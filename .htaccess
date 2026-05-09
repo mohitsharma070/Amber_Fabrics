@@ -1,0 +1,16 @@
+DirectoryIndex index.php
+
+# Block direct access to environment and internal config files
+<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock)|phpunit\.xml|\.git|\.gitignore)$">
+	Require all denied
+</FilesMatch>
+
+# Block direct access to selected private folders
+RedirectMatch 403 ^/(config|database|tmp_sessions)/
+
+RewriteEngine On
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+RewriteRule ^(.+)$ index.php?url=$1 [L,QSA]

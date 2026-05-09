@@ -1,0 +1,4 @@
+.env
+.env.local
+secure-config.php
+composer.phar

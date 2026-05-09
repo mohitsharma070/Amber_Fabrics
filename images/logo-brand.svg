@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" width="420" height="120">
+  <defs>
+    <linearGradient id="amberGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f0c57a"/>
+      <stop offset="100%" stop-color="#c99a47"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(10 8)">
+    <text x="20" y="82" font-family="Cormorant Garamond, Georgia, serif" font-size="88" font-weight="600" fill="#11110b">A</text>
+    <text x="72" y="82" font-family="Cormorant Garamond, Georgia, serif" font-size="88" font-weight="600" fill="#11110b">F</text>
+    <path d="M92 22c8-18 18-18 27-7-14 2-20 9-27 7z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+    <path d="M99 16c10-10 19-11 27-3-11 1-19 6-27 3z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+    <path d="M68 84c-12-14-25-18-37-13 12 1 22 9 37 13z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+    <path d="M64 92c-10-12-21-15-31-11 10 1 18 7 31 11z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(150 26)">
+    <text x="0" y="34" font-family="Cormorant Garamond, Georgia, serif" font-size="34" font-weight="700" fill="#11110b" letter-spacing="0.5">Amber Fabrics</text>
+    <line x1="0" y1="48" x2="180" y2="48" stroke="url(#amberGold)" stroke-width="2" opacity="0.9"/>
+    <text x="0" y="70" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="500" fill="#6b5b43" letter-spacing="2.6">PREMIUM TEXTILE HOUSE</text>
+  </g>
+</svg>

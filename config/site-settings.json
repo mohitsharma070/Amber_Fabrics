@@ -1,0 +1,16 @@
+{
+    "site_name": "Amber Fabrics",
+    "site_description": "Premium woven and blended fabrics for global brands, importers, and distributors.",
+    "contact_email": "amberfabricstextiles@gmail.com",
+    "branding_logo": "images\/logo-brand-light.svg",
+    "announcement_1_text": "Free Shipping on orders above \u20b9999",
+    "announcement_1_enabled": "1",
+    "announcement_2_text": "New arrivals added every week",
+    "announcement_2_enabled": "1",
+    "announcement_3_text": "",
+    "announcement_3_enabled": "0",
+    "announcement_4_text": "",
+    "announcement_4_enabled": "0",
+    "announcement_5_text": "",
+    "announcement_5_enabled": "0"
+}

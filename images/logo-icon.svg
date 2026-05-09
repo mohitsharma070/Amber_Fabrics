@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="iconAmber" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f3cb85"/>
+      <stop offset="100%" stop-color="#c99744"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="18" fill="none"/>
+  <text x="22" y="82" font-family="Cormorant Garamond, Georgia, serif" font-size="88" font-weight="600" fill="#11110b">A</text>
+  <text x="58" y="82" font-family="Cormorant Garamond, Georgia, serif" font-size="88" font-weight="600" fill="#11110b">F</text>
+  <path d="M74 24c8-14 16-15 24-6-12 1-18 7-24 6z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+  <path d="M79 18c8-9 16-9 22-3-9 1-15 5-22 3z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+  <path d="M53 83c-13-12-25-16-36-11 11 1 22 7 36 11z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+  <path d="M48 92c-10-10-19-13-28-9 9 1 17 6 28 9z" fill="none" stroke="#11110b" stroke-width="2" stroke-linecap="round"/>
+  <path d="M34 24h34" stroke="url(#iconAmber)" stroke-width="1.6" opacity="0.8"/>
+</svg>
