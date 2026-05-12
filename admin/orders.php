@@ -12,21 +12,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'mark_refunded') {
         $orderId = (int) ($_POST['order_id'] ?? 0);
         if ($orderId > 0) {
-            $upd = $conn->prepare(
-                "UPDATE orders
-                 SET payment_status = 'refunded',
-                     order_status = CASE WHEN order_status = 'cancelled' THEN 'refunded' ELSE order_status END,
-                     status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE status END,
-                     updated_at = NOW()
-                 WHERE id = ? AND order_status = 'cancelled' AND payment_status = 'paid'"
-            );
-            $upd->bind_param('i', $orderId);
-            $upd->execute();
-
-            if ($upd->affected_rows > 0) {
-                flash('success', 'Order marked as refunded.');
+            $result = admin_mark_order_refunded($conn, $orderId);
+            if (!empty($result['ok'])) {
+                flash('success', (string) ($result['message'] ?? 'Order marked as refunded.'));
             } else {
-                flash('error', 'Order is not eligible for refund update.');
+                flash('error', (string) ($result['message'] ?? 'Refund failed.'));
             }
         }
         redirect('orders.php?refund_queue=1');
@@ -72,8 +62,10 @@ $params = [];
 // Hide abandoned online-payment orders (pending > 30 minutes),
 // same behavior as customer side.
 $where[] = "NOT (
+    o.order_status = 'pending'
+    AND
     o.payment_status = 'pending'
-    AND o.payment_method IN ('razorpay', 'stripe', 'upi')
+    AND o.payment_method IN ('razorpay', 'upi')
     AND o.created_at < (NOW() - INTERVAL 30 MINUTE)
 )";
 

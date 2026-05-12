@@ -11,7 +11,11 @@ if ($token === '' || strlen($token) < 32) {
 } else {
     $tokenHash = hash('sha256', $token);
     $stmt = $conn->prepare(
-        "SELECT id, email_verified FROM customers WHERE email_verify_token = ? LIMIT 1"
+        "SELECT id, email_verified
+         FROM customers
+         WHERE email_verify_token = ?
+           AND email_verify_expires > UTC_TIMESTAMP()
+         LIMIT 1"
     );
     $stmt->bind_param('s', $tokenHash);
     $stmt->execute();
@@ -23,7 +27,11 @@ if ($token === '' || strlen($token) < 32) {
         $already = true;
     } else {
         $upd = $conn->prepare(
-            "UPDATE customers SET email_verified = 1, email_verify_token = NULL WHERE id = ?"
+            "UPDATE customers
+             SET email_verified = 1,
+                 email_verify_token = NULL,
+                 email_verify_expires = NULL
+             WHERE id = ?"
         );
         $upd->bind_param('i', $customer['id']);
         $upd->execute();

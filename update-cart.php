@@ -11,6 +11,8 @@ if (!verify_csrf()) {
 
 $productId = (int) ($_POST['product_id'] ?? 0);
 $quantityInput = $_POST['quantity'] ?? 1;
+$bundleQtyInput = $_POST['bundle_quantity'] ?? null;
+$meterLengthInput = $_POST['meter_length'] ?? null;
 
 if ($productId <= 0) {
     flash('error', 'Invalid cart item.');
@@ -19,6 +21,9 @@ if ($productId <= 0) {
 
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
+}
+if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_length'])) {
+    $_SESSION['cart_meter_length'] = [];
 }
 
 $stmt = $conn->prepare("SELECT unit_type, min_order_meters, stock, stock_meters FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
@@ -33,6 +38,20 @@ $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : 1;
 $quantity = normalize_quantity_by_unit($quantityInput, $unitType, (float) $minOrder);
+if ($unitType === 'meter') {
+    $meterLength = null;
+    if ($meterLengthInput !== null && is_numeric($meterLengthInput) && (float) $meterLengthInput > 0) {
+        $meterLength = (float) $meterLengthInput;
+    } elseif (isset($_SESSION['cart_meter_length'][$productId]) && is_numeric($_SESSION['cart_meter_length'][$productId])) {
+        $meterLength = (float) $_SESSION['cart_meter_length'][$productId];
+    }
+
+    if ($meterLength !== null && $bundleQtyInput !== null && is_numeric($bundleQtyInput)) {
+        $bundleQty = max(1, (int) round((float) $bundleQtyInput));
+        $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
+        $_SESSION['cart_meter_length'][$productId] = round($meterLength, 2);
+    }
+}
 
 if ($quantity < 1) {
     flash('error', 'Quantity must be at least 1 ' . (($unitType === 'piece' || $unitType === 'set') ? rtrim($unitType) : 'meter') . '.');

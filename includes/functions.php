@@ -275,12 +275,60 @@ function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $
  */
 function admin_notification_email(): string
 {
-    $email = getenv('ADMIN_NOTIFICATION_EMAIL') ?: (getenv('ADMIN_EMAIL') ?: '');
+    $email = _cfg('ADMIN_NOTIFICATION_EMAIL', _cfg('ADMIN_EMAIL', ''));
     if ($email === '') {
-        error_log('[amberfabrics] WARNING: ADMIN_NOTIFICATION_EMAIL env var is not set. Admin notifications will not be sent.');
+        error_log('[amberfabrics] WARNING: ADMIN_NOTIFICATION_EMAIL is not set. Admin notifications will not be sent.');
         return '';
     }
     return $email;
+}
+
+/**
+ * Build normalized SKU from category, material, color, GSM.
+ */
+function build_fabric_sku_base(string $category, string $material, string $color, string $gsm): string
+{
+    $parts = [$category, $material, $color, $gsm];
+    $clean = [];
+    foreach ($parts as $part) {
+        $p = strtoupper(trim($part));
+        $p = preg_replace('/[^A-Z0-9]+/', '-', $p ?? '');
+        $p = trim((string) $p, '-');
+        if ($p !== '') {
+            $clean[] = $p;
+        }
+    }
+    if (empty($clean)) {
+        return 'SKU';
+    }
+    return implode('-', $clean);
+}
+
+/**
+ * Generate a unique fabrics.sku value by appending -2, -3... when needed.
+ */
+function generate_unique_fabric_sku(mysqli $conn, string $category, string $material, string $color, string $gsm, int $excludeId = 0): string
+{
+    $base = build_fabric_sku_base($category, $material, $color, $gsm);
+    $candidate = $base;
+    $n = 1;
+
+    while (true) {
+        if ($excludeId > 0) {
+            $stmt = $conn->prepare("SELECT id FROM fabrics WHERE sku = ? AND id <> ? LIMIT 1");
+            $stmt->bind_param('si', $candidate, $excludeId);
+        } else {
+            $stmt = $conn->prepare("SELECT id FROM fabrics WHERE sku = ? LIMIT 1");
+            $stmt->bind_param('s', $candidate);
+        }
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row) {
+            return $candidate;
+        }
+        $n++;
+        $candidate = $base . '-' . $n;
+    }
 }
 
 /**
@@ -288,10 +336,6 @@ function admin_notification_email(): string
  */
 function send_inquiry_notification(array $inquiry): bool
 {
-    require_once __DIR__ . '/../vendor/phpmailer/phpmailer/src/PHPMailer.php';
-    require_once __DIR__ . '/../vendor/phpmailer/phpmailer/src/SMTP.php';
-    require_once __DIR__ . '/../vendor/phpmailer/phpmailer/src/Exception.php';
-
     $to = admin_notification_email();
     if ($to === '') {
         return false;
@@ -316,31 +360,23 @@ function send_inquiry_notification(array $inquiry): bool
         'Message:',
         ((string) ($inquiry['message'] ?? '')),
     ];
-    $message = implode("\r\n", $lines);
 
-    $from = getenv('MAIL_FROM') ?: 'no-reply@localhost';
+    $replyTo = filter_var($inquiry['email'] ?? '', FILTER_VALIDATE_EMAIL)
+        ? (string) $inquiry['email']
+        : '';
 
-    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
     try {
-        // SMTP settings for Gmail
-        $mail->isSMTP();
-        $mail->Host = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
-        $mail->SMTPAuth = true;
-        $mail->Username = $from; // Your Gmail address
-        $mail->Password = getenv('SMTP_PASSWORD') ?: ''; // Gmail App Password - set SMTP_PASSWORD environment variable
-        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = (int) (getenv('SMTP_PORT') ?: 587);
-
-        $mail->setFrom($from, 'Fabric Export Notification');
+        $mail = _mailer_base();
         $mail->addAddress($to);
-        $mail->addReplyTo($inquiry['email'] ?? $from);
+        if ($replyTo !== '') {
+            $mail->addReplyTo($replyTo);
+        }
         $mail->Subject = $subject;
-        $mail->Body = $message;
-
+        $mail->Body    = implode("\r\n", $lines);
         $mail->send();
         return true;
-    } catch (PHPMailer\PHPMailer\Exception $e) {
-        error_log('[fabric-export] PHPMailer failed: ' . $e->getMessage());
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] inquiry notification email failed: ' . $e->getMessage());
         return false;
     }
 }
@@ -394,26 +430,41 @@ function site_settings_defaults(): array
     ];
 }
 
-function ensure_site_settings_table(mysqli $conn): void
+function ensure_site_settings_table(mysqli $conn): bool
 {
-    static $ready = false;
-    if ($ready) {
-        return;
+    static $checked = false;
+    static $available = false;
+    if ($checked) {
+        return $available;
+    }
+    $checked = true;
+
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'site_settings'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $available = ((int) ($row['total'] ?? 0)) > 0;
+        if (!$available) {
+            error_log('[amberfabrics] site_settings table missing. Run: php database/setup.php');
+        }
+    } catch (Throwable $e) {
+        $available = false;
+        error_log('[amberfabrics] site_settings table check failed: ' . $e->getMessage());
     }
 
-    $conn->query(
-        "CREATE TABLE IF NOT EXISTS site_settings (
-            setting_key VARCHAR(120) PRIMARY KEY,
-            setting_value TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
-    $ready = true;
+    return $available;
 }
 
 function load_site_settings_from_db(mysqli $conn): array
 {
-    ensure_site_settings_table($conn);
+    if (!ensure_site_settings_table($conn)) {
+        return [];
+    }
     $rows = $conn->query("SELECT setting_key, setting_value FROM site_settings");
     $settings = [];
     while ($row = $rows->fetch_assoc()) {
@@ -427,7 +478,9 @@ function load_site_settings_from_db(mysqli $conn): array
 
 function save_site_settings_to_db(mysqli $conn, array $settings): void
 {
-    ensure_site_settings_table($conn);
+    if (!ensure_site_settings_table($conn)) {
+        return;
+    }
     $stmt = $conn->prepare(
         "INSERT INTO site_settings (setting_key, setting_value)
          VALUES (?, ?)
@@ -482,28 +535,34 @@ function get_site_settings(): array
 /**
  * Ensure announcement dismissal table exists.
  */
-function ensure_announcement_dismissals_table(mysqli $conn): void
+function ensure_announcement_dismissals_table(mysqli $conn): bool
 {
-    static $ready = false;
-    if ($ready) {
-        return;
+    static $checked = false;
+    static $available = false;
+    if ($checked) {
+        return $available;
+    }
+    $checked = true;
+
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'announcement_dismissals'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $available = ((int) ($row['total'] ?? 0)) > 0;
+        if (!$available) {
+            error_log('[amberfabrics] announcement_dismissals table missing. Run: php database/setup.php');
+        }
+    } catch (Throwable $e) {
+        $available = false;
+        error_log('[amberfabrics] announcement_dismissals table check failed: ' . $e->getMessage());
     }
 
-    $conn->query(
-        "CREATE TABLE IF NOT EXISTS announcement_dismissals (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            session_key CHAR(64) NOT NULL,
-            customer_id INT DEFAULT NULL,
-            announcement_key CHAR(32) NOT NULL,
-            dismissed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uq_announce_dismissal (session_key, announcement_key),
-            INDEX idx_announce_customer_id (customer_id),
-            INDEX idx_announce_updated_at (updated_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
-
-    $ready = true;
+    return $available;
 }
 
 /**
@@ -527,7 +586,9 @@ function announcement_is_dismissed(mysqli $conn, string $announcementKey): bool
         return false;
     }
 
-    ensure_announcement_dismissals_table($conn);
+    if (!ensure_announcement_dismissals_table($conn)) {
+        return false;
+    }
     $sessionKey = announcement_session_key();
     $stmt = $conn->prepare(
         "SELECT id
@@ -550,7 +611,9 @@ function announcement_mark_dismissed(mysqli $conn, string $announcementKey): boo
         return false;
     }
 
-    ensure_announcement_dismissals_table($conn);
+    if (!ensure_announcement_dismissals_table($conn)) {
+        return false;
+    }
     $sessionKey = announcement_session_key();
     $customerId = !empty($_SESSION['customer_id']) ? (int) $_SESSION['customer_id'] : null;
 
@@ -589,9 +652,39 @@ function cart_get_or_create_db_cart(mysqli $conn, int $customerId): int
  * Save the current session cart to the database for the logged-in customer.
  * Replaces any previously saved cart items.
  */
-function cart_save_to_db(mysqli $conn, int $customerId, array $cart): void
+function cart_items_supports_meter_length(mysqli $conn): bool
+{
+    static $checked = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'cart_items'
+               AND COLUMN_NAME = 'meter_length'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
+}
+
+function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null): void
 {
     try {
+        if ($meterMap === null) {
+            $meterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length']))
+                ? $_SESSION['cart_meter_length']
+                : [];
+        }
         $cartId = cart_get_or_create_db_cart($conn, $customerId);
         $del = $conn->prepare("DELETE FROM cart_items WHERE cart_id = ?");
         $del->bind_param('i', $cartId);
@@ -599,14 +692,27 @@ function cart_save_to_db(mysqli $conn, int $customerId, array $cart): void
         if (empty($cart)) {
             return;
         }
-        $ins = $conn->prepare(
-            "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters)
-             VALUES (?, ?, ?, ?, ?)"
-        );
+        $supportsMeterLength = cart_items_supports_meter_length($conn);
+        $ins = $supportsMeterLength
+            ? $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length)
+                 VALUES (?, ?, ?, ?, ?, ?)"
+            )
+            : $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters)
+                 VALUES (?, ?, ?, ?, ?)"
+            );
         foreach ($cart as $productId => $qty) {
             $pid = (int) $productId;
             $q   = normalize_meter_quantity($qty);
-            $ins->bind_param('iidid', $cartId, $pid, $q, $pid, $q);
+            $meterLength = (isset($meterMap[$pid]) && is_numeric($meterMap[$pid]) && (float) $meterMap[$pid] > 0)
+                ? round((float) $meterMap[$pid], 2)
+                : null;
+            if ($supportsMeterLength) {
+                $ins->bind_param('iididd', $cartId, $pid, $q, $pid, $q, $meterLength);
+            } else {
+                $ins->bind_param('iidid', $cartId, $pid, $q, $pid, $q);
+            }
             $ins->execute();
         }
     } catch (Throwable $e) {
@@ -620,26 +726,49 @@ function cart_save_to_db(mysqli $conn, int $customerId, array $cart): void
  */
 function cart_load_from_db(mysqli $conn, int $customerId): array
 {
+    $bundle = cart_load_from_db_bundle($conn, $customerId);
+    return $bundle['cart'];
+}
+
+/**
+ * Load the saved cart and meter metadata from DB for a logged-in customer.
+ * Returns ['cart' => [product_id => quantity], 'meter_map' => [product_id => meter_length]].
+ */
+function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
+{
     try {
-        $stmt = $conn->prepare(
-            "SELECT ci.product_id, ci.quantity
-             FROM cart c
-             JOIN cart_items ci ON ci.cart_id = c.id
-             WHERE c.customer_id = ?"
-        );
+        $supportsMeterLength = cart_items_supports_meter_length($conn);
+        $stmt = $supportsMeterLength
+            ? $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.meter_length
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            )
+            : $conn->prepare(
+                "SELECT ci.product_id, ci.quantity
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
         $stmt->bind_param('i', $customerId);
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $cart = [];
+        $meterMap = [];
         foreach ($rows as $row) {
             if ((int) $row['product_id'] > 0) {
-                $cart[(int) $row['product_id']] = normalize_meter_quantity($row['quantity'] ?? 1);
+                $pid = (int) $row['product_id'];
+                $cart[$pid] = normalize_meter_quantity($row['quantity'] ?? 1);
+                if ($supportsMeterLength && isset($row['meter_length']) && is_numeric($row['meter_length']) && (float) $row['meter_length'] > 0) {
+                    $meterMap[$pid] = round((float) $row['meter_length'], 2);
+                }
             }
         }
-        return $cart;
+        return ['cart' => $cart, 'meter_map' => $meterMap];
     } catch (Throwable $e) {
         error_log('[amberfabrics] cart_load_from_db failed: ' . $e->getMessage());
-        return [];
+        return ['cart' => [], 'meter_map' => []];
     }
 }
 
@@ -665,7 +794,280 @@ function cart_clear_db(mysqli $conn, int $customerId): void
     }
 }
 
+/**
+ * For cancelled + paid Razorpay orders, create a real gateway refund first.
+ * Mark local order/payment as refunded only when gateway reports processed.
+ * Returns ['ok' => bool, 'message' => string].
+ */
+function admin_mark_order_refunded(mysqli $conn, int $orderId): array
+{
+    try {
+        $conn->begin_transaction();
+
+        $orderStmt = $conn->prepare(
+            "SELECT id, order_number, payment_method, payment_status, order_status
+             FROM orders
+             WHERE id = ?
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order) {
+            throw new RuntimeException('Order not found.');
+        }
+
+        $method = strtolower((string) ($order['payment_method'] ?? ''));
+        $payStatus = strtolower((string) ($order['payment_status'] ?? ''));
+        $ordStatus = strtolower((string) ($order['order_status'] ?? ''));
+
+        if ($ordStatus !== 'cancelled' || $payStatus !== 'paid') {
+            throw new RuntimeException('Order is not eligible for refund update.');
+        }
+
+        $payStmt = $conn->prepare(
+            "SELECT id, amount, razorpay_payment_id, transaction_id
+             FROM payments
+             WHERE order_id = ? AND payment_method = ?
+             LIMIT 1
+             FOR UPDATE"
+        );
+        $payStmt->bind_param('is', $orderId, $method);
+        $payStmt->execute();
+        $payment = $payStmt->get_result()->fetch_assoc();
+
+        if ($method === 'razorpay') {
+            if (!$payment) {
+                throw new RuntimeException('Payment record not found for Razorpay order.');
+            }
+
+            $paymentId = trim((string) ($payment['razorpay_payment_id'] ?? ''));
+            if ($paymentId === '') {
+                $paymentId = trim((string) ($payment['transaction_id'] ?? ''));
+            }
+            if ($paymentId === '') {
+                throw new RuntimeException('Missing Razorpay payment id.');
+            }
+
+            require_once __DIR__ . '/../vendor/autoload.php';
+            $keyId = _cfg('RAZORPAY_KEY_ID', '');
+            $keySecret = _cfg('RAZORPAY_KEY_SECRET', '');
+            if ($keyId === '' || $keySecret === '') {
+                throw new RuntimeException('Razorpay configuration missing.');
+            }
+
+            $amountPaise = 0;
+            if (isset($payment['amount']) && is_numeric($payment['amount'])) {
+                $amountPaise = max(0, (int) round(((float) $payment['amount']) * 100));
+            }
+
+            $refundStatus = '';
+            $existingRefundId = '';
+            $existingNotes = (string) ($order['notes'] ?? '');
+            if (preg_match('/refund_id:\s*(rfnd_[A-Za-z0-9]+)/i', $existingNotes, $m)) {
+                $existingRefundId = trim((string) ($m[1] ?? ''));
+            }
+            try {
+                $api = new Razorpay\Api\Api($keyId, $keySecret);
+                $refundId = '';
+                if ($existingRefundId !== '') {
+                    $refund = $api->refund->fetch($existingRefundId);
+                    $refundId = $existingRefundId;
+                } else {
+                    $payload = ['speed' => 'normal'];
+                    if ($amountPaise > 0) {
+                        $payload['amount'] = $amountPaise;
+                    }
+                    $refund = $api->payment->fetch($paymentId)->refund($payload);
+                    $refundId = trim((string) ($refund['id'] ?? ''));
+                }
+                $refundStatus = strtolower(trim((string) ($refund['status'] ?? '')));
+                if ($existingRefundId === '') {
+                    $refundNote = '[System] Razorpay refund initiated';
+                    if ($refundId !== '') {
+                        $refundNote .= ' (refund_id: ' . $refundId . ')';
+                    }
+                    if ($refundStatus !== '') {
+                        $refundNote .= ' [status: ' . $refundStatus . ']';
+                    }
+                    $refundNote .= ' on ' . date('d M Y, H:i');
+
+                    $updNotes = $conn->prepare(
+                        "UPDATE orders
+                         SET notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END
+                         WHERE id = ?"
+                    );
+                    $updNotes->bind_param('ssi', $refundNote, $refundNote, $orderId);
+                    $updNotes->execute();
+                }
+            } catch (Throwable $e) {
+                throw new RuntimeException('Razorpay refund failed: ' . $e->getMessage());
+            }
+
+            if ($refundStatus !== 'processed') {
+                $conn->commit();
+                return [
+                    'ok' => true,
+                    'message' => 'Refund initiated in Razorpay (status: ' . ($refundStatus !== '' ? $refundStatus : 'processing') . '). Keep payment as Paid until processed.',
+                ];
+            }
+        }
+
+        $updOrder = $conn->prepare(
+            "UPDATE orders
+             SET payment_status = 'refunded',
+                 order_status = CASE WHEN order_status = 'cancelled' THEN 'refunded' ELSE order_status END,
+                 status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE status END,
+                 updated_at = NOW()
+             WHERE id = ?"
+        );
+        $updOrder->bind_param('i', $orderId);
+        $updOrder->execute();
+
+        if ($payment) {
+            $updPayment = $conn->prepare(
+                "UPDATE payments
+                 SET payment_status = 'refunded'
+                 WHERE id = ?"
+            );
+            $paymentRowId = (int) ($payment['id'] ?? 0);
+            $updPayment->bind_param('i', $paymentRowId);
+            $updPayment->execute();
+        }
+
+        $conn->commit();
+        return ['ok' => true, 'message' => 'Order marked as refunded.'];
+    } catch (Throwable $e) {
+        try {
+            $conn->rollback();
+        } catch (Throwable $rollbackException) {
+            // ignore rollback errors
+        }
+        return ['ok' => false, 'message' => $e->getMessage() ?: 'Refund failed.'];
+    }
+}
+
+/**
+ * Sync local refund status with Razorpay using stored refund_id in order notes.
+ * Useful for previously mismatched orders.
+ * Returns ['ok' => bool, 'message' => string].
+ */
+function admin_sync_razorpay_refund_status(mysqli $conn, int $orderId): array
+{
+    try {
+        $conn->begin_transaction();
+
+        $orderStmt = $conn->prepare(
+            "SELECT id, payment_method, payment_status, order_status, status, notes
+             FROM orders
+             WHERE id = ?
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order) {
+            throw new RuntimeException('Order not found.');
+        }
+
+        $method = strtolower((string) ($order['payment_method'] ?? ''));
+        if ($method !== 'razorpay') {
+            throw new RuntimeException('Sync is available only for Razorpay orders.');
+        }
+
+        $notes = (string) ($order['notes'] ?? '');
+        if (!preg_match('/refund_id:\s*(rfnd_[A-Za-z0-9]+)/i', $notes, $m)) {
+            throw new RuntimeException('No Razorpay refund_id found in order notes.');
+        }
+        $refundId = trim((string) ($m[1] ?? ''));
+        if ($refundId === '') {
+            throw new RuntimeException('Invalid refund_id in order notes.');
+        }
+
+        require_once __DIR__ . '/../vendor/autoload.php';
+        $keyId = _cfg('RAZORPAY_KEY_ID', '');
+        $keySecret = _cfg('RAZORPAY_KEY_SECRET', '');
+        if ($keyId === '' || $keySecret === '') {
+            throw new RuntimeException('Razorpay configuration missing.');
+        }
+
+        $api = new Razorpay\Api\Api($keyId, $keySecret);
+        $refund = $api->refund->fetch($refundId);
+        $refundStatus = strtolower(trim((string) ($refund['status'] ?? '')));
+
+        $paymentRowStmt = $conn->prepare(
+            "SELECT id FROM payments WHERE order_id = ? AND payment_method = 'razorpay' LIMIT 1 FOR UPDATE"
+        );
+        $paymentRowStmt->bind_param('i', $orderId);
+        $paymentRowStmt->execute();
+        $payment = $paymentRowStmt->get_result()->fetch_assoc();
+
+        if ($refundStatus === 'processed') {
+            $updOrder = $conn->prepare(
+                "UPDATE orders
+                 SET payment_status = 'refunded',
+                     order_status = 'refunded',
+                     status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE status END,
+                     updated_at = NOW()
+                 WHERE id = ?"
+            );
+            $updOrder->bind_param('i', $orderId);
+            $updOrder->execute();
+
+            if ($payment) {
+                $updPayment = $conn->prepare("UPDATE payments SET payment_status = 'refunded' WHERE id = ?");
+                $paymentId = (int) $payment['id'];
+                $updPayment->bind_param('i', $paymentId);
+                $updPayment->execute();
+            }
+
+            $conn->commit();
+            return ['ok' => true, 'message' => 'Refund processed in Razorpay. Local status updated to Refunded.'];
+        }
+
+        // Not processed yet: keep "refund initiated" state locally.
+        $updOrder = $conn->prepare(
+            "UPDATE orders
+             SET payment_status = 'paid',
+                 order_status = 'cancelled',
+                 status = 'cancelled',
+                 updated_at = NOW()
+             WHERE id = ?"
+        );
+        $updOrder->bind_param('i', $orderId);
+        $updOrder->execute();
+
+        if ($payment) {
+            $updPayment = $conn->prepare("UPDATE payments SET payment_status = 'paid' WHERE id = ?");
+            $paymentId = (int) $payment['id'];
+            $updPayment->bind_param('i', $paymentId);
+            $updPayment->execute();
+        }
+
+        $conn->commit();
+        return ['ok' => true, 'message' => 'Refund is still ' . ($refundStatus !== '' ? $refundStatus : 'processing') . ' in Razorpay. Local status corrected to Refund Initiated state.'];
+    } catch (Throwable $e) {
+        try {
+            $conn->rollback();
+        } catch (Throwable $rollbackException) {
+            // ignore rollback errors
+        }
+        return ['ok' => false, 'message' => $e->getMessage() ?: 'Refund sync failed.'];
+    }
+}
+
 // E-Commerce Email Helpers
+
+/**
+ * Read active app config from config/db.php bootstrap.
+ */
+function _cfg(string $key, string $default = ''): string
+{
+    if (isset($GLOBALS['_app_config'][$key]) && $GLOBALS['_app_config'][$key] !== '') {
+        return (string) $GLOBALS['_app_config'][$key];
+    }
+    return $default;
+}
 
 function _mailer_base(): PHPMailer\PHPMailer\PHPMailer
 {
@@ -674,14 +1076,27 @@ function _mailer_base(): PHPMailer\PHPMailer\PHPMailer
     require_once __DIR__ . '/../vendor/phpmailer/phpmailer/src/Exception.php';
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-    $mail->isSMTP();
-    $mail->Host      = getenv('SMTP_HOST')     ?: 'smtp.gmail.com';
-    $mail->SMTPAuth  = true;
-    $mail->Username  = getenv('MAIL_FROM')     ?: '';
-    $mail->Password  = getenv('SMTP_PASSWORD') ?: '';
-    $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-    $mail->Port      = (int)(getenv('SMTP_PORT') ?: 587);
-    $mail->setFrom(getenv('MAIL_FROM') ?: 'no-reply@amberfabrics.com', 'Amber Fabrics');
+
+    $driver = strtolower(trim(_cfg('MAIL_DRIVER', 'smtp')));
+
+    if ($driver === 'mail') {
+        // Use PHP's built-in mail() — required on hosts that block outbound SMTP
+        // (e.g. InfinityFree). The host's sendmail handles delivery.
+        $mail->isMail();
+    } else {
+        // Full SMTP (default) — for Gmail App Password, Mailgun, etc.
+        $mail->isSMTP();
+        $mail->Host       = _cfg('SMTP_HOST', 'smtp.gmail.com');
+        $mail->SMTPAuth   = true;
+        $mail->Username   = _cfg('MAIL_FROM');
+        $mail->Password   = _cfg('SMTP_PASSWORD');
+        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = (int) _cfg('SMTP_PORT', '587');
+    }
+
+    $fromAddress = _cfg('MAIL_FROM', 'no-reply@amberfabrics.com');
+    $mail->setFrom($fromAddress, 'Amber Fabrics');
+    $mail->CharSet = 'UTF-8';
     return $mail;
 }
 
@@ -769,16 +1184,46 @@ function send_order_status_update_email(mysqli $conn, int $orderId, string $newS
     $order = $row->get_result()->fetch_assoc();
     if (!$order) { return false; }
 
+    $statusLower = strtolower(trim($newStatus));
     $lines = [
         'Dear ' . $order['cname'] . ',',
         '',
         'Your order ' . $order['order_number'] . ' status has been updated to: ' . strtoupper($newStatus),
         '',
-        'Log in to your account to view full order details.',
-        '',
-        'Regards,',
-        'Amber Fabrics',
     ];
+
+    if (in_array($statusLower, ['shipped', 'delivered'], true)) {
+        $shipStmt = $conn->prepare(
+            "SELECT courier_name, tracking_id, tracking_url, shipped_at, delivered_at
+             FROM shipments
+             WHERE order_id = ?
+             LIMIT 1"
+        );
+        $shipStmt->bind_param('i', $orderId);
+        $shipStmt->execute();
+        $shipment = $shipStmt->get_result()->fetch_assoc() ?: [];
+
+        $courier = trim((string) ($shipment['courier_name'] ?? ''));
+        $trackingId = trim((string) ($shipment['tracking_id'] ?? ''));
+        $trackingUrl = safe_external_url((string) ($shipment['tracking_url'] ?? ''));
+        $shippedAt = trim((string) ($shipment['shipped_at'] ?? ''));
+        $deliveredAt = trim((string) ($shipment['delivered_at'] ?? ''));
+
+        if ($courier !== '' || $trackingId !== '' || $trackingUrl !== '' || $shippedAt !== '' || $deliveredAt !== '') {
+            $lines[] = 'Shipment Details:';
+            if ($courier !== '') { $lines[] = 'Courier: ' . $courier; }
+            if ($trackingId !== '') { $lines[] = 'Tracking ID: ' . $trackingId; }
+            if ($trackingUrl !== '') { $lines[] = 'Tracking URL: ' . $trackingUrl; }
+            if ($shippedAt !== '') { $lines[] = 'Shipped At: ' . $shippedAt; }
+            if ($deliveredAt !== '') { $lines[] = 'Delivered At: ' . $deliveredAt; }
+            $lines[] = '';
+        }
+    }
+
+    $lines[] = 'Log in to your account to view full order details.';
+    $lines[] = '';
+    $lines[] = 'Regards,';
+    $lines[] = 'Amber Fabrics';
 
     try {
         $mail = _mailer_base();
@@ -798,7 +1243,7 @@ function send_order_status_update_email(mysqli $conn, int $orderId, string $newS
  */
 function send_customer_password_reset_email(string $email, string $token): bool
 {
-    $appUrl   = rtrim((string) (getenv('APP_URL') ?: ''), '/');
+    $appUrl   = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
         // Fallback: build from server vars but never trust HTTP_HOST for security-sensitive URLs.
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -838,7 +1283,7 @@ function send_customer_password_reset_email(string $email, string $token): bool
  */
 function send_customer_verification_email(string $email, string $name, string $token): bool
 {
-    $appUrl  = rtrim((string) (getenv('APP_URL') ?: ''), '/');
+    $appUrl  = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $appUrl   = $protocol . '://' . ($_SERVER['SERVER_NAME'] ?? 'localhost');

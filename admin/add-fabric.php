@@ -54,14 +54,13 @@ if(isset($_POST['submit'])){
     $salePrice     = trim($_POST['sale_price']    ?? '');
     $costPrice     = trim($_POST['cost_price']    ?? '');
     $stock         = trim($_POST['stock']         ?? '0');
-    $sku           = trim($_POST['sku']           ?? '');
-    $sku           = $sku !== '' ? $sku : null;
     $size          = trim($_POST['size']          ?? '');
     $meterOptions  = trim($_POST['meter_options']  ?? '');
     $color         = trim($_POST['color']         ?? '');
     $printStyle    = trim($_POST['print_style']    ?? '');
     $material      = trim($_POST['material']      ?? '');
     $gsm           = trim($_POST['gsm']           ?? '');
+    $sku           = generate_unique_fabric_sku($conn, $category, $material, $color, $gsm);
     $width         = trim($_POST['width']         ?? '');
     $moq           = trim($_POST['moq']           ?? '');
     $lead          = trim($_POST['lead_time']     ?? '');
@@ -281,8 +280,10 @@ include 'partials/header.php'; ?>
         <?php echo form_error($errors, 'unit_type'); ?>
     </div>
     <div class="col-sm-6">
-        <label class="form-label">SKU <small class="text-muted">(unique product code)</small></label>
-        <input type="text" name="sku" class="form-control" placeholder="e.g. VT-PROD-001" value="<?php echo e($old['sku']); ?>">
+        <label class="form-label">SKU <small class="text-muted">(auto-generated)</small></label>
+        <input type="text" id="sku_preview" class="form-control" value="<?php echo e($old['sku']); ?>" readonly>
+        <input type="hidden" name="sku" id="sku_hidden" value="<?php echo e($old['sku']); ?>">
+        <small class="text-muted">Generated from Category + Material + Color + GSM.</small>
     </div>
     <div class="col-6 col-md-3">
         <label class="form-label">Regular Price *</label>
@@ -415,6 +416,12 @@ include 'partials/header.php'; ?>
     var stockInput = document.querySelector('input[name="stock"]');
     var minOrderInput = document.querySelector('input[name="min_order_meters"]');
     var qtyStepInput = document.querySelector('input[name="qty_step"]');
+    var categoryInput = document.querySelector('select[name="category"]');
+    var materialInput = document.querySelector('input[name="material"]');
+    var colorInput = document.querySelector('input[name="color"]');
+    var gsmInput = document.querySelector('input[name="gsm"]');
+    var skuPreview = document.getElementById('sku_preview');
+    var skuHidden = document.getElementById('sku_hidden');
     if (!unitSelect || !stockInput) return;
 
     function applyUnitRules() {
@@ -441,6 +448,35 @@ include 'partials/header.php'; ?>
 
     unitSelect.addEventListener('change', applyUnitRules);
     applyUnitRules();
+
+    function skuPart(value) {
+        return String(value || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+    }
+
+    function updateSkuPreview() {
+        if (!skuPreview || !skuHidden) return;
+        var parts = [
+            categoryInput ? skuPart(categoryInput.value) : '',
+            materialInput ? skuPart(materialInput.value) : '',
+            colorInput ? skuPart(colorInput.value) : '',
+            gsmInput ? skuPart(gsmInput.value) : ''
+        ].filter(Boolean);
+        var sku = parts.length ? parts.join('-') : 'SKU';
+        skuPreview.value = sku;
+        skuHidden.value = sku;
+    }
+
+    [categoryInput, materialInput, colorInput, gsmInput].forEach(function (el) {
+        if (el) {
+            el.addEventListener('input', updateSkuPreview);
+            el.addEventListener('change', updateSkuPreview);
+        }
+    });
+    updateSkuPreview();
 })();
 </script>
 

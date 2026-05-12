@@ -1,4 +1,66 @@
 document.addEventListener("DOMContentLoaded", function () {
+
+    // ── Ripple effect on all .btn clicks ─────────────────────────────────────
+    (function () {
+        document.addEventListener("click", function (e) {
+            var btn = e.target.closest(".btn");
+            if (!btn || btn.disabled || btn.classList.contains("is-loading")) return;
+
+            var ripple = document.createElement("span");
+            ripple.className = "btn-ripple";
+
+            var rect = btn.getBoundingClientRect();
+            var size = Math.max(rect.width, rect.height);
+            ripple.style.width  = size + "px";
+            ripple.style.height = size + "px";
+            ripple.style.left   = (e.clientX - rect.left - size / 2) + "px";
+            ripple.style.top    = (e.clientY - rect.top  - size / 2) + "px";
+
+            btn.appendChild(ripple);
+            ripple.addEventListener("animationend", function () { ripple.remove(); });
+        });
+    }());
+
+    // ── Auto loading state: any form submit button shows spinner ─────────────
+    (function () {
+        document.addEventListener("submit", function (e) {
+            var form = e.target;
+            if (!form || form.tagName !== "FORM") return;
+
+            // Don't apply to filter/sort forms that auto-submit and need to stay responsive
+            if (form.classList.contains("js-no-loading")) return;
+
+            // Find the submit button that triggered the form
+            var submitBtn = form.querySelector('[type="submit"]:not(.js-no-loading)');
+            if (!submitBtn || submitBtn.disabled) return;
+
+            // Store label, set loading
+            var original = submitBtn.innerHTML;
+            submitBtn.dataset.originalLabel = original;
+            submitBtn.classList.add("is-loading");
+            submitBtn.disabled = true;
+
+            // Safety: restore after 12 s in case server is slow / page stays
+            setTimeout(function () {
+                submitBtn.classList.remove("is-loading");
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = original;
+            }, 12000);
+        });
+
+        // Restore buttons when browser navigates back (bfcache)
+        window.addEventListener("pageshow", function (e) {
+            if (e.persisted) {
+                document.querySelectorAll(".btn.is-loading").forEach(function (btn) {
+                    btn.classList.remove("is-loading");
+                    btn.disabled = false;
+                    if (btn.dataset.originalLabel) {
+                        btn.innerHTML = btn.dataset.originalLabel;
+                    }
+                });
+            }
+        });
+    }());
     var animated = document.querySelectorAll(".animate-in");
     if (animated.length) {
         if (!("IntersectionObserver" in window)) {

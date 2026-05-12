@@ -42,6 +42,19 @@ $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : 1;
 $quantity = normalize_quantity_by_unit($_POST['quantity'] ?? 1, $unitType, (float) $minOrder);
+$selectedMeterLength = null;
+
+// Meter products can be posted as: selected meter length + bundle quantity (pieces).
+if ($unitType === 'meter') {
+    $meterLengthRaw = $_POST['meter_length'] ?? null;
+    $bundleQtyRaw = $_POST['bundle_quantity'] ?? null;
+    if ($meterLengthRaw !== null && $bundleQtyRaw !== null && is_numeric($meterLengthRaw) && is_numeric($bundleQtyRaw)) {
+        $meterLength = max(0.01, (float) $meterLengthRaw);
+        $bundleQty = max(1, (int) round((float) $bundleQtyRaw));
+        $selectedMeterLength = $meterLength;
+        $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
+    }
+}
 
 $sizeOptions = [];
 if (!empty($product['size'])) {
@@ -82,6 +95,9 @@ if ($stock > 0 && $quantity > $stock) {
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
+if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_length'])) {
+    $_SESSION['cart_meter_length'] = [];
+}
 
 $existing = isset($_SESSION['cart'][$productId])
     ? normalize_quantity_by_unit($_SESSION['cart'][$productId], $unitType, (float) $minOrder)
@@ -92,6 +108,9 @@ if ($stock > 0 && $newQty > $stock) {
     $cappedByStock = true;
 }
 $_SESSION['cart'][$productId] = normalize_quantity_by_unit($newQty, $unitType, (float) $minOrder);
+if ($unitType === 'meter' && $selectedMeterLength !== null) {
+    $_SESSION['cart_meter_length'][$productId] = round((float) $selectedMeterLength, 2);
+}
 if (!isset($_SESSION['cart_size']) || !is_array($_SESSION['cart_size'])) {
     $_SESSION['cart_size'] = [];
 }

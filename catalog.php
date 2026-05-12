@@ -14,10 +14,18 @@ $sortMap = [
     'price_asc' => 'price ASC',
     'price_desc' => 'price DESC',
 ];
+$sellableCategorySlugs = ['fabric-by-meter', 'bedsheets', 'towels', 'table-covers'];
+$sellablePlaceholders = implode(',', array_fill(0, count($sellableCategorySlugs), '?'));
 
 $categories = [];
 try {
-    $catStmt = $conn->prepare("SELECT id, name, slug, parent_id FROM categories WHERE status = 'active' ORDER BY parent_id ASC, name ASC");
+    $catStmt = $conn->prepare(
+        "SELECT id, name, slug, parent_id
+         FROM categories
+         WHERE status = 'active' AND slug IN ($sellablePlaceholders)
+         ORDER BY FIELD(slug, 'fabric-by-meter', 'bedsheets', 'towels', 'table-covers'), name ASC"
+    );
+    $catStmt->bind_param(str_repeat('s', count($sellableCategorySlugs)), ...$sellableCategorySlugs);
     $catStmt->execute();
     $categories = $catStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 } catch (Throwable $e) {
@@ -33,6 +41,10 @@ $state = [
 ];
 $search = $state['q'];
 $category = $state['category'];
+if ($category !== '' && !in_array($category, $sellableCategorySlugs, true)) {
+    $category = '';
+    $state['category'] = '';
+}
 $sort = $state['sort'];
 $perPage = $state['per_page'];
 $page = $state['page'];
@@ -47,9 +59,10 @@ $sortLabels = [
     'price_desc' => 'Price High-Low',
 ];
 
-$where = ["status = 'active'"];
+$where = ["status = 'active'", "category IN ($sellablePlaceholders)"];
 $types = '';
-$params = [];
+$params = $sellableCategorySlugs;
+$types .= str_repeat('s', count($sellableCategorySlugs));
 
 if ($search !== '') {
     $where[] = "(name LIKE ? OR sku LIKE ? OR material LIKE ?)";
@@ -168,37 +181,11 @@ function catalog_query(array $params): string {
                                 <label class="form-label">Category</label>
                                 <select class="form-select" name="category">
                                     <option value="">All Categories</option>
-                                    <?php 
-                                    // Group categories by parent
-                                    $grouped = [];
-                                    foreach ($categories as $cat) {
-                                        $parentId = ($cat['parent_id'] ?? null);
-                                        if ($parentId === null) {
-                                            $grouped[$cat['id']] = ['name' => $cat['name'], 'slug' => $cat['slug'], 'children' => []];
-                                        }
-                                    }
-                                    foreach ($categories as $cat) {
-                                        $parentId = ($cat['parent_id'] ?? null);
-                                        if ($parentId !== null && isset($grouped[$parentId])) {
-                                            $grouped[$parentId]['children'][] = $cat;
-                                        }
-                                    }
-                                    
-                                    // Display grouped categories
-                                    foreach ($grouped as $parentId => $parent) {
-                                        if (!empty($parent['children'])):
-                                            ?>
-                                            <optgroup label="<?php echo e($parent['name']); ?>">
-                                                <?php foreach ($parent['children'] as $child): ?>
-                                                    <option value="<?php echo e($child['slug']); ?>" <?php echo $category === $child['slug'] ? 'selected' : ''; ?>>
-                                                        <?php echo e($child['name']); ?>
-                                                    </option>
-                                                <?php endforeach; ?>
-                                            </optgroup>
-                                            <?php
-                                        endif;
-                                    }
-                                    ?>
+                                    <?php foreach ($categories as $cat): ?>
+                                        <option value="<?php echo e($cat['slug']); ?>" <?php echo $category === $cat['slug'] ? 'selected' : ''; ?>>
+                                            <?php echo e($cat['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-12">
@@ -296,15 +283,17 @@ function catalog_query(array $params): string {
                                 <div class="d-flex gap-1 mt-auto">
                                     <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="btn btn-outline-dark btn-sm">View</a>
                                     <?php if ($inStock): ?>
-                                        <?php if ($hasSizeOptions): ?>
+                                        <?php if ($unitType === 'meter'): ?>
+                                            <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Meter</a>
+                                        <?php elseif ($hasSizeOptions): ?>
                                             <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Size</a>
                                         <?php else: ?>
-                                        <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
-                                            <?php echo csrf_field(); ?>
-                                            <input type="hidden" name="product_id" value="<?php echo (int) $row['id']; ?>">
-                                            <input type="hidden" name="quantity" value="1">
-                                            <button type="submit" class="btn btn-primary btn-sm w-100">Add to Cart</button>
-                                        </form>
+                                            <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
+                                                <?php echo csrf_field(); ?>
+                                                <input type="hidden" name="product_id" value="<?php echo (int) $row['id']; ?>">
+                                                <input type="hidden" name="quantity" value="1">
+                                                <button type="submit" class="btn btn-primary btn-sm w-100">Add to Cart</button>
+                                            </form>
                                         <?php endif; ?>
                                     <?php else: ?>
                                         <button type="button" class="btn btn-secondary btn-sm flex-grow-1" disabled>Unavailable</button>
@@ -380,4 +369,3 @@ function catalog_query(array $params): string {
 </div>
 
 <?php include 'includes/footer.php'; ?>
-

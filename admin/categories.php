@@ -6,6 +6,8 @@ $errors = [];
 $maxSize = 2 * 1024 * 1024; // 2MB
 $allowedExt = ['jpg', 'jpeg', 'png', 'webp'];
 $allowedMime = ['image/jpeg', 'image/png', 'image/webp'];
+$lockedSellableSlugs = ['fabric-by-meter', 'bedsheets', 'towels', 'table-covers'];
+$lockedAllowedSlugs = $lockedSellableSlugs;
 
 $processCategoryImageUpload = static function (array $file, string $slug) use ($maxSize, $allowedExt, $allowedMime): ?string {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
@@ -52,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create') {
         $name = trim((string) ($_POST['name'] ?? ''));
         $slugRaw = trim((string) ($_POST['slug'] ?? ''));
-        $parentId = (int) ($_POST['parent_id'] ?? 0);
+        $parentId = 0;
         $status = trim((string) ($_POST['status'] ?? 'active'));
         $slug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $slugRaw));
         $slug = trim($slug, '-');
@@ -62,6 +64,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($slug === '') {
             $errors[] = 'Category slug is required.';
+        }
+        if (!in_array($slug, $lockedAllowedSlugs, true)) {
+            $errors[] = 'Only these slugs are allowed: fabric-by-meter, bedsheets, towels, table-covers.';
         }
         if (!in_array($status, ['active', 'inactive'], true)) {
             $status = 'active';
@@ -73,13 +78,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($_FILES['image']['name'])) {
                     $imagePath = $processCategoryImageUpload($_FILES['image'], $slug);
                 }
-                $parentIdNull = $parentId > 0 ? $parentId : null;
                 $stmt = $conn->prepare("INSERT INTO categories (name, slug, parent_id, image, status) VALUES (?, ?, ?, ?, ?)");
+                $parentIdNull = null;
                 $stmt->bind_param('ssiis', $name, $slug, $parentIdNull, $imagePath, $status);
                 $stmt->execute();
                 flash('success', 'Category added successfully.');
             } catch (Throwable $e) {
-                flash('error', 'Could not add category. ' . $e->getMessage());
+                error_log('[categories] create failed: ' . $e->getMessage());
+                flash('error', 'Could not add category. Please try again.');
             }
             redirect('categories.php');
         }
@@ -89,13 +95,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int) ($_POST['id'] ?? 0);
         $name = trim((string) ($_POST['name'] ?? ''));
         $slugRaw = trim((string) ($_POST['slug'] ?? ''));
-        $parentId = (int) ($_POST['parent_id'] ?? 0);
+        $parentId = 0;
         $status = trim((string) ($_POST['status'] ?? 'active'));
         $slug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $slugRaw));
         $slug = trim($slug, '-');
 
         if ($id <= 0 || $name === '' || $slug === '') {
             flash('error', 'Please provide valid category data.');
+            redirect('categories.php');
+        }
+        if (!in_array($slug, $lockedAllowedSlugs, true)) {
+            flash('error', 'Only locked taxonomy categories can be edited here.');
             redirect('categories.php');
         }
         if (!in_array($status, ['active', 'inactive'], true)) {
@@ -116,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $parentIdNull = $parentId > 0 ? $parentId : null;
+            $parentIdNull = null;
             $stmt = $conn->prepare("UPDATE categories SET name = ?, slug = ?, parent_id = ?, image = ?, status = ? WHERE id = ?");
             $stmt->bind_param('ssiisi', $name, $slug, $parentIdNull, $imagePath, $status, $id);
             $stmt->execute();
@@ -144,6 +154,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($slug !== '') {
+            if (in_array($slug, $lockedAllowedSlugs, true)) {
+                flash('error', 'Locked taxonomy categories cannot be deleted.');
+                redirect('categories.php');
+            }
             $usedStmt = $conn->prepare("SELECT COUNT(*) AS total FROM fabrics WHERE category = ?");
             $usedStmt->bind_param('s', $slug);
             $usedStmt->execute();
@@ -188,8 +202,12 @@ include 'partials/header.php';
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1 class="mb-1">Categories</h1>
-        <p class="text-muted mb-0">Manage product categories for your catalog.</p>
+        <p class="text-muted mb-0">Locked taxonomy: top-level only -> Fabric by Meter, Bedsheets, Towels, Table Covers.</p>
     </div>
+</div>
+<div class="alert alert-info">
+    This catalog uses a fixed top-level category structure for storefront consistency. Allowed slugs:
+    <code>fabric-by-meter</code>, <code>bedsheets</code>, <code>towels</code>, <code>table-covers</code>.
 </div>
 
 <div class="card mb-4">
@@ -211,17 +229,9 @@ include 'partials/header.php';
             </div>
             <div class="col-md-3">
                 <label class="form-label">Slug</label>
-                <input type="text" name="slug" class="form-control" placeholder="e.g. bedsheets" required>
+                <input type="text" name="slug" class="form-control" placeholder="e.g. fabric-by-meter" required>
             </div>
-            <div class="col-md-3">
-                <label class="form-label">Parent Category</label>
-                <select name="parent_id" class="form-select">
-                    <option value="">None (Top-level)</option>
-                    <?php foreach ($parentCategories as $parent): ?>
-                        <option value="<?php echo (int) $parent['id']; ?>"><?php echo e((string) $parent['name']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
+
             <div class="col-md-2">
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select">
@@ -247,7 +257,6 @@ include 'partials/header.php';
             <th>ID</th>
             <th>Name</th>
             <th>Slug</th>
-            <th>Parent</th>
             <th>Status</th>
             <th>Image</th>
             <th>Actions</th>
@@ -255,32 +264,18 @@ include 'partials/header.php';
         </thead>
         <tbody>
         <?php if (empty($categories)): ?>
-            <tr><td colspan="7" class="text-center text-muted py-4">No categories found.</td></tr>
+            <tr><td colspan="6" class="text-center text-muted py-4">No categories found.</td></tr>
         <?php else: ?>
             <?php foreach ($categories as $cat): ?>
-                <tr <?php echo (($cat['parent_id'] ?? null) !== null) ? 'style="background-color:#f9f9f9;"' : ''; ?>>
+                <tr>
+
                     <td><?php echo (int) $cat['id']; ?></td>
                     <td>
-                        <?php if (($cat['parent_id'] ?? null) !== null): ?>
-                            <span style="margin-left:20px;">↳</span>
-                        <?php endif; ?>
+
                         <?php echo e((string) $cat['name']); ?>
                     </td>
                     <td><code><?php echo e((string) $cat['slug']); ?></code></td>
-                    <td>
-                        <?php 
-                        $parentName = '';
-                        if (($cat['parent_id'] ?? null) !== null) {
-                            foreach ($categories as $potentialParent) {
-                                if ((int) $potentialParent['id'] === (int) ($cat['parent_id'] ?? 0)) {
-                                    $parentName = (string) $potentialParent['name'];
-                                    break;
-                                }
-                            }
-                        }
-                        echo $parentName ? e($parentName) : '<span class="text-muted">-</span>';
-                        ?>
-                    </td>
+
                     <td>
                         <?php if ((string) $cat['status'] === 'active'): ?>
                             <span class="badge bg-success">Active</span>
@@ -302,18 +297,7 @@ include 'partials/header.php';
                                 <div class="col-md-3">
                                     <input type="text" name="slug" class="form-control form-control-sm" value="<?php echo e((string) $cat['slug']); ?>" required>
                                 </div>
-                                <div class="col-md-2">
-                                    <select name="parent_id" class="form-select form-select-sm">
-                                        <option value="">None (Top-level)</option>
-                                        <?php foreach ($parentCategories as $parent): ?>
-                                            <?php if ((int) $parent['id'] !== (int) $cat['id']): ?>
-                                                <option value="<?php echo (int) $parent['id']; ?>" <?php echo (int) ($cat['parent_id'] ?? 0) === (int) $parent['id'] ? 'selected' : ''; ?>>
-                                                    <?php echo e((string) $parent['name']); ?>
-                                                </option>
-                                            <?php endif; ?>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
+
                                 <div class="col-md-2">
                                     <select name="status" class="form-select form-select-sm">
                                         <option value="active" <?php echo ((string) $cat['status'] === 'active') ? 'selected' : ''; ?>>Active</option>

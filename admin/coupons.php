@@ -15,6 +15,62 @@ $couponOld = [
     'status'           => 'active',
 ];
 
+/**
+ * Validate and normalize coupon form payload.
+ */
+function coupon_form_payload(array $src): array
+{
+    $code = strtoupper(trim((string) ($src['code'] ?? '')));
+    $discountType = trim((string) ($src['discount_type'] ?? 'flat'));
+    $discountValue = (float) ($src['discount_value'] ?? 0);
+    $minOrderAmount = (float) ($src['min_order_amount'] ?? 0);
+    $maxDiscountRaw = trim((string) ($src['max_discount'] ?? ''));
+    $maxDiscount = $maxDiscountRaw === '' ? null : (float) $maxDiscountRaw;
+    $startDateRaw = trim((string) ($src['start_date'] ?? ''));
+    $endDateRaw = trim((string) ($src['end_date'] ?? ''));
+    $usageLimit = max(0, (int) ($src['usage_limit'] ?? 0));
+    $status = trim((string) ($src['status'] ?? 'active'));
+
+    $startDate = $startDateRaw === '' ? null : $startDateRaw;
+    $endDate = $endDateRaw === '' ? null : $endDateRaw;
+
+    $errors = [];
+    if ($code === '') { $errors['code'] = 'Coupon code is required.'; }
+    if (!in_array($discountType, ['flat', 'percent'], true)) { $errors['discount_type'] = 'Invalid discount type.'; }
+    if ($discountValue <= 0) { $errors['discount_value'] = 'Discount value must be greater than 0.'; }
+    if ($discountType === 'percent' && $discountValue > 100) { $errors['discount_value'] = 'Percent discount cannot exceed 100.'; }
+    if (!in_array($status, ['active', 'inactive'], true)) { $errors['status'] = 'Invalid status.'; }
+    if ($startDate !== null && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) { $errors['start_date'] = 'Invalid start date.'; }
+    if ($endDate !== null && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) { $errors['end_date'] = 'Invalid end date.'; }
+    if ($startDate !== null && $endDate !== null && $endDate < $startDate) { $errors['end_date'] = 'End date must be after start date.'; }
+
+    return [
+        'data' => [
+            'code' => $code,
+            'discount_type' => $discountType,
+            'discount_value' => $discountValue,
+            'min_order_amount' => $minOrderAmount,
+            'max_discount' => $maxDiscount,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'usage_limit' => $usageLimit,
+            'status' => $status,
+        ],
+        'errors' => $errors,
+        'old' => [
+            'code' => $code,
+            'discount_type' => $discountType,
+            'discount_value' => (string) ($src['discount_value'] ?? ''),
+            'min_order_amount' => (string) ($src['min_order_amount'] ?? '0'),
+            'max_discount' => $maxDiscountRaw,
+            'start_date' => $startDateRaw,
+            'end_date' => $endDateRaw,
+            'usage_limit' => (string) $usageLimit,
+            'status' => $status,
+        ],
+    ];
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
         flash('error', 'Invalid token. Please try again.');
@@ -24,34 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim((string) ($_POST['action'] ?? ''));
 
     if ($action === 'create') {
-        $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
-        $discountType = trim((string) ($_POST['discount_type'] ?? 'flat'));
-        $discountValue = (float) ($_POST['discount_value'] ?? 0);
-        $minOrderAmount = (float) ($_POST['min_order_amount'] ?? 0);
-        $maxDiscountRaw = trim((string) ($_POST['max_discount'] ?? ''));
-        $maxDiscount = $maxDiscountRaw === '' ? null : (float) $maxDiscountRaw;
-        $startDate = trim((string) ($_POST['start_date'] ?? ''));
-        $endDate = trim((string) ($_POST['end_date'] ?? ''));
-        $usageLimit = max(0, (int) ($_POST['usage_limit'] ?? 0));
-        $status = trim((string) ($_POST['status'] ?? 'active'));
-
-        $couponOld = [
-            'code'             => $code,
-            'discount_type'    => $discountType,
-            'discount_value'   => (string) ($_POST['discount_value'] ?? ''),
-            'min_order_amount' => (string) ($_POST['min_order_amount'] ?? '0'),
-            'max_discount'     => $maxDiscountRaw,
-            'start_date'       => $startDate,
-            'end_date'         => $endDate,
-            'usage_limit'      => (string) $usageLimit,
-            'status'           => $status,
-        ];
-
-        if ($code === '') { $couponErrors['code'] = 'Coupon code is required.'; }
-        if (!in_array($discountType, ['flat', 'percent'], true)) { $couponErrors['discount_type'] = 'Invalid discount type.'; }
-        if ($discountValue <= 0) { $couponErrors['discount_value'] = 'Discount value must be greater than 0.'; }
-        if ($discountType === 'percent' && $discountValue > 100) { $couponErrors['discount_value'] = 'Percent discount cannot exceed 100.'; }
-        if (!in_array($status, ['active', 'inactive'], true)) { $couponErrors['status'] = 'Invalid status.'; }
+        $parsed = coupon_form_payload($_POST);
+        $couponErrors = $parsed['errors'];
+        $couponOld = $parsed['old'];
+        $data = $parsed['data'];
 
         if (empty($couponErrors)) {
             $stmt = $conn->prepare(
@@ -60,15 +92,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $stmt->bind_param(
                 'ssdddssis',
-                $code,
-                $discountType,
-                $discountValue,
-                $minOrderAmount,
-                $maxDiscount,
-                $startDate,
-                $endDate,
-                $usageLimit,
-                $status
+                $data['code'],
+                $data['discount_type'],
+                $data['discount_value'],
+                $data['min_order_amount'],
+                $data['max_discount'],
+                $data['start_date'],
+                $data['end_date'],
+                $data['usage_limit'],
+                $data['status']
             );
 
             try {
@@ -76,6 +108,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('success', 'Coupon created successfully.');
             } catch (Throwable $e) {
                 flash('error', 'Could not create coupon. Code may already exist.');
+            }
+            redirect('coupons.php');
+        }
+    }
+
+    if ($action === 'update') {
+        $id = (int) ($_POST['id'] ?? 0);
+        $parsed = coupon_form_payload($_POST);
+        $couponErrors = $parsed['errors'];
+        $couponOld = $parsed['old'];
+        $data = $parsed['data'];
+        if ($id <= 0) {
+            $couponErrors['code'] = 'Invalid coupon.';
+        }
+
+        if (empty($couponErrors)) {
+            $stmt = $conn->prepare(
+                "UPDATE coupons
+                 SET code = ?, discount_type = ?, discount_value = ?, min_order_amount = ?, max_discount = ?, start_date = ?, end_date = ?, usage_limit = ?, status = ?
+                 WHERE id = ?"
+            );
+            $stmt->bind_param(
+                'ssdddssisi',
+                $data['code'],
+                $data['discount_type'],
+                $data['discount_value'],
+                $data['min_order_amount'],
+                $data['max_discount'],
+                $data['start_date'],
+                $data['end_date'],
+                $data['usage_limit'],
+                $data['status'],
+                $id
+            );
+            try {
+                $stmt->execute();
+                flash('success', 'Coupon updated successfully.');
+            } catch (Throwable $e) {
+                flash('error', 'Could not update coupon. Code may already exist.');
             }
             redirect('coupons.php');
         }
@@ -89,6 +160,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param('si', $newStatus, $id);
             $stmt->execute();
             flash('success', 'Coupon status updated.');
+        }
+        redirect('coupons.php');
+    }
+
+    if ($action === 'delete') {
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id > 0) {
+            $stmt = $conn->prepare("DELETE FROM coupons WHERE id = ?");
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            flash('success', 'Coupon deleted.');
         }
         redirect('coupons.php');
     }
@@ -210,14 +292,38 @@ include 'partials/header.php';
                                     <?php echo ucfirst(e($coupon['status'])); ?>
                                 </span>
                             </td>
-                            <td>
-                                <form method="POST" action="coupons.php" class="d-inline">
+                            <td class="text-nowrap">
+                                <div class="d-flex flex-wrap gap-1 align-items-center">
+                                <form method="POST" action="coupons.php" class="m-0">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="toggle_status">
                                     <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">
                                     <input type="hidden" name="new_status" value="<?php echo $coupon['status'] === 'active' ? 'inactive' : 'active'; ?>">
                                     <button class="btn btn-sm btn-outline-primary" type="submit"><?php echo $coupon['status'] === 'active' ? 'Deactivate' : 'Activate'; ?></button>
                                 </form>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        type="button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#editCouponModal"
+                                        data-id="<?php echo (int) $coupon['id']; ?>"
+                                        data-code="<?php echo e($coupon['code']); ?>"
+                                        data-discount-type="<?php echo e($coupon['discount_type']); ?>"
+                                        data-discount-value="<?php echo e((string) $coupon['discount_value']); ?>"
+                                        data-min-order-amount="<?php echo e((string) $coupon['min_order_amount']); ?>"
+                                        data-max-discount="<?php echo e((string) ($coupon['max_discount'] ?? '')); ?>"
+                                        data-start-date="<?php echo e((string) ($coupon['start_date'] ?? '')); ?>"
+                                        data-end-date="<?php echo e((string) ($coupon['end_date'] ?? '')); ?>"
+                                        data-usage-limit="<?php echo e((string) $coupon['usage_limit']); ?>"
+                                        data-status="<?php echo e($coupon['status']); ?>">
+                                    Edit
+                                </button>
+                                <form method="POST" action="coupons.php" class="m-0" onsubmit="return confirm('Delete this coupon?');">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                </form>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -226,5 +332,97 @@ include 'partials/header.php';
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="editCouponModal" tabindex="-1" aria-labelledby="editCouponModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editCouponModalLabel">Edit Coupon</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="coupons.php">
+                <div class="modal-body">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="update">
+                    <input type="hidden" name="id" id="editCouponId" value="">
+
+                    <div class="mb-2">
+                        <label class="form-label">Code</label>
+                        <input class="form-control" name="code" id="editCouponCode" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Discount Type</label>
+                        <select class="form-select" name="discount_type" id="editCouponDiscountType">
+                            <option value="flat">Flat</option>
+                            <option value="percent">Percent</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Discount Value</label>
+                        <input class="form-control" type="number" step="0.01" min="0" name="discount_value" id="editCouponDiscountValue" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Min Order Amount</label>
+                        <input class="form-control" type="number" step="0.01" min="0" name="min_order_amount" id="editCouponMinOrderAmount">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Max Discount</label>
+                        <input class="form-control" type="number" step="0.01" min="0" name="max_discount" id="editCouponMaxDiscount">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Start Date</label>
+                        <input class="form-control" type="date" name="start_date" id="editCouponStartDate">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">End Date</label>
+                        <input class="form-control" type="date" name="end_date" id="editCouponEndDate">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Usage Limit (0 = unlimited)</label>
+                        <input class="form-control" type="number" min="0" name="usage_limit" id="editCouponUsageLimit">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" name="status" id="editCouponStatus">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script nonce="<?php echo e($cspNonce ?? ''); ?>">
+(function () {
+    function prefillCouponFromButton(btn) {
+        if (!btn) return;
+        document.getElementById('editCouponId').value = btn.getAttribute('data-id') || '';
+        document.getElementById('editCouponCode').value = btn.getAttribute('data-code') || '';
+        document.getElementById('editCouponDiscountType').value = btn.getAttribute('data-discount-type') || 'flat';
+        document.getElementById('editCouponDiscountValue').value = btn.getAttribute('data-discount-value') || '';
+        document.getElementById('editCouponMinOrderAmount').value = btn.getAttribute('data-min-order-amount') || '0';
+        document.getElementById('editCouponMaxDiscount').value = btn.getAttribute('data-max-discount') || '';
+        document.getElementById('editCouponStartDate').value = btn.getAttribute('data-start-date') || '';
+        document.getElementById('editCouponEndDate').value = btn.getAttribute('data-end-date') || '';
+        document.getElementById('editCouponUsageLimit').value = btn.getAttribute('data-usage-limit') || '0';
+        document.getElementById('editCouponStatus').value = btn.getAttribute('data-status') || 'active';
+    }
+
+    var modalEl = document.getElementById('editCouponModal');
+    if (!modalEl) return;
+
+    modalEl.addEventListener('show.bs.modal', function (event) {
+        var btn = event.relatedTarget;
+        if (!btn) return;
+        prefillCouponFromButton(btn);
+    });
+})();
+</script>
 
 <?php include 'partials/footer.php'; ?>

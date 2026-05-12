@@ -105,7 +105,13 @@ try {
     if ($eventType === 'cancelled') {
         flash('error', 'Payment was cancelled. You can retry payment from your orders.');
     } else {
-        flash('error', 'Payment failed. You can retry payment from your orders.');
+        $msg = 'Payment failed. You can retry payment from your orders.';
+        if ($errorDescription !== '') {
+            $msg .= ' Reason: ' . $errorDescription;
+        } elseif ($errorCode !== '') {
+            $msg .= ' Reason code: ' . $errorCode;
+        }
+        flash('error', $msg);
     }
     redirect('/customer/orders.php');
 } catch (Throwable $e) {

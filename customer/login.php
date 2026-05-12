@@ -13,6 +13,10 @@ $returnTo = trim($_GET['return'] ?? '');
 if (!preg_match('/^\/[a-zA-Z0-9\/_\-\.?&=%]*$/', $returnTo)) {
     $returnTo = '/index.php';
 }
+// Block protocol-relative redirects (e.g. //evil.com).
+if (strpos($returnTo, '//') === 0) {
+    $returnTo = '/index.php';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
@@ -37,7 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($customer && password_verify($password, $customer['password_hash'])) {
             if (!(int) $customer['email_verified']) {
-                $errors['_login'] = 'Please verify your email address before logging in. Check your inbox for the verification link.';
+                $errors['_login'] = 'Please verify your email address before logging in.';
+                $errors['_login_raw'] = '<a href="/customer/resend-verification.php">Resend verification email &rsaquo;</a>';
             } else {
             customer_record_attempt($conn, $email, $ip, true);
             session_regenerate_id(true);
@@ -46,8 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Merge any guest session cart with the customer's saved DB cart.
             // Quantity normalization must respect each product's unit type.
-            $dbCart      = cart_load_from_db($conn, (int) $customer['id']);
+            $dbCartBundle = cart_load_from_db_bundle($conn, (int) $customer['id']);
+            $dbCart = is_array($dbCartBundle['cart'] ?? null) ? $dbCartBundle['cart'] : [];
+            $dbMeterMap = is_array($dbCartBundle['meter_map'] ?? null) ? $dbCartBundle['meter_map'] : [];
             $sessionCart = isset($_SESSION['cart']) && is_array($_SESSION['cart']) ? $_SESSION['cart'] : [];
+            $sessionMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])
+                ? $_SESSION['cart_meter_length']
+                : [];
             $mergedIds = array_values(array_filter(array_unique(array_map(
                 'intval',
                 array_merge(array_keys($dbCart), array_keys($sessionCart))
@@ -77,6 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dbCart[$productId] = ($unitType === 'meter')
                     ? round((float) $currentQty + (float) $incomingQty, 2)
                     : (int) $currentQty + (int) $incomingQty;
+                if ($unitType === 'meter' && isset($sessionMeterMap[$productId]) && is_numeric($sessionMeterMap[$productId]) && (float) $sessionMeterMap[$productId] > 0) {
+                    $dbMeterMap[$productId] = round((float) $sessionMeterMap[$productId], 2);
+                }
             }
 
             // Cap merged quantities to current stock so we don't end up with
@@ -105,8 +118,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $_SESSION['cart'] = $dbCart;
+            $_SESSION['cart_meter_length'] = $dbMeterMap;
             if (!empty($dbCart)) {
-                cart_save_to_db($conn, (int) $customer['id'], $dbCart);
+                cart_save_to_db($conn, (int) $customer['id'], $dbCart, $dbMeterMap);
             }
 
             flash('success', 'Welcome back, ' . $customer['name'] . '!');
@@ -135,7 +149,12 @@ include __DIR__ . '/../includes/header.php';
         <div class="row justify-content-center">
             <div class="col-md-6 col-lg-4">
                 <?php if (!empty($errors['_login'])): ?>
-                    <div class="alert alert-danger"><?php echo e($errors['_login']); ?></div>
+                    <div class="alert alert-danger">
+                        <?php echo e($errors['_login']); ?>
+                        <?php if (!empty($errors['_login_raw'])): ?>
+                            <br><small><?php echo $errors['_login_raw']; ?></small>
+                        <?php endif; ?>
+                    </div>
                 <?php endif; ?>
 
                 <div class="surface-panel p-4">

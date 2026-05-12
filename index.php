@@ -9,7 +9,7 @@ include 'includes/header.php'; ?>
 $siteSettings = get_site_settings();
 
 // Latest 8 active fabrics — no filter/pagination on home page
-$stmt = $conn->prepare("SELECT id, name, image, material, size, price, sale_price, price_inr, min_order_meters, stock_meters, is_available FROM fabrics WHERE status = 'active' AND is_available = 1 ORDER BY created_at DESC LIMIT 8");
+$stmt = $conn->prepare("SELECT id, name, image, material, size, unit_type, price, sale_price, price_inr, min_order_meters, stock, stock_meters, is_available FROM fabrics WHERE status = 'active' ORDER BY created_at DESC LIMIT 8");
 $stmt->execute();
 $homeProducts = $stmt->get_result();
 
@@ -200,7 +200,11 @@ $announcementKey = md5(implode('|', $announcementMessages));
 
             <?php while ($row = $homeProducts->fetch_assoc()): ?>
             <?php
-                $cardIsInStock = !empty($row['is_available']) && (int)$row['stock_meters'] > 0;
+                $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+                    ? (string) $row['unit_type']
+                    : 'meter';
+                $displayStock = $unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
+                $cardIsInStock = !empty($row['is_available']) && $displayStock > 0;
                 $hasSizeOptions = !empty($row['size']) && preg_match('/[,\|\/]/', (string) $row['size']);
             ?>
             <div class="prod-slide">
@@ -237,7 +241,9 @@ $announcementKey = md5(implode('|', $announcementMessages));
                         <div class="d-flex gap-1 mt-auto">
                             <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-outline-dark btn-sm">View</a>
                             <?php if ($cardIsInStock): ?>
-                                <?php if ($hasSizeOptions): ?>
+                                <?php if ($unitType === 'meter'): ?>
+                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Meter</a>
+                                <?php elseif ($hasSizeOptions): ?>
                                     <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Size</a>
                                 <?php else: ?>
                                     <button class="btn btn-primary btn-sm flex-grow-1 add-to-cart-btn"

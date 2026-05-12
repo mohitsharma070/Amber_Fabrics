@@ -43,7 +43,12 @@ $siteLogo = (string) ($siteSettings['branding_logo'] ?? '');
 $siteLogo = $siteLogo !== '' ? '/' . ltrim($siteLogo, '/') : '/images/logo-brand-light.svg';
 $headerCategories = [];
 try {
-    $headerCatStmt = $conn->prepare("SELECT name, slug FROM categories WHERE status = 'active' ORDER BY name ASC");
+    $headerCatStmt = $conn->prepare(
+        "SELECT name, slug
+         FROM categories
+         WHERE status = 'active' AND slug IN ('fabric-by-meter', 'bedsheets', 'towels', 'table-covers')
+         ORDER BY FIELD(slug, 'fabric-by-meter', 'bedsheets', 'towels', 'table-covers')"
+    );
     $headerCatStmt->execute();
     $headerCategories = $headerCatStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 } catch (Throwable $e) {
@@ -145,5 +150,8 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
     <?php endif; ?>
     <?php if ($msg = flash('error')): ?>
         <div class="alert alert-danger text-center mb-0 rounded-0"><?php echo e($msg); ?></div>
+    <?php endif; ?>
+    <?php if ($msg = flash('warning')): ?>
+        <div class="alert alert-warning text-center mb-0 rounded-0"><?php echo e($msg); ?></div>
     <?php endif; ?>
 <?php endif; ?>

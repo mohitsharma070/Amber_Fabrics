@@ -270,27 +270,50 @@ include 'includes/header.php';
                 <?php endif; ?>
 
                 <div class="card p-3 mb-3" style="max-width:420px;">
-                    <label class="form-label fw-semibold">Quantity (<?php echo e($unitLabel); ?>)</label>
+                    <label class="form-label fw-semibold">
+                        <?php echo $unitType === 'meter' ? 'Quantity (pieces)' : 'Quantity (' . e($unitLabel) . ')'; ?>
+                    </label>
                     <form method="POST" action="/add-to-cart.php">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="product_id" value="<?php echo (int) $product['id']; ?>">
+                        <?php if ($unitType === 'meter'): ?>
+                            <?php $defaultMeterLength = !empty($meterOptions) ? (float) $meterOptions[0] : max(1.0, (float) ($product['min_order_meters'] ?? 1)); ?>
+                            <input type="hidden" name="meter_length" id="selected_meter_length" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>">
+                            <input type="hidden" name="quantity" id="meter_total_quantity" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>">
+                        <?php endif; ?>
                         <?php if ($unitType === 'piece' && !empty($sizeOptions)): ?>
                             <input type="hidden" name="selected_size" id="selected_size_add" value="<?php echo e($defaultSize); ?>">
                         <?php endif; ?>
                         <div class="d-flex gap-2 align-items-center">
-                            <select
-                                   id="product_quantity"
-                                   name="quantity"
-                                   class="form-control"
-                                   style="width:120px;"
-                                   <?php echo $inStock ? '' : 'disabled'; ?>>
-                                <?php foreach ($quantityOptions as $idx => $qOpt): ?>
-                                    <?php $qVal = $isWholeUnit ? (string) ((int) round($qOpt)) : rtrim(rtrim(number_format((float) $qOpt, 2), '0'), '.'); ?>
-                                    <option value="<?php echo e($qVal); ?>" <?php echo $idx === 0 ? 'selected' : ''; ?>>
-                                        <?php echo e($qVal); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
+                            <?php if ($unitType === 'meter'): ?>
+                                <button type="button" id="qty_dec" class="btn btn-outline-secondary" aria-label="Decrease quantity">-</button>
+                                <input type="number"
+                                       id="product_quantity"
+                                       name="bundle_quantity"
+                                       class="form-control"
+                                       style="width:120px;"
+                                       min="1"
+                                       step="1"
+                                       value="1"
+                                       <?php echo $inStock ? '' : 'disabled'; ?>>
+                                <button type="button" id="qty_inc" class="btn btn-outline-secondary" aria-label="Increase quantity">+</button>
+                            <?php else: ?>
+                                <button type="button" id="qty_dec" class="btn btn-outline-secondary" aria-label="Decrease quantity">-</button>
+                                <select
+                                       id="product_quantity"
+                                       name="quantity"
+                                       class="form-control"
+                                       style="width:120px;"
+                                       <?php echo $inStock ? '' : 'disabled'; ?>>
+                                    <?php foreach ($quantityOptions as $idx => $qOpt): ?>
+                                        <?php $qVal = $isWholeUnit ? (string) ((int) round($qOpt)) : rtrim(rtrim(number_format((float) $qOpt, 2), '0'), '.'); ?>
+                                        <option value="<?php echo e($qVal); ?>" <?php echo $idx === 0 ? 'selected' : ''; ?>>
+                                            <?php echo e($qVal); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="button" id="qty_inc" class="btn btn-outline-secondary" aria-label="Increase quantity">+</button>
+                            <?php endif; ?>
                             <button type="submit" class="btn btn-primary flex-grow-1" <?php echo $inStock ? '' : 'disabled'; ?>>
                                 Add to Cart
                             </button>
@@ -301,6 +324,9 @@ include 'includes/header.php';
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="product_id" value="<?php echo (int) $product['id']; ?>">
                             <input type="hidden" name="quantity" id="buy_now_quantity" value="1">
+                            <?php if ($unitType === 'meter'): ?>
+                                <input type="hidden" name="meter_length" id="buy_now_meter_length" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength ?? max(1.0, (float) ($product['min_order_meters'] ?? 1)), 2), '0'), '.')); ?>">
+                            <?php endif; ?>
                             <?php if ($unitType === 'piece' && !empty($sizeOptions)): ?>
                                 <input type="hidden" name="selected_size" id="selected_size_buy" value="<?php echo e($defaultSize); ?>">
                             <?php endif; ?>
@@ -311,17 +337,65 @@ include 'includes/header.php';
                         (function () {
                             var qtyInput = document.getElementById('product_quantity');
                             var buyNowQty = document.getElementById('buy_now_quantity');
+                            var qtyDec = document.getElementById('qty_dec');
+                            var qtyInc = document.getElementById('qty_inc');
                             var isPieceUnit = <?php echo $isWholeUnit ? 'true' : 'false'; ?>;
+                            var isMeterUnit = <?php echo $unitType === 'meter' ? 'true' : 'false'; ?>;
+                            var meterLengthInput = document.getElementById('selected_meter_length');
+                            var meterTotalInput = document.getElementById('meter_total_quantity');
+                            var buyNowMeterLength = document.getElementById('buy_now_meter_length');
                             if (!qtyInput || !buyNowQty) return;
 
                             function syncQty() {
                                 var qty = parseFloat(qtyInput.value);
                                 if (!Number.isFinite(qty) || qty < 1) qty = 1;
-                                buyNowQty.value = isPieceUnit ? String(Math.round(qty)) : qty.toFixed(2);
+
+                                if (isMeterUnit) {
+                                    qty = Math.round(qty);
+                                    qtyInput.value = String(qty);
+                                    var meterLen = parseFloat(meterLengthInput ? meterLengthInput.value : '1');
+                                    if (!Number.isFinite(meterLen) || meterLen <= 0) meterLen = 1;
+                                    var totalMeters = meterLen * qty;
+                                    var normalized = totalMeters.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+                                    if (meterTotalInput) {
+                                        meterTotalInput.value = normalized;
+                                    }
+                                    buyNowQty.value = normalized;
+                                    if (buyNowMeterLength) {
+                                        buyNowMeterLength.value = meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+                                    }
+                                } else {
+                                    buyNowQty.value = isPieceUnit ? String(Math.round(qty)) : qty.toFixed(2);
+                                }
                             }
 
                             qtyInput.addEventListener('change', syncQty);
+                            qtyInput.addEventListener('input', syncQty);
                             syncQty();
+
+                            function bump(dir) {
+                                if (!qtyInput || qtyInput.disabled) return;
+                                if (qtyInput.tagName === 'SELECT') {
+                                    var idx = qtyInput.selectedIndex + dir;
+                                    if (idx < 0) idx = 0;
+                                    if (idx >= qtyInput.options.length) idx = qtyInput.options.length - 1;
+                                    qtyInput.selectedIndex = idx;
+                                } else {
+                                    var step = parseFloat(qtyInput.getAttribute('step') || '1');
+                                    if (!Number.isFinite(step) || step <= 0) step = 1;
+                                    var current = parseFloat(qtyInput.value || '1');
+                                    if (!Number.isFinite(current) || current < 1) current = 1;
+                                    var next = current + (dir * step);
+                                    if (next < 1) next = 1;
+                                    qtyInput.value = step >= 1
+                                        ? String(Math.round(next))
+                                        : next.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+                                }
+                                syncQty();
+                            }
+
+                            if (qtyDec) qtyDec.addEventListener('click', function () { bump(-1); });
+                            if (qtyInc) qtyInc.addEventListener('click', function () { bump(1); });
 
                             var sizeButtons = document.querySelectorAll('.size-option-btn');
                             var sizeAdd = document.getElementById('selected_size_add');
@@ -355,14 +429,25 @@ include 'includes/header.php';
                                         btn.classList.remove('btn-outline-primary');
                                         btn.classList.add('btn-primary');
                                         var normalized = val.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
-                                        var hasOption = false;
-                                        for (var i = 0; i < qtyInput.options.length; i++) {
-                                            if (qtyInput.options[i].value === normalized) {
-                                                hasOption = true;
-                                                break;
+                                        if (isMeterUnit) {
+                                            if (meterLengthInput) {
+                                                meterLengthInput.value = normalized;
                                             }
-                                        }
-                                        if (hasOption) {
+                                            if (buyNowMeterLength) {
+                                                buyNowMeterLength.value = normalized;
+                                            }
+                                        } else if (qtyInput.tagName === 'SELECT') {
+                                            var hasOption = false;
+                                            for (var i = 0; i < qtyInput.options.length; i++) {
+                                                if (qtyInput.options[i].value === normalized) {
+                                                    hasOption = true;
+                                                    break;
+                                                }
+                                            }
+                                            if (hasOption) {
+                                                qtyInput.value = normalized;
+                                            }
+                                        } else {
                                             qtyInput.value = normalized;
                                         }
                                         syncQty();
@@ -454,4 +539,3 @@ include 'includes/header.php';
 </section>
 
 <?php include 'includes/footer.php'; ?>
-

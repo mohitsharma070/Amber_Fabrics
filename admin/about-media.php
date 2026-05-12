@@ -2,21 +2,6 @@
 require_once __DIR__ . '/../includes/init.php';
 require_admin();
 
-$conn->query(
-    "CREATE TABLE IF NOT EXISTS about_media (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        media_type ENUM('image','video') NOT NULL DEFAULT 'image',
-        file_name VARCHAR(255) NOT NULL,
-        poster_image VARCHAR(255) DEFAULT NULL,
-        alt_text VARCHAR(255) DEFAULT NULL,
-        sort_order INT NOT NULL DEFAULT 0,
-        is_active TINYINT(1) NOT NULL DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_about_media_active_sort (is_active, sort_order, id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-);
-
 $errors = [];
 $old = [
     'media_type' => 'image',
@@ -281,4 +266,3 @@ include 'partials/header.php';
 </div>
 
 <?php include 'partials/footer.php'; ?>
-

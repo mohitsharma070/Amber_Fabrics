@@ -44,16 +44,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $hash  = password_hash($password, PASSWORD_DEFAULT);
         $token = bin2hex(random_bytes(32));
         $tokenHash = hash('sha256', $token);
+        $verifyExpires = (new DateTime('now', new DateTimeZone('UTC')))->modify('+24 hours')->format('Y-m-d H:i:s');
         $stmt  = $conn->prepare(
-            "INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token)
-             VALUES (?, ?, ?, ?, ?, 0, ?)"
+            "INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token, email_verify_expires)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?)"
         );
-        $stmt->bind_param('ssssss', $name, $email, $hash, $phone, $country, $tokenHash);
+        $stmt->bind_param('sssssss', $name, $email, $hash, $phone, $country, $tokenHash, $verifyExpires);
         $stmt->execute();
 
-        send_customer_verification_email($email, $name, $token);
+        $emailSent = send_customer_verification_email($email, $name, $token);
 
-        flash('success', 'Account created! Please check your email to verify your address before logging in.');
+        if ($emailSent) {
+            flash('success', 'Account created! Please check your email to verify your address before logging in.');
+        } else {
+            flash('warning', 'Account created, but we could not send the verification email right now. '
+                . 'Please <a href="/customer/resend-verification.php">request a new verification email</a>.');
+        }
         redirect('/customer/login.php');
     }
 }

@@ -6,9 +6,8 @@ Local setup guide for running this project safely on **XAMPP + phpMyAdmin**.
 
 This project uses:
 
-- `.env` (local environment variables)
-- `.env.example` (template)
-- `config/db.php` (reads env values and creates mysqli connection)
+- `config/app-config.php` (local + production config map)
+- `config/db.php` (loads active mode config and creates mysqli connection)
 
 Expected DB variables:
 
@@ -18,7 +17,7 @@ Expected DB variables:
 - `DB_PASSWORD`
 - `DB_NAME`
 
-Email-related variables are also read from `.env`:
+Email-related variables are also read from `config/app-config.php`:
 
 - `ADMIN_NOTIFICATION_EMAIL`
 - `MAIL_FROM`
@@ -30,15 +29,11 @@ Email-related variables are also read from `.env`:
 
 Database connection is centralized in `config/db.php`:
 
-1. Loads `.env` file (if present).
-2. Falls back to defaults when vars are missing:
-   - host: `localhost`
-   - port: `3306`
-   - user: `root`
-   - password: empty
-   - database: `fabric_export`
-3. Creates connection using `new mysqli(...)`.
-4. Sets charset to `utf8mb4`.
+1. Loads `config/app-config.php`.
+2. Selects `local` mode for localhost/CLI and `production` otherwise.
+3. Keeps active values in the app config map for runtime access.
+4. Creates connection using `new mysqli(...)`.
+5. Sets charset to `utf8mb4`.
 
 ## 3) Can `schema.sql` be imported?
 
@@ -92,17 +87,11 @@ This installs:
 
 - `phpmailer/phpmailer`
 - `razorpay/razorpay`
-- `stripe/stripe-php`
 
 ## Step C: Configure environment
 
-1. Copy `.env.example` to `.env`:
-
-```bash
-copy .env.example .env
-```
-
-2. Edit `.env` values:
+1. Open `config/app-config.php`.
+2. Edit the `local` section values:
 
 ```env
 DB_HOST=localhost
@@ -112,7 +101,7 @@ DB_PASSWORD=
 DB_NAME=fabric_export
 ```
 
-Also set mail and SMTP values if you want email features working.
+Also set mail and SMTP values in the same `local` section if you want email features working.
 
 For Razorpay test mode, also set:
 
@@ -127,7 +116,7 @@ Get these from Razorpay Dashboard in **Test Mode**:
 2. Enable Test Mode toggle
 3. Go to `Settings -> API Keys`
 4. Generate/get Test Key ID and Test Key Secret
-5. Put them in `.env`
+5. Put them in `config/app-config.php` under `local`.
 
 ## Step D: Import database schema (phpMyAdmin)
 
@@ -165,7 +154,7 @@ If bootstrap admin was created by `setup.php`, credentials are printed in termin
 
 Before first real use:
 
-1. Confirm `.env` has correct DB credentials.
+1. Confirm `config/app-config.php` local DB credentials are correct.
 2. Confirm schema import completed without SQL errors.
 3. Confirm `vendor/` exists after `composer install`.
 4. Confirm Apache rewrite/permissions are normal.
@@ -189,5 +178,5 @@ Before first real use:
 
 - **`Access denied for user`**: fix `DB_USER` / `DB_PASSWORD` in `.env`.
 - **`Unknown database fabric_export`**: import `database/schema.sql` or create DB manually.
-- **`Class not found` (Stripe/Razorpay/PHPMailer)**: run `composer install`.
+- **`Class not found` (Razorpay/PHPMailer)**: run `composer install`.
 - **Blank page / 500**: check XAMPP Apache/PHP error logs.

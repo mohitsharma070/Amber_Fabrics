@@ -24,7 +24,7 @@ try {
     $conn->begin_transaction();
 
     $orderStmt = $conn->prepare(
-        "SELECT id, order_number, order_status, status, payment_status, notes
+        "SELECT id, order_number, order_status, status, payment_status, payment_method, notes
          FROM orders
          WHERE id = ? AND customer_id = ?
          FOR UPDATE"
@@ -51,7 +51,11 @@ try {
     $itemsStmt->execute();
     $items = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-    if (!empty($items)) {
+    $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
+    $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
+    $shouldRestoreStock = ($paymentMethod === 'cod') || ($paymentMethod === 'razorpay' && $paymentStatus === 'paid');
+
+    if ($shouldRestoreStock && !empty($items)) {
         $stockCheckStmt = $conn->prepare(
             "SELECT id, stock, stock_meters
              FROM fabrics
@@ -61,7 +65,7 @@ try {
 
         foreach ($items as $item) {
             $fabricId = (int) ($item['fabric_id'] ?? 0);
-            $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece'], true)
+            $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
                 ? (string) $item['unit_type']
                 : 'meter';
             $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
@@ -97,7 +101,6 @@ try {
         }
     }
 
-    $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
     $refundNote = '';
     if ($paymentStatus === 'paid') {
         $refundNote = "\n[System] Refund process initiated on " . date('d M Y, H:i');

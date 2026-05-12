@@ -17,7 +17,7 @@ $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 $stmt = $conn->prepare(
     "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status
      FROM orders
-     WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay' AND payment_status = 'pending'
+     WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending','failed')
      LIMIT 1"
 );
 $stmt->bind_param('ii', $orderId, $customerId);
@@ -29,8 +29,8 @@ if (!$order) {
     redirect('/checkout.php');
 }
 
-$keyId = (string) (getenv('RAZORPAY_KEY_ID') ?: '');
-$keySecret = (string) (getenv('RAZORPAY_KEY_SECRET') ?: '');
+$keyId = _cfg('RAZORPAY_KEY_ID', '');
+$keySecret = _cfg('RAZORPAY_KEY_SECRET', '');
 if ($keyId === '' || $keySecret === '') {
     flash('error', 'Razorpay configuration is missing. Please contact support.');
     redirect('/checkout.php');
@@ -90,7 +90,11 @@ include __DIR__ . '/../includes/header.php';
                     <h5 class="mb-3"><?php echo e((string) $order['order_number']); ?></h5>
                     <p class="fs-4 fw-bold mb-4">Rs <?php echo number_format((float) $order['total_amount'], 2); ?></p>
                     <button id="rzpPayBtn" class="btn btn-primary btn-lg w-100">Pay with Razorpay</button>
-                    <p class="text-muted small mt-3">Your order will be marked paid only after secure verification.</p>
+                    <p id="rzpPayHint" class="text-muted small mt-3">Your order will be marked paid only after secure verification.</p>
+                    <div id="rzpPayLoading" class="d-none mt-3">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status" aria-hidden="true"></div>
+                        <span class="small text-muted">Verifying payment, please wait...</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -99,7 +103,28 @@ include __DIR__ . '/../includes/header.php';
 
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script nonce="<?php echo $cspNonce; ?>">
+var isSubmitting = false;
+
+function setPayLoadingState(on) {
+    var btn = document.getElementById('rzpPayBtn');
+    var hint = document.getElementById('rzpPayHint');
+    var loading = document.getElementById('rzpPayLoading');
+    if (!btn || !hint || !loading) {
+        return;
+    }
+    btn.disabled = !!on;
+    btn.textContent = on ? 'Processing Payment...' : 'Pay with Razorpay';
+    hint.classList.toggle('d-none', !!on);
+    loading.classList.toggle('d-none', !on);
+}
+
 function postTo(url, payload) {
+    if (isSubmitting) {
+        return;
+    }
+    isSubmitting = true;
+    setPayLoadingState(true);
+
     var form = document.createElement('form');
     form.method = 'POST';
     form.action = url;
@@ -144,6 +169,9 @@ var options = {
     },
     modal: {
         ondismiss: function () {
+            if (isSubmitting) {
+                return;
+            }
             postTo('/payment/razorpay-failure.php', {
                 event_type: 'cancelled',
                 razorpay_order_id: <?php echo json_encode($rzpOrderId); ?>
@@ -152,9 +180,15 @@ var options = {
     }
 };
 
-document.getElementById('rzpPayBtn').addEventListener('click', function () {
+function openRazorpayCheckout() {
+    if (isSubmitting) {
+        return;
+    }
     var rzp = new Razorpay(options);
     rzp.on('payment.failed', function (response) {
+        if (isSubmitting) {
+            return;
+        }
         var err = response && response.error ? response.error : {};
         postTo('/payment/razorpay-failure.php', {
             event_type: 'failed',
@@ -165,6 +199,15 @@ document.getElementById('rzpPayBtn').addEventListener('click', function () {
         });
     });
     rzp.open();
+}
+
+document.getElementById('rzpPayBtn').addEventListener('click', function () {
+    openRazorpayCheckout();
+});
+
+window.addEventListener('load', function () {
+    // Auto-open for smoother flow after redirect from checkout.
+    setTimeout(openRazorpayCheckout, 250);
 });
 </script>
 

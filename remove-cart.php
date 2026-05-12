@@ -21,6 +21,9 @@ if (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) {
 if (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) {
     unset($_SESSION['cart_size'][$productId]);
 }
+if (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) {
+    unset($_SESSION['cart_meter_length'][$productId]);
+}
 
 if (!empty($_SESSION['customer_id'])) {
     cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'] ?? []);

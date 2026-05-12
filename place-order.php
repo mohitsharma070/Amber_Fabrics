@@ -35,7 +35,7 @@ $pincode = trim($_POST['pincode'] ?? '');
 $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
-$codFeeApply = isset($_POST['cod_fee_apply']) && (string) ($_POST['cod_fee_apply'] ?? '') === '1' ? 1 : 0;
+$codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 
 $_SESSION['checkout_old'] = [
@@ -74,9 +74,6 @@ if ($country !== '' && strcasecmp($country, 'india') !== 0) {
     $errors['country'] = 'International checkout is inquiry-only for now. Please use Request International Quote.';
 }
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) { $errors['payment_method'] = 'Invalid payment method.'; }
-if ($paymentMethod !== 'cod') {
-    $codFeeApply = 0;
-}
 if (strlen($orderNotes) > 500) { $errors['order_notes'] = 'Notes must be 500 characters or fewer.'; }
 
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION['cart'])) {
@@ -181,6 +178,11 @@ try {
         ];
     }
 
+    $baseShippingAmount = ($paymentMethod === 'razorpay' && $subtotal >= 999) ? 0.00 : 70.00;
+    $codFeeAmount = ($paymentMethod === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
+    $shippingAmount = $baseShippingAmount + $codFeeAmount;
+    $preDiscountTotal = $subtotal + $shippingAmount;
+
     $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
     $discountAmount = 0.00;
     $couponId = 0;
@@ -199,7 +201,7 @@ try {
         $coupon = $couponStmt->get_result()->fetch_assoc();
 
         if ($coupon) {
-            $validated = validate_coupon_for_subtotal($coupon, $subtotal, date('Y-m-d'));
+            $validated = validate_coupon_for_amount($coupon, $preDiscountTotal, date('Y-m-d'));
             if ($validated['valid']) {
                 $discountAmount = (float) $validated['discount'];
                 $couponId = (int) $coupon['id'];
@@ -211,10 +213,7 @@ try {
         }
     }
 
-    $baseShippingAmount = ($paymentMethod === 'razorpay' && $subtotal >= 999) ? 0.00 : 70.00;
-    $codFeeAmount = ($paymentMethod === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
-    $shippingAmount = $baseShippingAmount + $codFeeAmount;
-    $totalAmount = max(0, $subtotal + $shippingAmount - $discountAmount);
+    $totalAmount = max(0, $preDiscountTotal - $discountAmount);
 
     $orderNumber = 'VT' . date('YmdHis') . strtoupper(substr(bin2hex(random_bytes(3)), 0, 4));
 

@@ -28,7 +28,7 @@ if ($paymentId === '' || $rzpOrderId === '' || $signature === '') {
     redirect('/checkout.php');
 }
 
-$keySecret = (string) (getenv('RAZORPAY_KEY_SECRET') ?: '');
+$keySecret = _cfg('RAZORPAY_KEY_SECRET', '');
 if ($keySecret === '') {
     flash('error', 'Razorpay verification configuration missing.');
     redirect('/checkout.php');
@@ -45,7 +45,7 @@ try {
     $conn->begin_transaction();
 
     $orderStmt = $conn->prepare(
-        "SELECT id, payment_status, order_status
+        "SELECT id, payment_status, order_status, order_notes
          FROM orders
          WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
          FOR UPDATE"
@@ -162,6 +162,7 @@ try {
     $updatePayment->execute();
 
     $pendingCouponId = (int) ($_SESSION['pending_coupon_id'] ?? 0);
+    $couponUpdated = false;
     if ($pendingCouponId > 0) {
         // Only increment if the coupon still has capacity (usage_limit = 0 means unlimited)
         $couponStmt = $conn->prepare(
@@ -170,6 +171,22 @@ try {
         );
         $couponStmt->bind_param('i', $pendingCouponId);
         $couponStmt->execute();
+        $couponUpdated = $conn->affected_rows > 0;
+    }
+
+    if (!$couponUpdated) {
+        $orderNotes = (string) ($order['order_notes'] ?? '');
+        if ($orderNotes !== '' && preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
+            $couponCode = strtoupper(trim((string) ($m[1] ?? '')));
+            if ($couponCode !== '') {
+                $couponByCodeStmt = $conn->prepare(
+                    "UPDATE coupons SET used_count = used_count + 1
+                     WHERE code = ? AND (usage_limit = 0 OR used_count < usage_limit)"
+                );
+                $couponByCodeStmt->bind_param('s', $couponCode);
+                $couponByCodeStmt->execute();
+            }
+        }
     }
 
     $conn->commit();

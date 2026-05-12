@@ -32,6 +32,14 @@ function ensure_tables(mysqli $conn): void
         return $total > 0;
     };
 
+    $ensureColumns = static function (mysqli $conn, string $table, array $definitions) use ($columnExists): void {
+        foreach ($definitions as $column => $definition) {
+            if (!$columnExists($conn, $table, $column)) {
+                $conn->query("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+            }
+        }
+    };
+
     // Fabrics table
     $conn->query(
         "CREATE TABLE IF NOT EXISTS fabrics (
@@ -75,25 +83,43 @@ function ensure_tables(mysqli $conn): void
 
     // Backfill product columns for existing installs created before ecommerce expansion.
     $fabricColumnDefinitions = [
+        'name' => "VARCHAR(255) NOT NULL",
         'price' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
         'sale_price' => "DECIMAL(10,2) NULL DEFAULT NULL",
         'cost_price' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+        'price_inr' => "DECIMAL(10,2) NULL DEFAULT NULL",
+        'price_usd' => "DECIMAL(10,2) NULL DEFAULT NULL",
         'stock' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+        'stock_meters' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+        'min_order_meters' => "DECIMAL(10,2) NOT NULL DEFAULT 1.00",
+        'qty_step' => "DECIMAL(10,4) NOT NULL DEFAULT 0.0000",
+        'is_featured' => "TINYINT(1) NOT NULL DEFAULT 0",
+        'is_available' => "TINYINT(1) NOT NULL DEFAULT 1",
         'unit_type' => "ENUM('meter','piece','set') NOT NULL DEFAULT 'meter'",
         'meter_options' => "VARCHAR(100) NULL DEFAULT NULL",
         'print_style' => "VARCHAR(100) NULL DEFAULT NULL",
+        'material' => "VARCHAR(255) NULL DEFAULT NULL",
+        'gsm' => "VARCHAR(50) NULL DEFAULT NULL",
+        'width' => "VARCHAR(50) NULL DEFAULT NULL",
+        'moq' => "VARCHAR(100) NULL DEFAULT NULL",
+        'lead_time' => "VARCHAR(100) NULL DEFAULT NULL",
+        'dispatch_time' => "VARCHAR(100) NULL DEFAULT NULL",
         'sku' => "VARCHAR(100) NULL DEFAULT NULL",
         'size' => "VARCHAR(100) NULL DEFAULT NULL",
         'color' => "VARCHAR(100) NULL DEFAULT NULL",
         'category' => "VARCHAR(100) NULL DEFAULT NULL",
+        'description' => "TEXT NULL",
+        'wash_care' => "TEXT NULL",
+        'image' => "VARCHAR(255) NULL DEFAULT NULL",
+        'image2' => "VARCHAR(255) NULL DEFAULT NULL",
+        'image3' => "VARCHAR(255) NULL DEFAULT NULL",
+        'image4' => "VARCHAR(255) NULL DEFAULT NULL",
+        'video' => "VARCHAR(255) NULL DEFAULT NULL",
         'status' => "ENUM('active','inactive') NOT NULL DEFAULT 'active'",
+        'created_at' => "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP",
     ];
 
-    foreach ($fabricColumnDefinitions as $column => $definition) {
-        if (!$columnExists($conn, 'fabrics', $column)) {
-            $conn->query("ALTER TABLE fabrics ADD COLUMN {$column} {$definition}");
-        }
-    }
+    $ensureColumns($conn, 'fabrics', $fabricColumnDefinitions);
 
     if ($columnExists($conn, 'fabrics', 'stock_meters')) {
         $conn->query("ALTER TABLE fabrics MODIFY COLUMN stock_meters DECIMAL(10,2) NOT NULL DEFAULT 0.00");
@@ -145,29 +171,41 @@ function ensure_tables(mysqli $conn): void
     // Disable foreign key checks to allow parent_id references before parent rows exist
     $conn->query("SET FOREIGN_KEY_CHECKS=0");
     
+    // Curated storefront taxonomy (no parent categories):
+    // Fabric by Meter, Bedsheets, Towels, Table Covers.
     $conn->query(
-        "INSERT INTO categories (name, slug, parent_id, status) VALUES
-            ('Fabric by Meter', 'fabric-by-meter', NULL, 'active'),
-            ('Floral Prints', 'floral-prints', 1, 'active'),
-            ('Geometrical Prints', 'geometrical-prints', 1, 'active'),
-            ('Traditional Prints', 'traditional-prints', 1, 'active'),
-            ('Ajrakh Prints', 'ajrakh-prints', 1, 'active'),
-            ('Bagru Prints', 'bagru-prints', 1, 'active'),
-            ('Indigo Prints', 'indigo-prints', 1, 'active'),
-            ('Cotton Fabric', 'cotton-fabric', 1, 'active'),
-            ('Dress Material', 'dress-material', 1, 'active'),
-            ('Home Furnishing', 'home-furnishing', NULL, 'active'),
-            ('Bedsheets', 'bedsheets', 11, 'active'),
-            ('Table Covers', 'table-covers', 11, 'active'),
-            ('Towels', 'towels', 11, 'active'),
-            ('Cushion Covers', 'cushion-covers', 11, 'active'),
-            ('Curtains', 'curtains', 11, 'active'),
-            ('Napkins', 'napkins', 11, 'active'),
-            ('Ready Made', 'ready-made', NULL, 'active'),
-            ('Kurtis', 'kurtis', 18, 'active'),
-            ('Dupattas', 'dupattas', 18, 'active'),
-            ('Sarees', 'sarees', 18, 'active')
-         ON DUPLICATE KEY UPDATE name = VALUES(name), status = VALUES(status), parent_id = VALUES(parent_id)"
+        "INSERT INTO categories (name, slug, parent_id, status)
+         VALUES ('Fabric by Meter', 'fabric-by-meter', NULL, 'active')
+         ON DUPLICATE KEY UPDATE name = VALUES(name), status = VALUES(status), parent_id = NULL"
+    );
+    $conn->query(
+        "INSERT INTO categories (name, slug, parent_id, status)
+         VALUES ('Bedsheets', 'bedsheets', NULL, 'active')
+         ON DUPLICATE KEY UPDATE name = VALUES(name), status = VALUES(status), parent_id = NULL"
+    );
+    $conn->query(
+        "INSERT INTO categories (name, slug, parent_id, status)
+         VALUES ('Towels', 'towels', NULL, 'active')
+         ON DUPLICATE KEY UPDATE name = VALUES(name), status = VALUES(status), parent_id = NULL"
+    );
+    $conn->query(
+        "INSERT INTO categories (name, slug, parent_id, status)
+         VALUES ('Table Covers', 'table-covers', NULL, 'active')
+         ON DUPLICATE KEY UPDATE name = VALUES(name), status = VALUES(status), parent_id = NULL"
+    );
+
+    // Keep only curated categories active for storefront/admin selection.
+    $conn->query(
+        "UPDATE categories
+         SET status = 'inactive'
+         WHERE slug NOT IN ('fabric-by-meter', 'bedsheets', 'towels', 'table-covers')"
+    );
+
+    // Keep active products sellable under curated taxonomy.
+    $conn->query(
+        "UPDATE fabrics
+         SET category = 'fabric-by-meter'
+         WHERE status = 'active' AND (category IS NULL OR category = '' OR category NOT IN ('fabric-by-meter', 'bedsheets', 'towels', 'table-covers'))"
     );
 
     // Add foreign key constraint if it doesn't exist
@@ -189,11 +227,16 @@ function ensure_tables(mysqli $conn): void
             country VARCHAR(100) DEFAULT NULL,
             email_verified TINYINT(1) DEFAULT 0,
             email_verify_token VARCHAR(64) DEFAULT NULL,
+            email_verify_expires DATETIME DEFAULT NULL,
             reset_token VARCHAR(64) DEFAULT NULL,
             reset_token_expires DATETIME DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    $ensureColumns($conn, 'customers', [
+        'email_verify_expires' => "DATETIME NULL DEFAULT NULL",
+    ]);
 
     $conn->query(
         "CREATE TABLE IF NOT EXISTS cart (
@@ -230,6 +273,9 @@ function ensure_tables(mysqli $conn): void
         }
         if ($columnExists($conn, 'cart_items', 'quantity_meters')) {
             $conn->query("ALTER TABLE cart_items MODIFY COLUMN quantity_meters DECIMAL(10,2) NOT NULL DEFAULT 1.00");
+        }
+        if (!$columnExists($conn, 'cart_items', 'meter_length')) {
+            $conn->query("ALTER TABLE cart_items ADD COLUMN meter_length DECIMAL(10,2) NULL DEFAULT NULL AFTER quantity_meters");
         }
     }
 
@@ -290,6 +336,27 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_orders_customer_email (customer_email)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    $ensureColumns($conn, 'coupons', [
+        'code' => "VARCHAR(50) NOT NULL UNIQUE",
+        'discount_type' => "ENUM('flat','percent') NOT NULL DEFAULT 'flat'",
+        'discount_value' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+        'min_order_amount' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+        'max_discount' => "DECIMAL(10,2) NULL DEFAULT NULL",
+        'start_date' => "DATE NULL DEFAULT NULL",
+        'end_date' => "DATE NULL DEFAULT NULL",
+        'usage_limit' => "INT NOT NULL DEFAULT 0",
+        'used_count' => "INT NOT NULL DEFAULT 0",
+        'status' => "ENUM('active','inactive') NOT NULL DEFAULT 'active'",
+        'created_at' => "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP",
+    ]);
+
+    // Normalize legacy installs where payment_method enum may not include cod/upi.
+    if ($columnExists($conn, 'orders', 'payment_method')) {
+        $conn->query(
+            "ALTER TABLE orders
+             MODIFY COLUMN payment_method ENUM('cod','upi','razorpay') NOT NULL DEFAULT 'cod'"
+        );
+    }
 
     // Order line items
     $conn->query(
@@ -300,7 +367,7 @@ function ensure_tables(mysqli $conn): void
             product_name VARCHAR(255) NOT NULL,
             size VARCHAR(100) DEFAULT NULL,
             color VARCHAR(100) DEFAULT NULL,
-            unit_type ENUM('meter','piece') NOT NULL DEFAULT 'meter',
+            unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
             quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
             price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -317,7 +384,10 @@ function ensure_tables(mysqli $conn): void
 
     if ($tableExists($conn, 'order_items')) {
         if (!$columnExists($conn, 'order_items', 'unit_type')) {
-            $conn->query("ALTER TABLE order_items ADD COLUMN unit_type ENUM('meter','piece') NOT NULL DEFAULT 'meter' AFTER color");
+            $conn->query("ALTER TABLE order_items ADD COLUMN unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter' AFTER color");
+        }
+        if ($columnExists($conn, 'order_items', 'unit_type')) {
+            $conn->query("ALTER TABLE order_items MODIFY COLUMN unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter'");
         }
         if ($columnExists($conn, 'order_items', 'quantity')) {
             $conn->query("ALTER TABLE order_items MODIFY COLUMN quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00");
@@ -433,6 +503,45 @@ function ensure_tables(mysqli $conn): void
     );
 
     $conn->query(
+        "CREATE TABLE IF NOT EXISTS admin_login_otps (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            admin_id INT NOT NULL,
+            otp_hash CHAR(64) NOT NULL,
+            expires_at DATETIME NOT NULL,
+            attempts INT NOT NULL DEFAULT 0,
+            resend_available_at DATETIME NOT NULL,
+            created_ip VARCHAR(45) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_admin_login_otps_admin_id (admin_id),
+            INDEX idx_admin_login_otps_expires_at (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $adminOtpFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'admin_login_otps'
+           AND CONSTRAINT_NAME = 'fk_admin_login_otps_admin'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $adminOtpFkExists = ((int) ($adminOtpFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$adminOtpFkExists) {
+        $conn->query(
+            "DELETE o
+             FROM admin_login_otps o
+             LEFT JOIN admins a ON a.id = o.admin_id
+             WHERE a.id IS NULL"
+        );
+        $conn->query(
+            "ALTER TABLE admin_login_otps
+             ADD CONSTRAINT fk_admin_login_otps_admin
+             FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE"
+        );
+    }
+
+    $conn->query(
         "CREATE TABLE IF NOT EXISTS announcement_dismissals (
             id INT AUTO_INCREMENT PRIMARY KEY,
             session_key CHAR(64) NOT NULL,
@@ -469,14 +578,98 @@ function ensure_tables(mysqli $conn): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS returns (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            return_number VARCHAR(32) NOT NULL UNIQUE,
+            order_id INT NOT NULL,
+            customer_id INT NOT NULL,
+            status ENUM('requested','approved','rejected','pickup_scheduled','in_transit','received','refund_initiated','refund_completed','cancelled') NOT NULL DEFAULT 'requested',
+            reason VARCHAR(255) NOT NULL,
+            customer_note TEXT DEFAULT NULL,
+            image_1 VARCHAR(255) DEFAULT NULL,
+            image_2 VARCHAR(255) DEFAULT NULL,
+            admin_note TEXT DEFAULT NULL,
+            refund_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            approved_at DATETIME DEFAULT NULL,
+            rejected_at DATETIME DEFAULT NULL,
+            received_at DATETIME DEFAULT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_returns_order_id (order_id),
+            INDEX idx_returns_customer_id (customer_id),
+            INDEX idx_returns_status (status),
+            INDEX idx_returns_requested_at (requested_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS return_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            return_id INT NOT NULL,
+            order_item_id INT DEFAULT NULL,
+            fabric_id INT DEFAULT NULL,
+            product_name VARCHAR(255) NOT NULL,
+            unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
+            quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+            line_total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_return_items_return_id (return_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $ensureColumns($conn, 'returns', [
+        'image_1' => "VARCHAR(255) NULL DEFAULT NULL",
+        'image_2' => "VARCHAR(255) NULL DEFAULT NULL",
+    ]);
+
+    $returnsOrderFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'returns'
+           AND CONSTRAINT_NAME = 'fk_returns_order'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $returnsOrderFkExists = ((int) ($returnsOrderFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$returnsOrderFkExists) {
+        $conn->query("ALTER TABLE returns ADD CONSTRAINT fk_returns_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE");
+    }
+
+    $returnsCustomerFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'returns'
+           AND CONSTRAINT_NAME = 'fk_returns_customer'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $returnsCustomerFkExists = ((int) ($returnsCustomerFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$returnsCustomerFkExists) {
+        $conn->query("ALTER TABLE returns ADD CONSTRAINT fk_returns_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE");
+    }
+
+    $returnItemsFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'return_items'
+           AND CONSTRAINT_NAME = 'fk_return_items_return'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $returnItemsFkExists = ((int) ($returnItemsFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$returnItemsFkExists) {
+        $conn->query("ALTER TABLE return_items ADD CONSTRAINT fk_return_items_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE");
+    }
+
     $result = $conn->query("SELECT COUNT(*) AS total FROM admins");
     $count = (int) $result->fetch_assoc()['total'];
     if ($count === 0) {
         $stmt = $conn->prepare(
             "INSERT INTO admins (name, email, password_hash, force_password_reset) VALUES (?, ?, ?, 1)"
         );
-        $bootstrapEmail = getenv('ADMIN_EMAIL') ?: 'admin@example.com';
-        $bootstrapPassword = getenv('ADMIN_PASSWORD') ?: bin2hex(random_bytes(8));
+        $bootstrapEmail = (string) ($GLOBALS['_app_config']['ADMIN_EMAIL'] ?? 'admin@example.com');
+        $bootstrapPassword = (string) ($GLOBALS['_app_config']['ADMIN_PASSWORD'] ?? bin2hex(random_bytes(8)));
         $defaultHash = password_hash($bootstrapPassword, PASSWORD_DEFAULT);
         $name = 'Site Admin';
         $stmt->bind_param('sss', $name, $bootstrapEmail, $defaultHash);

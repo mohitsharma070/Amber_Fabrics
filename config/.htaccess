@@ -1,0 +1,3 @@
+<Files "app-config.php">
+  Require all denied
+</Files>

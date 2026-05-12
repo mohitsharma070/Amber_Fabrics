@@ -32,6 +32,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('order-view.php?id=' . $id);
         }
 
+        // Prevent manual refund-related status bypass for Razorpay/UPI.
+        if ($newPaymentStatus === 'refunded' || $newOrderStatus === 'refunded') {
+            $methodStmt = $conn->prepare("SELECT payment_method FROM orders WHERE id = ? LIMIT 1");
+            $methodStmt->bind_param('i', $id);
+            $methodStmt->execute();
+            $row = $methodStmt->get_result()->fetch_assoc() ?: [];
+            $method = strtolower((string) ($row['payment_method'] ?? ''));
+            if (in_array($method, ['razorpay', 'upi'], true)) {
+                flash('error', 'Use Mark Refunded button. It verifies refund status with payment gateway.');
+                redirect('order-view.php?id=' . $id);
+            }
+        }
+
         $update = $conn->prepare(
             "UPDATE orders
              SET order_status = ?, payment_status = ?, status = ?, updated_at = NOW()
@@ -50,20 +63,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'mark_refunded') {
-        $markRefunded = $conn->prepare(
-            "UPDATE orders
-             SET payment_status = 'refunded',
-                 order_status = CASE WHEN order_status = 'cancelled' THEN 'refunded' ELSE order_status END,
-                 updated_at = NOW()
-             WHERE id = ? AND order_status = 'cancelled' AND payment_status = 'paid'"
-        );
-        $markRefunded->bind_param('i', $id);
-        $markRefunded->execute();
-
-        if ($markRefunded->affected_rows > 0) {
-            flash('success', 'Order marked as refunded.');
+        $result = admin_mark_order_refunded($conn, $id);
+        if (!empty($result['ok'])) {
+            flash('success', (string) ($result['message'] ?? 'Order marked as refunded.'));
         } else {
-            flash('error', 'Order is not eligible for refund update.');
+            flash('error', (string) ($result['message'] ?? 'Refund failed.'));
+        }
+        redirect('order-view.php?id=' . $id);
+    }
+
+    if ($action === 'sync_refund_status') {
+        $result = admin_sync_razorpay_refund_status($conn, $id);
+        if (!empty($result['ok'])) {
+            flash('success', (string) ($result['message'] ?? 'Refund status synced.'));
+        } else {
+            flash('error', (string) ($result['message'] ?? 'Unable to sync refund status.'));
         }
         redirect('order-view.php?id=' . $id);
     }
@@ -364,6 +378,13 @@ include 'partials/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="mark_refunded">
                         <button type="submit" class="btn btn-sm btn-outline-danger w-100">Mark Refunded</button>
+                    </form>
+                <?php endif; ?>
+                <?php if (strtolower((string) ($order['payment_method'] ?? '')) === 'razorpay'): ?>
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-2" onsubmit="return confirm('Sync refund status from Razorpay now?');">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="action" value="sync_refund_status">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100">Sync Refund Status</button>
                     </form>
                 <?php endif; ?>
             </div>

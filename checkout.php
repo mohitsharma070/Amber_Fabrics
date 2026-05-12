@@ -11,6 +11,7 @@ if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
 
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
+$cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
 $items = [];
 $subtotal = 0.00;
 
@@ -35,6 +36,12 @@ if (!empty($cart)) {
                 ? (string) $row['unit_type']
                 : 'meter';
             $qty = normalize_quantity_by_unit($cart[$pid] ?? 1, $unitType);
+            $meterLength = null;
+            $bundleQty = null;
+            if ($unitType === 'meter' && isset($cartMeterMap[$pid]) && is_numeric($cartMeterMap[$pid]) && (float) $cartMeterMap[$pid] > 0) {
+                $meterLength = (float) $cartMeterMap[$pid];
+                $bundleQty = max(1, (int) round($qty / $meterLength));
+            }
             $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
             $sale = (float) ($row['sale_price'] ?? 0);
             $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
@@ -65,6 +72,8 @@ if (!empty($cart)) {
                 'subtotal' => $lineTotal,
                 'stock' => $displayStock,
                 'in_stock' => $inStock,
+                'meter_length' => $meterLength,
+                'bundle_quantity' => $bundleQty,
             ];
         }
     }
@@ -87,8 +96,60 @@ $old = [
     'country' => 'India',
     'order_notes' => '',
     'payment_method' => 'cod',
-    'cod_fee_apply' => 0,
+    'cod_fee_apply' => 1,
 ];
+
+// Prefill checkout form from customer profile + latest order address when available.
+$customerId = (int) ($_SESSION['customer_id'] ?? 0);
+if ($customerId > 0) {
+    try {
+        $prefill = [
+            'full_name' => '',
+            'phone' => '',
+            'email' => '',
+            'address' => '',
+            'city' => '',
+            'state' => '',
+            'pincode' => '',
+            'country' => '',
+        ];
+
+        $cStmt = $conn->prepare("SELECT name, email, phone, country FROM customers WHERE id = ? LIMIT 1");
+        $cStmt->bind_param('i', $customerId);
+        $cStmt->execute();
+        $customer = $cStmt->get_result()->fetch_assoc() ?: [];
+
+        $prefill['full_name'] = (string) ($customer['name'] ?? '');
+        $prefill['email'] = (string) ($customer['email'] ?? '');
+        $prefill['phone'] = (string) ($customer['phone'] ?? '');
+        $prefill['country'] = (string) ($customer['country'] ?? '');
+
+        $oStmt = $conn->prepare(
+            "SELECT customer_name, customer_phone, customer_email, address, city, state, pincode, country
+             FROM orders
+             WHERE customer_id = ?
+             ORDER BY id DESC
+             LIMIT 1"
+        );
+        $oStmt->bind_param('i', $customerId);
+        $oStmt->execute();
+        $lastOrder = $oStmt->get_result()->fetch_assoc() ?: [];
+
+        foreach (['full_name' => 'customer_name', 'phone' => 'customer_phone', 'email' => 'customer_email', 'address' => 'address', 'city' => 'city', 'state' => 'state', 'pincode' => 'pincode', 'country' => 'country'] as $dst => $src) {
+            if ($prefill[$dst] === '' && !empty($lastOrder[$src])) {
+                $prefill[$dst] = (string) $lastOrder[$src];
+            }
+        }
+
+        foreach ($prefill as $k => $v) {
+            if ($v !== '') {
+                $old[$k] = $v;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[checkout] prefill load failed: ' . $e->getMessage());
+    }
+}
 
 if (!empty($_SESSION['checkout_old']) && is_array($_SESSION['checkout_old'])) {
     $old = array_merge($old, $_SESSION['checkout_old']);
@@ -100,17 +161,10 @@ if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'
     unset($_SESSION['checkout_errors']);
 }
 
-$couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
-$couponInfo = get_active_coupon_discount($conn, $couponCode, $subtotal);
-if (!$couponInfo['valid'] && $couponCode !== '') {
-    unset($_SESSION['applied_coupon_code']);
-}
-$discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
-
 $selectedPayment = in_array((string) ($old['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $old['payment_method']
     : 'cod';
-$codFeeApply = !empty($old['cod_fee_apply']) ? 1 : 0;
+$codFeeApply = ($selectedPayment === 'cod') ? 1 : 0;
 $countryForCalc = trim((string) ($old['country'] ?? ''));
 $isIndia = strcasecmp($countryForCalc, 'india') === 0;
 $baseShippingAmount = 0.00;
@@ -120,7 +174,14 @@ if ($isIndia) {
     $codFeeAmount = ($selectedPayment === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
 }
 $shippingAmount = $baseShippingAmount + $codFeeAmount;
-$totalAmount = max(0, $subtotal + $shippingAmount - $discountAmount);
+$preDiscountTotal = $subtotal + $shippingAmount;
+$couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
+$couponInfo = get_active_coupon_discount($conn, $couponCode, $preDiscountTotal);
+if (!$couponInfo['valid'] && $couponCode !== '') {
+    unset($_SESSION['applied_coupon_code']);
+}
+$discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
+$totalAmount = max(0, $preDiscountTotal - $discountAmount);
 $internationalQuoteUrl = '/international-buyers.php';
 if (!$isIndia) {
     $internationalQuoteUrl .= '?' . http_build_query([
@@ -230,10 +291,7 @@ include __DIR__ . '/includes/header.php';
                                 <strong>Pay Online (Razorpay)</strong>
                             </label>
                         </div>
-                        <div class="form-check mt-3" id="cod_fee_row" <?php echo (($old['payment_method'] ?? 'cod') === 'cod') ? '' : 'style="display:none;"'; ?>>
-                            <input class="form-check-input" type="checkbox" name="cod_fee_apply" id="cod_fee_apply" value="1" <?php echo !empty($old['cod_fee_apply']) ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="cod_fee_apply">Apply COD handling fee (Rs 50)</label>
-                        </div>
+                        <div class="small text-muted mt-2">COD handling fee of Rs 50 is added automatically for COD orders.</div>
                     </div>
 
                     <?php if ($isIndia): ?>
@@ -251,7 +309,11 @@ include __DIR__ . '/includes/header.php';
                         <div class="d-flex justify-content-between mb-2 small">
                             <div>
                                 <span class="fw-semibold"><?php echo e($item['name']); ?></span>
-                                <span class="text-muted"> — <?php echo e($item['quantity_text']); ?> <?php echo e($item['quantity_unit_label']); ?></span>
+                                <?php if ($item['unit_type'] === 'meter' && !empty($item['meter_length']) && !empty($item['bundle_quantity'])): ?>
+                                    <span class="text-muted"> — <?php echo e((string) $item['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>m = <?php echo e($item['quantity_text']); ?>m</span>
+                                <?php else: ?>
+                                    <span class="text-muted"> — <?php echo e($item['quantity_text']); ?> <?php echo e($item['quantity_unit_label']); ?></span>
+                                <?php endif; ?>
                                 <?php if ($item['selected_size'] !== ''): ?>
                                     <span class="text-muted"> (<?php echo e($item['selected_size']); ?>)</span>
                                 <?php endif; ?>
@@ -259,6 +321,28 @@ include __DIR__ . '/includes/header.php';
                             <span>Rs <?php echo number_format($item['subtotal'], 2); ?></span>
                         </div>
                     <?php endforeach; ?>
+
+                    <form method="POST" action="/apply-coupon.php" class="mb-3">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="redirect_to" value="checkout">
+                        <label class="form-label">Coupon Code</label>
+                        <div class="d-flex gap-2">
+                            <input type="text" name="coupon_code" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
+                            <button class="btn btn-outline-dark" type="submit">Apply</button>
+                        </div>
+                    </form>
+
+                    <?php if ($couponInfo['valid']): ?>
+                    <form method="POST" action="/remove-coupon.php" class="mb-2">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="redirect_to" value="checkout">
+                        <div class="d-flex justify-content-between small">
+                            <span>Coupon: <strong><?php echo e($couponInfo['code']); ?></strong></span>
+                            <button type="submit" class="btn btn-link btn-sm p-0 text-danger">Remove</button>
+                        </div>
+                    </form>
+                    <?php endif; ?>
+
                     <hr>
                     <?php if ($couponInfo['valid']): ?>
                     <div class="d-flex justify-content-between mb-1 small">
@@ -268,26 +352,26 @@ include __DIR__ . '/includes/header.php';
                     <?php endif; ?>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Subtotal</span>
-                        <span>Rs <?php echo number_format($subtotal, 2); ?></span>
+                        <span id="summary_subtotal">Rs <?php echo number_format($subtotal, 2); ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Discount</span>
-                        <span class="text-success">- Rs <?php echo number_format($discountAmount, 2); ?></span>
+                        <span class="text-success" id="summary_discount">- Rs <?php echo number_format($discountAmount, 2); ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Shipping</span>
-                        <span>Rs <?php echo number_format($baseShippingAmount, 2); ?></span>
+                        <span id="summary_shipping">Rs <?php echo number_format($baseShippingAmount, 2); ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
-                        <span>COD Fee (optional)</span>
-                        <span>Rs <?php echo number_format($codFeeAmount, 2); ?></span>
+                        <span>COD Fee</span>
+                        <span id="summary_cod_fee">Rs <?php echo number_format($codFeeAmount, 2); ?></span>
                     </div>
                     <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
                         <span>Total</span>
-                        <span>Rs <?php echo number_format($totalAmount, 2); ?></span>
+                        <span id="summary_total">Rs <?php echo number_format($totalAmount, 2); ?></span>
                     </div>
                     <div class="text-muted small mt-2">
-                        India prepaid (Razorpay) above Rs 999: free shipping. India below Rs 999: Rs 70 shipping. COD extra Rs 50 optional.
+                        India prepaid (Razorpay) above Rs 999: free shipping. India below Rs 999: Rs 70 shipping. COD adds Rs 50 handling fee.
                     </div>
                 </div>
             </div>
@@ -299,16 +383,46 @@ include __DIR__ . '/includes/header.php';
 (function () {
     var codRadio = document.getElementById('payment_cod');
     var razorpayRadio = document.getElementById('payment_razorpay');
-    var codFeeRow = document.getElementById('cod_fee_row');
-    if (!codRadio || !razorpayRadio || !codFeeRow) return;
+    var countryInput = document.querySelector('input[name="country"]');
+    var subtotal = <?php echo json_encode((float) $subtotal); ?>;
+    var discount = <?php echo json_encode((float) $discountAmount); ?>;
 
-    function syncCodFeeVisibility() {
-        codFeeRow.style.display = codRadio.checked ? '' : 'none';
+    var shippingEl = document.getElementById('summary_shipping');
+    var codFeeEl = document.getElementById('summary_cod_fee');
+    var totalEl = document.getElementById('summary_total');
+
+    if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
+        return;
     }
 
-    codRadio.addEventListener('change', syncCodFeeVisibility);
-    razorpayRadio.addEventListener('change', syncCodFeeVisibility);
-    syncCodFeeVisibility();
+    function toMoney(v) {
+        return 'Rs ' + Number(v).toFixed(2);
+    }
+
+    function syncSummary() {
+        var country = String(countryInput.value || '').trim().toLowerCase();
+        var isIndia = country === 'india';
+        var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
+
+        var shipping = 0;
+        var codFee = 0;
+        if (isIndia) {
+            shipping = (paymentMethod === 'razorpay' && subtotal >= 999) ? 0 : 70;
+            codFee = (paymentMethod === 'cod') ? 50 : 0;
+        }
+
+        var preDiscount = subtotal + shipping + codFee;
+        var total = Math.max(0, preDiscount - discount);
+
+        shippingEl.textContent = toMoney(shipping);
+        codFeeEl.textContent = toMoney(codFee);
+        totalEl.textContent = toMoney(total);
+    }
+
+    codRadio.addEventListener('change', syncSummary);
+    razorpayRadio.addEventListener('change', syncSummary);
+    countryInput.addEventListener('input', syncSummary);
+    syncSummary();
 })();
 </script>
 

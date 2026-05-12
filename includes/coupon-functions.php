@@ -26,7 +26,7 @@ function get_coupon_by_code(mysqli $conn, string $code): ?array
     return $coupon ?: null;
 }
 
-function validate_coupon_for_subtotal(array $coupon, float $subtotal, string $today): array
+function validate_coupon_for_amount(array $coupon, float $amount, string $today): array
 {
     if (($coupon['status'] ?? '') !== 'active') {
         return ['valid' => false, 'message' => 'This coupon is not active.'];
@@ -43,7 +43,7 @@ function validate_coupon_for_subtotal(array $coupon, float $subtotal, string $to
     }
 
     $minOrder = (float) ($coupon['min_order_amount'] ?? 0);
-    if ($subtotal < $minOrder) {
+    if ($amount < $minOrder) {
         return ['valid' => false, 'message' => 'Minimum order amount for this coupon is Rs ' . number_format($minOrder, 2) . '.'];
     }
 
@@ -60,7 +60,7 @@ function validate_coupon_for_subtotal(array $coupon, float $subtotal, string $to
     }
 
     if ($discountType === 'percent') {
-        $discountAmount = ($subtotal * $discountValue) / 100;
+        $discountAmount = ($amount * $discountValue) / 100;
     } else {
         $discountAmount = $discountValue;
     }
@@ -70,23 +70,33 @@ function validate_coupon_for_subtotal(array $coupon, float $subtotal, string $to
         $discountAmount = $maxDiscount;
     }
 
-    if ($discountAmount > $subtotal) {
-        $discountAmount = $subtotal;
+    if ($discountAmount > $amount) {
+        $discountAmount = $amount;
+    }
+
+    $discountAmount = round($discountAmount, 0);
+    if ($discountAmount > $amount) {
+        $discountAmount = $amount;
     }
 
     return [
         'valid' => true,
         'message' => 'Coupon applied successfully.',
-        'discount' => round($discountAmount, 2),
+        'discount' => (float) $discountAmount,
         'code' => (string) ($coupon['code'] ?? ''),
         'coupon_id' => (int) ($coupon['id'] ?? 0),
     ];
 }
 
-function get_active_coupon_discount(mysqli $conn, ?string $couponCode, float $subtotal): array
+function validate_coupon_for_subtotal(array $coupon, float $subtotal, string $today): array
+{
+    return validate_coupon_for_amount($coupon, $subtotal, $today);
+}
+
+function get_active_coupon_discount(mysqli $conn, ?string $couponCode, float $amount): array
 {
     $code = normalize_coupon_code((string) $couponCode);
-    if ($code === '' || $subtotal <= 0) {
+    if ($code === '' || $amount <= 0) {
         return ['valid' => false, 'discount' => 0.00, 'code' => '', 'message' => ''];
     }
 
@@ -96,7 +106,7 @@ function get_active_coupon_discount(mysqli $conn, ?string $couponCode, float $su
     }
 
     $today = date('Y-m-d');
-    $validated = validate_coupon_for_subtotal($coupon, $subtotal, $today);
+    $validated = validate_coupon_for_amount($coupon, $amount, $today);
 
     if (!$validated['valid']) {
         return ['valid' => false, 'discount' => 0.00, 'code' => $code, 'message' => $validated['message']];

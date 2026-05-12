@@ -4,59 +4,77 @@ require_once __DIR__ . '/../includes/init.php';
 if (!empty($_SESSION['admin_id'])) {
     redirect('dashboard.php');
 }
-$metaTitle = 'Admin Login | Amber Fabrics';
-$metaDescription = 'Admin login page for Amber Fabrics. Secure access to management tools.';
-$metaKeywords = 'admin, login, secure, Amber Fabrics';
 
-function login_attempt_state(mysqli $conn, string $attemptKey): array
+const ADMIN_OTP_TTL_SECONDS = 300;
+const ADMIN_OTP_RESEND_SECONDS = 60;
+const ADMIN_OTP_REQUEST_WINDOW_SECONDS = 900;
+const ADMIN_OTP_REQUEST_MAX_ATTEMPTS = 5;
+
+$errors = [];
+$oldEmail = '';
+
+function admin_attempt_key(string $email, string $ip): string
 {
-    try {
-        $stmt = $conn->prepare("SELECT attempts, blocked_until FROM admin_login_attempts WHERE attempt_key = ? LIMIT 1");
-        $stmt->bind_param('s', $attemptKey);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-    } catch (Throwable $e) {
-        error_log('[admin-auth] login attempt table unavailable: ' . $e->getMessage());
-        return ['attempts' => 0, 'blocked_until_ts' => 0];
+    return hash('sha256', strtolower(trim($email)) . '|' . trim($ip));
+}
+
+function admin_utc_mysql_to_timestamp(?string $value): ?int
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return null;
     }
 
+    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+    if (!$dt) {
+        return null;
+    }
+
+    return $dt->getTimestamp();
+}
+
+function admin_rate_limit_status(mysqli $conn, string $attemptKey): array
+{
+    $stmt = $conn->prepare("SELECT attempts, blocked_until FROM admin_login_attempts WHERE attempt_key = ? LIMIT 1");
+    $stmt->bind_param('s', $attemptKey);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
     if (!$row) {
-        return ['attempts' => 0, 'blocked_until_ts' => 0];
+        return ['blocked' => false, 'attempts' => 0];
     }
 
-    $blockedUntil = !empty($row['blocked_until']) ? strtotime($row['blocked_until']) : 0;
-
-    return [
-        'attempts' => (int) ($row['attempts'] ?? 0),
-        'blocked_until_ts' => $blockedUntil ?: 0,
-    ];
-}
-
-function update_login_attempt(mysqli $conn, string $attemptKey, int $attempts, int $blockedUntilTs): void
-{
-    $blockedUntil = $blockedUntilTs > 0 ? date('Y-m-d H:i:s', $blockedUntilTs) : null;
-    try {
-        $stmt = $conn->prepare(
-            "INSERT INTO admin_login_attempts (attempt_key, attempts, blocked_until, updated_at)
-             VALUES (?, ?, ?, NOW())
-             ON DUPLICATE KEY UPDATE attempts = VALUES(attempts), blocked_until = VALUES(blocked_until), updated_at = NOW()"
-        );
-        $stmt->bind_param('sis', $attemptKey, $attempts, $blockedUntil);
-        $stmt->execute();
-    } catch (Throwable $e) {
-        error_log('[admin-auth] login attempt write failed: ' . $e->getMessage());
+    $blockedUntilTs = admin_utc_mysql_to_timestamp((string) ($row['blocked_until'] ?? ''));
+    if ($blockedUntilTs !== null && $blockedUntilTs > time()) {
+        return ['blocked' => true, 'attempts' => (int) $row['attempts']];
     }
+
+    return ['blocked' => false, 'attempts' => (int) $row['attempts']];
 }
 
-function clear_login_attempt(mysqli $conn, string $attemptKey): void
+function admin_record_attempt(mysqli $conn, string $attemptKey, bool $success): void
 {
-    try {
+    if ($success) {
         $stmt = $conn->prepare("DELETE FROM admin_login_attempts WHERE attempt_key = ?");
         $stmt->bind_param('s', $attemptKey);
         $stmt->execute();
-    } catch (Throwable $e) {
-        error_log('[admin-auth] login attempt clear failed: ' . $e->getMessage());
+        return;
     }
+
+    $windowMinutes = (int) ceil(ADMIN_OTP_REQUEST_WINDOW_SECONDS / 60);
+    $maxAttempts = ADMIN_OTP_REQUEST_MAX_ATTEMPTS;
+    $stmt = $conn->prepare(
+        "INSERT INTO admin_login_attempts (attempt_key, attempts, blocked_until)
+         VALUES (?, 1, NULL)
+         ON DUPLICATE KEY UPDATE
+             attempts = attempts + 1,
+             blocked_until = CASE
+                 WHEN (attempts + 1) >= ? THEN DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE)
+                 ELSE blocked_until
+             END,
+             updated_at = CURRENT_TIMESTAMP"
+    );
+    $stmt->bind_param('sii', $attemptKey, $maxAttempts, $windowMinutes);
+    $stmt->execute();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -65,100 +83,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('login.php');
     }
 
-    $email = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $clientIp = substr((string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'), 0, 45);
-    $attemptIdentity = $email !== '' ? strtolower($email) : 'anonymous';
-    $attemptKey = hash('sha256', $attemptIdentity . '|' . $clientIp);
-    $attempt = login_attempt_state($conn, $attemptKey);
+    $email = strtolower(trim($_POST['email'] ?? ''));
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $oldEmail = $email;
 
-    if ($attempt['blocked_until_ts'] > time()) {
-        flash('error', 'Too many attempts. Try again in a few minutes.');
-        redirect('login.php');
-    }
-
-    if ($email === '' || $password === '') {
-        flash('error', 'Email and password are required.');
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        flash('error', 'Enter a valid email address.');
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors['email'] = 'Enter a valid email address.';
     } else {
-        $stmt = $conn->prepare("SELECT id, name, password_hash, force_password_reset FROM admins WHERE email = ? LIMIT 1");
-        $stmt->bind_param('s', $email);
-        $stmt->execute();
-        $admin = $stmt->get_result()->fetch_assoc();
-
-        if ($admin && password_verify($password, $admin['password_hash'])) {
-            session_regenerate_id(true);
-            $_SESSION['admin_id'] = $admin['id'];
-            $_SESSION['admin_name'] = $admin['name'];
-            clear_login_attempt($conn, $attemptKey);
-            if (!empty($admin['force_password_reset'])) {
-                $_SESSION['must_reset_password'] = true;
-                flash('error', 'Please set a new password to continue.');
-                redirect('password-reset.php');
-            }
-            unset($_SESSION['must_reset_password']);
-            flash('success', 'Welcome back '.$admin['name'].'!');
-            redirect('dashboard.php');
+        $attemptKey = admin_attempt_key($email, $ip);
+        $rateStatus = admin_rate_limit_status($conn, $attemptKey);
+        if ($rateStatus['blocked']) {
+            $errors['_login'] = 'Too many attempts. Please wait 15 minutes and try again.';
         } else {
-            $newAttempts = $attempt['attempts'] + 1;
-            $blockedUntilTs = $newAttempts >= 5 ? time() + 300 : 0;
-            update_login_attempt($conn, $attemptKey, $newAttempts, $blockedUntilTs);
-            flash('error', 'Invalid credentials.');
+            $stmt = $conn->prepare("SELECT id, name, email FROM admins WHERE email = ? LIMIT 1");
+            $stmt->bind_param('s', $email);
+            $stmt->execute();
+            $admin = $stmt->get_result()->fetch_assoc();
+
+            if (!$admin) {
+                admin_record_attempt($conn, $attemptKey, false);
+                $errors['_login'] = 'Unable to send OTP for this email.';
+            } else {
+                $otp = (string) random_int(100000, 999999);
+                $otpHash = hash('sha256', $otp);
+
+                $upsert = $conn->prepare(
+                    "INSERT INTO admin_login_otps (admin_id, otp_hash, expires_at, attempts, resend_available_at, created_ip)
+                     VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), 0, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), ?)
+                     ON DUPLICATE KEY UPDATE
+                         otp_hash = VALUES(otp_hash),
+                         expires_at = VALUES(expires_at),
+                         attempts = 0,
+                         resend_available_at = VALUES(resend_available_at),
+                         created_ip = VALUES(created_ip),
+                         updated_at = CURRENT_TIMESTAMP"
+                );
+                $adminId = (int) $admin['id'];
+                $ttl = ADMIN_OTP_TTL_SECONDS;
+                $resend = ADMIN_OTP_RESEND_SECONDS;
+                $upsert->bind_param('isiis', $adminId, $otpHash, $ttl, $resend, $ip);
+                $upsert->execute();
+
+                $mailSent = false;
+                try {
+                    $mail = _mailer_base();
+                    $mail->addAddress((string) $admin['email'], (string) $admin['name']);
+                    $mail->Subject = 'Amber Fabrics Admin Login OTP';
+                    $mail->Body = implode("\r\n", [
+                        'Hi ' . (string) $admin['name'] . ',',
+                        '',
+                        'Your admin login OTP is: ' . $otp,
+                        'It is valid for 5 minutes.',
+                        '',
+                        'If you did not request this OTP, ignore this email.',
+                        '',
+                        'Amber Fabrics',
+                    ]);
+                    $mail->send();
+                    $mailSent = true;
+                } catch (Throwable $e) {
+                    error_log('[amberfabrics] admin otp email send failed: ' . $e->getMessage());
+                }
+
+                if (!$mailSent) {
+                    $errors['_login'] = 'OTP email could not be sent. Check mail configuration.';
+                } else {
+                    admin_record_attempt($conn, $attemptKey, true);
+                    $_SESSION['admin_pending_otp_admin_id'] = $adminId;
+                    $_SESSION['admin_pending_otp_email'] = (string) $admin['email'];
+                    $_SESSION['admin_pending_otp_name'] = (string) $admin['name'];
+                    flash('success', 'OTP sent to your email.');
+                    redirect('verify-otp.php');
+                }
+            }
         }
     }
 }
 ?>
-
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin Login | Amber Fabrics</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="../css/style.css?v=20260313a">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login | Amber Fabrics</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css?v=20260506c">
 </head>
+<body class="bg-light">
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4">
+                    <h1 class="h4 mb-3">Admin OTP Login</h1>
+                    <p class="text-muted small mb-4">Enter your admin email to receive a one-time login code.</p>
 
-<body class="admin-shell">
+                    <?php if ($msg = flash('success')): ?>
+                        <div class="alert alert-success"><?php echo e($msg); ?></div>
+                    <?php endif; ?>
+                    <?php if ($msg = flash('error')): ?>
+                        <div class="alert alert-danger"><?php echo e($msg); ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($errors['_login'])): ?>
+                        <div class="alert alert-danger"><?php echo e($errors['_login']); ?></div>
+                    <?php endif; ?>
 
-<div class="container py-5 admin-login-wrap">
-
-<div class="surface-panel">
-    <div class="text-center mb-4">
-        <h1 class="h3 mb-2">Admin Login</h1>
-        <p class="text-muted mb-0">Access operations dashboard</p>
+                    <form method="POST" action="login.php" novalidate>
+                        <?php echo csrf_field(); ?>
+                        <div class="mb-3">
+                            <label class="form-label">Email Address</label>
+                            <input
+                                type="email"
+                                name="email"
+                                class="<?php echo form_class($errors, 'email'); ?>"
+                                value="<?php echo e($oldEmail); ?>"
+                                required
+                                autofocus
+                            >
+                            <?php echo form_error($errors, 'email'); ?>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Send OTP</button>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
-
-        <?php if ($msg = flash('error')): ?>
-            <div class="alert alert-danger"><?php echo e($msg); ?></div>
-        <?php endif; ?>
-
-        <form method="POST" class="row g-3">
-        <?php echo csrf_field(); ?>
-
-        <div class="col-12">
-            <label class="form-label">Email</label>
-            <input class="form-control" name="email" placeholder="Email" required value="<?php echo e($_POST['email'] ?? ''); ?>">
-        </div>
-        <div class="col-12">
-            <label class="form-label">Password</label>
-            <input class="form-control" type="password" name="password" placeholder="Password" required>
-        </div>
-        <div class="col-12">
-            <button name="login" class="btn btn-dark w-100">Login</button>
-        </div>
-
-        </form>
 </div>
-
-<p class="text-center text-muted mt-3">Use your configured admin credentials.</p>
-
-</div>
-
-<script src="../js/script.js?v=20260313a" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-

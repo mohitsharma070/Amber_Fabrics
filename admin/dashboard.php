@@ -10,8 +10,10 @@ if ($month === '' || !preg_match('/^\d{4}-\d{2}$/', $month)) {
 $monthOrderClause = "DATE_FORMAT(created_at, '%Y-%m') = ?";
 $monthExpenseClause = "DATE_FORMAT(expense_date, '%Y-%m') = ?";
 $activeOrderClause = "NOT (
+    order_status = 'pending'
+    AND
     payment_status = 'pending'
-    AND payment_method IN ('razorpay', 'stripe', 'upi')
+    AND payment_method IN ('razorpay', 'upi')
     AND created_at < (NOW() - INTERVAL 30 MINUTE)
 )";
 
