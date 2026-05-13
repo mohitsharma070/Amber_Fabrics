@@ -22,6 +22,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
     $settings['site_name'] = trim($_POST['site_name'] ?? $settings['site_name']);
     $settings['site_description'] = trim($_POST['site_description'] ?? $settings['site_description']);
     $settings['contact_email'] = trim($_POST['contact_email'] ?? $settings['contact_email']);
+    $gstRateInput = trim((string) ($_POST['gst_rate'] ?? ($settings['gst_rate'] ?? '18')));
+    if (!is_numeric($gstRateInput)) {
+        $gstRateInput = (string) ($settings['gst_rate'] ?? '18');
+    }
+    $gstRate = (float) $gstRateInput;
+    if ($gstRate < 0) { $gstRate = 0; }
+    if ($gstRate > 100) { $gstRate = 100; }
+    $settings['gst_rate'] = rtrim(rtrim(number_format($gstRate, 2, '.', ''), '0'), '.');
     for ($i = 1; $i <= 5; $i++) {
         $textKey = 'announcement_' . $i . '_text';
         $enabledKey = 'announcement_' . $i . '_enabled';
@@ -126,6 +134,20 @@ include 'partials/header.php';
     <div class="mb-3">
         <label for="contact_email" class="form-label">Contact Email</label>
         <input type="email" class="form-control" id="contact_email" name="contact_email" value="<?php echo e($settings['contact_email']); ?>">
+    </div>
+    <div class="mb-3">
+        <label for="gst_rate" class="form-label">GST Rate (%)</label>
+        <input
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            class="form-control"
+            id="gst_rate"
+            name="gst_rate"
+            value="<?php echo e((string) ($settings['gst_rate'] ?? '18')); ?>"
+        >
+        <small class="text-muted">Used for billing display and invoice GST breakdown for India orders.</small>
     </div>
 
     <h4 class="mt-4">Announcement Bar</h4>

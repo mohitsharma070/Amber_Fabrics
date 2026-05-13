@@ -182,6 +182,8 @@ if (!$couponInfo['valid'] && $couponCode !== '') {
 }
 $discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
 $totalAmount = max(0, $preDiscountTotal - $discountAmount);
+$taxableAmount = max(0.0, $subtotal - $discountAmount);
+$gst = order_gst_breakdown($taxableAmount, $countryForCalc);
 $internationalQuoteUrl = '/international-buyers.php';
 if (!$isIndia) {
     $internationalQuoteUrl .= '?' . http_build_query([
@@ -358,6 +360,12 @@ include __DIR__ . '/includes/header.php';
                         <span>Discount</span>
                         <span class="text-success" id="summary_discount">- Rs <?php echo number_format($discountAmount, 2); ?></span>
                     </div>
+                    <?php if (!empty($gst['enabled'])): ?>
+                    <div class="d-flex justify-content-between mb-1 small text-muted">
+                        <span>GST @<?php echo number_format((float) $gst['rate'], 0); ?>% (included)</span>
+                        <span>Rs <?php echo number_format((float) $gst['gst_amount'], 2); ?></span>
+                    </div>
+                    <?php endif; ?>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Shipping</span>
                         <span id="summary_shipping">Rs <?php echo number_format($baseShippingAmount, 2); ?></span>

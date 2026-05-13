@@ -162,31 +162,41 @@ try {
     $updatePayment->execute();
 
     $pendingCouponId = (int) ($_SESSION['pending_coupon_id'] ?? 0);
+    $resolvedCouponId = $pendingCouponId;
+    if ($resolvedCouponId <= 0) {
+        $orderNotes = (string) ($order['order_notes'] ?? '');
+        if ($orderNotes !== '' && preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
+            $couponCode = strtoupper(trim((string) ($m[1] ?? '')));
+            if ($couponCode !== '') {
+                $couponIdStmt = $conn->prepare("SELECT id FROM coupons WHERE code = ? LIMIT 1");
+                $couponIdStmt->bind_param('s', $couponCode);
+                $couponIdStmt->execute();
+                $couponRow = $couponIdStmt->get_result()->fetch_assoc();
+                $resolvedCouponId = (int) ($couponRow['id'] ?? 0);
+            }
+        }
+    }
+
     $couponUpdated = false;
-    if ($pendingCouponId > 0) {
+    if ($resolvedCouponId > 0) {
+        if (has_customer_used_coupon($conn, $resolvedCouponId, $customerId)) {
+            throw new RuntimeException('Coupon already used by this customer.');
+        }
         // Only increment if the coupon still has capacity (usage_limit = 0 means unlimited)
         $couponStmt = $conn->prepare(
             "UPDATE coupons SET used_count = used_count + 1
              WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
         );
-        $couponStmt->bind_param('i', $pendingCouponId);
+        $couponStmt->bind_param('i', $resolvedCouponId);
         $couponStmt->execute();
-        $couponUpdated = $conn->affected_rows > 0;
+        if ($conn->affected_rows > 0) {
+            mark_coupon_used_once($conn, $resolvedCouponId, $customerId, $orderId);
+            $couponUpdated = true;
+        }
     }
 
-    if (!$couponUpdated) {
-        $orderNotes = (string) ($order['order_notes'] ?? '');
-        if ($orderNotes !== '' && preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
-            $couponCode = strtoupper(trim((string) ($m[1] ?? '')));
-            if ($couponCode !== '') {
-                $couponByCodeStmt = $conn->prepare(
-                    "UPDATE coupons SET used_count = used_count + 1
-                     WHERE code = ? AND (usage_limit = 0 OR used_count < usage_limit)"
-                );
-                $couponByCodeStmt->bind_param('s', $couponCode);
-                $couponByCodeStmt->execute();
-            }
-        }
+    if ($resolvedCouponId > 0 && !$couponUpdated) {
+        throw new RuntimeException('Coupon usage limit reached.');
     }
 
     $conn->commit();

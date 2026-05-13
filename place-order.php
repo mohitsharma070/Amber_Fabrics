@@ -203,6 +203,9 @@ try {
         if ($coupon) {
             $validated = validate_coupon_for_amount($coupon, $preDiscountTotal, date('Y-m-d'));
             if ($validated['valid']) {
+                if (has_customer_used_coupon($conn, (int) $coupon['id'], $customerId)) {
+                    throw new RuntimeException('You have already used this coupon.');
+                }
                 $discountAmount = (float) $validated['discount'];
                 $couponId = (int) $coupon['id'];
             } else {
@@ -346,6 +349,7 @@ try {
         $couponUsedStmt = $conn->prepare("UPDATE coupons SET used_count = used_count + 1 WHERE id = ?");
         $couponUsedStmt->bind_param('i', $couponId);
         $couponUsedStmt->execute();
+        mark_coupon_used_once($conn, $couponId, $customerId, $orderId);
     }
 
     $conn->commit();

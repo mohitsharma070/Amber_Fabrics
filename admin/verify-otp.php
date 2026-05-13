@@ -79,21 +79,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $update->execute();
 
         try {
-            $mail = _mailer_base();
-            $mail->addAddress($pendingEmail, $pendingName);
-            $mail->Subject = 'Amber Fabrics Admin Login OTP (Resend)';
-            $mail->Body = implode("\r\n", [
-                'Hi ' . $pendingName . ',',
-                '',
-                'Your new admin login OTP is: ' . $otp,
-                'It is valid for 5 minutes.',
-                '',
-                'If you did not request this OTP, ignore this email.',
-                '',
-                'Amber Fabrics',
-            ]);
-            $mail->send();
-            flash('success', 'New OTP sent to your email.');
+            $mailSent = send_admin_login_otp_email($pendingEmail, $pendingName, $otp, true);
+            if ($mailSent) {
+                flash('success', 'New OTP sent to your email.');
+            } else {
+                flash('error', 'OTP resend failed. Check mail configuration.');
+            }
         } catch (Throwable $e) {
             error_log('[amberfabrics] admin otp resend failed: ' . $e->getMessage());
             flash('error', 'OTP resend failed. Check mail configuration.');

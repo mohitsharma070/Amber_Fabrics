@@ -91,7 +91,8 @@ if ($isIndia) {
 }
 $preDiscountTotal = round($subtotal + $baseShippingAmount + $codFeeAmount, 2);
 
-$discountInfo = get_active_coupon_discount($conn, $code, $preDiscountTotal);
+$customerIdForCoupon = (int) ($_SESSION['customer_id'] ?? 0);
+$discountInfo = get_active_coupon_discount_for_customer($conn, $code, $preDiscountTotal, $customerIdForCoupon);
 
 if (!$discountInfo['valid']) {
     unset($_SESSION['applied_coupon_code']);

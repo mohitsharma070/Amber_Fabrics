@@ -126,21 +126,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $mailSent = false;
                 try {
-                    $mail = _mailer_base();
-                    $mail->addAddress((string) $admin['email'], (string) $admin['name']);
-                    $mail->Subject = 'Amber Fabrics Admin Login OTP';
-                    $mail->Body = implode("\r\n", [
-                        'Hi ' . (string) $admin['name'] . ',',
-                        '',
-                        'Your admin login OTP is: ' . $otp,
-                        'It is valid for 5 minutes.',
-                        '',
-                        'If you did not request this OTP, ignore this email.',
-                        '',
-                        'Amber Fabrics',
-                    ]);
-                    $mail->send();
-                    $mailSent = true;
+                    $mailSent = send_admin_login_otp_email(
+                        (string) $admin['email'],
+                        (string) $admin['name'],
+                        $otp,
+                        false
+                    );
                 } catch (Throwable $e) {
                     error_log('[amberfabrics] admin otp email send failed: ' . $e->getMessage());
                 }

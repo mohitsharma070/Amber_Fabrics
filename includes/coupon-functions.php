@@ -26,6 +26,38 @@ function get_coupon_by_code(mysqli $conn, string $code): ?array
     return $coupon ?: null;
 }
 
+function has_customer_used_coupon(mysqli $conn, int $couponId, int $customerId): bool
+{
+    if ($couponId <= 0 || $customerId <= 0) {
+        return false;
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT 1
+         FROM coupon_usages
+         WHERE coupon_id = ? AND customer_id = ?
+         LIMIT 1"
+    );
+    $stmt->bind_param('ii', $couponId, $customerId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return !empty($row);
+}
+
+function mark_coupon_used_once(mysqli $conn, int $couponId, int $customerId, int $orderId): bool
+{
+    if ($couponId <= 0 || $customerId <= 0 || $orderId <= 0) {
+        return false;
+    }
+
+    $stmt = $conn->prepare(
+        "INSERT INTO coupon_usages (coupon_id, customer_id, order_id)
+         VALUES (?, ?, ?)"
+    );
+    $stmt->bind_param('iii', $couponId, $customerId, $orderId);
+    return $stmt->execute();
+}
+
 function validate_coupon_for_amount(array $coupon, float $amount, string $today): array
 {
     if (($coupon['status'] ?? '') !== 'active') {
@@ -119,4 +151,25 @@ function get_active_coupon_discount(mysqli $conn, ?string $couponCode, float $am
         'coupon_id' => (int) $validated['coupon_id'],
         'message' => (string) $validated['message'],
     ];
+}
+
+function get_active_coupon_discount_for_customer(mysqli $conn, ?string $couponCode, float $amount, int $customerId): array
+{
+    $base = get_active_coupon_discount($conn, $couponCode, $amount);
+    if (!$base['valid']) {
+        return $base;
+    }
+
+    $couponId = (int) ($base['coupon_id'] ?? 0);
+    if ($customerId > 0 && $couponId > 0 && has_customer_used_coupon($conn, $couponId, $customerId)) {
+        return [
+            'valid' => false,
+            'discount' => 0.00,
+            'code' => (string) ($base['code'] ?? ''),
+            'coupon_id' => $couponId,
+            'message' => 'You have already used this coupon.',
+        ];
+    }
+
+    return $base;
 }

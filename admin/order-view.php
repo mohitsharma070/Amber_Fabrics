@@ -212,6 +212,8 @@ $shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [
     'shipped_at' => null,
     'delivered_at' => null,
 ];
+$taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
+$gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
 
 $metaTitle = 'Order ' . e((string) $order['order_number']) . ' | Admin';
 include 'partials/header.php';
@@ -222,6 +224,9 @@ include 'partials/header.php';
         <a href="orders.php" class="text-muted small">Back to Orders</a>
         <h1 class="mt-1">Order <?php echo e((string) $order['order_number']); ?></h1>
         <span class="text-muted small"><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></span>
+    </div>
+    <div>
+        <a href="order-invoice.php?id=<?php echo $id; ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">View Invoice</a>
     </div>
 </div>
 
@@ -266,6 +271,9 @@ include 'partials/header.php';
                     <div class="d-flex justify-content-between small"><span>Subtotal</span><span>Rs <?php echo number_format((float) ($order['subtotal'] ?? 0), 2); ?></span></div>
                     <div class="d-flex justify-content-between small"><span>Shipping</span><span>Rs <?php echo number_format((float) ($order['shipping_amount'] ?? 0), 2); ?></span></div>
                     <div class="d-flex justify-content-between small"><span>Discount</span><span>Rs <?php echo number_format((float) ($order['discount_amount'] ?? 0), 2); ?></span></div>
+                    <?php if (!empty($gst['enabled'])): ?>
+                    <div class="d-flex justify-content-between small"><span>GST @<?php echo number_format((float) $gst['rate'], 0); ?>% (included)</span><span>Rs <?php echo number_format((float) $gst['gst_amount'], 2); ?></span></div>
+                    <?php endif; ?>
                     <div class="d-flex justify-content-between fw-bold mt-2"><span>Total</span><span>Rs <?php echo number_format((float) ($order['total_amount'] ?? 0), 2); ?></span></div>
                 </div>
             </div>

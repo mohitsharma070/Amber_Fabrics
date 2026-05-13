@@ -158,7 +158,7 @@ if ($eventType === 'payment.failed') {
     exit;
 }
 
-function webhook_increment_coupon_used_count(mysqli $conn, string $orderNotes): void
+function webhook_increment_coupon_used_count(mysqli $conn, int $customerId, int $orderId, string $orderNotes): void
 {
     if (!preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
         return;
@@ -167,12 +167,28 @@ function webhook_increment_coupon_used_count(mysqli $conn, string $orderNotes): 
     if ($code === '') {
         return;
     }
+    $couponIdStmt = $conn->prepare("SELECT id FROM coupons WHERE code = ? LIMIT 1");
+    $couponIdStmt->bind_param('s', $code);
+    $couponIdStmt->execute();
+    $couponRow = $couponIdStmt->get_result()->fetch_assoc();
+    $couponId = (int) ($couponRow['id'] ?? 0);
+    if ($couponId <= 0) {
+        return;
+    }
+    if (has_customer_used_coupon($conn, $couponId, $customerId)) {
+        throw new RuntimeException('Coupon already used by this customer.');
+    }
+
     $stmt = $conn->prepare(
         "UPDATE coupons SET used_count = used_count + 1
-         WHERE code = ? AND (usage_limit = 0 OR used_count < usage_limit)"
+         WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
     );
-    $stmt->bind_param('s', $code);
+    $stmt->bind_param('i', $couponId);
     $stmt->execute();
+    if ($conn->affected_rows <= 0) {
+        throw new RuntimeException('Coupon usage limit reached.');
+    }
+    mark_coupon_used_once($conn, $couponId, $customerId, $orderId);
 }
 
 try {
@@ -197,7 +213,7 @@ try {
     }
 
     $orderStmt = $conn->prepare(
-        "SELECT id, order_number, order_status, payment_status, order_notes
+        "SELECT id, customer_id, order_number, order_status, payment_status, order_notes
          FROM orders
          WHERE id = ? AND payment_method = 'razorpay'
          FOR UPDATE"
@@ -299,7 +315,12 @@ try {
     $updatePayment->bind_param('sssssi', $paymentId, $paymentId, $paymentId, $paymentId, $signature, $orderId);
     $updatePayment->execute();
 
-    webhook_increment_coupon_used_count($conn, (string) ($order['order_notes'] ?? ''));
+    webhook_increment_coupon_used_count(
+        $conn,
+        (int) ($order['customer_id'] ?? 0),
+        $orderId,
+        (string) ($order['order_notes'] ?? '')
+    );
 
     $conn->commit();
 

@@ -1,4 +1,5 @@
 ﻿<?php
+require_once __DIR__ . '/email-templates/index.php';
 
 // Harden session cookie settings before starting the session.
 if (session_status() === PHP_SESSION_NONE) {
@@ -341,25 +342,7 @@ function send_inquiry_notification(array $inquiry): bool
         return false;
     }
 
-    $subject = 'New Inquiry Received #' . (int) ($inquiry['id'] ?? 0);
-    $lines = [
-        'A new inquiry was submitted.',
-        '',
-        'ID: ' . ((int) ($inquiry['id'] ?? 0)),
-        'Name: ' . ((string) ($inquiry['name'] ?? '')),
-        'Email: ' . ((string) ($inquiry['email'] ?? '')),
-        'Country: ' . ((string) ($inquiry['country'] ?? '')),
-        'Fabric: ' . ((string) ($inquiry['fabric_type'] ?? '')),
-        'Quantity: ' . ((string) ($inquiry['quantity'] ?? '')),
-        'Meters: ' . ((string) ($inquiry['meters'] ?? '')),
-        'Incoterm: ' . ((string) ($inquiry['incoterm'] ?? '')),
-        'Destination: ' . ((string) ($inquiry['destination'] ?? '')),
-        'Pin Code: ' . ((string) ($inquiry['pincode'] ?? '')),
-        'Timeline: ' . ((string) ($inquiry['timeline'] ?? '')),
-        '',
-        'Message:',
-        ((string) ($inquiry['message'] ?? '')),
-    ];
+    $template = email_template_build('inquiry_notification', $inquiry);
 
     $replyTo = filter_var($inquiry['email'] ?? '', FILTER_VALIDATE_EMAIL)
         ? (string) $inquiry['email']
@@ -371,8 +354,8 @@ function send_inquiry_notification(array $inquiry): bool
         if ($replyTo !== '') {
             $mail->addReplyTo($replyTo);
         }
-        $mail->Subject = $subject;
-        $mail->Body    = implode("\r\n", $lines);
+        $mail->Subject = $template['subject'];
+        $mail->Body    = $template['body'];
         $mail->send();
         return true;
     } catch (Throwable $e) {
@@ -427,6 +410,7 @@ function site_settings_defaults(): array
         'announcement_4_enabled' => '0',
         'announcement_5_text' => '',
         'announcement_5_enabled' => '0',
+        'gst_rate' => '18',
     ];
 }
 
@@ -1114,6 +1098,9 @@ function send_order_confirmation_email(mysqli $conn, int $orderId): bool
     $row->execute();
     $order = $row->get_result()->fetch_assoc();
     if (!$order) { return false; }
+    if (strtolower((string) ($order['payment_status'] ?? '')) !== 'paid') {
+        return false;
+    }
 
     $iStmt = $conn->prepare(
         "SELECT unit_type, fabric_name_snapshot, quantity, quantity_meters, price, price_per_meter, total, line_total
@@ -1151,16 +1138,28 @@ function send_order_confirmation_email(mysqli $conn, int $orderId): bool
     $lines[] = 'Shipping : ' . $sym . number_format((float)$order['shipping_cost'], 2);
     $lines[] = 'Total    : ' . $sym . number_format((float)$order['total'], 2) . ' ' . $order['currency'];
     $lines[] = '';
+    $appUrl = rtrim(_cfg('APP_URL', ''), '/');
+    if ($appUrl === '') {
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $appUrl   = $protocol . '://' . ($_SERVER['SERVER_NAME'] ?? 'localhost');
+    }
+    $invoiceUrl = $appUrl . '/customer/order-invoice.php?id=' . (int) $orderId;
+    $lines[] = 'Invoice: ' . $invoiceUrl;
+    $lines[] = '';
     $lines[] = 'We will notify you once your order is shipped.';
     $lines[] = '';
     $lines[] = 'Regards,';
     $lines[] = 'Amber Fabrics';
+    $template = email_template_build('order_confirmation', [
+        'order_number' => (string) $order['order_number'],
+        'lines' => $lines,
+    ]);
 
     try {
         $mail = _mailer_base();
         $mail->addAddress($order['cemail'], $order['cname']);
-        $mail->Subject = 'Order Confirmed - ' . $order['order_number'];
-        $mail->Body    = implode("\r\n", $lines);
+        $mail->Subject = $template['subject'];
+        $mail->Body    = $template['body'];
         $mail->send();
         return true;
     } catch (Throwable $e) {
@@ -1224,12 +1223,17 @@ function send_order_status_update_email(mysqli $conn, int $orderId, string $newS
     $lines[] = '';
     $lines[] = 'Regards,';
     $lines[] = 'Amber Fabrics';
+    $template = email_template_build('order_status_update', [
+        'order_number' => (string) $order['order_number'],
+        'new_status' => $newStatus,
+        'lines' => $lines,
+    ]);
 
     try {
         $mail = _mailer_base();
         $mail->addAddress($order['cemail'], $order['cname']);
-        $mail->Subject = 'Order Update - ' . $order['order_number'] . ' is now ' . ucfirst($newStatus);
-        $mail->Body    = implode("\r\n", $lines);
+        $mail->Subject = $template['subject'];
+        $mail->Body    = $template['body'];
         $mail->send();
         return true;
     } catch (Throwable $e) {
@@ -1251,25 +1255,13 @@ function send_customer_password_reset_email(string $email, string $token): bool
     }
     $resetUrl = $appUrl . '/customer/reset-password.php?token=' . urlencode($token);
 
-    $lines = [
-        'Hi,',
-        '',
-        'We received a request to reset the password for your Amber Fabrics account.',
-        '',
-        'Click the link below to set a new password (valid for 1 hour):',
-        $resetUrl,
-        '',
-        'If you did not request this, please ignore this email.',
-        '',
-        'Regards,',
-        'Amber Fabrics',
-    ];
+    $template = email_template_build('customer_password_reset', ['reset_url' => $resetUrl]);
 
     try {
         $mail = _mailer_base();
         $mail->addAddress($email);
-        $mail->Subject = 'Password Reset - Amber Fabrics';
-        $mail->Body    = implode("\r\n", $lines);
+        $mail->Subject = $template['subject'];
+        $mail->Body    = $template['body'];
         $mail->send();
         return true;
     } catch (Throwable $e) {
@@ -1290,31 +1282,195 @@ function send_customer_verification_email(string $email, string $name, string $t
     }
     $verifyUrl = $appUrl . '/customer/verify-email.php?token=' . urlencode($token);
 
-    $lines = [
-        'Hi ' . $name . ',',
-        '',
-        'Thank you for registering with Amber Fabrics!',
-        '',
-        'Please verify your email address by clicking the link below (valid for 24 hours):',
-        $verifyUrl,
-        '',
-        'If you did not create an account, please ignore this email.',
-        '',
-        'Regards,',
-        'Amber Fabrics',
-    ];
+    $template = email_template_build('customer_email_verification', [
+        'name' => $name,
+        'verify_url' => $verifyUrl,
+    ]);
 
     try {
         $mail = _mailer_base();
         $mail->addAddress($email, $name);
-        $mail->Subject = 'Verify your email - Amber Fabrics';
-        $mail->Body    = implode("\r\n", $lines);
+        $mail->Subject = $template['subject'];
+        $mail->Body    = $template['body'];
         $mail->send();
         return true;
     } catch (Throwable $e) {
         error_log('[amberfabrics] verification email failed: ' . $e->getMessage());
         return false;
     }
+}
+
+/**
+ * Send admin login OTP email (initial + resend) using shared template.
+ */
+function send_admin_login_otp_email(string $email, string $name, string $otp, bool $isResend = false): bool
+{
+    $template = email_template_build('admin_login_otp', [
+        'name' => $name,
+        'otp' => $otp,
+        'is_resend' => $isResend,
+    ]);
+
+    try {
+        $mail = _mailer_base();
+        $mail->addAddress($email, $name);
+        $mail->Subject = $template['subject'];
+        $mail->Body = $template['body'];
+        $mail->send();
+        return true;
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] admin otp email send failed: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Calculate GST breakdown for display without changing order totals.
+ */
+function configured_gst_rate(): float
+{
+    $settings = get_site_settings();
+    $raw = trim((string) ($settings['gst_rate'] ?? '18'));
+    if (!is_numeric($raw)) {
+        return 18.0;
+    }
+    $rate = (float) $raw;
+    if ($rate < 0) {
+        return 0.0;
+    }
+    if ($rate > 100) {
+        return 100.0;
+    }
+    return round($rate, 2);
+}
+
+function order_gst_breakdown(float $taxableAmount, string $country, ?float $gstRate = null): array
+{
+    if ($gstRate === null) {
+        $gstRate = configured_gst_rate();
+    }
+    $isIndia = strcasecmp(trim($country), 'india') === 0;
+    $taxable = max(0.0, round($taxableAmount, 2));
+    if (!$isIndia || $taxable <= 0 || $gstRate <= 0) {
+        return [
+            'enabled' => false,
+            'rate' => 0.0,
+            'taxable_amount' => $taxable,
+            'gst_amount' => 0.0,
+            'cgst_amount' => 0.0,
+            'sgst_amount' => 0.0,
+        ];
+    }
+
+    $gst = round(($taxable * $gstRate) / 100, 2);
+    $half = round($gst / 2, 2);
+    return [
+        'enabled' => true,
+        'rate' => $gstRate,
+        'taxable_amount' => $taxable,
+        'gst_amount' => $gst,
+        'cgst_amount' => $half,
+        'sgst_amount' => round($gst - $half, 2),
+    ];
+}
+
+/**
+ * Build normalized invoice payload for an order.
+ */
+function build_order_invoice_payload(mysqli $conn, int $orderId): ?array
+{
+    $orderStmt = $conn->prepare(
+        "SELECT o.id, o.order_number, o.customer_id, o.customer_name, o.customer_email, o.customer_phone,
+                o.address, o.city, o.state, o.pincode, o.country,
+                o.shipping_address, o.currency, o.created_at,
+                o.subtotal, o.shipping_amount, o.shipping_cost, o.discount_amount, o.total_amount, o.total
+         FROM orders o
+         WHERE o.id = ?
+         LIMIT 1"
+    );
+    $orderStmt->bind_param('i', $orderId);
+    $orderStmt->execute();
+    $order = $orderStmt->get_result()->fetch_assoc();
+    if (!$order) {
+        return null;
+    }
+
+    $itemStmt = $conn->prepare(
+        "SELECT product_name, fabric_name_snapshot, fabric_sku_snapshot, unit_type,
+                quantity, quantity_meters, price, price_per_meter, total, line_total
+         FROM order_items
+         WHERE order_id = ?
+         ORDER BY id ASC"
+    );
+    $itemStmt->bind_param('i', $orderId);
+    $itemStmt->execute();
+    $rows = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $currency = (string) ($order['currency'] ?? 'INR');
+    $symbol = $currency === 'USD' ? '$' : 'Rs ';
+    $items = [];
+    foreach ($rows as $row) {
+        $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+            ? (string) $row['unit_type']
+            : 'meter';
+        $qty = (($row['quantity'] ?? 0) > 0)
+            ? (float) $row['quantity']
+            : (float) ($row['quantity_meters'] ?? 0);
+        $unitPrice = (($row['price'] ?? 0) > 0)
+            ? (float) $row['price']
+            : (float) ($row['price_per_meter'] ?? 0);
+        $lineTotal = (($row['total'] ?? 0) > 0)
+            ? (float) $row['total']
+            : (float) ($row['line_total'] ?? 0);
+        $items[] = [
+            'name' => (string) (($row['product_name'] ?? '') !== '' ? $row['product_name'] : ($row['fabric_name_snapshot'] ?? 'Product')),
+            'sku' => (string) ($row['fabric_sku_snapshot'] ?? ''),
+            'unit_type' => $unitType,
+            'quantity' => $qty,
+            'unit_price' => $unitPrice,
+            'line_total' => $lineTotal,
+        ];
+    }
+
+    $shipping = json_decode((string) ($order['shipping_address'] ?? ''), true);
+    if (!is_array($shipping)) {
+        $shipping = [];
+    }
+    $addressLines = [];
+    $name = trim((string) ($shipping['name'] ?? $order['customer_name'] ?? ''));
+    $line1 = trim((string) ($shipping['address'] ?? $order['address'] ?? ''));
+    $line2 = trim(
+        trim((string) ($shipping['city'] ?? $order['city'] ?? '')) .
+        (trim((string) ($shipping['state'] ?? $order['state'] ?? '')) !== '' ? ', ' . trim((string) ($shipping['state'] ?? $order['state'] ?? '')) : '') .
+        (trim((string) ($shipping['pincode'] ?? $order['pincode'] ?? '')) !== '' ? ' - ' . trim((string) ($shipping['pincode'] ?? $order['pincode'] ?? '')) : '')
+    );
+    $line3 = trim((string) ($shipping['country'] ?? $order['country'] ?? ''));
+    if ($name !== '') { $addressLines[] = $name; }
+    if ($line1 !== '') { $addressLines[] = $line1; }
+    if ($line2 !== '') { $addressLines[] = $line2; }
+    if ($line3 !== '') { $addressLines[] = $line3; }
+    $country = (string) ($shipping['country'] ?? $order['country'] ?? '');
+    $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
+    $gst = order_gst_breakdown($taxableAmount, $country);
+
+    return [
+        'order_id' => (int) $order['id'],
+        'customer_id' => (int) ($order['customer_id'] ?? 0),
+        'order_number' => (string) $order['order_number'],
+        'invoice_date' => (string) $order['created_at'],
+        'currency' => $currency,
+        'symbol' => $symbol,
+        'customer_name' => (string) ($order['customer_name'] ?? ''),
+        'customer_email' => (string) ($order['customer_email'] ?? ''),
+        'customer_phone' => (string) ($order['customer_phone'] ?? ''),
+        'billing_address_lines' => $addressLines,
+        'items' => $items,
+        'subtotal' => (float) ($order['subtotal'] ?? 0),
+        'shipping' => (float) (($order['shipping_amount'] ?? 0) > 0 ? $order['shipping_amount'] : ($order['shipping_cost'] ?? 0)),
+        'discount' => (float) ($order['discount_amount'] ?? 0),
+        'total' => (float) (($order['total_amount'] ?? 0) > 0 ? $order['total_amount'] : ($order['total'] ?? 0)),
+        'gst' => $gst,
+    ];
 }
 
 // ---------------------------------------------------------------------------

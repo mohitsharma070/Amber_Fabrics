@@ -64,6 +64,8 @@ $returnRequest = $returnStmt->get_result()->fetch_assoc() ?: null;
 
 $shipping = json_decode($order['shipping_address'] ?? '{}', true) ?: [];
 $symbol   = $order['currency'] === 'USD' ? '$' : 'Rs ';
+$taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
+$gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
 
 $statusLabels = [
     'pending'    => ['label' => 'Pending',    'class' => 'warning'],
@@ -98,6 +100,9 @@ include __DIR__ . '/../includes/header.php';
     <div class="container">
         <div class="mb-3">
             <a href="/customer/orders.php" class="text-muted small">&larr; Back to My Orders</a>
+            <div class="mt-2">
+                <a href="/customer/order-invoice.php?id=<?php echo (int) $order['id']; ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">View Invoice</a>
+            </div>
         </div>
 
         <div class="row g-4">
@@ -139,6 +144,12 @@ include __DIR__ . '/../includes/header.php';
                         <span>Shipping</span>
                         <span><?php echo $symbol . number_format((float)$order['shipping_cost'], 2); ?></span>
                     </div>
+                    <?php if (!empty($gst['enabled'])): ?>
+                    <div class="d-flex justify-content-between text-muted small">
+                        <span>GST @<?php echo number_format((float) $gst['rate'], 0); ?>% (included)</span>
+                        <span><?php echo $symbol . number_format((float) $gst['gst_amount'], 2); ?></span>
+                    </div>
+                    <?php endif; ?>
                     <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
                         <span>Total</span>
                         <span><?php echo $symbol . number_format((float)$order['total'], 2); ?> <?php echo e($order['currency']); ?></span>
