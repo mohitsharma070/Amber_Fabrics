@@ -164,13 +164,16 @@ if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'
 $selectedPayment = in_array((string) ($old['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $old['payment_method']
     : 'cod';
+$selectedOnlineMethod = in_array((string) ($old['online_method'] ?? 'upi'), ['upi', 'card', 'paypal', 'emi'], true)
+    ? (string) ($old['online_method'] ?? 'upi')
+    : 'upi';
 $codFeeApply = ($selectedPayment === 'cod') ? 1 : 0;
 $countryForCalc = trim((string) ($old['country'] ?? ''));
 $isIndia = strcasecmp($countryForCalc, 'india') === 0;
 $baseShippingAmount = 0.00;
 $codFeeAmount = 0.00;
 if ($isIndia) {
-    $baseShippingAmount = ($selectedPayment === 'razorpay' && $subtotal >= 999) ? 0.00 : 70.00;
+    $baseShippingAmount = ($subtotal >= 999) ? 0.00 : 70.00;
     $codFeeAmount = ($selectedPayment === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
 }
 $shippingAmount = $baseShippingAmount + $codFeeAmount;
@@ -181,9 +184,14 @@ if (!$couponInfo['valid'] && $couponCode !== '') {
     unset($_SESSION['applied_coupon_code']);
 }
 $discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
-$totalAmount = max(0, $preDiscountTotal - $discountAmount);
-$taxableAmount = max(0.0, $subtotal - $discountAmount);
-$gst = order_gst_breakdown($taxableAmount, $countryForCalc);
+$discountAmount = min($discountAmount, $subtotal); // discount applies to product subtotal only — shipping is never discounted
+$taxableAmount  = max(0.0, $subtotal - $discountAmount);
+// Tax-inclusive pricing: GST is already embedded in product prices.
+// Total = (subtotal - discount) + shipping. No extra GST added.
+$totalAmount    = round($taxableAmount + $shippingAmount, 2);
+// Back-calculate GST included in price (for display info only)
+$gstRate        = (float) configured_gst_rate();
+$gstInclAmount  = ($isIndia && $gstRate > 0) ? round($taxableAmount * $gstRate / (100 + $gstRate), 2) : 0.0;
 $internationalQuoteUrl = '/international-buyers.php';
 if (!$isIndia) {
     $internationalQuoteUrl .= '?' . http_build_query([
@@ -228,6 +236,7 @@ include __DIR__ . '/includes/header.php';
                 <form method="POST" action="/place-order.php" novalidate>
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="order_nonce" value="<?php echo e($_SESSION['order_nonce']); ?>">
+                    <input type="hidden" name="online_method" id="online_method" value="<?php echo e($selectedOnlineMethod); ?>">
 
                     <div class="surface-panel p-4 mb-4">
                         <h5 class="mb-3">Delivery Details</h5>
@@ -281,19 +290,87 @@ include __DIR__ . '/includes/header.php';
 
                     <div class="surface-panel p-4 mb-4">
                         <h5 class="mb-3">Payment Method</h5>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="radio" name="payment_method" id="payment_cod" value="cod" <?php echo ($old['payment_method'] ?? 'cod') === 'cod' ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="payment_cod">
-                                <strong>Cash on Delivery (COD)</strong>
+                        <div class="checkout-payment-options">
+                            <label class="checkout-pay-option" for="payment_cod" data-pay-option="cod">
+                                <span class="checkout-pay-main">
+                                    <input class="form-check-input mt-0" type="radio" name="payment_method" id="payment_cod" value="cod" <?php echo ($old['payment_method'] ?? 'cod') === 'cod' ? 'checked' : ''; ?>>
+                                    <span>
+                                        <strong>Cash on Delivery (COD)</strong>
+                                        <small class="d-block text-muted">Pay in cash when your order is delivered.</small>
+                                    </span>
+                                </span>
                             </label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="payment_method" id="payment_razorpay" value="razorpay" <?php echo ($old['payment_method'] ?? '') === 'razorpay' ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="payment_razorpay">
-                                <strong>Pay Online (Razorpay)</strong>
+                            <div class="checkout-pay-panel" id="cod-panel">
+                                <div class="small text-muted">
+                                    COD handling fee of Rs 50 is applied for India orders.
+                                </div>
+                            </div>
+
+                            <label class="checkout-pay-option" for="payment_razorpay" data-pay-option="razorpay">
+                                <span class="checkout-pay-main">
+                                    <input class="form-check-input mt-0" type="radio" name="payment_method" id="payment_razorpay" value="razorpay" <?php echo ($old['payment_method'] ?? '') === 'razorpay' ? 'checked' : ''; ?>>
+                                    <span>
+                                        <strong>Pay Online (Razorpay)</strong>
+                                        <small class="d-block text-muted">Choose UPI, Card, Netbanking or EMI in secure checkout.</small>
+                                    </span>
+                                </span>
                             </label>
+                            <div class="checkout-pay-panel" id="razorpay-panel">
+                                <div class="checkout-online-methods">
+                                    <button type="button" class="checkout-online-method is-active" data-online-method="upi">UPI</button>
+                                    <button type="button" class="checkout-online-method" data-online-method="card">Card</button>
+                                    <button type="button" class="checkout-online-method" data-online-method="paypal">PayPal</button>
+                                    <button type="button" class="checkout-online-method" data-online-method="emi">EMI</button>
+                                </div>
+                                <noscript>
+                                    <div class="mb-3">
+                                        <label class="form-label mb-1" for="online_method_noscript">Online payment type</label>
+                                        <select class="form-select" id="online_method_noscript" name="online_method">
+                                            <option value="upi" <?php echo $selectedOnlineMethod === 'upi' ? 'selected' : ''; ?>>UPI</option>
+                                            <option value="card" <?php echo $selectedOnlineMethod === 'card' ? 'selected' : ''; ?>>Card</option>
+                                            <option value="paypal" <?php echo $selectedOnlineMethod === 'paypal' ? 'selected' : ''; ?>>PayPal</option>
+                                            <option value="emi" <?php echo $selectedOnlineMethod === 'emi' ? 'selected' : ''; ?>>EMI</option>
+                                        </select>
+                                    </div>
+                                </noscript>
+                                <div class="checkout-online-panels">
+                                    <div class="checkout-online-panel is-active" data-online-panel="upi">
+                                        <div class="small text-muted mb-2">Pay instantly with any UPI app in secure Razorpay checkout.</div>
+                                        <div class="checkout-brand-chips">
+                                            <span class="checkout-brand-chip">Google Pay</span>
+                                            <span class="checkout-brand-chip">PhonePe</span>
+                                            <span class="checkout-brand-chip">Paytm</span>
+                                            <span class="checkout-brand-chip">BHIM</span>
+                                        </div>
+                                    </div>
+                                    <div class="checkout-online-panel" data-online-panel="card">
+                                        <div class="small text-muted mb-2">Domestic and international cards are supported.</div>
+                                        <div class="checkout-brand-chips">
+                                            <span class="checkout-brand-chip">Visa</span>
+                                            <span class="checkout-brand-chip">Mastercard</span>
+                                            <span class="checkout-brand-chip">RuPay</span>
+                                            <span class="checkout-brand-chip">Amex</span>
+                                        </div>
+                                    </div>
+                                    <div class="checkout-online-panel" data-online-panel="paypal">
+                                        <div class="small text-muted mb-2">For international preference. Actual routing is handled in Razorpay flow.</div>
+                                        <div class="checkout-brand-chips">
+                                            <span class="checkout-brand-chip">PayPal</span>
+                                            <span class="checkout-brand-chip">Buyer Protection</span>
+                                        </div>
+                                    </div>
+                                    <div class="checkout-online-panel" data-online-panel="emi">
+                                        <div class="small text-muted mb-2">No-cost/standard EMI options shown based on card and bank eligibility.</div>
+                                        <div class="checkout-brand-chips">
+                                            <span class="checkout-brand-chip">HDFC</span>
+                                            <span class="checkout-brand-chip">ICICI</span>
+                                            <span class="checkout-brand-chip">SBI</span>
+                                            <span class="checkout-brand-chip">Axis</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="small text-muted mt-2">COD handling fee of Rs 50 is added automatically for COD orders.</div>
                     </div>
 
                     <?php if ($isIndia): ?>
@@ -360,12 +437,7 @@ include __DIR__ . '/includes/header.php';
                         <span>Discount</span>
                         <span class="text-success" id="summary_discount">- Rs <?php echo number_format($discountAmount, 2); ?></span>
                     </div>
-                    <?php if (!empty($gst['enabled'])): ?>
-                    <div class="d-flex justify-content-between mb-1 small text-muted">
-                        <span>GST @<?php echo number_format((float) $gst['rate'], 0); ?>% (included)</span>
-                        <span>Rs <?php echo number_format((float) $gst['gst_amount'], 2); ?></span>
-                    </div>
-                    <?php endif; ?>
+
                     <div class="d-flex justify-content-between mb-1">
                         <span>Shipping</span>
                         <span id="summary_shipping">Rs <?php echo number_format($baseShippingAmount, 2); ?></span>
@@ -379,7 +451,7 @@ include __DIR__ . '/includes/header.php';
                         <span id="summary_total">Rs <?php echo number_format($totalAmount, 2); ?></span>
                     </div>
                     <div class="text-muted small mt-2">
-                        India prepaid (Razorpay) above Rs 999: free shipping. India below Rs 999: Rs 70 shipping. COD adds Rs 50 handling fee.
+                        Free shipping on orders above Rs 999. Orders below Rs 999: Rs 70 shipping. COD adds Rs 50 handling fee.
                     </div>
                 </div>
             </div>
@@ -394,10 +466,19 @@ include __DIR__ . '/includes/header.php';
     var countryInput = document.querySelector('input[name="country"]');
     var subtotal = <?php echo json_encode((float) $subtotal); ?>;
     var discount = <?php echo json_encode((float) $discountAmount); ?>;
+    var gstRate  = <?php echo json_encode((float) $gstRate); ?>;
 
     var shippingEl = document.getElementById('summary_shipping');
     var codFeeEl = document.getElementById('summary_cod_fee');
     var totalEl = document.getElementById('summary_total');
+
+    var stateInput = document.querySelector('input[name="state"]');
+    var payOptionCards = document.querySelectorAll('[data-pay-option]');
+    var codPanel = document.getElementById('cod-panel');
+    var razorpayPanel = document.getElementById('razorpay-panel');
+    var onlineMethodButtons = document.querySelectorAll('.checkout-online-method');
+    var onlinePanels = document.querySelectorAll('.checkout-online-panel');
+    var onlineMethodInput = document.getElementById('online_method');
 
     if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
         return;
@@ -415,22 +496,63 @@ include __DIR__ . '/includes/header.php';
         var shipping = 0;
         var codFee = 0;
         if (isIndia) {
-            shipping = (paymentMethod === 'razorpay' && subtotal >= 999) ? 0 : 70;
+            shipping = (subtotal >= 999) ? 0 : 70;
             codFee = (paymentMethod === 'cod') ? 50 : 0;
         }
 
-        var preDiscount = subtotal + shipping + codFee;
-        var total = Math.max(0, preDiscount - discount);
+        // Tax-inclusive: total does NOT add extra GST
+        var taxable = Math.max(0, subtotal - discount);
+        var total = taxable + shipping + codFee;
 
         shippingEl.textContent = toMoney(shipping);
         codFeeEl.textContent = toMoney(codFee);
         totalEl.textContent = toMoney(total);
     }
 
+    function syncPaymentPanels() {
+        var selected = codRadio.checked ? 'cod' : 'razorpay';
+        payOptionCards.forEach(function (card) {
+            card.classList.toggle('is-active', card.getAttribute('data-pay-option') === selected);
+        });
+        if (codPanel) {
+            codPanel.classList.toggle('is-open', selected === 'cod');
+        }
+        if (razorpayPanel) {
+            razorpayPanel.classList.toggle('is-open', selected === 'razorpay');
+        }
+        if (onlineMethodInput && selected === 'cod') {
+            onlineMethodInput.value = '';
+        }
+    }
+
+    function activateOnlineMethod(method) {
+        onlineMethodButtons.forEach(function (btn) {
+            btn.classList.toggle('is-active', btn.getAttribute('data-online-method') === method);
+        });
+        onlinePanels.forEach(function (panel) {
+            panel.classList.toggle('is-active', panel.getAttribute('data-online-panel') === method);
+        });
+        if (onlineMethodInput) {
+            onlineMethodInput.value = method || 'upi';
+        }
+    }
+
     codRadio.addEventListener('change', syncSummary);
     razorpayRadio.addEventListener('change', syncSummary);
+    codRadio.addEventListener('change', syncPaymentPanels);
+    razorpayRadio.addEventListener('change', syncPaymentPanels);
     countryInput.addEventListener('input', syncSummary);
+    onlineMethodButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            activateOnlineMethod(btn.getAttribute('data-online-method'));
+            razorpayRadio.checked = true;
+            syncPaymentPanels();
+            syncSummary();
+        });
+    });
     syncSummary();
+    activateOnlineMethod(onlineMethodInput && onlineMethodInput.value ? onlineMethodInput.value : 'upi');
+    syncPaymentPanels();
 })();
 </script>
 

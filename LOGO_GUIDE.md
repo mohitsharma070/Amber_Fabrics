@@ -23,7 +23,7 @@ Your website now features a professional brand identity system with multiple log
 **File:** `images/logo-brand.svg`  
 - Same layout as light version
 - Deep teal-green and gold color scheme
-- Perfect for business cards, letterheads, documents, invoices
+- Perfect for business cards, letterheads, and documents
 - Print-ready for fabric labels and packaging
 
 ## 🎯 Design Philosophy

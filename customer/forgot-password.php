@@ -61,7 +61,7 @@ include __DIR__ . '/../includes/header.php';
                     <div class="alert alert-success">
                         If that email exists, we've sent a password reset link. Check your inbox.
                     </div>
-                    <p class="text-center"><a href="/customer/login.php">Back to login</a></p>
+                    <p class="text-center"><a href="/customer/login.php" class="app-back-link">&larr; Back to login</a></p>
                 <?php else: ?>
                     <?php if ($errors): ?>
                         <div class="alert alert-danger">Please fix the errors below.</div>
@@ -78,7 +78,7 @@ include __DIR__ . '/../includes/header.php';
                             <button type="submit" class="btn btn-primary w-100">Send Reset Link</button>
                         </form>
                     </div>
-                    <p class="text-center mt-3"><a href="/customer/login.php">Back to login</a></p>
+                    <p class="text-center mt-3"><a href="/customer/login.php" class="app-back-link">&larr; Back to login</a></p>
                 <?php endif; ?>
             </div>
         </div>

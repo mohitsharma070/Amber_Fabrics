@@ -74,7 +74,7 @@ include __DIR__ . '/../includes/header.php';
                         If that email address has an unverified account, a new verification link has been sent.
                         Please check your inbox (and spam folder).
                     </div>
-                    <p class="text-center"><a href="/customer/login.php">Back to Login</a></p>
+                    <p class="text-center"><a href="/customer/login.php" class="app-back-link">&larr; Back to Login</a></p>
                 <?php else: ?>
                     <?php if (!empty($errors['_rate_limit'])): ?>
                         <div class="alert alert-danger"><?php echo e($errors['_rate_limit']); ?></div>

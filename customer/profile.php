@@ -137,7 +137,7 @@ include __DIR__ . '/../includes/header.php';
                 </div>
 
                 <div class="mt-3 text-center">
-                    <a href="/customer/orders.php">&larr; Back to My Orders</a>
+                    <a href="/customer/orders.php" class="app-back-link">&larr; Back to My Orders</a>
                 </div>
                 <div class="mt-2 text-center">
                     <form method="POST" action="/customer/logout.php" class="d-inline">

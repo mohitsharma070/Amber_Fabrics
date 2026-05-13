@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/coupon-functions.php';
 
 require_customer();
 
@@ -78,7 +79,7 @@ try {
 
     if (($order['payment_status'] ?? '') === 'paid') {
         $conn->commit();
-        unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id']);
+        unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
         unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
@@ -201,7 +202,7 @@ try {
 
     $conn->commit();
 
-    unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id']);
+    unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
     unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
     if ($customerId > 0) {
         cart_clear_db($conn, $customerId);

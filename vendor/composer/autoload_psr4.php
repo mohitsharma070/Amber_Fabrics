@@ -6,6 +6,9 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'WpOrg\\Requests\\' => array($vendorDir . '/rmccue/requests/src'),
+    'Razorpay\\Tests\\' => array($vendorDir . '/razorpay/razorpay/tests'),
+    'Razorpay\\Api\\' => array($vendorDir . '/razorpay/razorpay/src'),
+    'Picqer\\Barcode\\' => array($vendorDir . '/picqer/php-barcode-generator/src'),
     'PHPMailer\\PHPMailer\\' => array($vendorDir . '/phpmailer/phpmailer/src'),
-    'Razorpay\\Api\\'       => array($vendorDir . '/razorpay/razorpay/src'),
 );

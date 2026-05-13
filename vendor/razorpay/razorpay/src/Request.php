@@ -2,78 +2,87 @@
 
 namespace Razorpay\Api;
 
+use Requests;
 use Exception;
+use Requests_Hooks;
 use Razorpay\Api\Errors;
 use Razorpay\Api\Errors\ErrorCode;
 
+
+// Available since PHP 5.5.19 and 5.6.3
+// https://git.io/fAMVS | https://secure.php.net/manual/en/curl.constants.php
+if (defined('CURL_SSLVERSION_TLSv1_1') === false)
+{
+    define('CURL_SSLVERSION_TLSv1_1', 5);
+}
+
 /**
- * Request class using native PHP cURL (no rmccue/requests dependency)
+ * Request class to communicate to the request libarary
  */
 class Request
 {
+    public static $OAUTH = 'oauth';
+    public static $API = 'api';
+    protected $authType;
+    public function __construct($authType = null)
+    {
+        $this->authType = $authType ?? self::$API;
+    }
     /**
      * Headers to be sent with every http request to the API
      * @var array
      */
     protected static $headers = array(
-        'Razorpay-API'  =>  1
+        'Razorpay-API'  =>  1    
     );
 
     /**
-     * Fires a request to the API using native cURL
+     * Fires a request to the API
+     * @param  string   $method HTTP Verb
+     * @param  string   $url    Relative URL for the request
+     * @param  array $data Data to be passed along the request
+     * @param  array $additionHeader headers to be passed along the request
+     * @param  string $apiVersion version to be passed along the request
+     * @return array Response data in array format. Not meant
+     * to be used directly
      */
-    public function request($method, $url, $data = array())
-    {
-        $url = Api::getFullUrl($url);
+    public function request($method, $url, $data = array(), $apiVersion = "v1")
+    { 
+        if($this->authType == self::$OAUTH){
+          $url = OAuth::getFullUrl($url, $apiVersion);
+        }else{
+          $url = Api::getFullUrl($url, $apiVersion);
+        }
 
+        $hooks = new Requests_Hooks();
+
+        $hooks->register('curl.before_send', array($this, 'setCurlSslOpts'));
+
+        $options = array(
+            'hook' => $hooks,
+            'timeout' => 60
+        );
+        
         $headers = $this->getRequestHeaders();
 
-        // Build cURL header array
-        $curlHeaders = array('Content-Type: application/json');
-        foreach ($headers as $key => $value) {
-            $curlHeaders[] = $key . ': ' . $value;
+        if(!Api::getToken()){
+          $options['auth'] = array(Api::getKey(), Api::getSecret());
+        }
+        
+        if(Api::getToken()){
+          $token = Api::getToken();  
+          $headers['Authorization'] = "Bearer $token";   
         }
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-        curl_setopt($ch, CURLOPT_USERPWD, Api::getKey() . ':' . Api::getSecret());
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $curlHeaders);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-
-        $method = strtoupper($method);
-        if ($method === 'POST') {
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        } elseif ($method === 'PATCH' || $method === 'PUT') {
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        } elseif ($method === 'DELETE') {
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
-        } elseif (!empty($data)) {
-            $url .= '?' . http_build_query($data);
-            curl_setopt($ch, CURLOPT_URL, $url);
-        }
-
-        $body       = curl_exec($ch);
-        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError  = curl_error($ch);
-        curl_close($ch);
-
-        if ($body === false) {
-            throw new Errors\ServerError(
-                'cURL request failed: ' . $curlError,
-                ErrorCode::SERVER_ERROR,
-                0
-            );
-        }
-
-        // Wrap into a simple object matching the checkErrors interface
-        $response = (object) ['body' => $body, 'status_code' => $statusCode];
+        $response = Requests::request($url, $headers, $data, $method, $options);  
         $this->checkErrors($response);
 
-        return json_decode($body, true);
+        return json_decode($response->body, true);
+    }
+
+    public function setCurlSslOpts($curl)
+    {
+        curl_setopt($curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1);
     }
 
     /**
@@ -85,6 +94,15 @@ class Request
     public static function addHeader($key, $value)
     {
         self::$headers[$key] = $value;
+    }
+
+    /**
+     * Removes an additional header from all API requests
+     * @param string $key   Header key
+     * @return null
+     */
+    public static function removeHeader($key){
+        unset(self::$headers[$key]);
     }
 
     /**
@@ -123,6 +141,13 @@ class Request
 
     protected function processError($body, $httpStatusCode, $response)
     {
+        if(isset($body['error']) && $this->authType == self::$OAUTH){
+          if($httpStatusCode >= 400 && $httpStatusCode < 500){
+            $body['error']['code'] = ErrorCode::BAD_REQUEST_ERROR;
+          }else if($httpStatusCode >= 500){
+            $body['error']['code'] = ErrorCode::SERVER_ERROR;
+          }
+        }
         $this->verifyErrorFormat($body, $httpStatusCode);
 
         $code = $body['error']['code'];

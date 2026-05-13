@@ -9,10 +9,10 @@
 
 ---
 
-### For Documents & Invoices
+### For Documents
 **USE:** `logo-brand.svg` (Full logo - dark version)  
 **Why:** Complete branding, professional for business documents  
-**Where:** Letterheads, invoices, quotations, export documents
+**Where:** Letterheads, quotations, export documents
 
 ---
 

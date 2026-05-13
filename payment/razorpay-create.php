@@ -13,6 +13,10 @@ if (empty($_SESSION['pending_order_id'])) {
 $orderId = (int) $_SESSION['pending_order_id'];
 $orderNumber = (string) ($_SESSION['pending_order_number'] ?? '');
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+$preferredOnlineMethod = strtolower(trim((string) ($_SESSION['pending_online_method'] ?? '')));
+if (!in_array($preferredOnlineMethod, ['upi', 'card', 'paypal', 'emi'], true)) {
+    $preferredOnlineMethod = '';
+}
 
 $stmt = $conn->prepare(
     "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status
@@ -159,6 +163,20 @@ var options = {
         email: <?php echo json_encode((string) ($order['customer_email'] ?? '')); ?>,
         contact: <?php echo json_encode((string) ($order['customer_phone'] ?? '')); ?>
     },
+    method: (function () {
+        var pref = <?php echo json_encode($preferredOnlineMethod); ?>;
+        if (pref === 'upi') {
+            return { upi: true, card: false, netbanking: false, wallet: false, emi: false, paylater: false };
+        }
+        if (pref === 'card') {
+            return { upi: false, card: true, netbanking: false, wallet: false, emi: false, paylater: false };
+        }
+        if (pref === 'emi') {
+            return { upi: false, card: false, netbanking: false, wallet: false, emi: true, paylater: false };
+        }
+        // PayPal is UI preference only; Razorpay does not provide native PayPal rails.
+        return undefined;
+    })(),
     theme: { color: '#0f766e' },
     handler: function (response) {
         postTo('/payment/razorpay-verify.php', {

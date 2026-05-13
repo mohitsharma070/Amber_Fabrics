@@ -66,6 +66,9 @@ $shipping = json_decode($order['shipping_address'] ?? '{}', true) ?: [];
 $symbol   = $order['currency'] === 'USD' ? '$' : 'Rs ';
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
 $gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
+$displayShipping = (float) (($order['shipping_amount'] ?? 0) > 0 ? $order['shipping_amount'] : ($order['shipping_cost'] ?? 0));
+$displayTotal = (float) (($order['total_amount'] ?? 0) > 0 ? $order['total_amount'] : ($order['total'] ?? 0));
+$displayDiscount = (float) ($order['discount_amount'] ?? 0);
 
 $statusLabels = [
     'pending'    => ['label' => 'Pending',    'class' => 'warning'],
@@ -99,10 +102,7 @@ include __DIR__ . '/../includes/header.php';
 <section class="section-block">
     <div class="container">
         <div class="mb-3">
-            <a href="/customer/orders.php" class="text-muted small">&larr; Back to My Orders</a>
-            <div class="mt-2">
-                <a href="/customer/order-invoice.php?id=<?php echo (int) $order['id']; ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">View Invoice</a>
-            </div>
+            <a href="/customer/orders.php" class="app-back-link">&larr; Back to My Orders</a>
         </div>
 
         <div class="row g-4">
@@ -142,17 +142,21 @@ include __DIR__ . '/../includes/header.php';
                     </div>
                     <div class="d-flex justify-content-between text-muted small">
                         <span>Shipping</span>
-                        <span><?php echo $symbol . number_format((float)$order['shipping_cost'], 2); ?></span>
+                        <span><?php echo $symbol . number_format($displayShipping, 2); ?></span>
+                    </div>
+                    <div class="d-flex justify-content-between text-muted small">
+                        <span>Discount</span>
+                        <span>- <?php echo $symbol . number_format($displayDiscount, 2); ?></span>
                     </div>
                     <?php if (!empty($gst['enabled'])): ?>
                     <div class="d-flex justify-content-between text-muted small">
-                        <span>GST @<?php echo number_format((float) $gst['rate'], 0); ?>% (included)</span>
+                        <span>Including GST</span>
                         <span><?php echo $symbol . number_format((float) $gst['gst_amount'], 2); ?></span>
                     </div>
                     <?php endif; ?>
                     <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
                         <span>Total</span>
-                        <span><?php echo $symbol . number_format((float)$order['total'], 2); ?> <?php echo e($order['currency']); ?></span>
+                        <span><?php echo $symbol . number_format($displayTotal, 2); ?> <?php echo e($order['currency']); ?></span>
                     </div>
                 </div>
 
@@ -217,6 +221,19 @@ include __DIR__ . '/../includes/header.php';
                         <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                         <button type="submit" class="btn btn-outline-danger w-100">Cancel Order</button>
                     </form>
+                    <?php endif; ?>
+                    <?php
+                    $invoiceStatuses = ['confirmed','processing','packed','shipped','delivered'];
+                    $isCod = strtolower((string) ($order['payment_method'] ?? '')) === 'cod';
+                    $showInvoice = $isCod
+                        || $order['payment_status'] === 'paid'
+                        || in_array($effectiveOrderStatus, $invoiceStatuses, true);
+                    ?>
+                    <?php if ($showInvoice): ?>
+                    <a href="/invoice.php?order=<?php echo e($order['order_number']); ?>" target="_blank"
+                       class="btn btn-outline-secondary w-100 mt-2">
+                        View / Download Invoice
+                    </a>
                     <?php endif; ?>
                     <?php if ($canRequestReturn): ?>
                     <form method="POST" action="/customer/request-return.php" class="mt-2" enctype="multipart/form-data">

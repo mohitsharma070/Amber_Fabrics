@@ -41,7 +41,7 @@ Professional logo system for Amber Fabrics - a handloom and eco-friendly textile
 - Letterheads
 - Product packaging (light backgrounds)
 - Export documents
-- Invoices and quotations
+- Business documents and quotations
 - Fabric labels on light materials
 
 ---
@@ -105,7 +105,7 @@ Professional logo system for Amber Fabrics - a handloom and eco-friendly textile
 **Alternative:** Use full `logo-brand-light.svg` and remove text duplication
 
 ### Business Documents
-- **Invoices:** Use `logo-brand.svg` (top left)
+- **Billing documents:** Use `logo-brand.svg` (top left)
 - **Quotations:** Use `logo-brand.svg` (letterhead)
 - **Export Documents:** Use `logo-brand.svg`
 

@@ -35,6 +35,7 @@ $pincode = trim($_POST['pincode'] ?? '');
 $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
+$onlineMethod = strtolower(trim((string) ($_POST['online_method'] ?? '')));
 $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 
@@ -74,6 +75,7 @@ if ($country !== '' && strcasecmp($country, 'india') !== 0) {
     $errors['country'] = 'International checkout is inquiry-only for now. Please use Request International Quote.';
 }
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) { $errors['payment_method'] = 'Invalid payment method.'; }
+if (!in_array($onlineMethod, ['', 'upi', 'card', 'paypal', 'emi'], true)) { $onlineMethod = ''; }
 if (strlen($orderNotes) > 500) { $errors['order_notes'] = 'Notes must be 500 characters or fewer.'; }
 
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION['cart'])) {
@@ -87,6 +89,7 @@ if (!empty($errors)) {
 
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
+$cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
 $ids = array_map('intval', array_keys($cart));
 $ids = array_values(array_filter($ids, static fn($v) => $v > 0));
 
@@ -165,20 +168,30 @@ try {
         $lineTotal = round($unitPrice * $qty, 2);
         $subtotal = round($subtotal + $lineTotal, 2);
 
+        // Preserve bundle display info for invoice (e.g. "1 × 5m")
+        $bundleMeterLength = null;
+        $bundleQtyVal      = null;
+        if ($unitType === 'meter' && isset($cartMeterMap[$productId]) && is_numeric($cartMeterMap[$productId]) && (float) $cartMeterMap[$productId] > 0) {
+            $bundleMeterLength = round((float) $cartMeterMap[$productId], 2);
+            $bundleQtyVal      = max(1, (int) round($qty / $bundleMeterLength));
+        }
+
         $orderItems[] = [
-            'product_id' => $productId,
-            'product_name' => (string) ($product['name'] ?? ''),
-            'size' => $selectedSize,
-            'color' => (string) ($product['color'] ?? ''),
-            'unit_type' => $unitType,
-            'quantity' => $qty,
-            'price' => $unitPrice,
-            'total' => $lineTotal,
-            'sku' => (string) ($product['sku'] ?? ''),
+            'product_id'     => $productId,
+            'product_name'   => (string) ($product['name'] ?? ''),
+            'size'           => $selectedSize,
+            'color'          => (string) ($product['color'] ?? ''),
+            'unit_type'      => $unitType,
+            'quantity'       => $qty,
+            'price'          => $unitPrice,
+            'total'          => $lineTotal,
+            'sku'            => (string) ($product['sku'] ?? ''),
+            'bundle_quantity'  => $bundleQtyVal,
+            'meter_length'     => $bundleMeterLength,
         ];
     }
 
-    $baseShippingAmount = ($paymentMethod === 'razorpay' && $subtotal >= 999) ? 0.00 : 70.00;
+    $baseShippingAmount = ($subtotal >= 999) ? 0.00 : 70.00;
     $codFeeAmount = ($paymentMethod === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
     $shippingAmount = $baseShippingAmount + $codFeeAmount;
     $preDiscountTotal = $subtotal + $shippingAmount;
@@ -216,7 +229,10 @@ try {
         }
     }
 
-    $totalAmount = max(0, $preDiscountTotal - $discountAmount);
+    $discountAmount     = min($discountAmount, $subtotal); // discount applies to product subtotal only — shipping is never discounted
+    $taxableAmountOrder = max(0.0, $subtotal - $discountAmount);
+    // Tax-inclusive pricing: GST is already in product prices. Total = taxable + shipping only.
+    $totalAmount        = round($taxableAmountOrder + $shippingAmount, 2);
 
     $orderNumber = 'VT' . date('YmdHis') . strtoupper(substr(bin2hex(random_bytes(3)), 0, 4));
 
@@ -265,38 +281,31 @@ try {
     $insertOrderItem = $conn->prepare(
         "INSERT INTO order_items (
             order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
-            fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total,
+            bundle_quantity, meter_length
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
     foreach ($orderItems as $item) {
-        $pid = (int) $item['product_id'];
-        $pname = $item['product_name'];
-        $psize = $item['size'];
-        $pcolor = $item['color'];
-        $punit = $item['unit_type'];
-        $qty = (float) $item['quantity'];
-        $price = (float) $item['price'];
-        $total = (float) $item['total'];
-        $sku = $item['sku'];
+        $pid       = (int) $item['product_id'];
+        $pname     = $item['product_name'];
+        $psize     = $item['size'];
+        $pcolor    = $item['color'];
+        $punit     = $item['unit_type'];
+        $qty       = (float) $item['quantity'];
+        $price     = (float) $item['price'];
+        $total     = (float) $item['total'];
+        $sku       = $item['sku'];
+        $bQty      = isset($item['bundle_quantity']) ? (int) $item['bundle_quantity'] : null;
+        $bMeter    = isset($item['meter_length'])    ? (float) $item['meter_length']   : null;
 
         $insertOrderItem->bind_param(
-            'iissssdddissddd',
-            $orderId,
-            $pid,
-            $pname,
-            $psize,
-            $pcolor,
-            $punit,
-            $qty,
-            $price,
-            $total,
-            $pid,
-            $pname,
-            $sku,
-            $qty,
-            $price,
-            $total
+            'iissssdddissdddid',
+            $orderId, $pid, $pname, $psize, $pcolor, $punit,
+            $qty, $price, $total,
+            $pid, $pname, $sku,
+            $qty, $price, $total,
+            $bQty, $bMeter
         );
         $insertOrderItem->execute();
 
@@ -365,6 +374,7 @@ try {
         $_SESSION['pending_order_id'] = $orderId;
         $_SESSION['pending_order_number'] = $orderNumber;
         $_SESSION['pending_coupon_id'] = $couponId;
+        $_SESSION['pending_online_method'] = $onlineMethod;
         redirect('/payment/razorpay-create.php');
     }
 
