@@ -56,7 +56,7 @@ This repository was missing a top-level setup guide. Important steps that were n
 
 - XAMPP placement (`htdocs` path)
 - phpMyAdmin schema import
-- `.env` creation/update
+- `config/app-config.php` creation/update from `config/app-config.example.php`
 - Composer dependency install
 - optional migration/setup script usage
 - admin bootstrap credentials behavior
@@ -90,7 +90,7 @@ This installs:
 
 ## Step C: Configure environment
 
-1. Open `config/app-config.php`.
+1. Copy `config/app-config.example.php` to `config/app-config.php`.
 2. Edit the `local` section values:
 
 ```env
@@ -127,21 +127,17 @@ Get these from Razorpay Dashboard in **Test Mode**:
 
 This creates DB + tables.
 
-## Step E: Optional setup/migration scripts
+## Step E: Optional setup script
 
-Two helper scripts exist:
+One helper script exists:
 
 - `database/setup.php` (CLI-only table ensure + bootstrap admin when admins table is empty)
-- `database/migrate.php` (adds/migrates ecommerce columns/tables for existing DBs)
 
 Run from project root if needed:
 
 ```bash
 php database/setup.php
-php database/migrate.php
 ```
-
-Use `migrate.php` mainly when upgrading older deployments.
 
 ## Step F: Open the site
 
@@ -176,7 +172,7 @@ Before first real use:
 
 ## 7) Troubleshooting
 
-- **`Access denied for user`**: fix `DB_USER` / `DB_PASSWORD` in `.env`.
+- **`Access denied for user`**: fix `DB_USER` / `DB_PASSWORD` in `config/app-config.php`.
 - **`Unknown database fabric_export`**: import `database/schema.sql` or create DB manually.
 - **`Class not found` (Razorpay/PHPMailer)**: run `composer install`.
 - **Blank page / 500**: check XAMPP Apache/PHP error logs.

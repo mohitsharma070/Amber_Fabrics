@@ -267,13 +267,6 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1
         <span><?php echo !empty($shipment['courier_name']) ? e($shipment['courier_name']) : ''; ?></span>
     </div>
 
-    <!-- COD collect warning -->
-    <?php if ($isCod && $codNotice !== ''): ?>
-    <div class="slip-cod-notice">
-        &#9888; <?php echo nl2br(e($codNotice)); ?>
-    </div>
-    <?php endif; ?>
-
     <!-- Unboxing notice -->
     <?php if ($unboxingNotice !== ''): ?>
     <div class="slip-unboxing-notice">
