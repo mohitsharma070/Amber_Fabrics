@@ -56,21 +56,9 @@ if ($unitType === 'meter') {
     }
 }
 
-$sizeOptions = [];
-if (!empty($product['size'])) {
-    $parts = preg_split('/[,\|\/]+/', (string) $product['size']);
-    if (is_array($parts)) {
-        foreach ($parts as $part) {
-            $clean = trim((string) $part);
-            if ($clean !== '') {
-                $sizeOptions[] = $clean;
-            }
-        }
-    }
-    $sizeOptions = array_values(array_unique($sizeOptions));
-}
+$sizeOptions = parse_size_options((string) ($product['size'] ?? ''));
 
-if ($unitType === 'piece' && !empty($sizeOptions)) {
+if (!empty($sizeOptions)) {
     if ($selectedSize === '') {
         if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Please select a size.']); exit; }
         flash('error', 'Please select a size.');

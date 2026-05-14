@@ -98,6 +98,7 @@ try {
         );
         $updateOrder->bind_param('ssi', $note, $note, $orderId);
         $updateOrder->execute();
+        log_order_activity($conn, $orderId, 'payment_failed', 'customer', $customerId, 'customer', $note);
     }
 
     $conn->commit();

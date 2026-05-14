@@ -17,31 +17,30 @@ if ($orderId <= 0) {
     redirect('/customer/orders.php');
 }
 
-// Only allow retry for the customer's own payable order (not cancelled/delivered/etc.)
-// that is payment-pending/failed and placed within the last 30 minutes.
-$stmt = $conn->prepare(
-    "SELECT id, order_number, payment_method, order_status, order_notes
-     FROM orders
-     WHERE id = ?
-       AND customer_id = ?
-       AND payment_status IN ('pending', 'failed')
-       AND order_status IN ('pending', 'confirmed')
-       AND payment_method = 'razorpay'
-       AND created_at >= (NOW() - INTERVAL 30 MINUTE)
-     LIMIT 1"
-);
-$stmt->bind_param('ii', $orderId, $customerId);
-$stmt->execute();
-$order = $stmt->get_result()->fetch_assoc();
-
-if (!$order) {
-    flash('error', 'This order is no longer eligible for retry. Please place a new order.');
-    redirect('/customer/orders.php');
-}
-
 // Normalize failed retry back to pending so the same order can continue payment.
 $conn->begin_transaction();
 try {
+    // Only allow retry for the customer's own payable order (not cancelled/delivered/etc.)
+    // that is payment-pending/failed and placed within the last 30 minutes.
+    $stmt = $conn->prepare(
+        "SELECT id, order_number, payment_method, order_status, order_notes
+         FROM orders
+         WHERE id = ?
+           AND customer_id = ?
+           AND payment_status IN ('pending', 'failed')
+           AND order_status IN ('pending', 'confirmed')
+           AND payment_method = 'razorpay'
+           AND created_at >= (NOW() - INTERVAL 30 MINUTE)
+         LIMIT 1
+         FOR UPDATE"
+    );
+    $stmt->bind_param('ii', $orderId, $customerId);
+    $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+    if (!$order) {
+        throw new RuntimeException('This order is no longer eligible for retry. Please place a new order.');
+    }
+
     $resetOrder = $conn->prepare(
         "UPDATE orders
          SET payment_status = 'pending',
@@ -59,11 +58,13 @@ try {
     );
     $resetPayment->bind_param('i', $orderId);
     $resetPayment->execute();
+    log_order_activity($conn, $orderId, 'payment_retry_started', 'customer', $customerId, 'customer', 'Customer retried Razorpay payment.');
     $conn->commit();
 } catch (Throwable $e) {
     $conn->rollback();
     error_log('[retry-payment] failed to reset order/payment status: ' . $e->getMessage());
-    flash('error', 'Unable to retry payment right now. Please try again.');
+    $msg = $e->getMessage();
+    flash('error', $msg !== '' ? $msg : 'Unable to retry payment right now. Please try again.');
     redirect('/customer/orders.php');
 }
 

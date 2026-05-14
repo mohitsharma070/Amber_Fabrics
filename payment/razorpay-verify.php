@@ -84,83 +84,34 @@ try {
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
 
-    $itemsStmt = $conn->prepare(
-        "SELECT fabric_id, unit_type, quantity_meters
-         FROM order_items
-         WHERE order_id = ?"
-    );
-    $itemsStmt->bind_param('i', $orderId);
-    $itemsStmt->execute();
-    $items = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
-    if (empty($items)) {
-        throw new RuntimeException('No order items found for stock update.');
-    }
-
-    $stockCheckStmt = $conn->prepare(
-        "SELECT id, name, stock, stock_meters
-         FROM fabrics
-         WHERE id = ?
-         FOR UPDATE"
-    );
-
-    foreach ($items as $item) {
-        $fabricId = (int) ($item['fabric_id'] ?? 0);
-        $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-            ? (string) $item['unit_type']
-            : 'meter';
-        $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
-        if ($fabricId <= 0) {
-            throw new RuntimeException('Invalid fabric in order item.');
-        }
-
-        $stockCheckStmt->bind_param('i', $fabricId);
-        $stockCheckStmt->execute();
-        $fabric = $stockCheckStmt->get_result()->fetch_assoc();
-        if (!$fabric) {
-            throw new RuntimeException('Fabric not found for stock update.');
-        }
-
-        // Only decrement the column that actually has stock to prevent double-deduction
-        $useMeters = $itemUnit === 'meter';
-        $availableStock = $useMeters ? (float) ($fabric['stock_meters'] ?? 0) : (float) $fabric['stock'];
-        if ($availableStock < $qty) {
-            throw new RuntimeException('Insufficient stock during payment confirmation.');
-        }
-
-        if ($useMeters) {
-            $stockUpdateStmt = $conn->prepare(
-                "UPDATE fabrics SET stock_meters = stock_meters - ? WHERE id = ? AND stock_meters >= ?"
-            );
-            $stockUpdateStmt->bind_param('did', $qty, $fabricId, $qty);
-        } else {
-            $stockUpdateStmt = $conn->prepare(
-                "UPDATE fabrics SET stock = stock - ? WHERE id = ? AND stock >= ?"
-            );
-            $deductQty = round((float) $qty, 2);
-            $stockUpdateStmt->bind_param('did', $deductQty, $fabricId, $deductQty);
-        }
-        $stockUpdateStmt->execute();
-        if ($conn->affected_rows === 0) {
-            throw new RuntimeException('Stock update conflict for fabric ' . $fabricId . '. Please try again.');
-        }
-    }
-
     $updateOrder = $conn->prepare(
         "UPDATE orders
          SET payment_id = ?, payment_status = 'paid', order_status = 'confirmed', status = 'confirmed'
-         WHERE id = ?"
+         WHERE id = ? AND payment_status IN ('pending', 'failed')"
     );
     $updateOrder->bind_param('si', $paymentId, $orderId);
     $updateOrder->execute();
+    if ($conn->affected_rows === 0 && (string) ($order['payment_status'] ?? '') !== 'paid') {
+        throw new RuntimeException('Order payment state changed unexpectedly during verification.');
+    }
 
     $updatePayment = $conn->prepare(
         "UPDATE payments
          SET payment_status = 'paid', transaction_id = ?, razorpay_order_id = ?, razorpay_payment_id = ?, razorpay_signature = ?
-         WHERE order_id = ? AND payment_method = 'razorpay'"
+         WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending', 'failed')"
     );
     $updatePayment->bind_param('ssssi', $paymentId, $rzpOrderId, $paymentId, $signature, $orderId);
     $updatePayment->execute();
+
+    log_order_activity(
+        $conn,
+        $orderId,
+        'payment_captured',
+        'customer',
+        $customerId,
+        'customer',
+        'Razorpay payment id: ' . $paymentId
+    );
 
     $pendingCouponId = (int) ($_SESSION['pending_coupon_id'] ?? 0);
     $resolvedCouponId = $pendingCouponId;
@@ -198,6 +149,9 @@ try {
 
     if ($resolvedCouponId > 0 && !$couponUpdated) {
         throw new RuntimeException('Coupon usage limit reached.');
+    }
+    if ($couponUpdated) {
+        log_order_activity($conn, $orderId, 'coupon_consumed', 'system', 0, 'system', 'Coupon usage count incremented after payment.');
     }
 
     $conn->commit();

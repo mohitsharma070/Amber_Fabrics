@@ -83,13 +83,8 @@ if ($countryForCalc === '' && !empty($_SESSION['customer_id'])) {
 }
 $isIndia = strcasecmp($countryForCalc, 'india') === 0;
 
-$baseShippingAmount = 0.00;
-$codFeeAmount = 0.00;
-if ($isIndia) {
-    $baseShippingAmount = ($selectedPayment === 'razorpay' && $subtotal >= 999) ? 0.00 : 70.00;
-    $codFeeAmount = ($selectedPayment === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
-}
-$preDiscountTotal = round($subtotal + $baseShippingAmount + $codFeeAmount, 2);
+$shipping = checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
+$preDiscountTotal = round($subtotal + (float) $shipping['shipping_total'], 2);
 
 $customerIdForCoupon = (int) ($_SESSION['customer_id'] ?? 0);
 $discountInfo = get_active_coupon_discount_for_customer($conn, $code, $preDiscountTotal, $customerIdForCoupon);

@@ -35,7 +35,7 @@ $pincode = trim($_POST['pincode'] ?? '');
 $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
-$onlineMethod = strtolower(trim((string) ($_POST['online_method'] ?? '')));
+$onlineMethod = sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
 $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 
@@ -75,7 +75,6 @@ if ($country !== '' && strcasecmp($country, 'india') !== 0) {
     $errors['country'] = 'International checkout is inquiry-only for now. Please use Request International Quote.';
 }
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) { $errors['payment_method'] = 'Invalid payment method.'; }
-if (!in_array($onlineMethod, ['', 'upi', 'card', 'paypal', 'emi'], true)) { $onlineMethod = ''; }
 if (strlen($orderNotes) > 500) { $errors['order_notes'] = 'Notes must be 500 characters or fewer.'; }
 
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION['cart'])) {
@@ -138,21 +137,9 @@ try {
         }
 
         $selectedSize = trim((string) ($cartSizes[$productId] ?? ''));
-        if (!empty($product['size'])) {
-            $options = preg_split('/[,\|\/]+/', (string) $product['size']);
-            $validSizes = [];
-            if (is_array($options)) {
-                foreach ($options as $opt) {
-                    $clean = trim((string) $opt);
-                    if ($clean !== '') {
-                        $validSizes[] = $clean;
-                    }
-                }
-            }
-            $validSizes = array_values(array_unique($validSizes));
-            if (!empty($validSizes) && !in_array($selectedSize, $validSizes, true)) {
-                throw new RuntimeException('Please reselect product size before placing order.');
-            }
+        $validSizes = parse_size_options((string) ($product['size'] ?? ''));
+        if (!empty($validSizes) && !in_array($selectedSize, $validSizes, true)) {
+            throw new RuntimeException('Please reselect product size before placing order.');
         }
 
         $availableStock = ($unitType === 'piece' || $unitType === 'set')
@@ -191,9 +178,10 @@ try {
         ];
     }
 
-    $baseShippingAmount = ($subtotal >= 999) ? 0.00 : 70.00;
-    $codFeeAmount = ($paymentMethod === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
-    $shippingAmount = $baseShippingAmount + $codFeeAmount;
+    $shipping = checkout_shipping_breakdown((float) $subtotal, $country, $paymentMethod, $codFeeApply === 1);
+    $baseShippingAmount = (float) $shipping['base_shipping'];
+    $codFeeAmount = (float) $shipping['cod_fee'];
+    $shippingAmount = (float) $shipping['shipping_total'];
     $preDiscountTotal = $subtotal + $shippingAmount;
 
     $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
@@ -309,38 +297,8 @@ try {
         );
         $insertOrderItem->execute();
 
-        // Reduce stock immediately only for COD.
-        // For online payments, stock is reduced after payment verification succeeds.
-        if ($paymentMethod === 'cod') {
-            $fabric = $productMap[$pid] ?? null;
-            if (!$fabric) {
-                throw new RuntimeException('Unable to lock product inventory for order placement.');
-            }
-
-            // Use only one stock source to avoid double-deduction.
-            $useMeters = (($item['unit_type'] ?? 'meter') === 'meter');
-            $availableStock = $useMeters ? (float) ($fabric['stock_meters'] ?? 0) : (float) $fabric['stock'];
-            if ($availableStock < $qty) {
-                throw new RuntimeException('Insufficient stock during order confirmation.');
-            }
-
-            if ($useMeters) {
-                $updateStock = $conn->prepare(
-                    "UPDATE fabrics SET stock_meters = stock_meters - ? WHERE id = ? AND stock_meters >= ?"
-                );
-                $updateStock->bind_param('did', $qty, $pid, $qty);
-            } else {
-                $updateStock = $conn->prepare(
-                    "UPDATE fabrics SET stock = stock - ? WHERE id = ? AND stock >= ?"
-                );
-                $deductQty = round((float) $qty, 2);
-                $updateStock->bind_param('did', $deductQty, $pid, $deductQty);
-            }
-            $updateStock->execute();
-            if ($conn->affected_rows === 0) {
-                throw new RuntimeException('Stock update conflict for product ' . $pid . '. Please try again.');
-            }
-        }
+        // Reserve inventory immediately for both COD and online orders.
+        adjust_fabric_stock($conn, $pid, (string) $item['unit_type'], (float) $qty, 'decrease');
     }
 
     $insertPayment = $conn->prepare(
@@ -349,6 +307,35 @@ try {
     );
     $insertPayment->bind_param('isd', $orderId, $paymentMethod, $totalAmount);
     $insertPayment->execute();
+
+    log_order_activity(
+        $conn,
+        $orderId,
+        'order_placed',
+        'customer',
+        $customerId,
+        $fullName,
+        'Payment: ' . $paymentMethod . ' | Total: ' . number_format($totalAmount, 2, '.', '')
+    );
+    if ($couponId > 0) {
+        log_order_activity(
+            $conn,
+            $orderId,
+            'coupon_applied',
+            'system',
+            0,
+            'system',
+            'Coupon code: ' . normalize_coupon_code($couponCode)
+        );
+    }
+    if ($paymentMethod === 'razorpay') {
+        log_order_activity($conn, $orderId, 'inventory_reserved', 'system', 0, 'system', 'Stock reserved before online payment.');
+    }
+    if ($paymentMethod === 'cod') {
+        log_order_activity($conn, $orderId, 'payment_pending_cod', 'system', 0, 'system', 'COD order created.');
+    } else {
+        log_order_activity($conn, $orderId, 'payment_pending_online', 'system', 0, 'system', 'Awaiting Razorpay payment.');
+    }
 
     // For COD: increment coupon usage only after the order is committed (payment confirmed
     // on delivery is outside our system's control, but the order is real and the discount

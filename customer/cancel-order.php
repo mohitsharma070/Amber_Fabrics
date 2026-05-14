@@ -42,63 +42,21 @@ try {
         throw new RuntimeException('This order can no longer be cancelled.');
     }
 
-    $itemsStmt = $conn->prepare(
-        "SELECT fabric_id, unit_type, quantity_meters
-         FROM order_items
-         WHERE order_id = ?"
-    );
-    $itemsStmt->bind_param('i', $orderId);
-    $itemsStmt->execute();
-    $items = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
     $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
     $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
-    $shouldRestoreStock = ($paymentMethod === 'cod') || ($paymentMethod === 'razorpay' && $paymentStatus === 'paid');
+    $paymentRowId = 0;
+    $paymentAmount = 0.0;
+    $paymentRowStmt = $conn->prepare("SELECT id, amount FROM payments WHERE order_id = ? AND payment_method = ? LIMIT 1");
+    $paymentRowStmt->bind_param('is', $orderId, $paymentMethod);
+    $paymentRowStmt->execute();
+    $paymentRow = $paymentRowStmt->get_result()->fetch_assoc() ?: [];
+    $paymentRowId = (int) ($paymentRow['id'] ?? 0);
+    $paymentAmount = (float) ($paymentRow['amount'] ?? 0);
+    $shouldRestoreStock = ($paymentMethod === 'cod' && in_array($paymentStatus, ['pending', 'failed', 'paid'], true))
+        || ($paymentMethod === 'razorpay' && in_array($paymentStatus, ['pending', 'failed'], true));
 
-    if ($shouldRestoreStock && !empty($items)) {
-        $stockCheckStmt = $conn->prepare(
-            "SELECT id, stock, stock_meters
-             FROM fabrics
-             WHERE id = ?
-             FOR UPDATE"
-        );
-
-        foreach ($items as $item) {
-            $fabricId = (int) ($item['fabric_id'] ?? 0);
-            $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-                ? (string) $item['unit_type']
-                : 'meter';
-            $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
-            if ($fabricId <= 0) {
-                continue;
-            }
-
-            $stockCheckStmt->bind_param('i', $fabricId);
-            $stockCheckStmt->execute();
-            $fabric = $stockCheckStmt->get_result()->fetch_assoc();
-            if (!$fabric) {
-                throw new RuntimeException('Unable to restore inventory: fabric not found.');
-            }
-
-            // Mirror single-source stock behavior used during order deduction.
-            $useMeters = $itemUnit === 'meter';
-            if ($useMeters) {
-                $stockStmt = $conn->prepare(
-                    "UPDATE fabrics SET stock_meters = stock_meters + ? WHERE id = ?"
-                );
-                $stockStmt->bind_param('di', $qty, $fabricId);
-            } else {
-                $stockStmt = $conn->prepare(
-                    "UPDATE fabrics SET stock = stock + ? WHERE id = ?"
-                );
-                $wholeQty = (int) ceil($qty);
-                $stockStmt->bind_param('ii', $wholeQty, $fabricId);
-            }
-            $stockStmt->execute();
-            if ($conn->affected_rows === 0) {
-                throw new RuntimeException('Unable to restore inventory for fabric ' . $fabricId . '.');
-            }
-        }
+    if ($shouldRestoreStock) {
+        restore_order_inventory($conn, $orderId);
     }
 
     $refundNote = '';
@@ -119,6 +77,30 @@ try {
     );
     $updateStmt->bind_param('si', $newNotes, $orderId);
     $updateStmt->execute();
+
+    log_order_activity(
+        $conn,
+        $orderId,
+        'order_cancelled',
+        'customer',
+        $customerId,
+        'customer',
+        'Payment status at cancel: ' . $paymentStatus
+    );
+    if ($paymentStatus === 'paid' && $paymentRowId > 0 && $paymentAmount > 0) {
+        log_refund_ledger(
+            $conn,
+            $orderId,
+            $paymentRowId,
+            $paymentAmount,
+            'INR',
+            'initiated',
+            $paymentMethod,
+            '',
+            'Customer cancelled paid order; refund initiation pending processing.'
+        );
+        log_order_activity($conn, $orderId, 'refund_initiated', 'system', 0, 'system', 'Refund ledger entry created.');
+    }
 
     $conn->commit();
 

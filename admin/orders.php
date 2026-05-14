@@ -186,24 +186,6 @@ if (!empty($orders)) {
     }
 }
 
-$statusBadge = [
-    'pending' => 'warning',
-    'confirmed' => 'info',
-    'packed' => 'primary',
-    'shipped' => 'primary',
-    'delivered' => 'success',
-    'cancelled' => 'danger',
-    'returned' => 'secondary',
-    'refunded' => 'dark',
-];
-
-$paymentBadge = [
-    'pending' => 'secondary',
-    'paid' => 'success',
-    'failed' => 'danger',
-    'refunded' => 'dark',
-];
-
 $metaTitle = 'Orders | Admin';
 include 'partials/header.php';
 ?>
@@ -316,12 +298,12 @@ include 'partials/header.php';
                     <td>Rs <?php echo number_format((float) ($order['total_amount'] ?? 0), 2); ?></td>
                     <td><?php echo strtoupper(e((string) $order['payment_method'])); ?></td>
                     <td>
-                        <?php $pb = $paymentBadge[$order['payment_status']] ?? 'secondary'; ?>
-                        <span class="badge bg-<?php echo $pb; ?>"><?php echo ucfirst(e((string) $order['payment_status'])); ?></span>
+                        <?php $pb = payment_status_meta((string) ($order['payment_status'] ?? 'pending')); ?>
+                        <span class="badge bg-<?php echo e($pb['class']); ?>"><?php echo e($pb['label']); ?></span>
                     </td>
                     <td>
-                        <?php $sb = $statusBadge[$order['order_status']] ?? 'secondary'; ?>
-                        <span class="badge bg-<?php echo $sb; ?>"><?php echo ucfirst(e((string) $order['order_status'])); ?></span>
+                        <?php $sb = order_status_meta((string) ($order['order_status'] ?? 'pending')); ?>
+                        <span class="badge bg-<?php echo e($sb['class']); ?>"><?php echo e($sb['label']); ?></span>
                     </td>
                     <td><?php echo $trackingId !== '' ? e($trackingId) : '-'; ?></td>
                     <td><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></td>

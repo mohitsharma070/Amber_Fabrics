@@ -164,19 +164,17 @@ if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'
 $selectedPayment = in_array((string) ($old['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $old['payment_method']
     : 'cod';
-$selectedOnlineMethod = in_array((string) ($old['online_method'] ?? 'upi'), ['upi', 'card', 'paypal', 'emi'], true)
-    ? (string) ($old['online_method'] ?? 'upi')
-    : 'upi';
+$selectedOnlineMethod = sanitize_online_payment_method((string) ($old['online_method'] ?? 'upi'));
+if ($selectedOnlineMethod === '') {
+    $selectedOnlineMethod = 'upi';
+}
 $codFeeApply = ($selectedPayment === 'cod') ? 1 : 0;
 $countryForCalc = trim((string) ($old['country'] ?? ''));
-$isIndia = strcasecmp($countryForCalc, 'india') === 0;
-$baseShippingAmount = 0.00;
-$codFeeAmount = 0.00;
-if ($isIndia) {
-    $baseShippingAmount = ($subtotal >= 999) ? 0.00 : 70.00;
-    $codFeeAmount = ($selectedPayment === 'cod' && $codFeeApply === 1) ? 50.00 : 0.00;
-}
-$shippingAmount = $baseShippingAmount + $codFeeAmount;
+$shipping = checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
+$isIndia = (bool) $shipping['is_india'];
+$baseShippingAmount = (float) $shipping['base_shipping'];
+$codFeeAmount = (float) $shipping['cod_fee'];
+$shippingAmount = (float) $shipping['shipping_total'];
 $preDiscountTotal = $subtotal + $shippingAmount;
 $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
 $couponInfo = get_active_coupon_discount($conn, $couponCode, $preDiscountTotal);
@@ -184,7 +182,7 @@ if (!$couponInfo['valid'] && $couponCode !== '') {
     unset($_SESSION['applied_coupon_code']);
 }
 $discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
-$discountAmount = min($discountAmount, $subtotal); // discount applies to product subtotal only — shipping is never discounted
+$discountAmount = min($discountAmount, $subtotal); // discount applies to product subtotal only - shipping is never discounted
 $taxableAmount  = max(0.0, $subtotal - $discountAmount);
 // Tax-inclusive pricing: GST is already embedded in product prices.
 // Total = (subtotal - discount) + shipping. No extra GST added.
@@ -205,7 +203,7 @@ if (!$isIndia) {
 
 $metaTitle = 'Checkout | Amber Fabrics';
 
-// One-time order nonce — consumed on first successful place-order.php submission
+// One-time order nonce - consumed on first successful place-order.php submission
 // so that double-click / back-and-resubmit creates only one order.
 $_SESSION['order_nonce'] = bin2hex(random_bytes(16));
 
@@ -319,7 +317,6 @@ include __DIR__ . '/includes/header.php';
                                 <div class="checkout-online-methods">
                                     <button type="button" class="checkout-online-method is-active" data-online-method="upi">UPI</button>
                                     <button type="button" class="checkout-online-method" data-online-method="card">Card</button>
-                                    <button type="button" class="checkout-online-method" data-online-method="paypal">PayPal</button>
                                     <button type="button" class="checkout-online-method" data-online-method="emi">EMI</button>
                                 </div>
                                 <noscript>
@@ -328,7 +325,6 @@ include __DIR__ . '/includes/header.php';
                                         <select class="form-select" id="online_method_noscript" name="online_method">
                                             <option value="upi" <?php echo $selectedOnlineMethod === 'upi' ? 'selected' : ''; ?>>UPI</option>
                                             <option value="card" <?php echo $selectedOnlineMethod === 'card' ? 'selected' : ''; ?>>Card</option>
-                                            <option value="paypal" <?php echo $selectedOnlineMethod === 'paypal' ? 'selected' : ''; ?>>PayPal</option>
                                             <option value="emi" <?php echo $selectedOnlineMethod === 'emi' ? 'selected' : ''; ?>>EMI</option>
                                         </select>
                                     </div>
@@ -350,13 +346,6 @@ include __DIR__ . '/includes/header.php';
                                             <span class="checkout-brand-chip">Mastercard</span>
                                             <span class="checkout-brand-chip">RuPay</span>
                                             <span class="checkout-brand-chip">Amex</span>
-                                        </div>
-                                    </div>
-                                    <div class="checkout-online-panel" data-online-panel="paypal">
-                                        <div class="small text-muted mb-2">For international preference. Actual routing is handled in Razorpay flow.</div>
-                                        <div class="checkout-brand-chips">
-                                            <span class="checkout-brand-chip">PayPal</span>
-                                            <span class="checkout-brand-chip">Buyer Protection</span>
                                         </div>
                                     </div>
                                     <div class="checkout-online-panel" data-online-panel="emi">
@@ -382,16 +371,16 @@ include __DIR__ . '/includes/header.php';
             </div>
 
             <div class="col-lg-5">
-                <div class="surface-panel p-4">
+                <div class="surface-panel p-4 checkout-summary-sticky">
                     <h5 class="mb-3">Order Summary</h5>
                     <?php foreach ($items as $item): ?>
                         <div class="d-flex justify-content-between mb-2 small">
                             <div>
                                 <span class="fw-semibold"><?php echo e($item['name']); ?></span>
                                 <?php if ($item['unit_type'] === 'meter' && !empty($item['meter_length']) && !empty($item['bundle_quantity'])): ?>
-                                    <span class="text-muted"> — <?php echo e((string) $item['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>m = <?php echo e($item['quantity_text']); ?>m</span>
+                                    <span class="text-muted"> - <?php echo e((string) $item['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>m = <?php echo e($item['quantity_text']); ?>m</span>
                                 <?php else: ?>
-                                    <span class="text-muted"> — <?php echo e($item['quantity_text']); ?> <?php echo e($item['quantity_unit_label']); ?></span>
+                                    <span class="text-muted"> - <?php echo e($item['quantity_text']); ?> <?php echo e($item['quantity_unit_label']); ?></span>
                                 <?php endif; ?>
                                 <?php if ($item['selected_size'] !== ''): ?>
                                     <span class="text-muted"> (<?php echo e($item['selected_size']); ?>)</span>
@@ -450,7 +439,7 @@ include __DIR__ . '/includes/header.php';
                         <span>Total</span>
                         <span id="summary_total">Rs <?php echo number_format($totalAmount, 2); ?></span>
                     </div>
-                    <div class="text-muted small mt-2">
+                    <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note">
                         Free shipping on orders above Rs 999. Orders below Rs 999: Rs 70 shipping. COD adds Rs 50 handling fee.
                     </div>
                 </div>
@@ -557,3 +546,4 @@ include __DIR__ . '/includes/header.php';
 </script>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>
+

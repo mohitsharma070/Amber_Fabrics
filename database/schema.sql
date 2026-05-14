@@ -267,6 +267,8 @@ CREATE TABLE IF NOT EXISTS order_items (
     quantity_meters      DECIMAL(10,2) DEFAULT NULL,
     price_per_meter      DECIMAL(10,2) DEFAULT NULL,
     line_total           DECIMAL(12,2) DEFAULT NULL,
+    bundle_quantity      INT           DEFAULT NULL,
+    meter_length         DECIMAL(10,2) DEFAULT NULL,
     INDEX idx_order_items_order_id   (order_id),
     INDEX idx_order_items_product_id (product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -283,8 +285,10 @@ CREATE TABLE IF NOT EXISTS payments (
     razorpay_signature  VARCHAR(255)  DEFAULT NULL,
     amount              DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     created_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_payments_order_method (order_id, payment_method),
     INDEX idx_payments_order_id       (order_id),
-    INDEX idx_payments_transaction_id (transaction_id)
+    INDEX idx_payments_transaction_id (transaction_id),
+    INDEX idx_payments_razorpay_order_id (razorpay_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- â”€â”€â”€ Shipments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -403,12 +407,55 @@ CREATE TABLE IF NOT EXISTS returns (
     rejected_at      DATETIME DEFAULT NULL,
     received_at      DATETIME DEFAULT NULL,
     updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_returns_order_id (order_id),
     CONSTRAINT fk_returns_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     CONSTRAINT fk_returns_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     INDEX idx_returns_order_id (order_id),
     INDEX idx_returns_customer_id (customer_id),
     INDEX idx_returns_status (status),
     INDEX idx_returns_requested_at (requested_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Payment webhook idempotency
+CREATE TABLE IF NOT EXISTS payment_webhook_events (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider    VARCHAR(32)  NOT NULL,
+    event_id    VARCHAR(191) NOT NULL,
+    signature   VARCHAR(255) DEFAULT NULL,
+    received_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_payment_webhook_event (provider, event_id),
+    INDEX idx_payment_webhook_received_at (received_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Order lifecycle audit trail
+CREATE TABLE IF NOT EXISTS order_activity_logs (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id   INT          NOT NULL,
+    action     VARCHAR(80)  NOT NULL,
+    actor_type ENUM('system','customer','admin','webhook') NOT NULL DEFAULT 'system',
+    actor_id   INT          DEFAULT NULL,
+    actor_name VARCHAR(255) DEFAULT NULL,
+    details    TEXT,
+    created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_order_activity_order_id (order_id),
+    INDEX idx_order_activity_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Refund financial ledger
+CREATE TABLE IF NOT EXISTS refund_ledger (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id          INT           NOT NULL,
+    payment_id        INT           NOT NULL,
+    amount            DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    currency          VARCHAR(8)    NOT NULL DEFAULT 'INR',
+    status            ENUM('initiated','processed','failed') NOT NULL DEFAULT 'initiated',
+    gateway           VARCHAR(32)   DEFAULT NULL,
+    gateway_refund_id VARCHAR(191)  DEFAULT NULL,
+    notes             TEXT,
+    created_at        TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_refund_ledger_order_id (order_id),
+    INDEX idx_refund_ledger_payment_id (payment_id),
+    INDEX idx_refund_ledger_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS coupon_usages (

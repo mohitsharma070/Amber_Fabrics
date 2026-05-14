@@ -13,13 +13,10 @@ if (empty($_SESSION['pending_order_id'])) {
 $orderId = (int) $_SESSION['pending_order_id'];
 $orderNumber = (string) ($_SESSION['pending_order_number'] ?? '');
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
-$preferredOnlineMethod = strtolower(trim((string) ($_SESSION['pending_online_method'] ?? '')));
-if (!in_array($preferredOnlineMethod, ['upi', 'card', 'paypal', 'emi'], true)) {
-    $preferredOnlineMethod = '';
-}
+$preferredOnlineMethod = sanitize_online_payment_method((string) ($_SESSION['pending_online_method'] ?? ''));
 
 $stmt = $conn->prepare(
-    "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status
+    "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status, order_status, created_at
      FROM orders
      WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending','failed')
      LIMIT 1"
@@ -31,6 +28,14 @@ $order = $stmt->get_result()->fetch_assoc();
 if (!$order) {
     flash('error', 'Order not available for Razorpay payment.');
     redirect('/checkout.php');
+}
+if (!in_array((string) ($order['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
+    flash('error', 'Order is not in a payable state.');
+    redirect('/customer/orders.php');
+}
+if (strtotime((string) ($order['created_at'] ?? 'now')) < strtotime('-30 minutes')) {
+    flash('error', 'This payment session has expired. Please place a new order.');
+    redirect('/customer/orders.php');
 }
 
 $keyId = _cfg('RAZORPAY_KEY_ID', '');
@@ -53,6 +58,17 @@ if ($amountPaise <= 0) {
 }
 
 try {
+    $conn->begin_transaction();
+    $payLockStmt = $conn->prepare(
+        "SELECT id FROM payments WHERE order_id = ? AND payment_method = 'razorpay' LIMIT 1 FOR UPDATE"
+    );
+    $payLockStmt->bind_param('i', $orderId);
+    $payLockStmt->execute();
+    $payRow = $payLockStmt->get_result()->fetch_assoc();
+    if (!$payRow) {
+        throw new RuntimeException('Payment row not found for this order.');
+    }
+
     $api = new Razorpay\Api\Api($keyId, $keySecret);
     $rzpOrder = $api->order->create([
         'amount' => $amountPaise,
@@ -73,7 +89,14 @@ try {
     );
     $payStmt->bind_param('ssi', $rzpOrderId, $rzpOrderId, $orderId);
     $payStmt->execute();
+    log_order_activity($conn, $orderId, 'payment_session_created', 'system', 0, 'system', 'Razorpay order id: ' . $rzpOrderId);
+    $conn->commit();
 } catch (Throwable $e) {
+    try {
+        $conn->rollback();
+    } catch (Throwable $rollbackException) {
+        // ignore rollback errors
+    }
     error_log('[razorpay] create failed: ' . $e->getMessage());
     flash('error', 'Unable to initialize Razorpay payment. Please try again.');
     redirect('/checkout.php');
@@ -174,7 +197,6 @@ var options = {
         if (pref === 'emi') {
             return { upi: false, card: false, netbanking: false, wallet: false, emi: true, paylater: false };
         }
-        // PayPal is UI preference only; Razorpay does not provide native PayPal rails.
         return undefined;
     })(),
     theme: { color: '#0f766e' },

@@ -32,32 +32,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('order-view.php?id=' . $id);
         }
 
+        $currentStmt = $conn->prepare("SELECT order_status, payment_method, payment_status FROM orders WHERE id = ? LIMIT 1");
+        $currentStmt->bind_param('i', $id);
+        $currentStmt->execute();
+        $currentRow = $currentStmt->get_result()->fetch_assoc() ?: [];
+        $currentOrderStatus = (string) ($currentRow['order_status'] ?? '');
+        if (!can_transition_order_status($currentOrderStatus, $newOrderStatus)) {
+            flash('error', 'Invalid order status transition.');
+            redirect('order-view.php?id=' . $id);
+        }
+
         // Prevent manual refund-related status bypass for Razorpay/UPI.
         if ($newPaymentStatus === 'refunded' || $newOrderStatus === 'refunded') {
-            $methodStmt = $conn->prepare("SELECT payment_method FROM orders WHERE id = ? LIMIT 1");
-            $methodStmt->bind_param('i', $id);
-            $methodStmt->execute();
-            $row = $methodStmt->get_result()->fetch_assoc() ?: [];
-            $method = strtolower((string) ($row['payment_method'] ?? ''));
+            $method = strtolower((string) ($currentRow['payment_method'] ?? ''));
             if (in_array($method, ['razorpay', 'upi'], true)) {
                 flash('error', 'Use Mark Refunded button. It verifies refund status with payment gateway.');
                 redirect('order-view.php?id=' . $id);
             }
         }
 
-        $update = $conn->prepare(
-            "UPDATE orders
-             SET order_status = ?, payment_status = ?, status = ?, updated_at = NOW()
-             WHERE id = ?"
-        );
-        $legacyStatus = in_array($newOrderStatus, ['pending','confirmed','shipped','delivered','cancelled'], true)
-            ? $newOrderStatus
-            : 'processing';
-        $update->bind_param('sssi', $newOrderStatus, $newPaymentStatus, $legacyStatus, $id);
-        $update->execute();
+        try {
+            $conn->begin_transaction();
+            $update = $conn->prepare(
+                "UPDATE orders
+                 SET order_status = ?, payment_status = ?, status = ?, updated_at = NOW()
+                 WHERE id = ?"
+            );
+            $legacyStatus = in_array($newOrderStatus, ['pending','confirmed','shipped','delivered','cancelled'], true)
+                ? $newOrderStatus
+                : 'processing';
+            $update->bind_param('sssi', $newOrderStatus, $newPaymentStatus, $legacyStatus, $id);
+            $update->execute();
+            $adminId = (int) ($_SESSION['admin_id'] ?? 0);
+            $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
+            log_order_activity(
+                $conn,
+                $id,
+                'admin_status_update',
+                'admin',
+                $adminId,
+                $adminName,
+                'Order: ' . $currentOrderStatus . ' -> ' . $newOrderStatus . ' | Payment: ' . ((string) ($currentRow['payment_status'] ?? '')) . ' -> ' . $newPaymentStatus
+            );
+            $conn->commit();
+        } catch (Throwable $e) {
+            try {
+                $conn->rollback();
+            } catch (Throwable $rollbackException) {
+                // ignore rollback errors
+            }
+            flash('error', 'Unable to update order right now.');
+            redirect('order-view.php?id=' . $id);
+        }
 
         send_order_status_update_email($conn, $id, $newOrderStatus);
-
         flash('success', 'Order updated successfully.');
         redirect('order-view.php?id=' . $id);
     }
@@ -95,55 +123,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'Tracking URL must be a valid http/https URL.');
             redirect('order-view.php?id=' . $id);
         }
-        $shipStmt = $conn->prepare("SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1");
-        $shipStmt->bind_param('i', $id);
-        $shipStmt->execute();
-        $existingShipment = $shipStmt->get_result()->fetch_assoc();
+        try {
+            $conn->begin_transaction();
+            $shipStmt = $conn->prepare("SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE");
+            $shipStmt->bind_param('i', $id);
+            $shipStmt->execute();
+            $existingShipment = $shipStmt->get_result()->fetch_assoc();
 
-        $shippedAt = $existingShipment['shipped_at'] ?? null;
-        $deliveredAt = $existingShipment['delivered_at'] ?? null;
+            $shippedAt = $existingShipment['shipped_at'] ?? null;
+            $deliveredAt = $existingShipment['delivered_at'] ?? null;
 
-        if ($action === 'mark_shipped') {
-            $shippedAt = date('Y-m-d H:i:s');
-            $orderUpdate = $conn->prepare("UPDATE orders SET order_status = 'shipped', status = 'shipped', updated_at = NOW() WHERE id = ?");
-            $orderUpdate->bind_param('i', $id);
-            $orderUpdate->execute();
-        }
-
-        if ($action === 'mark_delivered') {
-            if (empty($shippedAt)) {
+            if ($action === 'mark_shipped') {
                 $shippedAt = date('Y-m-d H:i:s');
+                $orderUpdate = $conn->prepare("UPDATE orders SET order_status = 'shipped', status = 'shipped', updated_at = NOW() WHERE id = ?");
+                $orderUpdate->bind_param('i', $id);
+                $orderUpdate->execute();
             }
-            $deliveredAt = date('Y-m-d H:i:s');
-            $orderUpdate = $conn->prepare("UPDATE orders SET order_status = 'delivered', status = 'delivered', updated_at = NOW() WHERE id = ?");
-            $orderUpdate->bind_param('i', $id);
-            $orderUpdate->execute();
-        }
 
-        if ($existingShipment) {
-            $shipmentId = (int) $existingShipment['id'];
-            $updateShip = $conn->prepare(
-                "UPDATE shipments
-                 SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
-                 WHERE id = ?"
-            );
-            $updateShip->bind_param('sssdssi', $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
-            $updateShip->execute();
-        } else {
-            $insertShip = $conn->prepare(
-                "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
-            );
-            $insertShip->bind_param('isssdss', $id, $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt);
-            $insertShip->execute();
+            if ($action === 'mark_delivered') {
+                if (empty($shippedAt)) {
+                    $shippedAt = date('Y-m-d H:i:s');
+                }
+                $deliveredAt = date('Y-m-d H:i:s');
+                $orderUpdate = $conn->prepare("UPDATE orders SET order_status = 'delivered', status = 'delivered', updated_at = NOW() WHERE id = ?");
+                $orderUpdate->bind_param('i', $id);
+                $orderUpdate->execute();
+            }
+
+            if ($existingShipment) {
+                $shipmentId = (int) $existingShipment['id'];
+                $updateShip = $conn->prepare(
+                    "UPDATE shipments
+                     SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
+                     WHERE id = ?"
+                );
+                $updateShip->bind_param('sssdssi', $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
+                $updateShip->execute();
+            } else {
+                $insertShip = $conn->prepare(
+                    "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)"
+                );
+                $insertShip->bind_param('isssdss', $id, $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt);
+                $insertShip->execute();
+            }
+            $conn->commit();
+        } catch (Throwable $e) {
+            try {
+                $conn->rollback();
+            } catch (Throwable $rollbackException) {
+                // ignore rollback errors
+            }
+            flash('error', 'Unable to update shipment right now.');
+            redirect('order-view.php?id=' . $id);
         }
 
         $flashMsg = 'Shipment details saved.';
         if ($action === 'mark_shipped') {
             $flashMsg = 'Order marked shipped and shipment updated.';
+            $adminId = (int) ($_SESSION['admin_id'] ?? 0);
+            $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
+            log_order_activity($conn, $id, 'order_shipped', 'admin', $adminId, $adminName, 'Shipment marked shipped.');
             send_order_status_update_email($conn, $id, 'shipped');
         } elseif ($action === 'mark_delivered') {
             $flashMsg = 'Order marked delivered and shipment updated.';
+            $adminId = (int) ($_SESSION['admin_id'] ?? 0);
+            $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
+            log_order_activity($conn, $id, 'order_delivered', 'admin', $adminId, $adminName, 'Shipment marked delivered.');
             send_order_status_update_email($conn, $id, 'delivered');
         }
 

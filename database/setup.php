@@ -235,6 +235,7 @@ function ensure_tables(mysqli $conn): void
     );
 
     $ensureColumns($conn, 'customers', [
+        'is_active' => "TINYINT(1) NOT NULL DEFAULT 1",
         'email_verify_expires' => "DATETIME NULL DEFAULT NULL",
     ]);
 
@@ -377,6 +378,8 @@ function ensure_tables(mysqli $conn): void
             quantity_meters DECIMAL(10,2) DEFAULT NULL,
             price_per_meter DECIMAL(10,2) DEFAULT NULL,
             line_total DECIMAL(12,2) DEFAULT NULL,
+            bundle_quantity INT DEFAULT NULL,
+            meter_length DECIMAL(10,2) DEFAULT NULL,
             INDEX idx_order_items_order_id (order_id),
             INDEX idx_order_items_product_id (product_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -394,6 +397,12 @@ function ensure_tables(mysqli $conn): void
         }
         if ($columnExists($conn, 'order_items', 'quantity_meters')) {
             $conn->query("ALTER TABLE order_items MODIFY COLUMN quantity_meters DECIMAL(10,2) NULL DEFAULT NULL");
+        }
+        if (!$columnExists($conn, 'order_items', 'bundle_quantity')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN bundle_quantity INT NULL DEFAULT NULL AFTER line_total");
+        }
+        if (!$columnExists($conn, 'order_items', 'meter_length')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN meter_length DECIMAL(10,2) NULL DEFAULT NULL AFTER bundle_quantity");
         }
     }
 
@@ -429,6 +438,39 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_payments_transaction_id (transaction_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    // Keep one payment row per (order_id, payment_method) to avoid duplicate state rows.
+    $conn->query(
+        "DELETE p1
+         FROM payments p1
+         JOIN payments p2
+           ON p1.order_id = p2.order_id
+          AND p1.payment_method = p2.payment_method
+          AND p1.id < p2.id"
+    );
+    $uqOrderMethodCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'payments'
+           AND INDEX_NAME = 'uq_payments_order_method'"
+    );
+    $uqOrderMethodExists = ((int) ($uqOrderMethodCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$uqOrderMethodExists) {
+        $conn->query("ALTER TABLE payments ADD UNIQUE KEY uq_payments_order_method (order_id, payment_method)");
+    }
+
+    $rzpOrderIdxCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'payments'
+           AND INDEX_NAME = 'idx_payments_razorpay_order_id'"
+    );
+    $rzpOrderIdxExists = ((int) ($rzpOrderIdxCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$rzpOrderIdxExists) {
+        $conn->query("CREATE INDEX idx_payments_razorpay_order_id ON payments (razorpay_order_id)");
+    }
 
     // Shipments
     $conn->query(
@@ -514,6 +556,51 @@ function ensure_tables(mysqli $conn): void
             attempts INT NOT NULL DEFAULT 0,
             blocked_until DATETIME DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS payment_webhook_events (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            provider VARCHAR(32) NOT NULL,
+            event_id VARCHAR(191) NOT NULL,
+            signature VARCHAR(255) DEFAULT NULL,
+            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_payment_webhook_event (provider, event_id),
+            INDEX idx_payment_webhook_received_at (received_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS order_activity_logs (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_id INT NOT NULL,
+            action VARCHAR(80) NOT NULL,
+            actor_type ENUM('system','customer','admin','webhook') NOT NULL DEFAULT 'system',
+            actor_id INT DEFAULT NULL,
+            actor_name VARCHAR(255) DEFAULT NULL,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_order_activity_order_id (order_id),
+            INDEX idx_order_activity_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS refund_ledger (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_id INT NOT NULL,
+            payment_id INT NOT NULL,
+            amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            currency VARCHAR(8) NOT NULL DEFAULT 'INR',
+            status ENUM('initiated','processed','failed') NOT NULL DEFAULT 'initiated',
+            gateway VARCHAR(32) DEFAULT NULL,
+            gateway_refund_id VARCHAR(191) DEFAULT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_refund_ledger_order_id (order_id),
+            INDEX idx_refund_ledger_payment_id (payment_id),
+            INDEX idx_refund_ledger_status (status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
@@ -611,12 +698,33 @@ function ensure_tables(mysqli $conn): void
             rejected_at DATETIME DEFAULT NULL,
             received_at DATETIME DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_returns_order_id (order_id),
             INDEX idx_returns_order_id (order_id),
             INDEX idx_returns_customer_id (customer_id),
             INDEX idx_returns_status (status),
             INDEX idx_returns_requested_at (requested_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    // Keep one active return request row per order to prevent duplicate return submissions.
+    $conn->query(
+        "DELETE r1
+         FROM returns r1
+         JOIN returns r2
+           ON r1.order_id = r2.order_id
+          AND r1.id < r2.id"
+    );
+    $returnsOrderUqCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'returns'
+           AND INDEX_NAME = 'uq_returns_order_id'"
+    );
+    $returnsOrderUqExists = ((int) ($returnsOrderUqCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$returnsOrderUqExists) {
+        $conn->query("ALTER TABLE returns ADD UNIQUE KEY uq_returns_order_id (order_id)");
+    }
 
     $conn->query(
         "CREATE TABLE IF NOT EXISTS return_items (

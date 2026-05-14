@@ -62,6 +62,17 @@ $returnStmt->bind_param('i', $orderId);
 $returnStmt->execute();
 $returnRequest = $returnStmt->get_result()->fetch_assoc() ?: null;
 
+$activityStmt = $conn->prepare(
+    "SELECT action, actor_type, actor_name, details, created_at
+     FROM order_activity_logs
+     WHERE order_id = ?
+     ORDER BY id DESC
+     LIMIT 12"
+);
+$activityStmt->bind_param('i', $orderId);
+$activityStmt->execute();
+$orderActivity = $activityStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
 $shipping = json_decode($order['shipping_address'] ?? '{}', true) ?: [];
 $symbol   = $order['currency'] === 'USD' ? '$' : 'Rs ';
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
@@ -70,17 +81,9 @@ $displayShipping = (float) (($order['shipping_amount'] ?? 0) > 0 ? $order['shipp
 $displayTotal = (float) (($order['total_amount'] ?? 0) > 0 ? $order['total_amount'] : ($order['total'] ?? 0));
 $displayDiscount = (float) ($order['discount_amount'] ?? 0);
 
-$statusLabels = [
-    'pending'    => ['label' => 'Pending',    'class' => 'warning'],
-    'confirmed'  => ['label' => 'Confirmed',  'class' => 'info'],
-    'processing' => ['label' => 'Processing', 'class' => 'primary'],
-    'shipped'    => ['label' => 'Shipped',    'class' => 'primary'],
-    'delivered'  => ['label' => 'Delivered',  'class' => 'success'],
-    'cancelled'  => ['label' => 'Cancelled',  'class' => 'danger'],
-    'refunded'   => ['label' => 'Refunded',   'class' => 'dark'],
-];
 $effectiveOrderStatus = (string) ($order['order_status'] ?? $order['status'] ?? '');
-$s = $statusLabels[$effectiveOrderStatus] ?? ['label' => ucfirst($effectiveOrderStatus), 'class' => 'secondary'];
+$s = order_status_meta($effectiveOrderStatus);
+$payMeta = payment_status_meta((string) ($order['payment_status'] ?? 'pending'));
 $isRefundInitiated = in_array(strtolower($effectiveOrderStatus), ['cancelled', 'refunded'], true)
     && in_array(strtolower((string) ($order['payment_method'] ?? '')), ['razorpay', 'upi'], true)
     && strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
@@ -191,7 +194,7 @@ include __DIR__ . '/../includes/header.php';
                     <h6 class="mb-2">Order Status</h6>
                     <span class="badge bg-<?php echo $s['class']; ?> fs-6 px-3 py-2"><?php echo $s['label']; ?></span>
                     <div class="mt-3 text-muted small">
-                        Payment: <strong><?php echo $order['payment_status'] === 'paid' ? 'Paid' : ucfirst($order['payment_status']); ?></strong><br>
+                        Payment: <strong><?php echo e($payMeta['label']); ?></strong><br>
                         Method: <?php echo ucfirst(str_replace('_', ' ', $order['payment_method'])); ?>
                     </div>
                     <?php if ($isRefundInitiated): ?>
@@ -295,6 +298,28 @@ include __DIR__ . '/../includes/header.php';
                 </div>
                 <?php endif; ?>
 
+                <?php if (!empty($orderActivity)): ?>
+                <div class="surface-panel p-4 mb-4">
+                    <h6 class="mb-3">Order Timeline</h6>
+                    <div class="order-timeline">
+                        <?php foreach ($orderActivity as $ev): ?>
+                        <div class="order-timeline-item">
+                            <div class="order-timeline-dot"></div>
+                            <div class="order-timeline-body">
+                                <div class="d-flex justify-content-between gap-2 flex-wrap">
+                                    <strong><?php echo e(ucwords(str_replace('_', ' ', (string) ($ev['action'] ?? 'update')))); ?></strong>
+                                    <span class="text-muted small"><?php echo date('d M Y, h:i A', strtotime((string) ($ev['created_at'] ?? 'now'))); ?></span>
+                                </div>
+                                <?php if (!empty($ev['details'])): ?>
+                                    <div class="text-muted small"><?php echo e((string) $ev['details']); ?></div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <!-- Shipping address -->
                 <?php if (!empty($shipping)): ?>
                 <div class="surface-panel p-4">
@@ -317,4 +342,3 @@ include __DIR__ . '/../includes/header.php';
 </section>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
-

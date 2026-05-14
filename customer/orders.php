@@ -60,15 +60,6 @@ $stmt->bind_param('i', $customerId);
 $stmt->execute();
 $orders = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$statusLabels = [
-    'pending'    => ['label' => 'Pending',    'class' => 'warning'],
-    'confirmed'  => ['label' => 'Confirmed',  'class' => 'info'],
-    'processing' => ['label' => 'Processing', 'class' => 'primary'],
-    'shipped'    => ['label' => 'Shipped',    'class' => 'primary'],
-    'delivered'  => ['label' => 'Delivered',  'class' => 'success'],
-    'cancelled'  => ['label' => 'Cancelled',  'class' => 'danger'],
-];
-
 function order_failure_reason(string $notes): string
 {
     $lines = preg_split("/\r\n|\n|\r/", $notes);
@@ -145,7 +136,8 @@ include __DIR__ . '/../includes/header.php';
                     <tbody>
                     <?php foreach ($orders as $o):
                         $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
-                        $s      = $statusLabels[$effectiveOrderStatus] ?? ['label' => ucfirst($effectiveOrderStatus), 'class' => 'secondary'];
+                        $s      = order_status_meta($effectiveOrderStatus);
+                        $payMeta = payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
                         $symbol = $o['currency'] === 'USD' ? '$' : '&#8377;';
                         $totalQty = (float) ($o['total_qty'] ?? 0);
                         $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
@@ -162,8 +154,13 @@ include __DIR__ . '/../includes/header.php';
                             <td class="text-muted small"><?php echo date('d M Y', strtotime($o['created_at'])); ?></td>
                             <td class="text-muted small"><?php echo e(format_meter_quantity($totalQty)); ?> total</td>
                             <td><?php echo $symbol . number_format((float) $o['total'], 2); ?> <?php echo e($o['currency']); ?></td>
-                            <td class="text-muted small"><?php echo ucfirst(str_replace('_', ' ', $o['payment_method'])); ?></td>
-                            <td><span class="badge bg-<?php echo $s['class']; ?>"><?php echo $s['label']; ?></span></td>
+                            <td class="text-muted small">
+                                <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?>
+                                <div class="mt-1">
+                                    <span class="badge bg-<?php echo e($payMeta['class']); ?>"><?php echo e($payMeta['label']); ?></span>
+                                </div>
+                            </td>
+                            <td><span class="badge bg-<?php echo e($s['class']); ?>"><?php echo e($s['label']); ?></span></td>
                             <td class="d-flex gap-2 flex-wrap">
                                 <a href="/customer/order-view.php?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
                                 <?php if ($canRetry): ?>

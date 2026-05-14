@@ -93,6 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
 
             if ($newStatus === 'refund_completed') {
+                if ($currentStatus !== 'refund_completed') {
+                    restore_order_inventory($conn, (int) ($ctx['order_id'] ?? 0));
+                }
                 $syncStmt = $conn->prepare(
                     "UPDATE orders o
                      JOIN returns r ON r.order_id = o.id
@@ -103,6 +106,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $syncStmt->bind_param('i', $returnId);
                 $syncStmt->execute();
+
+                $payStmt = $conn->prepare(
+                    "SELECT id, amount, payment_method
+                     FROM payments
+                     WHERE order_id = ?
+                     ORDER BY id DESC
+                     LIMIT 1"
+                );
+                $orderIdForRefund = (int) ($ctx['order_id'] ?? 0);
+                $payStmt->bind_param('i', $orderIdForRefund);
+                $payStmt->execute();
+                $pay = $payStmt->get_result()->fetch_assoc() ?: [];
+                $paymentId = (int) ($pay['id'] ?? 0);
+                $paymentAmount = (float) ($pay['amount'] ?? 0);
+                if ($paymentId > 0) {
+                    $amount = $refundAmount > 0 ? $refundAmount : $paymentAmount;
+                    if ($amount > 0) {
+                        log_refund_ledger(
+                            $conn,
+                            $orderIdForRefund,
+                            $paymentId,
+                            $amount,
+                            'INR',
+                            'processed',
+                            (string) ($pay['payment_method'] ?? ''),
+                            '',
+                            'Refund completed from returns module.'
+                        );
+                    }
+                }
+                $adminId = (int) ($_SESSION['admin_id'] ?? 0);
+                $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
+                log_order_activity($conn, $orderIdForRefund, 'refund_completed', 'admin', $adminId, $adminName, 'Return #' . $returnId . ' marked refund completed.');
             }
 
             $conn->commit();

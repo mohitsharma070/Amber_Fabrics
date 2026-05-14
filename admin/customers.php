@@ -24,8 +24,26 @@ $countStmt->execute();
 $total = (int) $countStmt->get_result()->fetch_row()[0];
 $pages = max(1, (int) ceil($total / $perPage));
 
+$hasIsActive = false;
+try {
+    $colStmt = $conn->prepare(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'customers'
+           AND COLUMN_NAME = 'is_active'"
+    );
+    $colStmt->execute();
+    $colRow = $colStmt->get_result()->fetch_assoc();
+    $hasIsActive = ((int) ($colRow['total'] ?? 0)) > 0;
+} catch (Throwable $e) {
+    $hasIsActive = false;
+}
+
+$activeSelect = $hasIsActive ? 'c.is_active' : '1 AS is_active';
+
 $stmt = $conn->prepare(
-    "SELECT c.id, c.name, c.email, c.country, c.phone, c.is_active, c.created_at,
+    "SELECT c.id, c.name, c.email, c.country, c.phone, {$activeSelect}, c.created_at,
             COUNT(o.id) AS order_count
      FROM customers c
      LEFT JOIN orders o ON o.customer_id = c.id

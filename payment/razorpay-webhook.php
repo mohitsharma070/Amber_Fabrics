@@ -44,6 +44,23 @@ if (!is_array($event)) {
     exit;
 }
 
+$eventId = trim((string) ($_SERVER['HTTP_X_RAZORPAY_EVENT_ID'] ?? ''));
+if ($eventId === '') {
+    $eventId = hash('sha256', $payload);
+}
+try {
+    if (payment_webhook_is_duplicate($conn, 'razorpay', $eventId, $signature)) {
+        http_response_code(200);
+        echo 'Duplicate ignored';
+        exit;
+    }
+} catch (Throwable $e) {
+    error_log('[razorpay-webhook] dedupe failed: ' . $e->getMessage());
+    http_response_code(500);
+    echo 'Error';
+    exit;
+}
+
 $eventType = (string) ($event['event'] ?? '');
 if (!in_array($eventType, ['payment.captured', 'order.paid', 'payment.failed'], true)) {
     http_response_code(200);
@@ -141,6 +158,7 @@ if ($eventType === 'payment.failed') {
             );
             $updateOrder->bind_param('ssi', $note, $note, $orderId);
             $updateOrder->execute();
+            log_order_activity($conn, $orderId, 'payment_failed', 'webhook', 0, 'razorpay', $note);
         }
 
         $conn->commit();
@@ -237,73 +255,16 @@ try {
         throw new RuntimeException('Order not in payable state for order_id=' . $orderId);
     }
 
-    $itemsStmt = $conn->prepare(
-        "SELECT fabric_id, unit_type, quantity_meters
-         FROM order_items
-         WHERE order_id = ?"
-    );
-    $itemsStmt->bind_param('i', $orderId);
-    $itemsStmt->execute();
-    $items = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    if (empty($items)) {
-        throw new RuntimeException('No order items for order_id=' . $orderId);
-    }
-
-    $stockCheckStmt = $conn->prepare(
-        "SELECT id, stock, stock_meters
-         FROM fabrics
-         WHERE id = ?
-         FOR UPDATE"
-    );
-
-    foreach ($items as $item) {
-        $fabricId = (int) ($item['fabric_id'] ?? 0);
-        if ($fabricId <= 0) {
-            throw new RuntimeException('Invalid fabric_id in order item');
-        }
-        $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-            ? (string) $item['unit_type']
-            : 'meter';
-        $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
-
-        $stockCheckStmt->bind_param('i', $fabricId);
-        $stockCheckStmt->execute();
-        $fabric = $stockCheckStmt->get_result()->fetch_assoc();
-        if (!$fabric) {
-            throw new RuntimeException('Fabric not found for stock update');
-        }
-
-        $useMeters = $itemUnit === 'meter';
-        $availableStock = $useMeters ? (float) ($fabric['stock_meters'] ?? 0) : (float) ($fabric['stock'] ?? 0);
-        if ($availableStock < $qty) {
-            throw new RuntimeException('Insufficient stock during webhook confirmation.');
-        }
-
-        if ($useMeters) {
-            $stockUpdateStmt = $conn->prepare(
-                "UPDATE fabrics SET stock_meters = stock_meters - ? WHERE id = ? AND stock_meters >= ?"
-            );
-            $stockUpdateStmt->bind_param('did', $qty, $fabricId, $qty);
-        } else {
-            $deductQty = round((float) $qty, 2);
-            $stockUpdateStmt = $conn->prepare(
-                "UPDATE fabrics SET stock = stock - ? WHERE id = ? AND stock >= ?"
-            );
-            $stockUpdateStmt->bind_param('did', $deductQty, $fabricId, $deductQty);
-        }
-        $stockUpdateStmt->execute();
-        if ($conn->affected_rows === 0) {
-            throw new RuntimeException('Stock update conflict for fabric ' . $fabricId);
-        }
-    }
-
     $updateOrder = $conn->prepare(
         "UPDATE orders
          SET payment_id = ?, payment_status = 'paid', order_status = 'confirmed', status = 'confirmed'
-         WHERE id = ?"
+         WHERE id = ? AND payment_status IN ('pending', 'failed')"
     );
     $updateOrder->bind_param('si', $paymentId, $orderId);
     $updateOrder->execute();
+    if ($conn->affected_rows === 0 && (string) ($order['payment_status'] ?? '') !== 'paid') {
+        throw new RuntimeException('Order payment state changed unexpectedly during webhook processing.');
+    }
 
     $updatePayment = $conn->prepare(
         "UPDATE payments
@@ -311,7 +272,7 @@ try {
              transaction_id = CASE WHEN ? <> '' THEN ? ELSE transaction_id END,
              razorpay_payment_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_payment_id END,
              razorpay_signature = ?
-         WHERE order_id = ? AND payment_method = 'razorpay'"
+         WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending', 'failed')"
     );
     $updatePayment->bind_param('sssssi', $paymentId, $paymentId, $paymentId, $paymentId, $signature, $orderId);
     $updatePayment->execute();
@@ -321,6 +282,15 @@ try {
         (int) ($order['customer_id'] ?? 0),
         $orderId,
         (string) ($order['order_notes'] ?? '')
+    );
+    log_order_activity(
+        $conn,
+        $orderId,
+        'payment_captured',
+        'webhook',
+        0,
+        'razorpay',
+        'Event: ' . $eventType . ' | Payment: ' . $paymentId
     );
 
     $conn->commit();

@@ -154,6 +154,200 @@ function format_quantity_by_unit($value, string $unitType): string
 }
 
 /**
+ * Normalize product size options from comma/pipe/slash separated DB value.
+ */
+function parse_size_options(?string $sizeRaw): array
+{
+    $sizeRaw = (string) $sizeRaw;
+    if ($sizeRaw === '') {
+        return [];
+    }
+    $parts = preg_split('/[,\|\/]+/', $sizeRaw);
+    if (!is_array($parts)) {
+        return [];
+    }
+    $sizes = [];
+    foreach ($parts as $part) {
+        $clean = trim((string) $part);
+        if ($clean !== '') {
+            $sizes[] = $clean;
+        }
+    }
+    return array_values(array_unique($sizes));
+}
+
+/**
+ * Shared India shipping + COD fee calculation.
+ */
+function checkout_shipping_breakdown(float $subtotal, string $country, string $paymentMethod, bool $codFeeApply = true): array
+{
+    $isIndia = strcasecmp(trim($country), 'india') === 0;
+    $baseShipping = 0.0;
+    $codFee = 0.0;
+    if ($isIndia) {
+        $baseShipping = ($subtotal >= 999.0) ? 0.0 : 70.0;
+        $codFee = (strtolower($paymentMethod) === 'cod' && $codFeeApply) ? 50.0 : 0.0;
+    }
+    return [
+        'is_india' => $isIndia,
+        'base_shipping' => round($baseShipping, 2),
+        'cod_fee' => round($codFee, 2),
+        'shipping_total' => round($baseShipping + $codFee, 2),
+    ];
+}
+
+/**
+ * Adjust stock for a single fabric row with in-transaction row lock.
+ * $direction must be "decrease" or "increase".
+ */
+function adjust_fabric_stock(mysqli $conn, int $fabricId, string $unitType, float $qty, string $direction = 'decrease'): void
+{
+    if ($fabricId <= 0) {
+        throw new RuntimeException('Invalid fabric id for stock update.');
+    }
+    if ($qty <= 0) {
+        return;
+    }
+    $unitType = in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
+    $direction = strtolower($direction) === 'increase' ? 'increase' : 'decrease';
+
+    $lock = $conn->prepare("SELECT id, stock, stock_meters FROM fabrics WHERE id = ? FOR UPDATE");
+    $lock->bind_param('i', $fabricId);
+    $lock->execute();
+    $fabric = $lock->get_result()->fetch_assoc();
+    if (!$fabric) {
+        throw new RuntimeException('Fabric not found for stock update.');
+    }
+
+    $useMeters = $unitType === 'meter';
+    if ($useMeters) {
+        $amount = round($qty, 2);
+        if ($direction === 'decrease') {
+            $available = (float) ($fabric['stock_meters'] ?? 0);
+            if ($available < $amount) {
+                throw new RuntimeException('Insufficient stock during order confirmation.');
+            }
+            $stmt = $conn->prepare("UPDATE fabrics SET stock_meters = stock_meters - ? WHERE id = ? AND stock_meters >= ?");
+            $stmt->bind_param('did', $amount, $fabricId, $amount);
+        } else {
+            $stmt = $conn->prepare("UPDATE fabrics SET stock_meters = stock_meters + ? WHERE id = ?");
+            $stmt->bind_param('di', $amount, $fabricId);
+        }
+    } else {
+        $amount = (int) round($qty);
+        if ($amount <= 0) {
+            return;
+        }
+        if ($direction === 'decrease') {
+            $available = (int) round((float) ($fabric['stock'] ?? 0));
+            if ($available < $amount) {
+                throw new RuntimeException('Insufficient stock during order confirmation.');
+            }
+            $stmt = $conn->prepare("UPDATE fabrics SET stock = stock - ? WHERE id = ? AND stock >= ?");
+            $stmt->bind_param('iii', $amount, $fabricId, $amount);
+        } else {
+            $stmt = $conn->prepare("UPDATE fabrics SET stock = stock + ? WHERE id = ?");
+            $stmt->bind_param('ii', $amount, $fabricId);
+        }
+    }
+    $stmt->execute();
+    if ($conn->affected_rows === 0) {
+        throw new RuntimeException('Stock update conflict for fabric ' . $fabricId . '. Please try again.');
+    }
+}
+
+/**
+ * Restore all order item quantities back into inventory.
+ */
+function restore_order_inventory(mysqli $conn, int $orderId): void
+{
+    $itemsStmt = $conn->prepare(
+        "SELECT fabric_id, unit_type, quantity_meters
+         FROM order_items
+         WHERE order_id = ?"
+    );
+    $itemsStmt->bind_param('i', $orderId);
+    $itemsStmt->execute();
+    $items = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($items as $item) {
+        $fabricId = (int) ($item['fabric_id'] ?? 0);
+        if ($fabricId <= 0) {
+            continue;
+        }
+        $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+            ? (string) $item['unit_type']
+            : 'meter';
+        $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
+        adjust_fabric_stock($conn, $fabricId, $itemUnit, (float) $qty, 'increase');
+    }
+}
+
+/**
+ * Guard admin order status edits with allowed state transitions.
+ */
+function can_transition_order_status(string $currentStatus, string $nextStatus): bool
+{
+    $current = strtolower(trim($currentStatus));
+    $next = strtolower(trim($nextStatus));
+    $map = [
+        'pending' => ['pending', 'confirmed', 'packed', 'cancelled'],
+        'confirmed' => ['confirmed', 'packed', 'shipped', 'cancelled'],
+        'packed' => ['packed', 'shipped', 'cancelled'],
+        'shipped' => ['shipped', 'delivered', 'returned'],
+        'delivered' => ['delivered', 'returned'],
+        'cancelled' => ['cancelled', 'refunded'],
+        'returned' => ['returned', 'refunded'],
+        'refunded' => ['refunded'],
+    ];
+    $allowed = $map[$current] ?? [$current];
+    return in_array($next, $allowed, true);
+}
+
+/**
+ * Shared UI metadata for order status badges.
+ */
+function order_status_meta(string $status): array
+{
+    $status = strtolower(trim($status));
+    $map = [
+        'pending' => ['label' => 'Pending', 'class' => 'warning'],
+        'confirmed' => ['label' => 'Confirmed', 'class' => 'info'],
+        'processing' => ['label' => 'Processing', 'class' => 'primary'],
+        'packed' => ['label' => 'Packed', 'class' => 'primary'],
+        'shipped' => ['label' => 'Shipped', 'class' => 'primary'],
+        'delivered' => ['label' => 'Delivered', 'class' => 'success'],
+        'cancelled' => ['label' => 'Cancelled', 'class' => 'danger'],
+        'returned' => ['label' => 'Returned', 'class' => 'secondary'],
+        'refunded' => ['label' => 'Refunded', 'class' => 'dark'],
+    ];
+    return $map[$status] ?? ['label' => ucfirst($status), 'class' => 'secondary'];
+}
+
+/**
+ * Shared UI metadata for payment status badges.
+ */
+function payment_status_meta(string $status): array
+{
+    $status = strtolower(trim($status));
+    $map = [
+        'pending' => ['label' => 'Pending', 'class' => 'secondary'],
+        'paid' => ['label' => 'Paid', 'class' => 'success'],
+        'failed' => ['label' => 'Failed', 'class' => 'danger'],
+        'refunded' => ['label' => 'Refunded', 'class' => 'dark'],
+    ];
+    return $map[$status] ?? ['label' => ucfirst($status), 'class' => 'secondary'];
+}
+
+/**
+ * Allow only supported online payment preference values.
+ */
+function sanitize_online_payment_method(?string $value): string
+{
+    $method = strtolower(trim((string) $value));
+    return in_array($method, ['upi', 'card', 'emi'], true) ? $method : '';
+}
+
+/**
  * Unit suffix for display.
  */
 function quantity_unit_suffix(string $unitType): string
@@ -384,6 +578,82 @@ function log_inquiry_activity(
         $stmt->execute();
     } catch (Throwable $e) {
         error_log('[fabric-export] inquiry activity log failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Persist order lifecycle events for auditability.
+ */
+function log_order_activity(
+    mysqli $conn,
+    int $orderId,
+    string $action,
+    string $actorType = 'system',
+    int $actorId = 0,
+    string $actorName = '',
+    string $details = ''
+): void {
+    try {
+        $stmt = $conn->prepare(
+            "INSERT INTO order_activity_logs (order_id, action, actor_type, actor_id, actor_name, details)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param('ississ', $orderId, $action, $actorType, $actorId, $actorName, $details);
+        $stmt->execute();
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] order activity log failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Persist refund transactions to keep a real ledger.
+ */
+function log_refund_ledger(
+    mysqli $conn,
+    int $orderId,
+    int $paymentId,
+    float $amount,
+    string $currency = 'INR',
+    string $status = 'initiated',
+    string $gateway = '',
+    string $gatewayRefundId = '',
+    string $notes = ''
+): void {
+    try {
+        $stmt = $conn->prepare(
+            "INSERT INTO refund_ledger (order_id, payment_id, amount, currency, status, gateway, gateway_refund_id, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param('iidsssss', $orderId, $paymentId, $amount, $currency, $status, $gateway, $gatewayRefundId, $notes);
+        $stmt->execute();
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] refund ledger log failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Idempotency guard for payment webhooks.
+ * Returns true when event was already processed.
+ */
+function payment_webhook_is_duplicate(mysqli $conn, string $provider, string $eventId, string $signature): bool
+{
+    if ($provider === '' || $eventId === '') {
+        return false;
+    }
+    try {
+        $stmt = $conn->prepare(
+            "INSERT INTO payment_webhook_events (provider, event_id, signature, received_at)
+             VALUES (?, ?, ?, NOW())"
+        );
+        $stmt->bind_param('sss', $provider, $eventId, $signature);
+        $stmt->execute();
+        return false;
+    } catch (Throwable $e) {
+        // Duplicate unique key => already processed.
+        if ($conn->errno === 1062) {
+            return true;
+        }
+        throw $e;
     }
 }
 
@@ -894,6 +1164,23 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
                     );
                     $updNotes->bind_param('ssi', $refundNote, $refundNote, $orderId);
                     $updNotes->execute();
+
+                    $paymentRowId = (int) ($payment['id'] ?? 0);
+                    $refundAmount = isset($payment['amount']) ? (float) $payment['amount'] : 0.0;
+                    if ($paymentRowId > 0 && $refundAmount > 0) {
+                        log_refund_ledger(
+                            $conn,
+                            $orderId,
+                            $paymentRowId,
+                            $refundAmount,
+                            'INR',
+                            'initiated',
+                            'razorpay',
+                            $refundId,
+                            'Refund initiated from admin order view.'
+                        );
+                    }
+                    log_order_activity($conn, $orderId, 'refund_initiated', 'admin', (int) ($_SESSION['admin_id'] ?? 0), (string) ($_SESSION['admin_name'] ?? 'admin'), 'Razorpay refund initiated.');
                 }
             } catch (Throwable $e) {
                 throw new RuntimeException('Razorpay refund failed: ' . $e->getMessage());
@@ -928,7 +1215,25 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
             $paymentRowId = (int) ($payment['id'] ?? 0);
             $updPayment->bind_param('i', $paymentRowId);
             $updPayment->execute();
+            $refundAmount = isset($payment['amount']) ? (float) $payment['amount'] : 0.0;
+            if ($refundAmount > 0) {
+                log_refund_ledger(
+                    $conn,
+                    $orderId,
+                    $paymentRowId,
+                    $refundAmount,
+                    'INR',
+                    'processed',
+                    $method,
+                    '',
+                    'Refund marked processed from admin flow.'
+                );
+            }
         }
+
+        // Restore inventory after successful refund completion for cancelled paid orders.
+        restore_order_inventory($conn, $orderId);
+        log_order_activity($conn, $orderId, 'refund_completed', 'admin', (int) ($_SESSION['admin_id'] ?? 0), (string) ($_SESSION['admin_name'] ?? 'admin'), 'Order marked refunded.');
 
         $conn->commit();
         return ['ok' => true, 'message' => 'Order marked as refunded.'];
@@ -1014,7 +1319,28 @@ function admin_sync_razorpay_refund_status(mysqli $conn, int $orderId): array
                 $paymentId = (int) $payment['id'];
                 $updPayment->bind_param('i', $paymentId);
                 $updPayment->execute();
+                $payAmtStmt = $conn->prepare("SELECT amount FROM payments WHERE id = ? LIMIT 1");
+                $payAmtStmt->bind_param('i', $paymentId);
+                $payAmtStmt->execute();
+                $payAmtRow = $payAmtStmt->get_result()->fetch_assoc() ?: [];
+                $refundAmount = (float) ($payAmtRow['amount'] ?? 0);
+                if ($refundAmount > 0) {
+                    log_refund_ledger(
+                        $conn,
+                        $orderId,
+                        $paymentId,
+                        $refundAmount,
+                        'INR',
+                        'processed',
+                        'razorpay',
+                        $refundId,
+                        'Refund processed confirmed by Razorpay sync.'
+                    );
+                }
             }
+
+            restore_order_inventory($conn, $orderId);
+            log_order_activity($conn, $orderId, 'refund_completed', 'admin', (int) ($_SESSION['admin_id'] ?? 0), (string) ($_SESSION['admin_name'] ?? 'admin'), 'Refund synced as processed from Razorpay.');
 
             $conn->commit();
             return ['ok' => true, 'message' => 'Refund processed in Razorpay. Local status updated to Refunded.'];
