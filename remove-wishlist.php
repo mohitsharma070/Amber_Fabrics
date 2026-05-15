@@ -9,7 +9,14 @@ if (!verify_csrf()) {
     redirect('/cart.php');
 }
 
-$productId = (int) ($_POST['product_id'] ?? 0);
+$cartKey = trim((string) ($_POST['cart_key'] ?? ''));
+$productId = 0;
+if ($cartKey !== '') {
+    $parts = explode('::', $cartKey, 2);
+    $productId = (int) ($parts[0] ?? 0);
+}
+$productId = $productId > 0 ? $productId : (int) ($_POST['product_id'] ?? 0);
+$cartKey = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::_') : '');
 if ($productId <= 0) {
     flash('error', 'Invalid item.');
     redirect('/cart.php');
@@ -25,6 +32,17 @@ if (!isset($_SESSION['wishlist_meter_length']) || !is_array($_SESSION['wishlist_
     $_SESSION['wishlist_meter_length'] = [];
 }
 
-unset($_SESSION['wishlist'][$productId], $_SESSION['wishlist_size'][$productId], $_SESSION['wishlist_meter_length'][$productId]);
+unset($_SESSION['wishlist'][$cartKey], $_SESSION['wishlist_size'][$cartKey], $_SESSION['wishlist_meter_length'][$cartKey]);
+if (!empty($_SESSION['customer_id'])) {
+    $cid = (int) $_SESSION['customer_id'];
+    wishlist_save_to_db(
+        $conn,
+        $cid,
+        $_SESSION['wishlist'],
+        $_SESSION['wishlist_meter_length'] ?? [],
+        $_SESSION['wishlist_size'] ?? []
+    );
+    $_SESSION['wishlist_loaded_for'] = $cid;
+}
 flash('success', 'Item removed from wishlist.');
 redirect('/cart.php');

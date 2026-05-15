@@ -95,5 +95,8 @@
 </button>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<?php do_action('page.footer', [
+    'page' => basename($_SERVER['PHP_SELF'] ?? ''),
+]); ?>
 </body>
 </html>

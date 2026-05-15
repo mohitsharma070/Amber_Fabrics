@@ -240,10 +240,10 @@ function catalog_query(array $params): string {
                     <?php
                         $regularPrice = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
                         $salePrice    = (float) ($row['sale_price'] ?? 0);
-                        $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece'], true) ? (string) $row['unit_type'] : 'meter';
-                        $displayStock = $unitType === 'piece' ? (float) ($row['stock'] ?? 0) : (float) ($row['stock_meters'] ?? 0);
+                        $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $row['unit_type'] : 'meter';
+                        $displayStock = ($unitType === 'piece' || $unitType === 'set') ? (float) ($row['stock'] ?? 0) : (float) ($row['stock_meters'] ?? 0);
                         $inStock      = !empty($row['is_available']) && $displayStock > 0;
-                        $hasSizeOptions = !empty($row['size']) && preg_match('/[,\|\/]/', (string) $row['size']);
+                        $hasSizeOptions = !empty(parse_size_options((string) ($row['size'] ?? '')));
                     ?>
                     <div class="animate-in">
                         <article class="card h-100">
@@ -269,7 +269,7 @@ function catalog_query(array $params): string {
                                 </a>
 
                                 <div class="fabric-price mb-2">
-                                    <?php if ($salePrice > 0 && $regularPrice > 0): ?>
+                                    <?php if ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice): ?>
                                         <span class="price-inr fw-bold">Rs <?php echo number_format($salePrice, 2); ?></span>
                                         <span class="text-muted small ms-1"><del>Rs <?php echo number_format($regularPrice, 2); ?></del></span>
                                     <?php elseif ($regularPrice > 0): ?>

@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/customer-auth.php';
 require_customer();
 
 $customerId = (int) $_SESSION['customer_id'];
+release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 $stmt = $conn->prepare(
     "SELECT

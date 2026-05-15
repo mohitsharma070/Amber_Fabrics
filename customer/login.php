@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!customer_check_rate_limit($conn, $email, $ip)) {
         $errors['_login'] = 'Too many failed attempts. Please wait ' . CUSTOMER_LOCK_MINUTES . ' minutes before trying again.';
     } else {
-        $stmt = $conn->prepare("SELECT id, name, password_hash, email_verified FROM customers WHERE email = ?");
+        $stmt = $conn->prepare("SELECT id, name, password_hash, email_verified, is_active FROM customers WHERE email = ?");
         $stmt->bind_param('s', $email);
         $stmt->execute();
         $customer = $stmt->get_result()->fetch_assoc();
@@ -43,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!(int) $customer['email_verified']) {
                 $errors['_login'] = 'Please verify your email address before logging in.';
                 $errors['_login_raw'] = '<a href="/customer/resend-verification.php">Resend verification email &rsaquo;</a>';
+            } elseif (isset($customer['is_active']) && (int) $customer['is_active'] !== 1) {
+                $errors['_login'] = 'Your account is inactive. Please contact support.';
             } else {
             customer_record_attempt($conn, $email, $ip, true);
             session_regenerate_id(true);
@@ -58,8 +60,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sessionMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])
                 ? $_SESSION['cart_meter_length']
                 : [];
+            $cartParseKey = static function (string $rawKey): array {
+                $parts = explode('::', $rawKey, 2);
+                $pid = (int) ($parts[0] ?? 0);
+                return [$pid, $parts[1] ?? ''];
+            };
             $mergedIds = array_values(array_filter(array_unique(array_map(
-                'intval',
+                static function ($key) use ($cartParseKey) {
+                    [$pid] = $cartParseKey((string) $key);
+                    return $pid;
+                },
                 array_merge(array_keys($dbCart), array_keys($sessionCart))
             )), static fn($v) => $v > 0));
             $unitMap = [];
@@ -76,26 +86,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         : 'meter';
                 }
             }
-            foreach ($sessionCart as $pid => $qty) {
-                $productId = (int) $pid;
+            foreach ($sessionCart as $cartKey => $qty) {
+                [$productId] = $cartParseKey((string) $cartKey);
                 if ($productId <= 0) {
                     continue;
                 }
                 $unitType = $unitMap[$productId] ?? 'meter';
-                $currentQty = isset($dbCart[$productId]) ? normalize_quantity_by_unit($dbCart[$productId], $unitType) : 0;
+                $currentQty = isset($dbCart[$cartKey]) ? normalize_quantity_by_unit($dbCart[$cartKey], $unitType) : 0;
                 $incomingQty = normalize_quantity_by_unit($qty, $unitType);
-                $dbCart[$productId] = ($unitType === 'meter')
+                $dbCart[$cartKey] = ($unitType === 'meter')
                     ? round((float) $currentQty + (float) $incomingQty, 2)
                     : (int) $currentQty + (int) $incomingQty;
-                if ($unitType === 'meter' && isset($sessionMeterMap[$productId]) && is_numeric($sessionMeterMap[$productId]) && (float) $sessionMeterMap[$productId] > 0) {
-                    $dbMeterMap[$productId] = round((float) $sessionMeterMap[$productId], 2);
+                if ($unitType === 'meter' && isset($sessionMeterMap[$cartKey]) && is_numeric($sessionMeterMap[$cartKey]) && (float) $sessionMeterMap[$cartKey] > 0) {
+                    $dbMeterMap[$cartKey] = round((float) $sessionMeterMap[$cartKey], 2);
                 }
             }
 
             // Cap merged quantities to current stock so we don't end up with
             // more units in cart than are actually available.
             if (!empty($dbCart)) {
-                $mergedIds = array_values(array_filter(array_map('intval', array_keys($dbCart)), static fn($v) => $v > 0));
+                $mergedIds = [];
+                foreach (array_keys($dbCart) as $key) {
+                    [$pid] = $cartParseKey((string) $key);
+                    if ($pid > 0) {
+                        $mergedIds[] = $pid;
+                    }
+                }
+                $mergedIds = array_values(array_unique($mergedIds));
                 if (!empty($mergedIds)) {
                     $ph   = implode(',', array_fill(0, count($mergedIds), '?'));
                     $stok = $conn->prepare("SELECT id, unit_type, stock, stock_meters FROM fabrics WHERE id IN ($ph)");
@@ -110,8 +127,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $avail = ($unitType === 'meter')
                             ? (float) ($sr['stock_meters'] ?? 0)
                             : (float) ($sr['stock'] ?? 0);
-                        if ($avail > 0 && isset($dbCart[$sid]) && $dbCart[$sid] > $avail) {
-                            $dbCart[$sid] = ($unitType === 'meter') ? round($avail, 2) : (int) floor($avail);
+                        foreach ($dbCart as $key => $qVal) {
+                            [$kPid] = $cartParseKey((string) $key);
+                            if ($kPid !== $sid) {
+                                continue;
+                            }
+                            if ($avail > 0 && $qVal > $avail) {
+                                $dbCart[$key] = ($unitType === 'meter') ? round($avail, 2) : (int) floor($avail);
+                            }
                         }
                     }
                 }
@@ -122,6 +145,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!empty($dbCart)) {
                 cart_save_to_db($conn, (int) $customer['id'], $dbCart, $dbMeterMap);
             }
+
+            // Merge guest wishlist with persisted wishlist and keep it in DB.
+            $dbWishlistBundle = wishlist_load_from_db_bundle($conn, (int) $customer['id']);
+            $dbWishlist = is_array($dbWishlistBundle['wishlist'] ?? null) ? $dbWishlistBundle['wishlist'] : [];
+            $dbWishlistSizeMap = is_array($dbWishlistBundle['size_map'] ?? null) ? $dbWishlistBundle['size_map'] : [];
+            $dbWishlistMeterMap = is_array($dbWishlistBundle['meter_map'] ?? null) ? $dbWishlistBundle['meter_map'] : [];
+            $sessionWishlist = isset($_SESSION['wishlist']) && is_array($_SESSION['wishlist']) ? $_SESSION['wishlist'] : [];
+            $sessionWishlistSizeMap = isset($_SESSION['wishlist_size']) && is_array($_SESSION['wishlist_size'])
+                ? $_SESSION['wishlist_size']
+                : [];
+            $sessionWishlistMeterMap = isset($_SESSION['wishlist_meter_length']) && is_array($_SESSION['wishlist_meter_length'])
+                ? $_SESSION['wishlist_meter_length']
+                : [];
+            foreach ($sessionWishlist as $wishlistKey => $wishlistQty) {
+                [$wishlistPid] = $cartParseKey((string) $wishlistKey);
+                if ($wishlistPid <= 0) {
+                    continue;
+                }
+                $existingQty = isset($dbWishlist[$wishlistKey]) ? normalize_meter_quantity($dbWishlist[$wishlistKey], 1.0) : 0.0;
+                $incomingQty = normalize_meter_quantity($wishlistQty, 1.0);
+                $dbWishlist[$wishlistKey] = max($existingQty, $incomingQty);
+                if (isset($sessionWishlistSizeMap[$wishlistKey])) {
+                    $dbWishlistSizeMap[$wishlistKey] = (string) $sessionWishlistSizeMap[$wishlistKey];
+                }
+                if (isset($sessionWishlistMeterMap[$wishlistKey]) && is_numeric($sessionWishlistMeterMap[$wishlistKey]) && (float) $sessionWishlistMeterMap[$wishlistKey] > 0) {
+                    $dbWishlistMeterMap[$wishlistKey] = round((float) $sessionWishlistMeterMap[$wishlistKey], 2);
+                }
+            }
+            $_SESSION['wishlist'] = $dbWishlist;
+            $_SESSION['wishlist_size'] = $dbWishlistSizeMap;
+            $_SESSION['wishlist_meter_length'] = $dbWishlistMeterMap;
+            $_SESSION['wishlist_loaded_for'] = (int) $customer['id'];
+            wishlist_save_to_db($conn, (int) $customer['id'], $dbWishlist, $dbWishlistMeterMap, $dbWishlistSizeMap);
 
             flash('success', 'Welcome back, ' . $customer['name'] . '!');
             redirect($returnTo ?: '/index.php');

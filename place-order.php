@@ -14,7 +14,7 @@ if (!verify_csrf()) {
 }
 
 // Clear any stale pending-payment session from a previous abandoned Razorpay attempt
-unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id']);
+unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
 
 // One-time nonce to prevent duplicate order submission (double-click, back-and-submit)
 $submittedNonce = (string) ($_POST['order_nonce'] ?? '');
@@ -36,8 +36,25 @@ $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
 $onlineMethod = sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
+$shippingAddressId = (int) ($_POST['shipping_address_id'] ?? 0);
 $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
+
+if ($customerId > 0 && $shippingAddressId > 0 && customer_addresses_table_ready($conn)) {
+    $savedAddress = customer_address_get($conn, $customerId, $shippingAddressId);
+    if ($savedAddress) {
+        $fullName = trim((string) ($savedAddress['full_name'] ?? $fullName));
+        $phone = trim((string) ($savedAddress['phone'] ?? $phone));
+        $address = trim((string) ($savedAddress['address_line'] ?? $address));
+        $city = trim((string) ($savedAddress['city'] ?? $city));
+        $state = trim((string) ($savedAddress['state'] ?? $state));
+        $pincode = trim((string) ($savedAddress['pincode'] ?? $pincode));
+        $country = trim((string) ($savedAddress['country'] ?? $country));
+    } else {
+        $shippingAddressId = 0;
+    }
+}
 
 $_SESSION['checkout_old'] = [
     'full_name' => $fullName,
@@ -51,6 +68,7 @@ $_SESSION['checkout_old'] = [
     'order_notes' => $orderNotes,
     'payment_method' => $paymentMethod,
     'cod_fee_apply' => $codFeeApply,
+    'shipping_address_id' => $shippingAddressId,
 ];
 
 $errors = [];
@@ -89,8 +107,26 @@ if (!empty($errors)) {
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
 $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
-$ids = array_map('intval', array_keys($cart));
-$ids = array_values(array_filter($ids, static fn($v) => $v > 0));
+$cartParseKey = static function (string $rawKey): array {
+    $parts = explode('::', $rawKey, 2);
+    $pid = (int) ($parts[0] ?? 0);
+    $size = '';
+    if (isset($parts[1])) {
+        $decoded = rawurldecode((string) $parts[1]);
+        if ($decoded !== '_' && $decoded !== '') {
+            $size = $decoded;
+        }
+    }
+    return [$pid, $size];
+};
+$ids = [];
+foreach (array_keys($cart) as $key) {
+    [$pid] = $cartParseKey((string) $key);
+    if ($pid > 0) {
+        $ids[] = $pid;
+    }
+}
+$ids = array_values(array_unique($ids));
 
 if (empty($ids)) {
     flash('error', 'Your cart is empty.');
@@ -119,8 +155,8 @@ try {
     $orderItems = [];
     $subtotal = 0.00;
 
-    foreach ($cart as $productIdRaw => $qtyRaw) {
-        $productId = (int) $productIdRaw;
+    foreach ($cart as $cartKey => $qtyRaw) {
+        [$productId, $sizeFromKey] = $cartParseKey((string) $cartKey);
 
         if (!isset($productMap[$productId])) {
             throw new RuntimeException('One of the products is no longer available.');
@@ -136,7 +172,7 @@ try {
             throw new RuntimeException('Product unavailable: ' . ($product['name'] ?? 'Unknown'));
         }
 
-        $selectedSize = trim((string) ($cartSizes[$productId] ?? ''));
+        $selectedSize = trim((string) ($cartSizes[$cartKey] ?? $sizeFromKey));
         $validSizes = parse_size_options((string) ($product['size'] ?? ''));
         if (!empty($validSizes) && !in_array($selectedSize, $validSizes, true)) {
             throw new RuntimeException('Please reselect product size before placing order.');
@@ -158,8 +194,8 @@ try {
         // Preserve bundle display info for invoice (e.g. "1 × 5m")
         $bundleMeterLength = null;
         $bundleQtyVal      = null;
-        if ($unitType === 'meter' && isset($cartMeterMap[$productId]) && is_numeric($cartMeterMap[$productId]) && (float) $cartMeterMap[$productId] > 0) {
-            $bundleMeterLength = round((float) $cartMeterMap[$productId], 2);
+        if ($unitType === 'meter' && isset($cartMeterMap[$cartKey]) && is_numeric($cartMeterMap[$cartKey]) && (float) $cartMeterMap[$cartKey] > 0) {
+            $bundleMeterLength = round((float) $cartMeterMap[$cartKey], 2);
             $bundleQtyVal      = max(1, (int) round($qty / $bundleMeterLength));
         }
 
@@ -178,11 +214,10 @@ try {
         ];
     }
 
-    $shipping = checkout_shipping_breakdown((float) $subtotal, $country, $paymentMethod, $codFeeApply === 1);
+    $shipping = checkout_shipping_for_order((float) $subtotal, $country, $pincode, $paymentMethod);
     $baseShippingAmount = (float) $shipping['base_shipping'];
     $codFeeAmount = (float) $shipping['cod_fee'];
     $shippingAmount = (float) $shipping['shipping_total'];
-    $preDiscountTotal = $subtotal + $shippingAmount;
 
     $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
     $discountAmount = 0.00;
@@ -202,7 +237,7 @@ try {
         $coupon = $couponStmt->get_result()->fetch_assoc();
 
         if ($coupon) {
-            $validated = validate_coupon_for_amount($coupon, $preDiscountTotal, date('Y-m-d'));
+            $validated = validate_coupon_for_amount($coupon, (float) $subtotal, date('Y-m-d'));
             if ($validated['valid']) {
                 if (has_customer_used_coupon($conn, (int) $coupon['id'], $customerId)) {
                     throw new RuntimeException('You have already used this coupon.');
@@ -231,18 +266,32 @@ try {
     }
     $shippingNote = "Shipping: Rs " . number_format($baseShippingAmount, 2) . " | COD Fee: Rs " . number_format($codFeeAmount, 2);
     $orderNotesWithCoupon = trim($orderNotesWithCoupon . "\n" . $shippingNote);
+    $shippingAddressJson = json_encode([
+        'address_id' => $shippingAddressId,
+        'name' => $fullName,
+        'address' => $address,
+        'city' => $city,
+        'state' => $state,
+        'pincode' => $pincode,
+        'country' => $country,
+        'phone' => $phone,
+        'email' => $email,
+    ], JSON_UNESCAPED_UNICODE);
+    if (!is_string($shippingAddressJson) || $shippingAddressJson === '') {
+        $shippingAddressJson = null;
+    }
 
     $insertOrder = $conn->prepare(
         "INSERT INTO orders (
             order_number, customer_name, customer_phone, customer_email,
             address, city, state, pincode, country,
             subtotal, shipping_amount, discount_amount, total_amount,
-            payment_method, payment_status, order_status, order_notes,
+            payment_method, payment_status, order_status, order_notes, shipping_address,
             customer_id, currency, shipping_cost, total, status, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, 'INR', ?, ?, 'pending', ?)"
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?, 'INR', ?, ?, 'pending', ?)"
     );
     $insertOrder->bind_param(
-        'sssssssssddddssidds',
+        'sssssssssddddsssidds',
         $orderNumber,
         $fullName,
         $phone,
@@ -258,6 +307,7 @@ try {
         $totalAmount,
         $paymentMethod,
         $orderNotesWithCoupon,
+        $shippingAddressJson,
         $customerId,
         $shippingAmount,
         $totalAmount,
@@ -296,10 +346,8 @@ try {
             $bQty, $bMeter
         );
         $insertOrderItem->execute();
-
-        // Reserve inventory immediately for both COD and online orders.
-        adjust_fabric_stock($conn, $pid, (string) $item['unit_type'], (float) $qty, 'decrease');
     }
+    reserve_order_inventory($conn, $orderId);
 
     $insertPayment = $conn->prepare(
         "INSERT INTO payments (order_id, payment_method, payment_status, transaction_id, amount)
@@ -337,15 +385,40 @@ try {
         log_order_activity($conn, $orderId, 'payment_pending_online', 'system', 0, 'system', 'Awaiting Razorpay payment.');
     }
 
+    do_action('order.after_create', [
+        'conn' => $conn,
+        'order_id' => $orderId,
+        'order_number' => $orderNumber,
+        'customer_id' => $customerId,
+        'customer_name' => $fullName,
+        'customer_phone' => $phone,
+        'payment_method' => $paymentMethod,
+        'payment_status' => 'pending',
+        'order_status' => 'pending',
+        'subtotal' => $subtotal,
+        'shipping_amount' => $shippingAmount,
+        'discount_amount' => $discountAmount,
+        'total_amount' => $totalAmount,
+    ]);
+
     // For COD: increment coupon usage only after the order is committed (payment confirmed
     // on delivery is outside our system's control, but the order is real and the discount
     // is locked in — this is the earliest safe point for COD).
     // For Razorpay: coupon increment happens in razorpay-verify.php after payment confirmation.
     if ($couponId > 0 && $paymentMethod === 'cod') {
-        $couponUsedStmt = $conn->prepare("UPDATE coupons SET used_count = used_count + 1 WHERE id = ?");
+        $couponUsedStmt = $conn->prepare(
+            "UPDATE coupons
+             SET used_count = used_count + 1
+             WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
+        );
         $couponUsedStmt->bind_param('i', $couponId);
         $couponUsedStmt->execute();
-        mark_coupon_used_once($conn, $couponId, $customerId, $orderId);
+        if ($conn->affected_rows <= 0) {
+            throw new RuntimeException('Coupon usage limit reached.');
+        }
+        if (!mark_coupon_used_once($conn, $couponId, $customerId, $orderId)) {
+            throw new RuntimeException('Unable to mark coupon usage for this order.');
+        }
     }
 
     $conn->commit();
@@ -365,8 +438,7 @@ try {
         redirect('/payment/razorpay-create.php');
     }
 
-    unset($_SESSION['cart'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
-    unset($_SESSION['cart_size']);
+    unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['cart_meter_length'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
     if ($customerId > 0) {
         cart_clear_db($conn, $customerId);
     }

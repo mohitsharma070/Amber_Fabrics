@@ -158,9 +158,11 @@ if ($eventType === 'payment.failed') {
             );
             $updateOrder->bind_param('ssi', $note, $note, $orderId);
             $updateOrder->execute();
+            restore_order_inventory($conn, $orderId);
             log_order_activity($conn, $orderId, 'payment_failed', 'webhook', 0, 'razorpay', $note);
         }
 
+        payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature);
         $conn->commit();
         http_response_code(200);
         echo 'OK';
@@ -245,6 +247,7 @@ try {
     }
 
     if (($order['payment_status'] ?? '') === 'paid') {
+        payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature);
         $conn->commit();
         http_response_code(200);
         echo 'Already processed';
@@ -292,8 +295,31 @@ try {
         'razorpay',
         'Event: ' . $eventType . ' | Payment: ' . $paymentId
     );
+    payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature);
 
     $conn->commit();
+
+    $awbResult = shiprocket_auto_create_awb_for_order($conn, $orderId);
+    if (empty($awbResult['ok'])) {
+        log_order_activity(
+            $conn,
+            $orderId,
+            'shipment_manual_fallback',
+            'webhook',
+            0,
+            'shiprocket',
+            (string) ($awbResult['reason'] ?? 'Auto AWB failed')
+        );
+    }
+
+    do_action('order.after_payment_success', [
+        'conn' => $conn,
+        'order_id' => $orderId,
+        'order_number' => (string) ($order['order_number'] ?? ''),
+        'customer_id' => (int) ($order['customer_id'] ?? 0),
+        'payment_method' => 'razorpay',
+        'payment_status' => 'paid',
+    ]);
 
     send_order_confirmation_email($conn, $orderId);
     http_response_code(200);

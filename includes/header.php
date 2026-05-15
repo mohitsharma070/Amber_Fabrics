@@ -31,6 +31,11 @@
 
 <script src="/js/script.js?v=20260507h" defer></script>
 
+<?php do_action('page.head', [
+    'page' => basename($_SERVER['PHP_SELF'] ?? ''),
+    'title' => isset($metaTitle) ? (string) $metaTitle : 'Amber Fabrics',
+]); ?>
+
 </head>
 
 <body>

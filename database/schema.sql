@@ -146,6 +146,25 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS customer_addresses (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id         INT NOT NULL,
+    label               VARCHAR(80) DEFAULT NULL,
+    full_name           VARCHAR(255) NOT NULL,
+    phone               VARCHAR(30) DEFAULT NULL,
+    address_line        TEXT NOT NULL,
+    city                VARCHAR(120) NOT NULL,
+    state               VARCHAR(120) DEFAULT NULL,
+    pincode             VARCHAR(20) DEFAULT NULL,
+    country             VARCHAR(120) NOT NULL DEFAULT 'India',
+    is_default_shipping TINYINT(1) NOT NULL DEFAULT 0,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_customer_addresses_customer (customer_id),
+    INDEX idx_customer_addresses_default (customer_id, is_default_shipping),
+    CONSTRAINT fk_customer_addresses_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- â”€â”€â”€ Customer brute-force protection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE IF NOT EXISTS customer_login_attempts (
     attempt_key   CHAR(64)  PRIMARY KEY,
@@ -163,33 +182,108 @@ CREATE TABLE IF NOT EXISTS cart (
     UNIQUE KEY uq_cart_customer (customer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Session / guest cart (legacy ecommerce flow) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-CREATE TABLE IF NOT EXISTS carts (
-    id          INT          AUTO_INCREMENT PRIMARY KEY,
-    session_id  VARCHAR(128) DEFAULT NULL,
-    customer_id INT          DEFAULT NULL,
-    created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_carts_session_id  (session_id),
-    INDEX idx_carts_customer_id (customer_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- â”€â”€â”€ Cart line items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE IF NOT EXISTS cart_items (
     id                 INT           AUTO_INCREMENT PRIMARY KEY,
     cart_id            INT           NOT NULL,
     product_id         INT           DEFAULT NULL,
+    cart_key           VARCHAR(255)  DEFAULT NULL,
+    selected_size      VARCHAR(100)  DEFAULT NULL,
     quantity           DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     price              DECIMAL(10,2) DEFAULT 0.00,
     created_at         TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     -- Legacy columns used by cart_save_to_db / cart_load_from_db
     fabric_id          INT           NOT NULL,
     quantity_meters    DECIMAL(10,2) NOT NULL DEFAULT 1.00,
-    price_snapshot_inr DECIMAL(10,2) DEFAULT NULL,
-    price_snapshot_usd DECIMAL(10,2) DEFAULT NULL,
-    added_at           TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_cart_product  (cart_id, product_id),
-    UNIQUE KEY uq_cart_fabric   (cart_id, fabric_id),
+    meter_length       DECIMAL(10,2) DEFAULT NULL,
+    UNIQUE KEY uq_cart_key      (cart_id, cart_key),
+    INDEX idx_cart_product      (cart_id, product_id),
+    INDEX idx_cart_fabric       (cart_id, fabric_id),
     INDEX idx_cart_items_cart_id (cart_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS wishlist_items (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id   INT NOT NULL,
+    product_id    INT NOT NULL,
+    cart_key      VARCHAR(255) NOT NULL,
+    selected_size VARCHAR(100) DEFAULT NULL,
+    quantity      DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+    meter_length  DECIMAL(10,2) DEFAULT NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_wishlist_customer_key (customer_id, cart_key),
+    INDEX idx_wishlist_customer (customer_id),
+    INDEX idx_wishlist_product (product_id),
+    CONSTRAINT fk_wishlist_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_wishlist_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Abandoned cart reminders
+CREATE TABLE IF NOT EXISTS abandoned_cart_reminders (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    customer_email VARCHAR(255) NOT NULL,
+    customer_name VARCHAR(255) DEFAULT NULL,
+    cart_hash CHAR(64) NOT NULL,
+    items_count INT NOT NULL DEFAULT 0,
+    subtotal_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    cart_summary TEXT,
+    status ENUM('active','completed','recovered') NOT NULL DEFAULT 'active',
+    emails_sent_count INT NOT NULL DEFAULT 0,
+    next_send_at DATETIME DEFAULT NULL,
+    last_sent_at DATETIME DEFAULT NULL,
+    last_activity_at DATETIME DEFAULT NULL,
+    recovered_at DATETIME DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_abandoned_cart_customer (customer_id),
+    INDEX idx_abandoned_cart_status_next (status, next_send_at),
+    CONSTRAINT fk_abandoned_cart_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Inventory alert logs
+CREATE TABLE IF NOT EXISTS inventory_alert_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'piece',
+    stock_value DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    sent_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_inventory_alert_product_sent (product_id, sent_at),
+    CONSTRAINT fk_inventory_alert_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Shipping / RTO risk scoring
+CREATE TABLE IF NOT EXISTS shipping_rto_risks (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    risk_score INT NOT NULL DEFAULT 0,
+    risk_band ENUM('low','medium','high') NOT NULL DEFAULT 'low',
+    reasons_json JSON DEFAULT NULL,
+    signals_json JSON DEFAULT NULL,
+    assessed_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_shipping_rto_risks_order (order_id),
+    INDEX idx_shipping_rto_risks_band_score (risk_band, risk_score)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Product reviews and ratings
+CREATE TABLE IF NOT EXISTS product_reviews (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    customer_id INT NOT NULL,
+    rating TINYINT NOT NULL,
+    review_text TEXT NOT NULL,
+    status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',
+    reviewed_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_product_review_customer (product_id, customer_id),
+    INDEX idx_product_reviews_status_product (status, product_id),
+    CONSTRAINT fk_product_reviews_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE,
+    CONSTRAINT fk_product_reviews_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- â”€â”€â”€ Coupons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -238,6 +332,8 @@ CREATE TABLE IF NOT EXISTS orders (
     notes           TEXT,
     admin_notes     TEXT,
     status          ENUM('pending','confirmed','processing','shipped','delivered','cancelled') DEFAULT 'pending',
+    inventory_reserved_at DATETIME DEFAULT NULL,
+    inventory_restored_at DATETIME DEFAULT NULL,
     created_at      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_orders_customer_id    (customer_id),
@@ -456,6 +552,48 @@ CREATE TABLE IF NOT EXISTS refund_ledger (
     INDEX idx_refund_ledger_order_id (order_id),
     INDEX idx_refund_ledger_payment_id (payment_id),
     INDEX idx_refund_ledger_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE shipping_rto_risks
+    ADD CONSTRAINT fk_shipping_rto_risks_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE;
+
+-- COD confirmation gate for high-value cash orders
+CREATE TABLE IF NOT EXISTS cod_confirmations (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id     INT NOT NULL,
+    channel      ENUM('auto','whatsapp','call') NOT NULL DEFAULT 'auto',
+    status       ENUM('pending','confirmed','cancelled','auto_cancelled') NOT NULL DEFAULT 'pending',
+    deadline_at  DATETIME DEFAULT NULL,
+    attempts     INT NOT NULL DEFAULT 0,
+    notes        TEXT,
+    confirmed_at DATETIME DEFAULT NULL,
+    cancelled_at DATETIME DEFAULT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_cod_confirmations_order_id (order_id),
+    INDEX idx_cod_confirmations_status_deadline (status, deadline_at),
+    CONSTRAINT fk_cod_confirmations_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Marketing campaign attribution captured from UTM/ad click parameters
+CREATE TABLE IF NOT EXISTS marketing_attributions (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id     INT NOT NULL,
+    customer_id  INT DEFAULT NULL,
+    utm_source   VARCHAR(255) DEFAULT NULL,
+    utm_medium   VARCHAR(255) DEFAULT NULL,
+    utm_campaign VARCHAR(255) DEFAULT NULL,
+    utm_term     VARCHAR(255) DEFAULT NULL,
+    utm_content  VARCHAR(255) DEFAULT NULL,
+    fbclid       VARCHAR(500) DEFAULT NULL,
+    gclid        VARCHAR(500) DEFAULT NULL,
+    landing_url  VARCHAR(1000) DEFAULT NULL,
+    referrer     VARCHAR(1000) DEFAULT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_marketing_attributions_order_id (order_id),
+    INDEX idx_marketing_attributions_source_campaign (utm_source, utm_campaign),
+    INDEX idx_marketing_attributions_customer_id (customer_id),
+    CONSTRAINT fk_marketing_attributions_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS coupon_usages (

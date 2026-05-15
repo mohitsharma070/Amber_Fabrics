@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<products generated_at="2026-05-15T10:44:41+02:00" count="15">
+  <product>
+    <id>15</id>
+    <title>Satin Fabric</title>
+    <sku></sku>
+    <description>Shiny satin fabric used for dresses and evening wear</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=15</link>
+    <image_link>http://localhost:8000/images/fabrics/satin1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>14</id>
+    <title>Georgette Fabric</title>
+    <sku></sku>
+    <description>Elegant georgette fabric used in ethnic wear</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=14</link>
+    <image_link>http://localhost:8000/images/fabrics/georgette1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>13</id>
+    <title>Chiffon Fabric</title>
+    <sku></sku>
+    <description>Lightweight chiffon fabric for fashion garments</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=13</link>
+    <image_link>http://localhost:8000/images/fabrics/chiffon1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>12</id>
+    <title>Canvas Fabric</title>
+    <sku></sku>
+    <description>Strong canvas fabric used for bags and upholstery</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=12</link>
+    <image_link>http://localhost:8000/images/fabrics/canvas1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>11</id>
+    <title>Corduroy Fabric</title>
+    <sku></sku>
+    <description>Corduroy fabric with textured ribs</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=11</link>
+    <image_link>http://localhost:8000/images/fabrics/corduroy1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>10</id>
+    <title>Viscose Fabric</title>
+    <sku></sku>
+    <description>Soft viscose fabric used for dresses and tops</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=10</link>
+    <image_link>http://localhost:8000/images/fabrics/viscose1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>9</id>
+    <title>Poly Cotton Fabric</title>
+    <sku></sku>
+    <description>Blend fabric combining durability and comfort</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=9</link>
+    <image_link>http://localhost:8000/images/fabrics/polycotton1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>8</id>
+    <title>Silk Fabric</title>
+    <sku></sku>
+    <description>Premium silk fabric used for luxury garments</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=8</link>
+    <image_link>http://localhost:8000/images/fabrics/silk1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>7</id>
+    <title>Twill Fabric</title>
+    <sku></sku>
+    <description>Strong twill fabric for workwear and trousers</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=7</link>
+    <image_link>http://localhost:8000/images/fabrics/twill1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>6</id>
+    <title>Cotton Poplin Fabric</title>
+    <sku></sku>
+    <description>Smooth cotton poplin fabric widely used in shirts</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=6</link>
+    <image_link>http://localhost:8000/images/fabrics/poplin1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>5</id>
+    <title>Rayon Printed Fabric</title>
+    <sku></sku>
+    <description>Soft rayon printed fabric for ladies garments</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=5</link>
+    <image_link>http://localhost:8000/images/fabrics/rayon1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>4</id>
+    <title>Denim Fabric</title>
+    <sku></sku>
+    <description>Heavy denim fabric ideal for jeans and jackets</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=4</link>
+    <image_link>http://localhost:8000/images/fabrics/denim1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>3</id>
+    <title>Polyester Fabric</title>
+    <sku></sku>
+    <description>Durable polyester fabric used for uniforms and sportswear</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=3</link>
+    <image_link>http://localhost:8000/images/fabrics/poly1.jpg</image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">0.00</price>
+    <unit_type>meter</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>2</id>
+    <title>Linen Plain Fabric</title>
+    <sku>FABRIC-BY-METER-LINEN-WHITE-140</sku>
+    <description>High quality breathable linen fabric for garments</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric.php?id=2</link>
+    <image_link>http://localhost:8000/images/fabrics/linen1.jpg</image_link>
+    <availability>in stock</availability>
+    <price currency="INR">500.00</price>
+    <sale_price currency="INR">500.00</sale_price>
+    <unit_type>meter</unit_type>
+    <stock>10</stock>
+  </product>
+  <product>
+    <id>1</id>
+    <title>Cotton Printed Fabric</title>
+    <sku>BEDSHEETS-COTTON-YELLOW-120</sku>
+    <description>Premium printed cotton fabric suitable for dresses and shirts</description>
+    <category>bedsheets</category>
+    <link>http://localhost:8000/fabric.php?id=1</link>
+    <image_link>http://localhost:8000/images/fabrics/cotton1.jpg</image_link>
+    <availability>in stock</availability>
+    <price currency="INR">699.00</price>
+    <sale_price currency="INR">699.00</sale_price>
+    <unit_type>piece</unit_type>
+    <stock>16</stock>
+  </product>
+</products>

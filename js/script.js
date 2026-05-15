@@ -534,6 +534,13 @@ document.addEventListener("DOMContentLoaded", function () {
         .then(function (data) {
             if (data.success) {
                 updateCartBadge(data.cart_count);
+                if (data.meta_pixel_event && window.amberMetaPixelTrack) {
+                    window.amberMetaPixelTrack(
+                        data.meta_pixel_event.name,
+                        data.meta_pixel_event.payload || {},
+                        data.meta_pixel_event.event_id || ''
+                    );
+                }
                 showToast(data.message || 'Added to cart!', 'success');
                 btn.textContent = 'Added ✓';
                 setTimeout(function () {

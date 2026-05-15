@@ -80,7 +80,10 @@ try {
     if (($order['payment_status'] ?? '') === 'paid') {
         $conn->commit();
         unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
-        unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
+        unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['cart_meter_length'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
+        if ($customerId > 0) {
+            cart_clear_db($conn, $customerId);
+        }
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
 
@@ -156,11 +159,33 @@ try {
 
     $conn->commit();
 
+    $awbResult = shiprocket_auto_create_awb_for_order($conn, $orderId);
+    if (empty($awbResult['ok'])) {
+        log_order_activity(
+            $conn,
+            $orderId,
+            'shipment_manual_fallback',
+            'system',
+            0,
+            'shiprocket',
+            (string) ($awbResult['reason'] ?? 'Auto AWB failed')
+        );
+    }
+
     unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
-    unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
+    unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['cart_meter_length'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
     if ($customerId > 0) {
         cart_clear_db($conn, $customerId);
     }
+
+    do_action('order.after_payment_success', [
+        'conn' => $conn,
+        'order_id' => $orderId,
+        'order_number' => $orderNumber,
+        'customer_id' => $customerId,
+        'payment_method' => 'razorpay',
+        'payment_status' => 'paid',
+    ]);
 
     send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));

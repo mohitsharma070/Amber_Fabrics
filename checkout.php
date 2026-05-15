@@ -15,9 +15,28 @@ $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['ca
 $items = [];
 $subtotal = 0.00;
 
+$cartParseKey = static function (string $rawKey): array {
+    $parts = explode('::', $rawKey, 2);
+    $pid = (int) ($parts[0] ?? 0);
+    $size = '';
+    if (isset($parts[1])) {
+        $decoded = rawurldecode((string) $parts[1]);
+        if ($decoded !== '_' && $decoded !== '') {
+            $size = $decoded;
+        }
+    }
+    return [$pid, $size];
+};
+
 if (!empty($cart)) {
-    $ids = array_map('intval', array_keys($cart));
-    $ids = array_values(array_filter($ids, static fn($v) => $v > 0));
+    $ids = [];
+    foreach (array_keys($cart) as $key) {
+        [$pid] = $cartParseKey((string) $key);
+        if ($pid > 0) {
+            $ids[] = $pid;
+        }
+    }
+    $ids = array_values(array_unique($ids));
 
     if (!empty($ids)) {
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
@@ -30,16 +49,25 @@ if (!empty($cart)) {
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+        $rowMap = [];
         foreach ($rows as $row) {
-            $pid = (int) $row['id'];
+            $rowMap[(int) $row['id']] = $row;
+        }
+
+        foreach ($cart as $cartKey => $cartQty) {
+            [$pid, $sizeFromKey] = $cartParseKey((string) $cartKey);
+            if ($pid <= 0 || !isset($rowMap[$pid])) {
+                continue;
+            }
+            $row = $rowMap[$pid];
             $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
                 ? (string) $row['unit_type']
                 : 'meter';
-            $qty = normalize_quantity_by_unit($cart[$pid] ?? 1, $unitType);
+            $qty = normalize_quantity_by_unit($cartQty ?? 1, $unitType);
             $meterLength = null;
             $bundleQty = null;
-            if ($unitType === 'meter' && isset($cartMeterMap[$pid]) && is_numeric($cartMeterMap[$pid]) && (float) $cartMeterMap[$pid] > 0) {
-                $meterLength = (float) $cartMeterMap[$pid];
+            if ($unitType === 'meter' && isset($cartMeterMap[$cartKey]) && is_numeric($cartMeterMap[$cartKey]) && (float) $cartMeterMap[$cartKey] > 0) {
+                $meterLength = (float) $cartMeterMap[$cartKey];
                 $bundleQty = max(1, (int) round($qty / $meterLength));
             }
             $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
@@ -61,13 +89,14 @@ if (!empty($cart)) {
 
             $items[] = [
                 'id' => $pid,
+                'cart_key' => (string) $cartKey,
                 'name' => (string) $row['name'],
                 'image' => (string) ($row['image'] ?? ''),
                 'quantity' => $qty,
                 'quantity_text' => format_quantity_by_unit($qty, $unitType),
                 'quantity_unit_label' => $unitLabel,
                 'unit_type' => $unitType,
-                'selected_size' => (string) ($cartSizes[$pid] ?? ''),
+                'selected_size' => (string) ($cartSizes[$cartKey] ?? $sizeFromKey),
                 'unit_price' => $unitPrice,
                 'subtotal' => $lineTotal,
                 'stock' => $displayStock,
@@ -97,6 +126,7 @@ $old = [
     'order_notes' => '',
     'payment_method' => 'cod',
     'cod_fee_apply' => 1,
+    'shipping_address_id' => 0,
 ];
 
 // Prefill checkout form from customer profile + latest order address when available.
@@ -161,6 +191,51 @@ if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'
     unset($_SESSION['checkout_errors']);
 }
 
+$savedAddresses = [];
+$selectedAddressId = (int) ($old['shipping_address_id'] ?? 0);
+if ($customerId > 0 && customer_addresses_table_ready($conn)) {
+    $savedAddresses = customer_addresses_list($conn, $customerId);
+    $addressMap = [];
+    foreach ($savedAddresses as $addr) {
+        $aid = (int) ($addr['id'] ?? 0);
+        if ($aid > 0) {
+            $addressMap[$aid] = $addr;
+        }
+    }
+
+    $applyAddress = static function (array $addr, array &$target): void {
+        $target['full_name'] = (string) ($addr['full_name'] ?? $target['full_name']);
+        $target['phone'] = (string) ($addr['phone'] ?? $target['phone']);
+        $target['address'] = (string) ($addr['address_line'] ?? $target['address']);
+        $target['city'] = (string) ($addr['city'] ?? $target['city']);
+        $target['state'] = (string) ($addr['state'] ?? $target['state']);
+        $target['pincode'] = (string) ($addr['pincode'] ?? $target['pincode']);
+        $target['country'] = (string) ($addr['country'] ?? $target['country']);
+    };
+
+    $requestedAddressId = (int) ($_GET['address_id'] ?? 0);
+    if ($requestedAddressId > 0 && isset($addressMap[$requestedAddressId])) {
+        $selectedAddressId = $requestedAddressId;
+        $applyAddress($addressMap[$requestedAddressId], $old);
+    } elseif ($selectedAddressId > 0 && isset($addressMap[$selectedAddressId])) {
+        $applyAddress($addressMap[$selectedAddressId], $old);
+    } else {
+        $hasAnyAddressInput = trim((string) ($old['address'] ?? '')) !== ''
+            || trim((string) ($old['city'] ?? '')) !== ''
+            || trim((string) ($old['pincode'] ?? '')) !== '';
+        if (!$hasAnyAddressInput) {
+            foreach ($savedAddresses as $addr) {
+                if ((int) ($addr['is_default_shipping'] ?? 0) === 1) {
+                    $selectedAddressId = (int) ($addr['id'] ?? 0);
+                    $applyAddress($addr, $old);
+                    break;
+                }
+            }
+        }
+    }
+}
+$old['shipping_address_id'] = $selectedAddressId;
+
 $selectedPayment = in_array((string) ($old['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $old['payment_method']
     : 'cod';
@@ -175,9 +250,25 @@ $isIndia = (bool) $shipping['is_india'];
 $baseShippingAmount = (float) $shipping['base_shipping'];
 $codFeeAmount = (float) $shipping['cod_fee'];
 $shippingAmount = (float) $shipping['shipping_total'];
-$preDiscountTotal = $subtotal + $shippingAmount;
+$shippingRateSource = 'manual';
+$shippingRateCourier = '';
+
+if ($isIndia) {
+    $forwardRate = shiprocket_calculate_forward_rate(
+        (float) $subtotal,
+        trim(_cfg('SHIPROCKET_PICKUP_PINCODE', '')),
+        trim((string) ($old['pincode'] ?? '')),
+        $selectedPayment === 'cod'
+    );
+    if (!empty($forwardRate['ok'])) {
+        $baseShippingAmount = max(0.0, (float) ($forwardRate['rate'] ?? $baseShippingAmount));
+        $shippingAmount = round($baseShippingAmount + $codFeeAmount, 2);
+        $shippingRateSource = 'live';
+        $shippingRateCourier = (string) ($forwardRate['courier_name'] ?? '');
+    }
+}
 $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
-$couponInfo = get_active_coupon_discount($conn, $couponCode, $preDiscountTotal);
+$couponInfo = get_active_coupon_discount($conn, $couponCode, (float) $subtotal);
 if (!$couponInfo['valid'] && $couponCode !== '') {
     unset($_SESSION['applied_coupon_code']);
 }
@@ -202,6 +293,14 @@ if (!$isIndia) {
 }
 
 $metaTitle = 'Checkout | Amber Fabrics';
+do_action('checkout.view', [
+    'conn' => $conn,
+    'customer_id' => $customerId,
+    'email' => (string) ($old['email'] ?? ''),
+    'phone' => (string) ($old['phone'] ?? ''),
+    'content_ids' => array_values(array_map(static fn($item) => (string) ($item['id'] ?? ''), $items)),
+    'num_items' => count($items),
+]);
 
 // One-time order nonce - consumed on first successful place-order.php submission
 // so that double-click / back-and-resubmit creates only one order.
@@ -235,48 +334,81 @@ include __DIR__ . '/includes/header.php';
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="order_nonce" value="<?php echo e($_SESSION['order_nonce']); ?>">
                     <input type="hidden" name="online_method" id="online_method" value="<?php echo e($selectedOnlineMethod); ?>">
+                    <input type="hidden" name="shipping_address_id" id="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
 
                     <div class="surface-panel p-4 mb-4">
                         <h5 class="mb-3">Delivery Details</h5>
+                        <?php if (!empty($savedAddresses)): ?>
+                            <div class="mb-3">
+                                <label class="form-label">Use Saved Address</label>
+                                <select class="form-select" id="saved_address_select">
+                                    <option value="">Select saved address</option>
+                                    <?php foreach ($savedAddresses as $addr): ?>
+                                        <?php
+                                            $addrId = (int) ($addr['id'] ?? 0);
+                                            $addrLine = trim((string) ($addr['address_line'] ?? ''));
+                                            $addrLabel = trim((string) ($addr['label'] ?? ''));
+                                            if ($addrLabel === '') {
+                                                $addrLabel = 'Address #' . $addrId;
+                                            }
+                                        ?>
+                                        <option
+                                            value="<?php echo $addrId; ?>"
+                                            data-full-name="<?php echo e((string) ($addr['full_name'] ?? '')); ?>"
+                                            data-phone="<?php echo e((string) ($addr['phone'] ?? '')); ?>"
+                                            data-address="<?php echo e($addrLine); ?>"
+                                            data-city="<?php echo e((string) ($addr['city'] ?? '')); ?>"
+                                            data-state="<?php echo e((string) ($addr['state'] ?? '')); ?>"
+                                            data-pincode="<?php echo e((string) ($addr['pincode'] ?? '')); ?>"
+                                            data-country="<?php echo e((string) ($addr['country'] ?? '')); ?>"
+                                            <?php echo ((int) ($old['shipping_address_id'] ?? 0) === $addrId) ? 'selected' : ''; ?>
+                                        >
+                                            <?php echo e($addrLabel . ' - ' . (strlen($addrLine) > 44 ? substr($addrLine, 0, 41) . '...' : $addrLine)); ?>
+                                            <?php if ((int) ($addr['is_default_shipping'] ?? 0) === 1): ?> (Default)<?php endif; ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        <?php endif; ?>
                         <div class="row g-3">
                             <div class="col-sm-6">
                                 <label class="form-label">Full Name *</label>
-                                <input type="text" name="full_name" class="<?php echo form_class($errors, 'full_name'); ?>" required value="<?php echo e($old['full_name']); ?>">
+                                <input type="text" id="checkout_full_name" name="full_name" class="<?php echo form_class($errors, 'full_name'); ?>" required value="<?php echo e($old['full_name']); ?>">
                                 <?php echo form_error($errors, 'full_name'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">Phone *</label>
-                                <input type="text" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" required value="<?php echo e($old['phone']); ?>">
+                                <input type="text" id="checkout_phone" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" required value="<?php echo e($old['phone']); ?>">
                                 <?php echo form_error($errors, 'phone'); ?>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Email *</label>
-                                <input type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" required value="<?php echo e($old['email']); ?>">
+                                <input type="email" id="checkout_email" name="email" class="<?php echo form_class($errors, 'email'); ?>" required value="<?php echo e($old['email']); ?>">
                                 <?php echo form_error($errors, 'email'); ?>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Address *</label>
-                                <textarea name="address" class="<?php echo form_class($errors, 'address'); ?>" rows="2" maxlength="500" required><?php echo e($old['address']); ?></textarea>
+                                <textarea id="checkout_address" name="address" class="<?php echo form_class($errors, 'address'); ?>" rows="2" maxlength="500" required><?php echo e($old['address']); ?></textarea>
                                 <?php echo form_error($errors, 'address'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">City *</label>
-                                <input type="text" name="city" class="<?php echo form_class($errors, 'city'); ?>" required value="<?php echo e($old['city']); ?>">
+                                <input type="text" id="checkout_city" name="city" class="<?php echo form_class($errors, 'city'); ?>" required value="<?php echo e($old['city']); ?>">
                                 <?php echo form_error($errors, 'city'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">State *</label>
-                                <input type="text" name="state" class="<?php echo form_class($errors, 'state'); ?>" required value="<?php echo e($old['state']); ?>">
+                                <input type="text" id="checkout_state" name="state" class="<?php echo form_class($errors, 'state'); ?>" required value="<?php echo e($old['state']); ?>">
                                 <?php echo form_error($errors, 'state'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">Pincode *</label>
-                                <input type="text" name="pincode" class="<?php echo form_class($errors, 'pincode'); ?>" required value="<?php echo e($old['pincode']); ?>">
+                                <input type="text" id="checkout_pincode" name="pincode" class="<?php echo form_class($errors, 'pincode'); ?>" required value="<?php echo e($old['pincode']); ?>">
                                 <?php echo form_error($errors, 'pincode'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">Country *</label>
-                                <input type="text" name="country" class="<?php echo form_class($errors, 'country'); ?>" required value="<?php echo e($old['country']); ?>">
+                                <input type="text" id="checkout_country" name="country" class="<?php echo form_class($errors, 'country'); ?>" required value="<?php echo e($old['country']); ?>">
                                 <?php echo form_error($errors, 'country'); ?>
                             </div>
                             <div class="col-12">
@@ -393,6 +525,7 @@ include __DIR__ . '/includes/header.php';
                     <form method="POST" action="/apply-coupon.php" class="mb-3">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="redirect_to" value="checkout">
+                        <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
                         <label class="form-label">Coupon Code</label>
                         <div class="d-flex gap-2">
                             <input type="text" name="coupon_code" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
@@ -404,6 +537,7 @@ include __DIR__ . '/includes/header.php';
                     <form method="POST" action="/remove-coupon.php" class="mb-2">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="redirect_to" value="checkout">
+                        <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
                         <div class="d-flex justify-content-between small">
                             <span>Coupon: <strong><?php echo e($couponInfo['code']); ?></strong></span>
                             <button type="submit" class="btn btn-link btn-sm p-0 text-danger">Remove</button>
@@ -440,7 +574,11 @@ include __DIR__ . '/includes/header.php';
                         <span id="summary_total">Rs <?php echo number_format($totalAmount, 2); ?></span>
                     </div>
                     <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note">
-                        Free shipping on orders above Rs 999. Orders below Rs 999: Rs 70 shipping. COD adds Rs 50 handling fee.
+                        <?php if ($shippingRateSource === 'live'): ?>
+                            Live courier estimate enabled<?php echo $shippingRateCourier !== '' ? ' via ' . e($shippingRateCourier) : ''; ?>. Manual fallback applies automatically if courier API is unavailable.
+                        <?php else: ?>
+                            Manual shipping fallback active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -453,6 +591,15 @@ include __DIR__ . '/includes/header.php';
     var codRadio = document.getElementById('payment_cod');
     var razorpayRadio = document.getElementById('payment_razorpay');
     var countryInput = document.querySelector('input[name="country"]');
+    var savedAddressSelect = document.getElementById('saved_address_select');
+    var shippingAddressIdInput = document.getElementById('shipping_address_id');
+    var fullNameInput = document.getElementById('checkout_full_name');
+    var phoneInput = document.getElementById('checkout_phone');
+    var addressInput = document.getElementById('checkout_address');
+    var cityInput = document.getElementById('checkout_city');
+    var stateInput = document.getElementById('checkout_state');
+    var pincodeInput = document.getElementById('checkout_pincode');
+    var countryFieldInput = document.getElementById('checkout_country');
     var subtotal = <?php echo json_encode((float) $subtotal); ?>;
     var discount = <?php echo json_encode((float) $discountAmount); ?>;
     var gstRate  = <?php echo json_encode((float) $gstRate); ?>;
@@ -461,7 +608,6 @@ include __DIR__ . '/includes/header.php';
     var codFeeEl = document.getElementById('summary_cod_fee');
     var totalEl = document.getElementById('summary_total');
 
-    var stateInput = document.querySelector('input[name="state"]');
     var payOptionCards = document.querySelectorAll('[data-pay-option]');
     var codPanel = document.getElementById('cod-panel');
     var razorpayPanel = document.getElementById('razorpay-panel');
@@ -471,6 +617,24 @@ include __DIR__ . '/includes/header.php';
 
     if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
         return;
+    }
+
+    function applySavedAddressOption(optionEl) {
+        if (!optionEl) return;
+        var selectedId = String(optionEl.value || '');
+        if (shippingAddressIdInput) {
+            shippingAddressIdInput.value = selectedId;
+        }
+        if (selectedId === '') {
+            return;
+        }
+        if (fullNameInput) fullNameInput.value = optionEl.getAttribute('data-full-name') || '';
+        if (phoneInput) phoneInput.value = optionEl.getAttribute('data-phone') || '';
+        if (addressInput) addressInput.value = optionEl.getAttribute('data-address') || '';
+        if (cityInput) cityInput.value = optionEl.getAttribute('data-city') || '';
+        if (stateInput) stateInput.value = optionEl.getAttribute('data-state') || '';
+        if (pincodeInput) pincodeInput.value = optionEl.getAttribute('data-pincode') || '';
+        if (countryFieldInput) countryFieldInput.value = optionEl.getAttribute('data-country') || '';
     }
 
     function toMoney(v) {
@@ -496,6 +660,32 @@ include __DIR__ . '/includes/header.php';
         shippingEl.textContent = toMoney(shipping);
         codFeeEl.textContent = toMoney(codFee);
         totalEl.textContent = toMoney(total);
+    }
+
+    function maybeFetchLiveRate() {
+        var country = String(countryInput.value || '').trim().toLowerCase();
+        var pincode = pincodeInput ? String(pincodeInput.value || '').trim() : '';
+        if (country !== 'india' || !/^[1-9][0-9]{5}$/.test(pincode)) {
+            return;
+        }
+        var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
+        fetch('/shipping-rate.php?pincode=' + encodeURIComponent(pincode) + '&subtotal=' + encodeURIComponent(String(subtotal)) + '&payment_method=' + encodeURIComponent(paymentMethod), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        }).then(function (res) {
+            return res.ok ? res.json() : null;
+        }).then(function (data) {
+            if (!data || !data.ok) {
+                return;
+            }
+            var liveShipping = Number(data.base_shipping || 0);
+            var liveCodFee = Number(data.cod_fee || 0);
+            var taxable = Math.max(0, subtotal - discount);
+            var total = taxable + liveShipping + liveCodFee;
+            shippingEl.textContent = toMoney(liveShipping);
+            codFeeEl.textContent = toMoney(liveCodFee);
+            totalEl.textContent = toMoney(total);
+        }).catch(function () {});
     }
 
     function syncPaymentPanels() {
@@ -531,6 +721,15 @@ include __DIR__ . '/includes/header.php';
     codRadio.addEventListener('change', syncPaymentPanels);
     razorpayRadio.addEventListener('change', syncPaymentPanels);
     countryInput.addEventListener('input', syncSummary);
+    if (pincodeInput) {
+        pincodeInput.addEventListener('input', function () {
+            syncSummary();
+            maybeFetchLiveRate();
+        });
+    }
+    countryInput.addEventListener('change', maybeFetchLiveRate);
+    codRadio.addEventListener('change', maybeFetchLiveRate);
+    razorpayRadio.addEventListener('change', maybeFetchLiveRate);
     onlineMethodButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             activateOnlineMethod(btn.getAttribute('data-online-method'));
@@ -539,7 +738,30 @@ include __DIR__ . '/includes/header.php';
             syncSummary();
         });
     });
+    if (savedAddressSelect) {
+        savedAddressSelect.addEventListener('change', function () {
+            applySavedAddressOption(savedAddressSelect.options[savedAddressSelect.selectedIndex] || null);
+            syncSummary();
+            maybeFetchLiveRate();
+        });
+    }
+    [fullNameInput, phoneInput, addressInput, cityInput, stateInput, pincodeInput, countryFieldInput].forEach(function (field) {
+        if (!field) return;
+        field.addEventListener('input', function () {
+            if (shippingAddressIdInput && shippingAddressIdInput.value !== '') {
+                shippingAddressIdInput.value = '';
+            }
+            if (savedAddressSelect && savedAddressSelect.value !== '') {
+                savedAddressSelect.value = '';
+            }
+        });
+    });
     syncSummary();
+    if (savedAddressSelect && savedAddressSelect.value !== '') {
+        applySavedAddressOption(savedAddressSelect.options[savedAddressSelect.selectedIndex] || null);
+        syncSummary();
+    }
+    maybeFetchLiveRate();
     activateOnlineMethod(onlineMethodInput && onlineMethodInput.value ? onlineMethodInput.value : 'upi');
     syncPaymentPanels();
 })();

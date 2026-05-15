@@ -13,6 +13,7 @@ function email_template_build(string $key, array $data = []): array
         'order_status_update' => 'order-status-update.php',
         'customer_password_reset' => 'customer-password-reset.php',
         'customer_email_verification' => 'customer-email-verification.php',
+        'abandoned_cart_reminder' => 'abandoned-cart-reminder.php',
     ];
 
     $file = $map[$key] ?? '';

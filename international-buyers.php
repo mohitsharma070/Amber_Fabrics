@@ -56,8 +56,24 @@ $cartProductNames = [];
 $cart = (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) ? $_SESSION['cart'] : [];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
 if (!empty($cart)) {
-    $ids = array_map('intval', array_keys($cart));
-    $ids = array_values(array_filter($ids, static fn($v) => $v > 0));
+    $cartLines = [];
+    foreach ($cart as $cartKey => $qtyRaw) {
+        $rawKey = (string) $cartKey;
+        $parts = explode('::', $rawKey, 2);
+        $pid = (int) ($parts[0] ?? 0);
+        if ($pid <= 0) {
+            continue;
+        }
+        $decodedSize = rawurldecode((string) ($parts[1] ?? ''));
+        $size = trim($decodedSize === '_' ? '' : $decodedSize);
+        $cartLines[] = [
+            'cart_key' => $rawKey,
+            'product_id' => $pid,
+            'qty' => (float) $qtyRaw,
+            'size' => $size,
+        ];
+    }
+    $ids = array_values(array_unique(array_map(static fn($line) => (int) $line['product_id'], $cartLines)));
     if (!empty($ids)) {
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
@@ -72,12 +88,26 @@ if (!empty($cart)) {
                 $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
                     ? (string) $row['unit_type']
                     : 'meter';
-                $qty = normalize_quantity_by_unit($cart[$pid] ?? 1, $unitType);
+                $qtyTotal = 0.0;
+                $sizes = [];
+                foreach ($cartLines as $lineData) {
+                    if ((int) $lineData['product_id'] !== $pid) {
+                        continue;
+                    }
+                    $qtyTotal += (float) $lineData['qty'];
+                    if ($lineData['size'] !== '') {
+                        $sizes[] = (string) $lineData['size'];
+                    } elseif (!empty($cartSizes[$lineData['cart_key']])) {
+                        $sizes[] = (string) $cartSizes[$lineData['cart_key']];
+                    }
+                }
+                $qty = normalize_quantity_by_unit($qtyTotal > 0 ? $qtyTotal : 1, $unitType);
                 $qtyText = format_quantity_by_unit($qty, $unitType);
                 $unitLabel = ($unitType === 'piece') ? (((float) $qty === 1.0) ? 'piece' : 'pieces') : (($unitType === 'set') ? (((float) $qty === 1.0) ? 'set' : 'sets') : 'meters');
                 $line = (string) ($row['name'] ?? 'Item') . ': ' . $qtyText . ' ' . $unitLabel;
-                if ($unitType === 'piece' && !empty($cartSizes[$pid])) {
-                    $line .= ' (Size: ' . (string) $cartSizes[$pid] . ')';
+                $sizes = array_values(array_unique(array_filter($sizes, static fn($s) => trim((string) $s) !== '')));
+                if (!empty($sizes)) {
+                    $line .= ' (Size: ' . implode(', ', $sizes) . ')';
                 }
                 $cartSummaryLines[] = $line;
                 $cartProductNames[] = (string) ($row['name'] ?? '');

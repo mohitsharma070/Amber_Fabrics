@@ -1,12 +1,13 @@
 DirectoryIndex index.php
 
 # Block direct access to environment and internal config files
-<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock)|phpunit\.xml|\.git|\.gitignore)$">
+<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock|phar)|phpunit\.xml|\.git|\.gitignore|\.gitattributes|\.htaccess|\.htaccess\.bak)$">
 	Require all denied
 </FilesMatch>
 
 # Block direct access to selected private folders
-RedirectMatch 403 ^/(config|database|tmp_sessions)/
+RedirectMatch 403 ^/(config|database|tmp_sessions|plugins|vendor)(/|$)
+RedirectMatch 403 ^/(tmp-debug-.*\.php|cron/(?!run-plugins\.php$).*)$
 
 RewriteEngine On
 

@@ -205,7 +205,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
                     : 'meter';
                 $displayStock = $unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
                 $cardIsInStock = !empty($row['is_available']) && $displayStock > 0;
-                $hasSizeOptions = !empty($row['size']) && preg_match('/[,\|\/]/', (string) $row['size']);
+                $hasSizeOptions = !empty(parse_size_options((string) ($row['size'] ?? '')));
             ?>
             <div class="prod-slide">
                 <article class="card h-100">
@@ -230,7 +230,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
                         ?>
                         <?php if ($cardRegular > 0 || $cardSale > 0): ?>
                             <div class="fabric-price mb-2">
-                                <?php if ($cardSale > 0 && $cardRegular > 0): ?>
+                                <?php if ($cardSale > 0 && $cardRegular > 0 && $cardSale < $cardRegular): ?>
                                     <span class="price-inr fw-bold">Rs <?php echo number_format($cardSale, 2); ?></span>
                                     <span class="text-muted small ms-1"><del>Rs <?php echo number_format($cardRegular, 2); ?></del></span>
                                 <?php elseif ($cardRegular > 0): ?>

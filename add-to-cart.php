@@ -48,11 +48,22 @@ $selectedMeterLength = null;
 if ($unitType === 'meter') {
     $meterLengthRaw = $_POST['meter_length'] ?? null;
     $bundleQtyRaw = $_POST['bundle_quantity'] ?? null;
-    if ($meterLengthRaw !== null && $bundleQtyRaw !== null && is_numeric($meterLengthRaw) && is_numeric($bundleQtyRaw)) {
+    if ($meterLengthRaw !== null && is_numeric($meterLengthRaw) && $bundleQtyRaw !== null && is_numeric($bundleQtyRaw)) {
         $meterLength = max(0.01, (float) $meterLengthRaw);
         $bundleQty = max(1, (int) round((float) $bundleQtyRaw));
         $selectedMeterLength = $meterLength;
         $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
+    } elseif ($meterLengthRaw !== null && is_numeric($meterLengthRaw) && isset($_POST['quantity']) && is_numeric($_POST['quantity'])) {
+        $meterLength = max(0.01, (float) $meterLengthRaw);
+        $qtyRaw = (float) $_POST['quantity'];
+        if (abs($qtyRaw - round($qtyRaw)) < 0.0001) {
+            $bundleQty = max(1, (int) round($qtyRaw));
+            $selectedMeterLength = $meterLength;
+            $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
+        } else {
+            $selectedMeterLength = $meterLength;
+            $quantity = normalize_meter_quantity($qtyRaw, (float) $minOrder);
+        }
     }
 }
 
@@ -74,6 +85,13 @@ if (!empty($sizeOptions)) {
 $stock = ($unitType === 'piece' || $unitType === 'set')
     ? (float) ($product['stock'] ?? 0)
     : (float) ($product['stock_meters'] ?? 0);
+$stock = max(0.0, $stock);
+$outOfStock = $stock <= 0;
+if ($outOfStock) {
+    if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'This product is out of stock.']); exit; }
+    flash('error', 'This product is out of stock.');
+    redirect('/fabric.php?id=' . $productId);
+}
 $cappedByStock = false;
 if ($stock > 0 && $quantity > $stock) {
     $quantity = normalize_quantity_by_unit($stock, $unitType, (float) $minOrder);
@@ -87,28 +105,41 @@ if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_le
     $_SESSION['cart_meter_length'] = [];
 }
 
-$existing = isset($_SESSION['cart'][$productId])
-    ? normalize_quantity_by_unit($_SESSION['cart'][$productId], $unitType, (float) $minOrder)
+$sizeToken = ($selectedSize !== '') ? $selectedSize : '';
+$cartKey = $productId . '::' . rawurlencode($sizeToken);
+
+$existing = isset($_SESSION['cart'][$cartKey])
+    ? normalize_quantity_by_unit($_SESSION['cart'][$cartKey], $unitType, (float) $minOrder)
     : 0;
 $newQty = round($existing + $quantity, 2);
 if ($stock > 0 && $newQty > $stock) {
     $newQty = normalize_quantity_by_unit($stock, $unitType, (float) $minOrder);
     $cappedByStock = true;
 }
-$_SESSION['cart'][$productId] = normalize_quantity_by_unit($newQty, $unitType, (float) $minOrder);
+$_SESSION['cart'][$cartKey] = normalize_quantity_by_unit($newQty, $unitType, (float) $minOrder);
+$addedQty = max(0.0, round($newQty - $existing, 2));
 if ($unitType === 'meter' && $selectedMeterLength !== null) {
-    $_SESSION['cart_meter_length'][$productId] = round((float) $selectedMeterLength, 2);
+    $_SESSION['cart_meter_length'][$cartKey] = round((float) $selectedMeterLength, 2);
 }
 if (!isset($_SESSION['cart_size']) || !is_array($_SESSION['cart_size'])) {
     $_SESSION['cart_size'] = [];
 }
 if ($selectedSize !== '') {
-    $_SESSION['cart_size'][$productId] = $selectedSize;
+    $_SESSION['cart_size'][$cartKey] = $selectedSize;
 }
 
 if (!empty($_SESSION['customer_id'])) {
-    cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart']);
+    cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'], $_SESSION['cart_meter_length'] ?? []);
 }
+
+do_action('cart.after_add', [
+    'conn' => $conn,
+    'product_id' => $productId,
+    'product_name' => (string) ($product['name'] ?? ''),
+    'quantity' => $addedQty,
+    'unit_type' => $unitType,
+    'is_ajax' => $isAjax,
+]);
 
 if ($isAjax) {
     $cartCount = count($_SESSION['cart']);
@@ -116,7 +147,13 @@ if ($isAjax) {
         ? 'Added to cart (only ' . format_quantity_by_unit($stock, $unitType) . quantity_unit_suffix($unitType) . ' in stock - quantity adjusted).'
         : 'Added to cart: ' . ($product['name'] ?? 'Product');
     header('Content-Type: application/json');
-    echo json_encode(['success' => true, 'message' => $msg, 'cart_count' => $cartCount, 'capped' => $cappedByStock]);
+    echo json_encode([
+        'success' => true,
+        'message' => $msg,
+        'cart_count' => $cartCount,
+        'capped' => $cappedByStock,
+        'meta_pixel_event' => $GLOBALS['meta_pixel_last_event'] ?? null,
+    ]);
     exit;
 }
 

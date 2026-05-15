@@ -4,8 +4,9 @@ require_once __DIR__ . '/includes/init.php';
 function coupon_remove_redirect_target(string $fallback = '/cart.php'): string
 {
     $target = (string) ($_POST['redirect_to'] ?? '');
+    $addressId = (int) ($_POST['shipping_address_id'] ?? 0);
     if ($target === 'checkout') {
-        return '/checkout.php';
+        return $addressId > 0 ? ('/checkout.php?address_id=' . $addressId) : '/checkout.php';
     }
     if ($target === 'cart') {
         return '/cart.php';

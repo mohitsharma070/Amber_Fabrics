@@ -27,14 +27,34 @@ $wishlistSizes = $_SESSION['wishlist_size'];
 $cartMeterMap = $_SESSION['cart_meter_length'];
 $wishlistMeterMap = $_SESSION['wishlist_meter_length'];
 
+function cart_view_parse_key(string $rawKey): array
+{
+    $parts = explode('::', $rawKey, 2);
+    $pid = (int) ($parts[0] ?? 0);
+    $size = '';
+    if (isset($parts[1])) {
+        $decoded = rawurldecode((string) $parts[1]);
+        if ($decoded !== '_' && $decoded !== '') {
+            $size = $decoded;
+        }
+    }
+    return [$pid, $size];
+}
+
 function cart_load_items(mysqli $conn, array $source, array $sizeMap, array $meterMap = []): array
 {
     if (empty($source)) {
         return [];
     }
 
-    $ids = array_map('intval', array_keys($source));
-    $ids = array_values(array_filter($ids, static fn($v) => $v > 0));
+    $ids = [];
+    foreach (array_keys($source) as $key) {
+        [$pid] = cart_view_parse_key((string) $key);
+        if ($pid > 0) {
+            $ids[] = $pid;
+        }
+    }
+    $ids = array_values(array_unique($ids));
     if (empty($ids)) {
         return [];
     }
@@ -48,18 +68,26 @@ function cart_load_items(mysqli $conn, array $source, array $sizeMap, array $met
     $stmt->bind_param($types, ...$ids);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $rowMap = [];
+    foreach ($rows as $row) {
+        $rowMap[(int) $row['id']] = $row;
+    }
 
     $items = [];
-    foreach ($rows as $row) {
-        $pid = (int) $row['id'];
+    foreach ($source as $cartKey => $sourceQty) {
+        [$pid, $sizeFromKey] = cart_view_parse_key((string) $cartKey);
+        if ($pid <= 0 || !isset($rowMap[$pid])) {
+            continue;
+        }
+        $row = $rowMap[$pid];
         $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
             ? (string) $row['unit_type']
             : 'meter';
-        $qty = normalize_quantity_by_unit($source[$pid] ?? 1, $unitType);
+        $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType);
         $meterLength = null;
         $bundleQty = null;
-        if ($unitType === 'meter' && isset($meterMap[$pid]) && is_numeric($meterMap[$pid]) && (float) $meterMap[$pid] > 0) {
-            $meterLength = (float) $meterMap[$pid];
+        if ($unitType === 'meter' && isset($meterMap[$cartKey]) && is_numeric($meterMap[$cartKey]) && (float) $meterMap[$cartKey] > 0) {
+            $meterLength = (float) $meterMap[$cartKey];
             $bundleQty = max(1, (int) round($qty / $meterLength));
         }
         $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
@@ -84,6 +112,7 @@ function cart_load_items(mysqli $conn, array $source, array $sizeMap, array $met
         }
 
         $items[] = [
+            'cart_key' => (string) $cartKey,
             'id' => $pid,
             'name' => (string) $row['name'],
             'image' => (string) ($row['image'] ?? ''),
@@ -91,7 +120,7 @@ function cart_load_items(mysqli $conn, array $source, array $sizeMap, array $met
             'quantity_text' => format_quantity_by_unit($qty, $unitType),
             'quantity_unit_label' => $unitLabel,
             'unit_type' => $unitType,
-            'selected_size' => (string) ($sizeMap[$pid] ?? ''),
+            'selected_size' => (string) ($sizeMap[$cartKey] ?? $sizeFromKey),
             'regular_price' => $regular,
             'sale_price' => $sale,
             'unit_price' => $unitPrice,
@@ -106,7 +135,11 @@ function cart_load_items(mysqli $conn, array $source, array $sizeMap, array $met
     }
 
     usort($items, static function (array $a, array $b): int {
-        return $a['id'] <=> $b['id'];
+        $cmp = $a['id'] <=> $b['id'];
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        return strcmp((string) ($a['selected_size'] ?? ''), (string) ($b['selected_size'] ?? ''));
     });
 
     return $items;
@@ -161,12 +194,12 @@ include __DIR__ . '/includes/header.php';
                                     <div class="d-flex gap-2">
                                         <form method="POST" action="/move-to-cart.php" class="d-inline">
                                             <?php echo csrf_field(); ?>
-                                            <input type="hidden" name="product_id" value="<?php echo $w['id']; ?>">
+                                            <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-primary">Move to Cart</button>
                                         </form>
                                         <form method="POST" action="/remove-wishlist.php" class="d-inline">
                                             <?php echo csrf_field(); ?>
-                                            <input type="hidden" name="product_id" value="<?php echo $w['id']; ?>">
+                                            <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-outline-danger">Remove</button>
                                         </form>
                                     </div>
@@ -239,7 +272,7 @@ include __DIR__ . '/includes/header.php';
                                 <div class="d-flex gap-2 mt-3 align-items-center flex-wrap">
                                     <form method="POST" action="/update-cart.php" class="d-flex gap-1 align-items-center cart-qty-form">
                                         <?php echo csrf_field(); ?>
-                                        <input type="hidden" name="product_id" value="<?php echo $item['id']; ?>">
+                                        <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
                                         <?php if ($item['unit_type'] === 'meter' && !empty($item['meter_length'])): ?>
                                             <input type="hidden" name="meter_length" value="<?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>">
                                         <?php endif; ?>
@@ -253,13 +286,13 @@ include __DIR__ . '/includes/header.php';
 
                                     <form method="POST" action="/move-to-wishlist.php" class="d-inline">
                                         <?php echo csrf_field(); ?>
-                                        <input type="hidden" name="product_id" value="<?php echo $item['id']; ?>">
+                                        <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
                                         <button class="btn btn-sm btn-outline-primary">Move to Wishlist</button>
                                     </form>
 
                                     <form method="POST" action="/remove-cart.php" class="d-inline">
                                         <?php echo csrf_field(); ?>
-                                        <input type="hidden" name="product_id" value="<?php echo $item['id']; ?>">
+                                        <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
                                         <button class="btn btn-sm btn-outline-danger">Remove</button>
                                     </form>
                                 </div>
@@ -282,12 +315,12 @@ include __DIR__ . '/includes/header.php';
                                     <div class="d-flex gap-2">
                                         <form method="POST" action="/move-to-cart.php" class="d-inline">
                                             <?php echo csrf_field(); ?>
-                                            <input type="hidden" name="product_id" value="<?php echo $w['id']; ?>">
+                                            <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-primary">Move to Cart</button>
                                         </form>
                                         <form method="POST" action="/remove-wishlist.php" class="d-inline">
                                             <?php echo csrf_field(); ?>
-                                            <input type="hidden" name="product_id" value="<?php echo $w['id']; ?>">
+                                            <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-outline-danger">Remove</button>
                                         </form>
                                     </div>

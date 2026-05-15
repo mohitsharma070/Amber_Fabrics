@@ -65,6 +65,7 @@ try {
                 <a class="nav-link <?php echo $currentPage === 'about-media.php' ? 'active' : ''; ?>" href="about-media.php">About Media</a>
                 <a class="nav-link <?php echo ((in_array($currentPage, ['orders.php','order-view.php'], true) && !$isRefundQueue) ? 'active' : ''); ?>" href="orders.php">Orders</a>
                 <a class="nav-link <?php echo $currentPage === 'returns.php' ? 'active' : ''; ?>" href="returns.php">Returns</a>
+                <a class="nav-link <?php echo $currentPage === 'shipping-rates.php' ? 'active' : ''; ?>" href="shipping-rates.php">Shipping Rates</a>
                 <a class="nav-link <?php echo $isRefundQueue ? 'active' : ''; ?>" href="orders.php?refund_queue=1">
                     Refunds
                     <?php if ($pendingRefunds > 0): ?>

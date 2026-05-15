@@ -41,6 +41,8 @@ try {
         throw new RuntimeException('This order is no longer eligible for retry. Please place a new order.');
     }
 
+    reserve_order_inventory($conn, $orderId);
+
     $resetOrder = $conn->prepare(
         "UPDATE orders
          SET payment_status = 'pending',

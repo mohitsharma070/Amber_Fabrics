@@ -9,20 +9,27 @@ if (!verify_csrf()) {
     redirect('/cart.php');
 }
 
-$productId = (int) ($_POST['product_id'] ?? 0);
+$cartKey = trim((string) ($_POST['cart_key'] ?? ''));
+$productId = 0;
+if ($cartKey !== '') {
+    $parts = explode('::', $cartKey, 2);
+    $productId = (int) ($parts[0] ?? 0);
+}
+$productId = $productId > 0 ? $productId : (int) ($_POST['product_id'] ?? 0);
+$cartKey = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::_') : '');
 if ($productId <= 0) {
     flash('error', 'Invalid cart item.');
     redirect('/cart.php');
 }
 
 if (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) {
-    unset($_SESSION['cart'][$productId]);
+    unset($_SESSION['cart'][$cartKey]);
 }
 if (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) {
-    unset($_SESSION['cart_size'][$productId]);
+    unset($_SESSION['cart_size'][$cartKey]);
 }
 if (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) {
-    unset($_SESSION['cart_meter_length'][$productId]);
+    unset($_SESSION['cart_meter_length'][$cartKey]);
 }
 
 if (!empty($_SESSION['customer_id'])) {

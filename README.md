@@ -156,6 +156,24 @@ Before first real use:
 4. Confirm Apache rewrite/permissions are normal.
 5. Rotate any default/bootstrap admin password immediately.
 6. Confirm `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` are set before testing online payments.
+7. Set a strong `CRON_RUN_TOKEN` and schedule `cron/run-plugins.php` to run every 5-10 minutes.
+
+## Scheduled cron (required for stale online-payment cleanup)
+
+`cron/run-plugins.php` now performs:
+- global stale Razorpay pending-order cancellation
+- reserved inventory release for those stale orders
+- plugin cron hooks via `do_action('cron.tick', ...)`
+
+Run it via CLI or secured HTTP:
+
+- CLI:
+  - `php cron/run-plugins.php`
+- HTTP:
+  - `https://your-domain/cron/run-plugins.php?token=<CRON_RUN_TOKEN>`
+  - or send header: `X-CRON-TOKEN: <CRON_RUN_TOKEN>`
+
+For IIS, create a Task Scheduler job (every 5-10 minutes) that executes the CLI command, or calls the secured HTTP URL.
 
 ## Razorpay test flow (local)
 

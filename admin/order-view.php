@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../includes/coupon-functions.php';
 require_admin();
 
 $id = (int) ($_GET['id'] ?? 0);
@@ -19,6 +20,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = trim((string) ($_POST['action'] ?? 'update_order'));
 
+    $pluginHandled = apply_filters('admin.order_action.handled', false, [
+        'conn' => $conn,
+        'order_id' => $id,
+        'action' => $action,
+        'post' => $_POST,
+    ]);
+    if ($pluginHandled) {
+        redirect('order-view.php?id=' . $id);
+    }
+
     if ($action === 'update_order') {
         $newOrderStatus = trim((string) ($_POST['order_status'] ?? ''));
         $newPaymentStatus = trim((string) ($_POST['payment_status'] ?? ''));
@@ -37,6 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currentStmt->execute();
         $currentRow = $currentStmt->get_result()->fetch_assoc() ?: [];
         $currentOrderStatus = (string) ($currentRow['order_status'] ?? '');
+        $currentPaymentStatus = (string) ($currentRow['payment_status'] ?? 'pending');
+        $method = strtolower((string) ($currentRow['payment_method'] ?? ''));
         if (!can_transition_order_status($currentOrderStatus, $newOrderStatus)) {
             flash('error', 'Invalid order status transition.');
             redirect('order-view.php?id=' . $id);
@@ -44,7 +57,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Prevent manual refund-related status bypass for Razorpay/UPI.
         if ($newPaymentStatus === 'refunded' || $newOrderStatus === 'refunded') {
-            $method = strtolower((string) ($currentRow['payment_method'] ?? ''));
             if (in_array($method, ['razorpay', 'upi'], true)) {
                 flash('error', 'Use Mark Refunded button. It verifies refund status with payment gateway.');
                 redirect('order-view.php?id=' . $id);
@@ -63,6 +75,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 : 'processing';
             $update->bind_param('sssi', $newOrderStatus, $newPaymentStatus, $legacyStatus, $id);
             $update->execute();
+            if (in_array($method, ['razorpay', 'upi'], true)) {
+                $payUpdate = $conn->prepare(
+                    "UPDATE payments
+                     SET payment_status = ?
+                     WHERE order_id = ? AND payment_method = ?"
+                );
+                $payUpdate->bind_param('sis', $newPaymentStatus, $id, $method);
+                $payUpdate->execute();
+            }
+
+            // Keep shipment timeline in sync with order status transitions.
+            if ($newOrderStatus === 'shipped' || $newOrderStatus === 'delivered') {
+                $shipStmt = $conn->prepare("SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE");
+                $shipStmt->bind_param('i', $id);
+                $shipStmt->execute();
+                $existingShipment = $shipStmt->get_result()->fetch_assoc() ?: null;
+                $shippedAt = !empty($existingShipment['shipped_at']) ? (string) $existingShipment['shipped_at'] : null;
+                $deliveredAt = !empty($existingShipment['delivered_at']) ? (string) $existingShipment['delivered_at'] : null;
+                $now = date('Y-m-d H:i:s');
+                if ($newOrderStatus === 'shipped' && $shippedAt === null) {
+                    $shippedAt = $now;
+                }
+                if ($newOrderStatus === 'delivered') {
+                    if ($shippedAt === null) {
+                        $shippedAt = $now;
+                    }
+                    if ($deliveredAt === null) {
+                        $deliveredAt = $now;
+                    }
+                }
+                if ($existingShipment) {
+                    $shipmentId = (int) ($existingShipment['id'] ?? 0);
+                    $updShipment = $conn->prepare("UPDATE shipments SET shipped_at = ?, delivered_at = ? WHERE id = ?");
+                    $updShipment->bind_param('ssi', $shippedAt, $deliveredAt, $shipmentId);
+                    $updShipment->execute();
+                } else {
+                    $insShipment = $conn->prepare(
+                        "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at)
+                         VALUES (?, '', '', '', 0.00, ?, ?)"
+                    );
+                    $insShipment->bind_param('iss', $id, $shippedAt, $deliveredAt);
+                    $insShipment->execute();
+                }
+            }
+
+            if ($currentOrderStatus !== 'cancelled' && $newOrderStatus === 'cancelled') {
+                restore_order_inventory($conn, $id);
+                release_coupon_usage_for_order($conn, $id);
+            }
             $adminId = (int) ($_SESSION['admin_id'] ?? 0);
             $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
             log_order_activity(
@@ -72,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'admin',
                 $adminId,
                 $adminName,
-                'Order: ' . $currentOrderStatus . ' -> ' . $newOrderStatus . ' | Payment: ' . ((string) ($currentRow['payment_status'] ?? '')) . ' -> ' . $newPaymentStatus
+                'Order: ' . $currentOrderStatus . ' -> ' . $newOrderStatus . ' | Payment: ' . $currentPaymentStatus . ' -> ' . $newPaymentStatus
             );
             $conn->commit();
         } catch (Throwable $e) {
@@ -86,6 +147,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         send_order_status_update_email($conn, $id, $newOrderStatus);
+        if (in_array($newOrderStatus, ['confirmed', 'packed', 'shipped', 'delivered'], true)) {
+            $awbResult = shiprocket_auto_create_awb_for_order($conn, $id);
+            if (empty($awbResult['ok'])) {
+                log_order_activity(
+                    $conn,
+                    $id,
+                    'shipment_manual_fallback',
+                    'admin',
+                    (int) ($_SESSION['admin_id'] ?? 0),
+                    (string) ($_SESSION['admin_name'] ?? 'admin'),
+                    (string) ($awbResult['reason'] ?? 'Auto AWB failed')
+                );
+            }
+        }
         flash('success', 'Order updated successfully.');
         redirect('order-view.php?id=' . $id);
     }
@@ -125,6 +200,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         try {
             $conn->begin_transaction();
+            $orderStateStmt = $conn->prepare(
+                "SELECT order_status, payment_method, payment_status
+                 FROM orders
+                 WHERE id = ?
+                 LIMIT 1
+                 FOR UPDATE"
+            );
+            $orderStateStmt->bind_param('i', $id);
+            $orderStateStmt->execute();
+            $orderState = $orderStateStmt->get_result()->fetch_assoc() ?: [];
+            $currentOrderStatus = strtolower((string) ($orderState['order_status'] ?? ''));
+            $paymentMethod = strtolower((string) ($orderState['payment_method'] ?? ''));
+            $paymentStatus = strtolower((string) ($orderState['payment_status'] ?? 'pending'));
+            if ($currentOrderStatus === '') {
+                throw new RuntimeException('Order not found.');
+            }
+            $isOnline = in_array($paymentMethod, ['razorpay', 'upi'], true);
+            if (in_array($action, ['mark_shipped', 'mark_delivered'], true) && $isOnline && $paymentStatus !== 'paid') {
+                throw new RuntimeException('Online-paid orders can be shipped only after payment is captured.');
+            }
+            if ($action === 'mark_shipped' && !can_transition_order_status($currentOrderStatus, 'shipped')) {
+                throw new RuntimeException('Order cannot be marked shipped from its current status.');
+            }
+            if ($action === 'mark_delivered' && !can_transition_order_status($currentOrderStatus, 'delivered')) {
+                throw new RuntimeException('Order cannot be marked delivered from its current status.');
+            }
+            if ($action === 'save_shipment' && in_array($currentOrderStatus, ['cancelled', 'refunded'], true)) {
+                throw new RuntimeException('Shipment details cannot be edited for cancelled/refunded orders.');
+            }
+
             $shipStmt = $conn->prepare("SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE");
             $shipStmt->bind_param('i', $id);
             $shipStmt->execute();
@@ -257,6 +362,21 @@ $shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [
     'shipped_at' => null,
     'delivered_at' => null,
 ];
+$activityStmt = $conn->prepare(
+    "SELECT action, actor_type, actor_name, details, created_at
+     FROM order_activity_logs
+     WHERE order_id = ?
+     ORDER BY id DESC
+     LIMIT 25"
+);
+$activityStmt->bind_param('i', $id);
+$activityStmt->execute();
+$orderActivity = $activityStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$orderActivity = apply_filters('order.timeline.events', is_array($orderActivity) ? $orderActivity : [], [
+    'audience' => 'admin',
+    'order_id' => $id,
+    'admin_id' => (int) ($_SESSION['admin_id'] ?? 0),
+]);
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
 $gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
 $metaTitle = 'Order ' . e((string) $order['order_number']) . ' | Admin';
@@ -390,6 +510,28 @@ include 'partials/header.php';
                 </div>
             </div>
         </div>
+
+        <?php if (!empty($orderActivity)): ?>
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Order Timeline</h5>
+                <div class="small">
+                    <?php foreach ($orderActivity as $ev): ?>
+                        <div class="border rounded p-2 mb-2">
+                            <?php $timelineActionLabel = (string) ($ev['display_action'] ?? ucwords(str_replace('_', ' ', (string) ($ev['action'] ?? 'update')))); ?>
+                            <div class="d-flex justify-content-between gap-2 flex-wrap">
+                                <strong><?php echo e($timelineActionLabel); ?></strong>
+                                <span class="text-muted"><?php echo date('d M Y, h:i A', strtotime((string) ($ev['created_at'] ?? 'now'))); ?></span>
+                            </div>
+                            <?php if (!empty($ev['display_details']) || !empty($ev['details'])): ?>
+                                <div class="text-muted"><?php echo e((string) ($ev['display_details'] ?? $ev['details'])); ?></div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <div class="col-lg-4">
@@ -404,6 +546,11 @@ include 'partials/header.php';
                 </div>
             </div>
         </div>
+
+        <?php do_action('admin.order_view.sidebar', [
+            'conn' => $conn,
+            'order' => $order,
+        ]); ?>
 
         <div class="card mb-4">
             <div class="card-body">

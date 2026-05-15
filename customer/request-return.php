@@ -33,7 +33,7 @@ try {
     $conn->begin_transaction();
 
     $orderStmt = $conn->prepare(
-        "SELECT o.id, o.order_number, o.order_status, s.delivered_at
+        "SELECT o.id, o.order_number, o.order_status, o.pincode, s.delivered_at
          FROM orders o
          LEFT JOIN shipments s ON s.order_id = o.id
          WHERE o.id = ? AND o.customer_id = ?
@@ -143,6 +143,20 @@ try {
     $insertReturn->bind_param('siissss', $returnNumber, $orderId, $customerId, $reason, $customerNote, $img1, $img2);
     $insertReturn->execute();
     $returnId = (int) $conn->insert_id;
+    $reverseRate = shiprocket_calculate_reverse_rate(
+        trim((string) ($order['pincode'] ?? '')),
+        trim(_cfg('SHIPROCKET_PICKUP_PINCODE', ''))
+    );
+    $reverseNote = '';
+    if (!empty($reverseRate['ok'])) {
+        $reverseNote = 'Live reverse option: ' . (string) ($reverseRate['courier_name'] ?? 'Courier')
+            . ' | Est. cost: Rs ' . number_format((float) ($reverseRate['rate'] ?? 0), 2);
+    } else {
+        $reverseNote = 'Manual reverse fallback required: ' . (string) ($reverseRate['reason'] ?? 'Reverse API unavailable');
+    }
+    $noteStmt = $conn->prepare("UPDATE returns SET admin_note = ? WHERE id = ?");
+    $noteStmt->bind_param('si', $reverseNote, $returnId);
+    $noteStmt->execute();
 
     $itemStmt = $conn->prepare(
         "SELECT id, fabric_id, product_name, fabric_name_snapshot, unit_type, quantity, quantity_meters, total, line_total

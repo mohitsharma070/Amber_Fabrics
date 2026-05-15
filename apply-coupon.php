@@ -5,8 +5,9 @@ require_once __DIR__ . '/includes/coupon-functions.php';
 function coupon_redirect_target(string $fallback = '/cart.php'): string
 {
     $target = (string) ($_POST['redirect_to'] ?? '');
+    $addressId = (int) ($_POST['shipping_address_id'] ?? 0);
     if ($target === 'checkout') {
-        return '/checkout.php';
+        return $addressId > 0 ? ('/checkout.php?address_id=' . $addressId) : '/checkout.php';
     }
     if ($target === 'cart') {
         return '/cart.php';
@@ -39,8 +40,17 @@ if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION
 }
 
 $cart = $_SESSION['cart'];
-$ids = array_map('intval', array_keys($cart));
-$ids = array_values(array_filter($ids, static fn($v) => $v > 0));
+$cartLines = [];
+foreach ($cart as $cartKey => $qty) {
+    $rawKey = (string) $cartKey;
+    $parts = explode('::', $rawKey, 2);
+    $pid = (int) ($parts[0] ?? 0);
+    if ($pid <= 0) {
+        continue;
+    }
+    $cartLines[] = ['product_id' => $pid, 'qty' => (float) $qty];
+}
+$ids = array_values(array_unique(array_map(static fn($line) => (int) $line['product_id'], $cartLines)));
 $subtotal = 0.00;
 
 if (!empty($ids)) {
@@ -57,7 +67,13 @@ if (!empty($ids)) {
         $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
             ? (string) $row['unit_type']
             : 'meter';
-        $qty = normalize_quantity_by_unit($cart[$pid] ?? 1, $unitType);
+        $lineQty = 0.0;
+        foreach ($cartLines as $line) {
+            if ((int) $line['product_id'] === $pid) {
+                $lineQty += (float) $line['qty'];
+            }
+        }
+        $qty = normalize_quantity_by_unit($lineQty > 0 ? $lineQty : 1, $unitType);
         $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
         $sale = (float) ($row['sale_price'] ?? 0);
         $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
@@ -84,10 +100,9 @@ if ($countryForCalc === '' && !empty($_SESSION['customer_id'])) {
 $isIndia = strcasecmp($countryForCalc, 'india') === 0;
 
 $shipping = checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
-$preDiscountTotal = round($subtotal + (float) $shipping['shipping_total'], 2);
 
 $customerIdForCoupon = (int) ($_SESSION['customer_id'] ?? 0);
-$discountInfo = get_active_coupon_discount_for_customer($conn, $code, $preDiscountTotal, $customerIdForCoupon);
+$discountInfo = get_active_coupon_discount_for_customer($conn, $code, (float) $subtotal, $customerIdForCoupon);
 
 if (!$discountInfo['valid']) {
     unset($_SESSION['applied_coupon_code']);

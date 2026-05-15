@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/coupon-functions.php';
 
 require_customer();
 
@@ -77,6 +78,7 @@ try {
     );
     $updateStmt->bind_param('si', $newNotes, $orderId);
     $updateStmt->execute();
+    release_coupon_usage_for_order($conn, $orderId);
 
     log_order_activity(
         $conn,

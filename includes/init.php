@@ -2,6 +2,8 @@
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/customer-auth.php';
+require_once __DIR__ . '/plugin-loader.php';
+plugin_load_all();
 
 $appEnv = strtolower(_cfg('APP_ENV', 'local'));
 $isProduction = in_array($appEnv, ['production', 'prod'], true);
@@ -12,6 +14,7 @@ ini_set('display_startup_errors', $isProduction ? '0' : '1');
 error_reporting($isProduction ? E_ALL & ~E_DEPRECATED & ~E_STRICT : E_ALL);
 
 $cspNonce = base64_encode(random_bytes(16));
+$GLOBALS['cspNonce'] = $cspNonce;
 
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
@@ -21,7 +24,35 @@ if (!headers_sent()) {
     if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
     }
-    header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://*.razorpay.com; img-src 'self' data: https:; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net https://*.razorpay.com 'nonce-{$cspNonce}'; font-src 'self' https://cdn.jsdelivr.net https://*.razorpay.com; frame-src https://*.razorpay.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    $cspDirectives = apply_filters('security.csp_directives', [
+        'default-src' => ["'self'"],
+        'connect-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com'],
+        'img-src' => ["'self'", 'data:', 'https:'],
+        'style-src' => ["'self'", 'https://cdn.jsdelivr.net', "'unsafe-inline'"],
+        'script-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com', "'nonce-{$cspNonce}'"],
+        'font-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com'],
+        'frame-src' => ['https://*.razorpay.com'],
+        'object-src' => ["'none'"],
+        'frame-ancestors' => ["'none'"],
+        'base-uri' => ["'self'"],
+        'form-action' => ["'self'"],
+    ], ['nonce' => $cspNonce]);
+    $cspParts = [];
+    foreach ($cspDirectives as $directive => $values) {
+        $values = is_array($values) ? array_values(array_unique(array_filter(array_map('strval', $values)))) : [(string) $values];
+        $cspParts[] = $directive . ' ' . implode(' ', $values);
+    }
+    header('Content-Security-Policy: ' . implode('; ', $cspParts));
+}
+
+do_action('app.init', [
+    'app_env' => $appEnv,
+    'is_production' => $isProduction,
+]);
+
+if (isset($conn) && $conn instanceof mysqli) {
+    session_ensure_cart_wishlist_arrays();
+    wishlist_bootstrap_session($conn);
 }
 
 /**

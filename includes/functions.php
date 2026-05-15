@@ -259,8 +259,112 @@ function adjust_fabric_stock(mysqli $conn, int $fabricId, string $unitType, floa
 /**
  * Restore all order item quantities back into inventory.
  */
+function orders_supports_inventory_tracking(mysqli $conn): bool
+{
+    static $checked = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT SUM(CASE WHEN COLUMN_NAME IN ('inventory_reserved_at', 'inventory_restored_at') THEN 1 ELSE 0 END) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'orders'
+               AND COLUMN_NAME IN ('inventory_reserved_at', 'inventory_restored_at')"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) === 2;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
+}
+
+function mark_order_inventory_reserved(mysqli $conn, int $orderId): void
+{
+    if ($orderId <= 0 || !orders_supports_inventory_tracking($conn)) {
+        return;
+    }
+    $stmt = $conn->prepare(
+        "UPDATE orders
+         SET inventory_reserved_at = COALESCE(inventory_reserved_at, NOW()),
+             inventory_restored_at = NULL
+         WHERE id = ?"
+    );
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+}
+
+function reserve_order_inventory(mysqli $conn, int $orderId): void
+{
+    if ($orderId <= 0) {
+        return;
+    }
+
+    $supportsTracking = orders_supports_inventory_tracking($conn);
+    if ($supportsTracking) {
+        $orderStmt = $conn->prepare(
+            "SELECT inventory_reserved_at, inventory_restored_at
+             FROM orders
+             WHERE id = ?
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order) {
+            throw new RuntimeException('Order not found for inventory reservation.');
+        }
+        if (!empty($order['inventory_reserved_at']) && empty($order['inventory_restored_at'])) {
+            return;
+        }
+    }
+
+    $itemsStmt = $conn->prepare(
+        "SELECT fabric_id, unit_type, quantity_meters
+         FROM order_items
+         WHERE order_id = ?"
+    );
+    $itemsStmt->bind_param('i', $orderId);
+    $itemsStmt->execute();
+    $items = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($items as $item) {
+        $fabricId = (int) ($item['fabric_id'] ?? 0);
+        if ($fabricId <= 0) {
+            continue;
+        }
+        $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+            ? (string) $item['unit_type']
+            : 'meter';
+        $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
+        adjust_fabric_stock($conn, $fabricId, $itemUnit, (float) $qty, 'decrease');
+    }
+
+    mark_order_inventory_reserved($conn, $orderId);
+}
+
 function restore_order_inventory(mysqli $conn, int $orderId): void
 {
+    $supportsTracking = orders_supports_inventory_tracking($conn);
+    if ($supportsTracking) {
+        $orderStmt = $conn->prepare(
+            "SELECT inventory_reserved_at, inventory_restored_at
+             FROM orders
+             WHERE id = ?
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order || empty($order['inventory_reserved_at']) || !empty($order['inventory_restored_at'])) {
+            return;
+        }
+    }
+
     $itemsStmt = $conn->prepare(
         "SELECT fabric_id, unit_type, quantity_meters
          FROM order_items
@@ -279,6 +383,12 @@ function restore_order_inventory(mysqli $conn, int $orderId): void
             : 'meter';
         $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
         adjust_fabric_stock($conn, $fabricId, $itemUnit, (float) $qty, 'increase');
+    }
+
+    if ($supportsTracking) {
+        $upd = $conn->prepare("UPDATE orders SET inventory_restored_at = NOW() WHERE id = ?");
+        $upd->bind_param('i', $orderId);
+        $upd->execute();
     }
 }
 
@@ -642,19 +752,154 @@ function payment_webhook_is_duplicate(mysqli $conn, string $provider, string $ev
     }
     try {
         $stmt = $conn->prepare(
-            "INSERT INTO payment_webhook_events (provider, event_id, signature, received_at)
-             VALUES (?, ?, ?, NOW())"
+            "SELECT id
+             FROM payment_webhook_events
+             WHERE provider = ? AND event_id = ?
+             LIMIT 1"
         );
-        $stmt->bind_param('sss', $provider, $eventId, $signature);
+        $stmt->bind_param('ss', $provider, $eventId);
         $stmt->execute();
-        return false;
+        $row = $stmt->get_result()->fetch_assoc();
+        return !empty($row);
     } catch (Throwable $e) {
-        // Duplicate unique key => already processed.
-        if ($conn->errno === 1062) {
-            return true;
-        }
         throw $e;
     }
+}
+
+function cancel_stale_pending_razorpay_order(mysqli $conn, int $orderId, int $ttlMinutes = 30): bool
+{
+    if ($orderId <= 0 || $ttlMinutes < 1) {
+        return false;
+    }
+    $note = 'System cancelled stale pending Razorpay order after ' . $ttlMinutes . ' minutes.';
+    $upd = $conn->prepare(
+        "UPDATE orders
+         SET order_status = 'cancelled',
+             status = 'cancelled',
+             notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+             updated_at = NOW()
+         WHERE id = ?
+           AND payment_method = 'razorpay'
+           AND payment_status IN ('pending', 'failed')
+           AND order_status IN ('pending', 'confirmed')"
+    );
+    $upd->bind_param('ssi', $note, $note, $orderId);
+    $upd->execute();
+    if ((int) $upd->affected_rows <= 0) {
+        return false;
+    }
+
+    $updPay = $conn->prepare(
+        "UPDATE payments
+         SET payment_status = 'failed'
+         WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status = 'pending'"
+    );
+    $updPay->bind_param('i', $orderId);
+    $updPay->execute();
+
+    restore_order_inventory($conn, $orderId);
+    log_order_activity($conn, $orderId, 'payment_expired', 'system', 0, 'system', $note);
+    return true;
+}
+
+function release_stale_pending_razorpay_orders_for_customer(mysqli $conn, int $customerId, int $ttlMinutes = 30): void
+{
+    if ($customerId <= 0 || $ttlMinutes < 1) {
+        return;
+    }
+    $stmt = $conn->prepare(
+        "SELECT id
+         FROM orders
+         WHERE customer_id = ?
+           AND payment_method = 'razorpay'
+           AND payment_status IN ('pending', 'failed')
+           AND order_status IN ('pending', 'confirmed')
+           AND created_at < (NOW() - INTERVAL ? MINUTE)"
+    );
+    $stmt->bind_param('ii', $customerId, $ttlMinutes);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($rows as $row) {
+        $orderId = (int) ($row['id'] ?? 0);
+        if ($orderId <= 0) {
+            continue;
+        }
+        cancel_stale_pending_razorpay_order($conn, $orderId, $ttlMinutes);
+    }
+}
+
+function release_stale_pending_razorpay_orders_global(mysqli $conn, int $ttlMinutes = 30, int $limit = 100): int
+{
+    if ($ttlMinutes < 1) {
+        return 0;
+    }
+    $limit = max(1, min(500, $limit));
+    $stmt = $conn->prepare(
+        "SELECT id
+         FROM orders
+         WHERE payment_method = 'razorpay'
+           AND payment_status IN ('pending', 'failed')
+           AND order_status IN ('pending', 'confirmed')
+           AND created_at < (NOW() - INTERVAL ? MINUTE)
+         ORDER BY id ASC
+         LIMIT ?"
+    );
+    $stmt->bind_param('ii', $ttlMinutes, $limit);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $released = 0;
+    foreach ($rows as $row) {
+        $orderId = (int) ($row['id'] ?? 0);
+        if ($orderId <= 0) {
+            continue;
+        }
+        if (cancel_stale_pending_razorpay_order($conn, $orderId, $ttlMinutes)) {
+            $released++;
+        }
+    }
+    return $released;
+}
+
+function checkout_shipping_for_order(float $subtotal, string $country, string $pincode, string $paymentMethod): array
+{
+    $manual = checkout_shipping_breakdown($subtotal, $country, $paymentMethod, $paymentMethod === 'cod');
+    if (strcasecmp(trim($country), 'india') !== 0) {
+        return $manual;
+    }
+    if (!preg_match('/^[1-9][0-9]{5}$/', trim($pincode))) {
+        return $manual;
+    }
+    $forward = shiprocket_calculate_forward_rate(
+        $subtotal,
+        trim(_cfg('SHIPROCKET_PICKUP_PINCODE', '')),
+        trim($pincode),
+        $paymentMethod === 'cod'
+    );
+    if (empty($forward['ok'])) {
+        return $manual;
+    }
+    $base = max(0.0, (float) ($forward['rate'] ?? 0));
+    $codFee = $paymentMethod === 'cod' ? (float) $manual['cod_fee'] : 0.0;
+    return [
+        'country' => 'india',
+        'base_shipping' => round($base, 2),
+        'cod_fee' => round($codFee, 2),
+        'shipping_total' => round($base + $codFee, 2),
+    ];
+}
+
+function payment_webhook_mark_processed(mysqli $conn, string $provider, string $eventId, string $signature): void
+{
+    if ($provider === '' || $eventId === '') {
+        return;
+    }
+    $stmt = $conn->prepare(
+        "INSERT INTO payment_webhook_events (provider, event_id, signature, received_at)
+         VALUES (?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE signature = VALUES(signature)"
+    );
+    $stmt->bind_param('sss', $provider, $eventId, $signature);
+    $stmt->execute();
 }
 
 function site_settings_defaults(): array
@@ -895,6 +1140,226 @@ function announcement_mark_dismissed(mysqli $conn, string $announcementKey): boo
 
 // Cart Persistence Helpers
 
+function session_ensure_cart_wishlist_arrays(): void
+{
+    $defaults = [
+        'cart' => [],
+        'wishlist' => [],
+        'cart_size' => [],
+        'wishlist_size' => [],
+        'cart_meter_length' => [],
+        'wishlist_meter_length' => [],
+    ];
+    foreach ($defaults as $key => $fallback) {
+        if (!isset($_SESSION[$key]) || !is_array($_SESSION[$key])) {
+            $_SESSION[$key] = $fallback;
+        }
+    }
+}
+
+function wishlist_table_ready(mysqli $conn): bool
+{
+    static $checked = false;
+    static $ready = false;
+    if ($checked) {
+        return $ready;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'wishlist_items'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $ready = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+function wishlist_save_to_db(mysqli $conn, int $customerId, array $wishlist, ?array $meterMap = null, ?array $sizeMap = null): void
+{
+    if ($customerId <= 0 || !wishlist_table_ready($conn)) {
+        return;
+    }
+    try {
+        if ($meterMap === null) {
+            $meterMap = (isset($_SESSION['wishlist_meter_length']) && is_array($_SESSION['wishlist_meter_length']))
+                ? $_SESSION['wishlist_meter_length']
+                : [];
+        }
+        if ($sizeMap === null) {
+            $sizeMap = (isset($_SESSION['wishlist_size']) && is_array($_SESSION['wishlist_size']))
+                ? $_SESSION['wishlist_size']
+                : [];
+        }
+
+        $del = $conn->prepare("DELETE FROM wishlist_items WHERE customer_id = ?");
+        $del->bind_param('i', $customerId);
+        $del->execute();
+        if (empty($wishlist)) {
+            return;
+        }
+
+        $ins = $conn->prepare(
+            "INSERT INTO wishlist_items (customer_id, product_id, cart_key, selected_size, quantity, meter_length)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        foreach ($wishlist as $cartKey => $qtyRaw) {
+            [$pid, $sizeFromKey] = cart_parse_key((string) $cartKey);
+            if ($pid <= 0) {
+                continue;
+            }
+            $selectedSize = trim((string) ($sizeMap[$cartKey] ?? $sizeFromKey));
+            $qty = normalize_meter_quantity($qtyRaw ?? 1, 1.0);
+            $meterLength = null;
+            if (isset($meterMap[$cartKey]) && is_numeric($meterMap[$cartKey]) && (float) $meterMap[$cartKey] > 0) {
+                $meterLength = round((float) $meterMap[$cartKey], 2);
+            } elseif (isset($meterMap[$pid]) && is_numeric($meterMap[$pid]) && (float) $meterMap[$pid] > 0) {
+                $meterLength = round((float) $meterMap[$pid], 2);
+            }
+            $keyStr = (string) $cartKey;
+            $ins->bind_param('iissdd', $customerId, $pid, $keyStr, $selectedSize, $qty, $meterLength);
+            $ins->execute();
+        }
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] wishlist_save_to_db failed: ' . $e->getMessage());
+    }
+}
+
+function wishlist_load_from_db_bundle(mysqli $conn, int $customerId): array
+{
+    if ($customerId <= 0 || !wishlist_table_ready($conn)) {
+        return ['wishlist' => [], 'size_map' => [], 'meter_map' => []];
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT product_id, cart_key, selected_size, quantity, meter_length
+             FROM wishlist_items
+             WHERE customer_id = ?"
+        );
+        $stmt->bind_param('i', $customerId);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $wishlist = [];
+        $sizeMap = [];
+        $meterMap = [];
+        foreach ($rows as $row) {
+            $pid = (int) ($row['product_id'] ?? 0);
+            if ($pid <= 0) {
+                continue;
+            }
+            $selectedSize = trim((string) ($row['selected_size'] ?? ''));
+            $cartKey = trim((string) ($row['cart_key'] ?? ''));
+            if ($cartKey === '') {
+                $cartKey = $pid . '::' . rawurlencode($selectedSize);
+            }
+            $wishlist[$cartKey] = normalize_meter_quantity($row['quantity'] ?? 1, 1.0);
+            if ($selectedSize !== '') {
+                $sizeMap[$cartKey] = $selectedSize;
+            }
+            if (isset($row['meter_length']) && is_numeric($row['meter_length']) && (float) $row['meter_length'] > 0) {
+                $meterMap[$cartKey] = round((float) $row['meter_length'], 2);
+            }
+        }
+        return ['wishlist' => $wishlist, 'size_map' => $sizeMap, 'meter_map' => $meterMap];
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] wishlist_load_from_db failed: ' . $e->getMessage());
+        return ['wishlist' => [], 'size_map' => [], 'meter_map' => []];
+    }
+}
+
+function wishlist_bootstrap_session(mysqli $conn): void
+{
+    session_ensure_cart_wishlist_arrays();
+    $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+    if ($customerId <= 0) {
+        unset($_SESSION['wishlist_loaded_for']);
+        return;
+    }
+    if ((int) ($_SESSION['wishlist_loaded_for'] ?? 0) === $customerId) {
+        return;
+    }
+    $bundle = wishlist_load_from_db_bundle($conn, $customerId);
+    $_SESSION['wishlist'] = is_array($bundle['wishlist'] ?? null) ? $bundle['wishlist'] : [];
+    $_SESSION['wishlist_size'] = is_array($bundle['size_map'] ?? null) ? $bundle['size_map'] : [];
+    $_SESSION['wishlist_meter_length'] = is_array($bundle['meter_map'] ?? null) ? $bundle['meter_map'] : [];
+    $_SESSION['wishlist_loaded_for'] = $customerId;
+}
+
+function customer_addresses_table_ready(mysqli $conn): bool
+{
+    static $checked = false;
+    static $ready = false;
+    if ($checked) {
+        return $ready;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'customer_addresses'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $ready = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+function customer_addresses_list(mysqli $conn, int $customerId): array
+{
+    if ($customerId <= 0 || !customer_addresses_table_ready($conn)) {
+        return [];
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT id, label, full_name, phone, address_line, city, state, pincode, country, is_default_shipping, created_at, updated_at
+             FROM customer_addresses
+             WHERE customer_id = ?
+             ORDER BY is_default_shipping DESC, id DESC"
+        );
+        $stmt->bind_param('i', $customerId);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        return is_array($rows) ? $rows : [];
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] customer_addresses_list failed: ' . $e->getMessage());
+        return [];
+    }
+}
+
+function customer_address_get(mysqli $conn, int $customerId, int $addressId): ?array
+{
+    if ($customerId <= 0 || $addressId <= 0 || !customer_addresses_table_ready($conn)) {
+        return null;
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT id, label, full_name, phone, address_line, city, state, pincode, country, is_default_shipping
+             FROM customer_addresses
+             WHERE id = ? AND customer_id = ?
+             LIMIT 1"
+        );
+        $stmt->bind_param('ii', $addressId, $customerId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return $row ?: null;
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] customer_address_get failed: ' . $e->getMessage());
+        return null;
+    }
+}
+
 /**
  * Get (or create) a DB cart row for a logged-in customer.
  */
@@ -942,6 +1407,41 @@ function cart_items_supports_meter_length(mysqli $conn): bool
     return $supported;
 }
 
+function cart_items_supports_key_columns(mysqli $conn): bool
+{
+    static $checked = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT SUM(CASE WHEN COLUMN_NAME IN ('cart_key', 'selected_size') THEN 1 ELSE 0 END) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'cart_items'
+               AND COLUMN_NAME IN ('cart_key', 'selected_size')"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) === 2;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
+}
+
+function cart_parse_key(string $rawKey): array
+{
+    $parts = explode('::', $rawKey, 2);
+    $pid = (int) ($parts[0] ?? 0);
+    $encodedSize = (string) ($parts[1] ?? '');
+    $decodedSize = rawurldecode($encodedSize);
+    $size = $decodedSize === '_' ? '' : trim($decodedSize);
+    return [$pid, $size];
+}
+
 function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null): void
 {
     try {
@@ -958,22 +1458,47 @@ function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $met
             return;
         }
         $supportsMeterLength = cart_items_supports_meter_length($conn);
-        $ins = $supportsMeterLength
-            ? $conn->prepare(
+        $supportsKeyColumns = cart_items_supports_key_columns($conn);
+        if ($supportsKeyColumns && $supportsMeterLength) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length, cart_key, selected_size)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+        } elseif ($supportsKeyColumns) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, cart_key, selected_size)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+            );
+        } elseif ($supportsMeterLength) {
+            $ins = $conn->prepare(
                 "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length)
                  VALUES (?, ?, ?, ?, ?, ?)"
-            )
-            : $conn->prepare(
+            );
+        } else {
+            $ins = $conn->prepare(
                 "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters)
                  VALUES (?, ?, ?, ?, ?)"
             );
-        foreach ($cart as $productId => $qty) {
-            $pid = (int) $productId;
-            $q   = normalize_meter_quantity($qty);
-            $meterLength = (isset($meterMap[$pid]) && is_numeric($meterMap[$pid]) && (float) $meterMap[$pid] > 0)
-                ? round((float) $meterMap[$pid], 2)
-                : null;
-            if ($supportsMeterLength) {
+        }
+        foreach ($cart as $cartKey => $qty) {
+            $rawKey = (string) $cartKey;
+            [$pid, $selectedSize] = cart_parse_key($rawKey);
+            if ($pid <= 0) {
+                continue;
+            }
+            $q = normalize_meter_quantity($qty);
+
+            $meterLength = null;
+            if (isset($meterMap[$rawKey]) && is_numeric($meterMap[$rawKey]) && (float) $meterMap[$rawKey] > 0) {
+                $meterLength = round((float) $meterMap[$rawKey], 2);
+            } elseif (isset($meterMap[$pid]) && is_numeric($meterMap[$pid]) && (float) $meterMap[$pid] > 0) {
+                $meterLength = round((float) $meterMap[$pid], 2);
+            }
+            if ($supportsKeyColumns && $supportsMeterLength) {
+                $ins->bind_param('iididdss', $cartId, $pid, $q, $pid, $q, $meterLength, $rawKey, $selectedSize);
+            } elseif ($supportsKeyColumns) {
+                $ins->bind_param('iididss', $cartId, $pid, $q, $pid, $q, $rawKey, $selectedSize);
+            } elseif ($supportsMeterLength) {
                 $ins->bind_param('iididd', $cartId, $pid, $q, $pid, $q, $meterLength);
             } else {
                 $ins->bind_param('iidid', $cartId, $pid, $q, $pid, $q);
@@ -1003,19 +1528,36 @@ function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
 {
     try {
         $supportsMeterLength = cart_items_supports_meter_length($conn);
-        $stmt = $supportsMeterLength
-            ? $conn->prepare(
+        $supportsKeyColumns = cart_items_supports_key_columns($conn);
+        if ($supportsKeyColumns && $supportsMeterLength) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.meter_length, ci.cart_key, ci.selected_size
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
+        } elseif ($supportsKeyColumns) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.cart_key, ci.selected_size
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
+        } elseif ($supportsMeterLength) {
+            $stmt = $conn->prepare(
                 "SELECT ci.product_id, ci.quantity, ci.meter_length
                  FROM cart c
                  JOIN cart_items ci ON ci.cart_id = c.id
                  WHERE c.customer_id = ?"
-            )
-            : $conn->prepare(
+            );
+        } else {
+            $stmt = $conn->prepare(
                 "SELECT ci.product_id, ci.quantity
                  FROM cart c
                  JOIN cart_items ci ON ci.cart_id = c.id
                  WHERE c.customer_id = ?"
             );
+        }
         $stmt->bind_param('i', $customerId);
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -1024,9 +1566,14 @@ function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
         foreach ($rows as $row) {
             if ((int) $row['product_id'] > 0) {
                 $pid = (int) $row['product_id'];
-                $cart[$pid] = normalize_meter_quantity($row['quantity'] ?? 1);
+                $size = trim((string) ($row['selected_size'] ?? ''));
+                $cartKey = trim((string) ($row['cart_key'] ?? ''));
+                if ($cartKey === '') {
+                    $cartKey = $pid . '::' . rawurlencode($size);
+                }
+                $cart[$cartKey] = normalize_meter_quantity($row['quantity'] ?? 1);
                 if ($supportsMeterLength && isset($row['meter_length']) && is_numeric($row['meter_length']) && (float) $row['meter_length'] > 0) {
-                    $meterMap[$pid] = round((float) $row['meter_length'], 2);
+                    $meterMap[$cartKey] = round((float) $row['meter_length'], 2);
                 }
             }
         }
@@ -1422,7 +1969,7 @@ function _mailer_base(): PHPMailer\PHPMailer\PHPMailer
 }
 
 /**
- * Send order confirmation to the customer after payment.
+ * Send order confirmation to the customer after order placement.
  */
 function send_order_confirmation_email(mysqli $conn, int $orderId): bool
 {
@@ -1435,9 +1982,6 @@ function send_order_confirmation_email(mysqli $conn, int $orderId): bool
     $row->execute();
     $order = $row->get_result()->fetch_assoc();
     if (!$order) { return false; }
-    if (strtolower((string) ($order['payment_status'] ?? '')) !== 'paid') {
-        return false;
-    }
 
     $iStmt = $conn->prepare(
         "SELECT unit_type, fabric_name_snapshot, quantity, quantity_meters, price, price_per_meter, total, line_total
@@ -1448,10 +1992,13 @@ function send_order_confirmation_email(mysqli $conn, int $orderId): bool
     $items = $iStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
     $sym = $order['currency'] === 'USD' ? '$' : 'Rs ';
+    $isPaid = strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
+    $paymentMethodLabel = strtoupper((string) ($order['payment_method'] ?? ''));
     $lines = [
         'Dear ' . $order['cname'] . ',',
         '',
         'Thank you for your order! Your order has been received and is being processed.',
+        $isPaid ? 'Payment Status: Paid' : ('Payment Status: Pending (' . $paymentMethodLabel . ')'),
         '',
         'Order Number : ' . $order['order_number'],
         'Date         : ' . date('d M Y', strtotime($order['created_at'])),
@@ -1702,6 +2249,285 @@ function order_gst_breakdown(float $taxableAmount, string $country, ?float $gstR
         'cgst_amount' => $half,
         'sgst_amount' => round($gst - $half, 2),
     ];
+}
+
+/**
+ * Shiprocket integration helpers (API-first with manual fallback).
+ */
+function shiprocket_enabled(): bool
+{
+    return _cfg('SHIPROCKET_ENABLED', '0') === '1';
+}
+
+function shiprocket_fallback_mode(string $reason): array
+{
+    return ['ok' => false, 'manual_fallback' => true, 'reason' => $reason];
+}
+
+function shiprocket_http_json(string $method, string $url, array $headers = [], ?array $payload = null): array
+{
+    if (!function_exists('curl_init')) {
+        return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'cURL is unavailable'];
+    }
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'Unable to initialize cURL'];
+    }
+    $finalHeaders = array_merge(['Accept: application/json'], $headers);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_CUSTOMREQUEST => strtoupper($method),
+        CURLOPT_HTTPHEADER => $finalHeaders,
+    ]);
+    if ($payload !== null) {
+        $json = json_encode($payload);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $json === false ? '{}' : $json);
+        if (!array_filter($finalHeaders, static fn($h) => stripos($h, 'Content-Type:') === 0)) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge($finalHeaders, ['Content-Type: application/json']));
+        }
+    }
+
+    $raw = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $err = curl_error($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+
+    if ($errno !== 0) {
+        return ['ok' => false, 'status' => $status, 'body' => null, 'error' => $err !== '' ? $err : ('cURL error ' . $errno)];
+    }
+    $decoded = json_decode((string) $raw, true);
+    return [
+        'ok' => $status >= 200 && $status < 300,
+        'status' => $status,
+        'body' => is_array($decoded) ? $decoded : [],
+        'error' => ($status >= 200 && $status < 300) ? '' : ('HTTP ' . $status),
+    ];
+}
+
+function shiprocket_get_token(): array
+{
+    if (!shiprocket_enabled()) {
+        return shiprocket_fallback_mode('Shiprocket disabled');
+    }
+    $email = trim(_cfg('SHIPROCKET_EMAIL', ''));
+    $password = trim(_cfg('SHIPROCKET_PASSWORD', ''));
+    $baseUrl = rtrim(_cfg('SHIPROCKET_BASE_URL', 'https://apiv2.shiprocket.in'), '/');
+    if ($email === '' || $password === '') {
+        return shiprocket_fallback_mode('Shiprocket credentials missing');
+    }
+
+    if (!isset($_SESSION['shiprocket_token_cache']) || !is_array($_SESSION['shiprocket_token_cache'])) {
+        $_SESSION['shiprocket_token_cache'] = [];
+    }
+    $cached = $_SESSION['shiprocket_token_cache'];
+    $token = trim((string) ($cached['token'] ?? ''));
+    $expiresAt = (int) ($cached['expires_at'] ?? 0);
+    if ($token !== '' && $expiresAt > (time() + 60)) {
+        return ['ok' => true, 'token' => $token];
+    }
+
+    $resp = shiprocket_http_json('POST', $baseUrl . '/v1/external/auth/login', [], [
+        'email' => $email,
+        'password' => $password,
+    ]);
+    if (empty($resp['ok'])) {
+        return shiprocket_fallback_mode('Shiprocket auth failed');
+    }
+    $newToken = trim((string) ($resp['body']['token'] ?? ''));
+    if ($newToken === '') {
+        return shiprocket_fallback_mode('Shiprocket token missing');
+    }
+    $_SESSION['shiprocket_token_cache'] = [
+        'token' => $newToken,
+        'expires_at' => time() + 8 * 60,
+    ];
+    return ['ok' => true, 'token' => $newToken];
+}
+
+function shiprocket_calculate_forward_rate(float $subtotal, string $pickupPincode, string $deliveryPincode, bool $isCod): array
+{
+    if (!shiprocket_enabled()) {
+        return shiprocket_fallback_mode('Shiprocket disabled');
+    }
+    if ($pickupPincode === '' || $deliveryPincode === '') {
+        return shiprocket_fallback_mode('Pincode missing for rate check');
+    }
+    $tokenResp = shiprocket_get_token();
+    if (empty($tokenResp['ok'])) {
+        return $tokenResp;
+    }
+    $baseUrl = rtrim(_cfg('SHIPROCKET_BASE_URL', 'https://apiv2.shiprocket.in'), '/');
+    $weightKg = (float) _cfg('SHIPROCKET_DEFAULT_WEIGHT_KG', '0.5');
+    if ($weightKg <= 0) {
+        $weightKg = 0.5;
+    }
+    $resp = shiprocket_http_json('GET', $baseUrl . '/v1/external/courier/serviceability?' . http_build_query([
+        'pickup_postcode' => $pickupPincode,
+        'delivery_postcode' => $deliveryPincode,
+        'cod' => $isCod ? 1 : 0,
+        'weight' => $weightKg,
+        'declared_value' => max(1, round($subtotal, 2)),
+    ]), ['Authorization: Bearer ' . $tokenResp['token']]);
+
+    if (empty($resp['ok'])) {
+        return shiprocket_fallback_mode('Forward rate API unavailable');
+    }
+    $options = (array) ($resp['body']['data']['available_courier_companies'] ?? []);
+    if (empty($options)) {
+        return shiprocket_fallback_mode('No courier available for this pincode');
+    }
+    usort($options, static function ($a, $b): int {
+        return ((float) ($a['rate'] ?? 0)) <=> ((float) ($b['rate'] ?? 0));
+    });
+    $best = $options[0];
+    return [
+        'ok' => true,
+        'manual_fallback' => false,
+        'rate' => round((float) ($best['rate'] ?? 0), 2),
+        'courier_name' => (string) ($best['courier_name'] ?? ''),
+        'courier_id' => (int) ($best['courier_company_id'] ?? 0),
+        'raw' => $best,
+    ];
+}
+
+function shiprocket_calculate_reverse_rate(string $pickupPincode, string $deliveryPincode): array
+{
+    if (!shiprocket_enabled()) {
+        return shiprocket_fallback_mode('Shiprocket disabled');
+    }
+    $tokenResp = shiprocket_get_token();
+    if (empty($tokenResp['ok'])) {
+        return $tokenResp;
+    }
+    $baseUrl = rtrim(_cfg('SHIPROCKET_BASE_URL', 'https://apiv2.shiprocket.in'), '/');
+    $weightKg = (float) _cfg('SHIPROCKET_DEFAULT_REVERSE_WEIGHT_KG', _cfg('SHIPROCKET_DEFAULT_WEIGHT_KG', '0.5'));
+    if ($weightKg <= 0) {
+        $weightKg = 0.5;
+    }
+    $resp = shiprocket_http_json('GET', $baseUrl . '/v1/external/courier/serviceability?' . http_build_query([
+        'pickup_postcode' => $pickupPincode,
+        'delivery_postcode' => $deliveryPincode,
+        'cod' => 0,
+        'weight' => $weightKg,
+        'is_return' => 1,
+    ]), ['Authorization: Bearer ' . $tokenResp['token']]);
+    if (empty($resp['ok'])) {
+        return shiprocket_fallback_mode('Reverse rate API unavailable');
+    }
+    $options = (array) ($resp['body']['data']['available_courier_companies'] ?? []);
+    if (empty($options)) {
+        return shiprocket_fallback_mode('No reverse courier serviceability');
+    }
+    usort($options, static function ($a, $b): int {
+        return ((float) ($a['rate'] ?? 0)) <=> ((float) ($b['rate'] ?? 0));
+    });
+    $best = $options[0];
+    return [
+        'ok' => true,
+        'manual_fallback' => false,
+        'rate' => round((float) ($best['rate'] ?? 0), 2),
+        'courier_name' => (string) ($best['courier_name'] ?? ''),
+    ];
+}
+
+function shiprocket_auto_create_awb_for_order(mysqli $conn, int $orderId): array
+{
+    if ($orderId <= 0) {
+        return shiprocket_fallback_mode('Invalid order id');
+    }
+    if (!shiprocket_enabled()) {
+        return shiprocket_fallback_mode('Shiprocket disabled');
+    }
+    try {
+        $orderStmt = $conn->prepare(
+            "SELECT id, order_number, customer_name, customer_phone, customer_email, address, city, state, pincode, total_amount, payment_method
+             FROM orders WHERE id = ? LIMIT 1"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order) {
+            return shiprocket_fallback_mode('Order not found');
+        }
+
+        $existingStmt = $conn->prepare("SELECT id, tracking_id FROM shipments WHERE order_id = ? LIMIT 1");
+        $existingStmt->bind_param('i', $orderId);
+        $existingStmt->execute();
+        $existing = $existingStmt->get_result()->fetch_assoc() ?: [];
+        if (trim((string) ($existing['tracking_id'] ?? '')) !== '') {
+            return ['ok' => true, 'manual_fallback' => false, 'message' => 'Shipment already exists'];
+        }
+
+        $tokenResp = shiprocket_get_token();
+        if (empty($tokenResp['ok'])) {
+            return $tokenResp;
+        }
+        $baseUrl = rtrim(_cfg('SHIPROCKET_BASE_URL', 'https://apiv2.shiprocket.in'), '/');
+        $pickup = trim(_cfg('SHIPROCKET_PICKUP_LOCATION', 'Primary'));
+        $payload = [
+            'order_id' => (string) $order['order_number'],
+            'order_date' => date('Y-m-d H:i'),
+            'pickup_location' => $pickup !== '' ? $pickup : 'Primary',
+            'billing_customer_name' => (string) $order['customer_name'],
+            'billing_last_name' => '',
+            'billing_address' => (string) $order['address'],
+            'billing_city' => (string) $order['city'],
+            'billing_pincode' => (string) $order['pincode'],
+            'billing_state' => (string) $order['state'],
+            'billing_country' => 'India',
+            'billing_email' => (string) $order['customer_email'],
+            'billing_phone' => (string) $order['customer_phone'],
+            'shipping_is_billing' => true,
+            'order_items' => [['name' => 'Amber Fabrics Order', 'sku' => (string) $order['order_number'], 'units' => 1, 'selling_price' => (float) $order['total_amount']]],
+            'payment_method' => strtolower((string) ($order['payment_method'] ?? '')) === 'cod' ? 'COD' : 'Prepaid',
+            'sub_total' => (float) $order['total_amount'],
+            'length' => (float) _cfg('SHIPROCKET_DEFAULT_LENGTH_CM', '20'),
+            'breadth' => (float) _cfg('SHIPROCKET_DEFAULT_BREADTH_CM', '20'),
+            'height' => (float) _cfg('SHIPROCKET_DEFAULT_HEIGHT_CM', '2'),
+            'weight' => (float) _cfg('SHIPROCKET_DEFAULT_WEIGHT_KG', '0.5'),
+        ];
+        $resp = shiprocket_http_json('POST', $baseUrl . '/v1/external/orders/create/adhoc', [
+            'Authorization: Bearer ' . $tokenResp['token'],
+            'Content-Type: application/json',
+        ], $payload);
+
+        if (empty($resp['ok'])) {
+            return shiprocket_fallback_mode('Shipment creation API failed');
+        }
+
+        $trackingId = trim((string) ($resp['body']['shipment_id'] ?? ''));
+        $awbCode = trim((string) ($resp['body']['awb_code'] ?? $trackingId));
+        if ($awbCode === '') {
+            return shiprocket_fallback_mode('AWB missing from Shiprocket response');
+        }
+        $courierName = trim((string) ($resp['body']['courier_name'] ?? 'Shiprocket'));
+        $trackingUrl = trim((string) (_cfg('SHIPROCKET_TRACKING_URL_BASE', 'https://shiprocket.co/tracking/') . $awbCode));
+        $shippingCost = (float) ($resp['body']['freight_charges'] ?? 0);
+
+        $current = date('Y-m-d H:i:s');
+        if (!empty($existing['id'])) {
+            $sid = (int) $existing['id'];
+            $upd = $conn->prepare(
+                "UPDATE shipments SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = COALESCE(shipped_at, ?) WHERE id = ?"
+            );
+            $upd->bind_param('sssdsi', $courierName, $awbCode, $trackingUrl, $shippingCost, $current, $sid);
+            $upd->execute();
+        } else {
+            $ins = $conn->prepare(
+                "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at) VALUES (?, ?, ?, ?, ?, ?)"
+            );
+            $ins->bind_param('isssds', $orderId, $courierName, $awbCode, $trackingUrl, $shippingCost, $current);
+            $ins->execute();
+        }
+
+        log_order_activity($conn, $orderId, 'awb_created', 'system', 0, 'shiprocket', 'AWB created automatically: ' . $awbCode);
+        return ['ok' => true, 'manual_fallback' => false, 'awb' => $awbCode];
+    } catch (Throwable $e) {
+        error_log('[shiprocket] auto awb failed: ' . $e->getMessage());
+        return shiprocket_fallback_mode('Auto AWB failed, continue manual shipment mode');
+    }
 }
 
 // ---------------------------------------------------------------------------

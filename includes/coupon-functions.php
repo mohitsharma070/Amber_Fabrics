@@ -58,6 +58,37 @@ function mark_coupon_used_once(mysqli $conn, int $couponId, int $customerId, int
     return $stmt->execute();
 }
 
+function release_coupon_usage_for_order(mysqli $conn, int $orderId): bool
+{
+    if ($orderId <= 0) {
+        return false;
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT coupon_id
+         FROM coupon_usages
+         WHERE order_id = ?
+         LIMIT 1"
+    );
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $couponId = (int) ($row['coupon_id'] ?? 0);
+    if ($couponId <= 0) {
+        return false;
+    }
+
+    $del = $conn->prepare("DELETE FROM coupon_usages WHERE order_id = ?");
+    $del->bind_param('i', $orderId);
+    $del->execute();
+
+    $upd = $conn->prepare("UPDATE coupons SET used_count = GREATEST(used_count - 1, 0) WHERE id = ?");
+    $upd->bind_param('i', $couponId);
+    $upd->execute();
+
+    return true;
+}
+
 function validate_coupon_for_amount(array $coupon, float $amount, string $today): array
 {
     if (($coupon['status'] ?? '') !== 'active') {

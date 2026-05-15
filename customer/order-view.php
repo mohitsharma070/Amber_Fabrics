@@ -72,8 +72,35 @@ $activityStmt = $conn->prepare(
 $activityStmt->bind_param('i', $orderId);
 $activityStmt->execute();
 $orderActivity = $activityStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$orderActivity = apply_filters('order.timeline.events', is_array($orderActivity) ? $orderActivity : [], [
+    'audience' => 'customer',
+    'order_id' => $orderId,
+    'customer_id' => $customerId,
+]);
 
 $shipping = json_decode($order['shipping_address'] ?? '{}', true) ?: [];
+if (empty($shipping)) {
+    $shipping = [
+        'name' => (string) ($order['customer_name'] ?? ''),
+        'address' => (string) ($order['address'] ?? ''),
+        'city' => (string) ($order['city'] ?? ''),
+        'state' => (string) ($order['state'] ?? ''),
+        'pincode' => (string) ($order['pincode'] ?? ''),
+        'country' => (string) ($order['country'] ?? ''),
+        'phone' => (string) ($order['customer_phone'] ?? ''),
+        'email' => (string) ($order['customer_email'] ?? ''),
+    ];
+    $hasAddressBits = false;
+    foreach (['address', 'city', 'state', 'pincode', 'country'] as $key) {
+        if (trim((string) ($shipping[$key] ?? '')) !== '') {
+            $hasAddressBits = true;
+            break;
+        }
+    }
+    if (!$hasAddressBits) {
+        $shipping = [];
+    }
+}
 $symbol   = $order['currency'] === 'USD' ? '$' : 'Rs ';
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
 $gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
@@ -306,12 +333,13 @@ include __DIR__ . '/../includes/header.php';
                         <div class="order-timeline-item">
                             <div class="order-timeline-dot"></div>
                             <div class="order-timeline-body">
+                                <?php $timelineActionLabel = (string) ($ev['display_action'] ?? ucwords(str_replace('_', ' ', (string) ($ev['action'] ?? 'update')))); ?>
                                 <div class="d-flex justify-content-between gap-2 flex-wrap">
-                                    <strong><?php echo e(ucwords(str_replace('_', ' ', (string) ($ev['action'] ?? 'update')))); ?></strong>
+                                    <strong><?php echo e($timelineActionLabel); ?></strong>
                                     <span class="text-muted small"><?php echo date('d M Y, h:i A', strtotime((string) ($ev['created_at'] ?? 'now'))); ?></span>
                                 </div>
-                                <?php if (!empty($ev['details'])): ?>
-                                    <div class="text-muted small"><?php echo e((string) $ev['details']); ?></div>
+                                <?php if (!empty($ev['display_details']) || !empty($ev['details'])): ?>
+                                    <div class="text-muted small"><?php echo e((string) ($ev['display_details'] ?? $ev['details'])); ?></div>
                                 <?php endif; ?>
                             </div>
                         </div>

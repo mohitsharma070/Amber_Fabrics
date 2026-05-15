@@ -113,6 +113,11 @@ $metaDescription = !empty($product['description'])
     : 'Product details from Amber Fabrics.';
 $metaImage = !empty($product['image']) ? 'images/fabrics/' . e($product['image']) : '';
 include 'includes/header.php';
+do_action('product.view', [
+    'conn' => $conn,
+    'product_id' => (int) $product['id'],
+    'customer_id' => (int) ($_SESSION['customer_id'] ?? 0),
+]);
 ?>
 <style nonce="<?php echo $cspNonce; ?>">
 @media (max-width: 767.98px) {
@@ -220,7 +225,7 @@ include 'includes/header.php';
                 <?php endif; ?>
 
                 <div class="mb-3">
-                    <?php if ($salePrice > 0 && $regularPrice > 0): ?>
+                    <?php if ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice): ?>
                         <span class="fs-4 fw-bold text-primary">₹<?php echo number_format($salePrice, 2); ?> / <?php echo e($unitSingleLabel); ?></span>
                         <span class="ms-3 text-muted"><del>₹<?php echo number_format($regularPrice, 2); ?> / <?php echo e($unitSingleLabel); ?></del></span>
                     <?php elseif ($regularPrice > 0): ?>
@@ -239,7 +244,7 @@ include 'includes/header.php';
                     </span>
                 </div>
 
-                <?php if ($unitType === 'piece' && !empty($sizeOptions)): ?>
+                <?php if (!empty($sizeOptions)): ?>
                 <div class="mb-3">
                     <h6 class="fw-semibold mb-2">Available Sizes</h6>
                     <div class="d-flex flex-wrap gap-2">
@@ -281,7 +286,7 @@ include 'includes/header.php';
                             <input type="hidden" name="meter_length" id="selected_meter_length" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>">
                             <input type="hidden" name="quantity" id="meter_total_quantity" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>">
                         <?php endif; ?>
-                        <?php if ($unitType === 'piece' && !empty($sizeOptions)): ?>
+                        <?php if (!empty($sizeOptions)): ?>
                             <input type="hidden" name="selected_size" id="selected_size_add" value="<?php echo e($defaultSize); ?>">
                         <?php endif; ?>
                         <div class="d-flex gap-2 align-items-center">
@@ -326,8 +331,9 @@ include 'includes/header.php';
                             <input type="hidden" name="quantity" id="buy_now_quantity" value="1">
                             <?php if ($unitType === 'meter'): ?>
                                 <input type="hidden" name="meter_length" id="buy_now_meter_length" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength ?? max(1.0, (float) ($product['min_order_meters'] ?? 1)), 2), '0'), '.')); ?>">
+                                <input type="hidden" name="bundle_quantity" id="buy_now_bundle_quantity" value="1">
                             <?php endif; ?>
-                            <?php if ($unitType === 'piece' && !empty($sizeOptions)): ?>
+                            <?php if (!empty($sizeOptions)): ?>
                                 <input type="hidden" name="selected_size" id="selected_size_buy" value="<?php echo e($defaultSize); ?>">
                             <?php endif; ?>
                             <input type="hidden" name="redirect_to" value="checkout">
@@ -344,6 +350,7 @@ include 'includes/header.php';
                             var meterLengthInput = document.getElementById('selected_meter_length');
                             var meterTotalInput = document.getElementById('meter_total_quantity');
                             var buyNowMeterLength = document.getElementById('buy_now_meter_length');
+                            var buyNowBundleQty = document.getElementById('buy_now_bundle_quantity');
                             if (!qtyInput || !buyNowQty) return;
 
                             function syncQty() {
@@ -361,6 +368,9 @@ include 'includes/header.php';
                                         meterTotalInput.value = normalized;
                                     }
                                     buyNowQty.value = normalized;
+                                    if (buyNowBundleQty) {
+                                        buyNowBundleQty.value = String(qty);
+                                    }
                                     if (buyNowMeterLength) {
                                         buyNowMeterLength.value = meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
                                     }
@@ -504,6 +514,12 @@ include 'includes/header.php';
                     <p class="mb-2 text-muted">Returns or exchanges are supported for eligible cases as per policy.</p>
                     <a href="return-policy.php" class="btn btn-sm btn-outline-secondary">View Return Policy</a>
                 </div>
+
+                <?php do_action('product.details.after', [
+                    'conn' => $conn,
+                    'product' => $product,
+                    'customer_id' => (int) ($_SESSION['customer_id'] ?? 0),
+                ]); ?>
             </div>
         </div>
     </div>
