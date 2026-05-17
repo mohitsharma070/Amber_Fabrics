@@ -45,14 +45,15 @@ if (!$isCodOrder && $order['payment_status'] !== 'paid' && !in_array($orderStatu
 }
 
 // ── Fetch items ──────────────────────────────────────────────────────────────
-$itemStmt = $conn->prepare(
-    "SELECT oi.fabric_name_snapshot, oi.fabric_sku_snapshot, oi.size, oi.color,
-            oi.unit_type, oi.quantity, oi.quantity_meters, oi.price, oi.price_per_meter, oi.total, oi.line_total,
-            oi.bundle_quantity, oi.meter_length
-     FROM order_items oi
-     WHERE oi.order_id = ?
-     ORDER BY oi.id ASC"
-);
+$supportsTaxSnapshot = order_items_supports_tax_snapshot($conn);
+$itemSql = "SELECT oi.fabric_name_snapshot, oi.fabric_sku_snapshot, oi.size, oi.color,
+                   oi.unit_type, oi.quantity, oi.quantity_meters, oi.price, oi.price_per_meter, oi.total, oi.line_total,
+                   oi.bundle_quantity, oi.meter_length, oi.pack_label, oi.units_per_set";
+if ($supportsTaxSnapshot) {
+    $itemSql .= ", oi.taxable_amount, oi.discount_amount, oi.gst_rate_snapshot, oi.gst_amount, oi.cgst_amount, oi.sgst_amount, oi.igst_amount, oi.tax_type, oi.hsn_code_snapshot";
+}
+$itemSql .= " FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.id ASC";
+$itemStmt = $conn->prepare($itemSql);
 $orderId = (int) $order['id'];
 $itemStmt->bind_param('i', $orderId);
 $itemStmt->execute();
@@ -101,6 +102,16 @@ if (!$isIndia || $gstRate <= 0) {
     $taxType = 'cgst_sgst';
 }
 $gstTotal = !empty($gst['enabled']) ? (float) $gst['gst_amount'] : 0.0;
+if ($supportsTaxSnapshot && !empty($items)) {
+    $firstTaxType = (string) ($items[0]['tax_type'] ?? '');
+    if (in_array($firstTaxType, ['none', 'cgst_sgst', 'igst'], true)) {
+        $taxType = $firstTaxType;
+    }
+    $firstRate = (float) ($items[0]['gst_rate_snapshot'] ?? 0.0);
+    if ($firstRate >= 0) {
+        $gstRate = $firstRate;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -359,6 +370,22 @@ a { color: inherit; text-decoration: none; }
             // Back-calculate GST included in price: gst = amount * rate / (100 + rate)
             $itemTax      = ($taxType !== 'none' && $gstRate > 0 && $itemAmount > 0) ? round($itemAmount * $gstRate / (100 + $gstRate), 2) : 0.0;
             $itemTotal    = $itemAmount; // price already includes tax — no addition
+            $displayTaxType = $taxType;
+            $displayGstRate = $gstRate;
+            $displayCgst = round($itemTax / 2, 2);
+            $displaySgst = round($itemTax - $displayCgst, 2);
+            $displayIgst = $itemTax;
+            if ($supportsTaxSnapshot) {
+                $itemDiscount = (float) ($item['discount_amount'] ?? $itemDiscount);
+                $itemAmount = (float) ($item['taxable_amount'] ?? $itemAmount);
+                $itemTax = (float) ($item['gst_amount'] ?? $itemTax);
+                $itemTotal = $itemAmount;
+                $displayTaxType = (string) ($item['tax_type'] ?? $displayTaxType);
+                $displayGstRate = (float) ($item['gst_rate_snapshot'] ?? $displayGstRate);
+                $displayCgst = (float) ($item['cgst_amount'] ?? $displayCgst);
+                $displaySgst = (float) ($item['sgst_amount'] ?? $displaySgst);
+                $displayIgst = (float) ($item['igst_amount'] ?? $displayIgst);
+            }
             $tQty += $qty; $tDiscount += $itemDiscount; $tAmount += $itemAmount; $tTax += $itemTax; $tTotal += $itemTotal;
         ?>
         <tr>
@@ -368,7 +395,15 @@ a { color: inherit; text-decoration: none; }
                 <?php if (!empty($item['fabric_sku_snapshot'])): ?>
                     <br><span style="color:#888;font-size:11px">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></span>
                 <?php endif; ?>
-                <?php $attrs = array_filter([trim($item['size'] ?? ''), trim($item['color'] ?? '')]); ?>
+                <?php
+                $attrs = array_filter([trim($item['size'] ?? ''), trim($item['color'] ?? '')]);
+                if ($unitType === 'set') {
+                    $ups = (int) ($item['units_per_set'] ?? 0);
+                    if ($ups > 0) {
+                        $attrs[] = ((int) round($qty)) . ' sets × ' . $ups . ' = ' . (((int) round($qty)) * $ups) . ' pieces';
+                    }
+                }
+                ?>
                 <?php if ($attrs): ?>
                     <br><span style="color:#888;font-size:11px"><?php echo e(implode(' · ', $attrs)); ?></span>
                 <?php endif; ?>
@@ -386,11 +421,11 @@ a { color: inherit; text-decoration: none; }
             <td style="text-align:right"><?php echo $itemDiscount > 0 ? $symbol . number_format($itemDiscount, 2) : '-'; ?></td>
             <td style="text-align:right"><?php echo $symbol . number_format($itemAmount, 2); ?></td>
             <td style="text-align:center;font-size:11px">
-                <?php if ($taxType === 'igst'): ?>
-                    IGST@<?php echo number_format($gstRate, 1); ?>%=<?php echo $symbol . number_format($itemTax, 2); ?>
-                <?php elseif ($taxType === 'cgst_sgst'): ?>
-                    CGST@<?php echo number_format($gstRate / 2, 1); ?>%=<?php echo $symbol . number_format(round($itemTax / 2, 2), 2); ?><br>
-                    SGST@<?php echo number_format($gstRate / 2, 1); ?>%=<?php echo $symbol . number_format($itemTax - round($itemTax / 2, 2), 2); ?>
+                <?php if ($displayTaxType === 'igst'): ?>
+                    IGST@<?php echo number_format($displayGstRate, 1); ?>%=<?php echo $symbol . number_format($displayIgst, 2); ?>
+                <?php elseif ($displayTaxType === 'cgst_sgst'): ?>
+                    CGST@<?php echo number_format($displayGstRate / 2, 1); ?>%=<?php echo $symbol . number_format($displayCgst, 2); ?><br>
+                    SGST@<?php echo number_format($displayGstRate / 2, 1); ?>%=<?php echo $symbol . number_format($displaySgst, 2); ?>
                 <?php else: ?>-<?php endif; ?>
             </td>
             <td style="text-align:right"><?php echo $symbol . number_format($itemTotal, 2); ?></td>

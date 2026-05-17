@@ -44,6 +44,93 @@ function verify_csrf(): bool
         hash_equals($_SESSION['csrf_token'], $_POST['csrf_token']);
 }
 
+/**
+ * Marketing consent helpers (Pixel/CAPI/UTM).
+ */
+function marketing_consent_cookie_name(): string
+{
+    return 'amber_marketing_consent';
+}
+
+function marketing_consent_status(): string
+{
+    $sessionStatus = strtolower(trim((string) ($_SESSION['marketing_consent'] ?? '')));
+    if (in_array($sessionStatus, ['granted', 'denied'], true)) {
+        return $sessionStatus;
+    }
+
+    $cookieStatus = strtolower(trim((string) ($_COOKIE[marketing_consent_cookie_name()] ?? '')));
+    if (in_array($cookieStatus, ['granted', 'denied'], true)) {
+        $_SESSION['marketing_consent'] = $cookieStatus;
+        return $cookieStatus;
+    }
+
+    return 'unknown';
+}
+
+function marketing_consent_granted(): bool
+{
+    return marketing_consent_status() === 'granted';
+}
+
+function marketing_consent_denied(): bool
+{
+    return marketing_consent_status() === 'denied';
+}
+
+function marketing_consent_clear_cookie(string $cookieName): void
+{
+    if (headers_sent() || $cookieName === '') {
+        return;
+    }
+
+    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    setcookie($cookieName, '', [
+        'expires' => time() - 3600,
+        'path' => '/',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    unset($_COOKIE[$cookieName]);
+}
+
+function marketing_consent_clear_tracking_data(): void
+{
+    unset($_SESSION['utm_attribution'], $_SESSION['meta_fbp'], $_SESSION['meta_fbc']);
+    marketing_consent_clear_cookie('amber_utm');
+    marketing_consent_clear_cookie('_fbp');
+    marketing_consent_clear_cookie('_fbc');
+}
+
+function marketing_consent_set(string $status, int $days = 180): bool
+{
+    $status = strtolower(trim($status));
+    if (!in_array($status, ['granted', 'denied'], true)) {
+        return false;
+    }
+
+    $_SESSION['marketing_consent'] = $status;
+    if (headers_sent()) {
+        return false;
+    }
+
+    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    setcookie(marketing_consent_cookie_name(), $status, [
+        'expires' => time() + (max(1, $days) * 86400),
+        'path' => '/',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+
+    if ($status === 'denied') {
+        marketing_consent_clear_tracking_data();
+    }
+
+    return true;
+}
+
 
 
 /**
@@ -153,6 +240,216 @@ function format_quantity_by_unit($value, string $unitType): string
         : format_meter_quantity($value);
 }
 
+function normalize_units_per_set($value): int
+{
+    $n = is_numeric($value) ? (int) round((float) $value) : 1;
+    return max(1, $n);
+}
+
+function format_pack_label(int $unitsPerSet): string
+{
+    return 'Pack of ' . max(1, (int) $unitsPerSet);
+}
+
+/**
+ * Build normalized cart/wishlist line items from session cart maps.
+ *
+ * Returns:
+ * - items: hydrated cart lines
+ * - removed_keys: cart keys rejected due to missing/inactive products/variants
+ * - invalid_variant_found: whether any variant mismatch was detected
+ */
+function cart_hydrate_items(mysqli $conn, array $source, array $sizeMap = [], array $meterMap = []): array
+{
+    if (empty($source)) {
+        return ['items' => [], 'removed_keys' => [], 'invalid_variant_found' => false];
+    }
+
+    $ids = [];
+    $variantIds = [];
+    foreach (array_keys($source) as $key) {
+        [$pid, $variantId] = cart_parse_key((string) $key);
+        if ($pid > 0) {
+            $ids[] = $pid;
+        }
+        if ($variantId > 0) {
+            $variantIds[] = $variantId;
+        }
+    }
+
+    $ids = array_values(array_unique($ids));
+    $variantIds = array_values(array_unique($variantIds));
+    if (empty($ids)) {
+        return ['items' => [], 'removed_keys' => array_keys($source), 'invalid_variant_found' => false];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $types = str_repeat('i', count($ids));
+    $sql = "SELECT id, name, image, unit_type, price, sale_price, price_inr, stock, stock_meters, is_available, dispatch_time
+            FROM fabrics
+            WHERE status = 'active' AND id IN ($placeholders)";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$ids);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $rowMap = [];
+    foreach ($rows as $row) {
+        $rowMap[(int) $row['id']] = $row;
+    }
+
+    $variantMap = !empty($variantIds) ? get_variants_by_ids($conn, $variantIds) : [];
+    $items = [];
+    $removedKeys = [];
+    $invalidVariantFound = false;
+
+    foreach ($source as $cartKey => $sourceQty) {
+        [$pid, $variantId] = cart_parse_key((string) $cartKey);
+        if ($pid <= 0 || !isset($rowMap[$pid])) {
+            $removedKeys[] = (string) $cartKey;
+            continue;
+        }
+
+        $row = $rowMap[$pid];
+        $variant = ($variantId > 0 && isset($variantMap[$variantId])) ? $variantMap[$variantId] : null;
+        if ($variantId > 0 && (!$variant || (int) ($variant['fabric_id'] ?? 0) !== $pid || (int) ($variant['is_active'] ?? 0) !== 1)) {
+            $removedKeys[] = (string) $cartKey;
+            $invalidVariantFound = true;
+            continue;
+        }
+
+        $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+            ? (string) $row['unit_type']
+            : 'meter';
+        $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType);
+        $meterLength = null;
+        $bundleQty = null;
+        if ($unitType === 'meter' && isset($meterMap[$cartKey]) && is_numeric($meterMap[$cartKey]) && (float) $meterMap[$cartKey] > 0) {
+            $meterLength = (float) $meterMap[$cartKey];
+            $bundleQty = max(1, (int) round($qty / $meterLength));
+        }
+
+        $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
+        $sale = (float) ($row['sale_price'] ?? 0);
+        if ($variant && $variant['price_override'] !== null && (float) $variant['price_override'] > 0) {
+            $unitPrice = (float) $variant['price_override'];
+        } else {
+            $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
+        }
+        $lineTotal = round($unitPrice * $qty, 2);
+
+        $unitLabel = 'meter';
+        if ($unitType === 'piece') {
+            $unitLabel = ((float) $qty === 1.0) ? 'piece' : 'pieces';
+        } elseif ($unitType === 'set') {
+            $unitLabel = ((float) $qty === 1.0) ? 'set' : 'sets';
+        }
+
+        if ($variant) {
+            $displayStock = ($unitType === 'piece' || $unitType === 'set')
+                ? (float) ($variant['stock'] ?? 0)
+                : (float) ($variant['stock_meters'] ?? 0);
+        } else {
+            $displayStock = ($unitType === 'piece' || $unitType === 'set')
+                ? (float) ($row['stock'] ?? 0)
+                : (float) ($row['stock_meters'] ?? 0);
+        }
+        $inStock = !empty($row['is_available']) && $displayStock > 0;
+        $maxBundleQty = null;
+        if ($unitType === 'meter' && $meterLength !== null && $meterLength > 0 && $displayStock > 0) {
+            $maxBundleQty = max(1, (int) floor($displayStock / $meterLength));
+        }
+
+        $selectedColor = ($variant !== null) ? (string) ($variant['color'] ?? '') : '';
+        $selectedSize = ($variant !== null)
+            ? variant_size_display($variant, $unitType)
+            : (string) ($sizeMap[$cartKey] ?? '');
+        $unitsPerSet = ($variant !== null) ? (int) ($variant['units_per_set'] ?? 0) : 0;
+        $packLabel = ($variant !== null) ? trim((string) ($variant['pack_label'] ?? '')) : '';
+
+        $displayImage = trim((string) ($row['image'] ?? ''));
+        if ($variant !== null) {
+            foreach (['image', 'image2', 'image3', 'image4'] as $mediaKey) {
+                $candidate = trim((string) ($variant[$mediaKey] ?? ''));
+                if ($candidate !== '') {
+                    $displayImage = $candidate;
+                    break;
+                }
+            }
+        }
+
+        $items[] = [
+            'cart_key' => (string) $cartKey,
+            'id' => $pid,
+            'name' => (string) $row['name'],
+            'image' => $displayImage,
+            'quantity' => $qty,
+            'quantity_text' => format_quantity_by_unit($qty, $unitType),
+            'quantity_unit_label' => $unitLabel,
+            'unit_type' => $unitType,
+            'selected_color' => $selectedColor,
+            'selected_size' => $selectedSize,
+            'variant_id' => $variantId,
+            'regular_price' => $regular,
+            'sale_price' => $sale,
+            'unit_price' => $unitPrice,
+            'subtotal' => $lineTotal,
+            'stock' => $displayStock,
+            'in_stock' => $inStock,
+            'dispatch_time' => trim((string) ($row['dispatch_time'] ?? '')),
+            'meter_length' => $meterLength,
+            'bundle_quantity' => $bundleQty,
+            'max_bundle_qty' => $maxBundleQty,
+            'units_per_set' => $unitsPerSet,
+            'pack_label' => $packLabel,
+        ];
+    }
+
+    usort($items, static function (array $a, array $b): int {
+        $cmp = $a['id'] <=> $b['id'];
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        return strcmp((string) ($a['selected_color'] ?? ''), (string) ($b['selected_color'] ?? ''))
+            ?: strcmp((string) ($a['selected_size'] ?? ''), (string) ($b['selected_size'] ?? ''));
+    });
+
+    return [
+        'items' => $items,
+        'removed_keys' => array_values(array_unique($removedKeys)),
+        'invalid_variant_found' => $invalidVariantFound,
+    ];
+}
+
+function cart_items_subtotal(array $items): float
+{
+    $subtotal = 0.0;
+    foreach ($items as $item) {
+        $subtotal = round($subtotal + (float) ($item['subtotal'] ?? 0), 2);
+    }
+    return $subtotal;
+}
+
+function variant_size_display(array $variant, string $unitType): string
+{
+    $size = trim((string) ($variant['size'] ?? ''));
+    if ($size !== '') {
+        return $size;
+    }
+
+    if ($unitType === 'set') {
+        $packLabel = trim((string) ($variant['pack_label'] ?? ''));
+        $unitsPerSet = (int) ($variant['units_per_set'] ?? 0);
+        if ($packLabel !== '') {
+            return $packLabel;
+        }
+        if ($unitsPerSet > 0) {
+            return format_pack_label($unitsPerSet);
+        }
+    }
+    return '';
+}
+
 /**
  * Normalize product size options from comma/pipe/slash separated DB value.
  */
@@ -257,6 +554,335 @@ function adjust_fabric_stock(mysqli $conn, int $fabricId, string $unitType, floa
 }
 
 /**
+ * Adjust stock for a single variant row with in-transaction row lock.
+ * $direction must be "decrease" or "increase".
+ */
+function adjust_variant_stock(mysqli $conn, int $variantId, string $unitType, float $qty, string $direction = 'decrease'): void
+{
+    if ($variantId <= 0) {
+        throw new RuntimeException('Invalid variant id for stock update.');
+    }
+    if ($qty <= 0) {
+        return;
+    }
+    $unitType = in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
+    $direction = strtolower($direction) === 'increase' ? 'increase' : 'decrease';
+
+    $lock = $conn->prepare("SELECT id, stock, stock_meters FROM fabric_variants WHERE id = ? FOR UPDATE");
+    $lock->bind_param('i', $variantId);
+    $lock->execute();
+    $variant = $lock->get_result()->fetch_assoc();
+    if (!$variant) {
+        throw new RuntimeException('Variant not found for stock update.');
+    }
+
+    $useMeters = $unitType === 'meter';
+    if ($useMeters) {
+        $amount = round($qty, 2);
+        if ($direction === 'decrease') {
+            $available = (float) ($variant['stock_meters'] ?? 0);
+            if ($available < $amount) {
+                throw new RuntimeException('Insufficient variant stock during order confirmation.');
+            }
+            $stmt = $conn->prepare("UPDATE fabric_variants SET stock_meters = stock_meters - ? WHERE id = ? AND stock_meters >= ?");
+            $stmt->bind_param('did', $amount, $variantId, $amount);
+        } else {
+            $stmt = $conn->prepare("UPDATE fabric_variants SET stock_meters = stock_meters + ? WHERE id = ?");
+            $stmt->bind_param('di', $amount, $variantId);
+        }
+    } else {
+        $amount = (int) round($qty);
+        if ($amount <= 0) {
+            return;
+        }
+        if ($direction === 'decrease') {
+            $available = (int) round((float) ($variant['stock'] ?? 0));
+            if ($available < $amount) {
+                throw new RuntimeException('Insufficient variant stock during order confirmation.');
+            }
+            $stmt = $conn->prepare("UPDATE fabric_variants SET stock = stock - ? WHERE id = ? AND stock >= ?");
+            $stmt->bind_param('iii', $amount, $variantId, $amount);
+        } else {
+            $stmt = $conn->prepare("UPDATE fabric_variants SET stock = stock + ? WHERE id = ?");
+            $stmt->bind_param('ii', $amount, $variantId);
+        }
+    }
+    $stmt->execute();
+    if ($conn->affected_rows === 0) {
+        throw new RuntimeException('Stock update conflict for variant ' . $variantId . '. Please try again.');
+    }
+}
+
+/**
+ * Return all variants for a fabric ordered by sort_order then id.
+ */
+function get_fabric_variants(mysqli $conn, int $fabricId): array
+{
+    $stmt = $conn->prepare(
+        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active, sort_order
+         FROM fabric_variants
+         WHERE fabric_id = ?
+         ORDER BY sort_order ASC, id ASC"
+    );
+    $stmt->bind_param('i', $fabricId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+/**
+ * Return a single variant by primary key, or null if not found.
+ */
+function get_variant_by_id(mysqli $conn, int $variantId): ?array
+{
+    if ($variantId <= 0) {
+        return null;
+    }
+    $stmt = $conn->prepare(
+        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active, sort_order
+         FROM fabric_variants
+         WHERE id = ?
+         LIMIT 1"
+    );
+    $stmt->bind_param('i', $variantId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc() ?: null;
+}
+
+function shipping_quote_store(
+    float $subtotal,
+    string $country,
+    string $pincode,
+    string $paymentMethod,
+    float $baseShipping,
+    float $codFee,
+    float $shippingTotal,
+    string $source = 'manual',
+    string $courierName = '',
+    int $courierId = 0
+): string {
+    if (!isset($_SESSION['shipping_quotes']) || !is_array($_SESSION['shipping_quotes'])) {
+        $_SESSION['shipping_quotes'] = [];
+    }
+    $now = time();
+    foreach ($_SESSION['shipping_quotes'] as $k => $v) {
+        $created = (int) (($v['created_at'] ?? 0));
+        if ($created <= 0 || ($now - $created) > 1800) {
+            unset($_SESSION['shipping_quotes'][$k]);
+        }
+    }
+    $token = bin2hex(random_bytes(16));
+    $_SESSION['shipping_quotes'][$token] = [
+        'subtotal' => round($subtotal, 2),
+        'country' => strtolower(trim($country)),
+        'pincode' => trim($pincode),
+        'payment_method' => strtolower(trim($paymentMethod)),
+        'base_shipping' => round($baseShipping, 2),
+        'cod_fee' => round($codFee, 2),
+        'shipping_total' => round($shippingTotal, 2),
+        'source' => $source,
+        'courier_name' => $courierName,
+        'courier_id' => max(0, (int) $courierId),
+        'created_at' => $now,
+    ];
+    try {
+        $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+        $expiresAt = date('Y-m-d H:i:s', $now + 1800);
+        $stmt = $conn = $GLOBALS['conn'] ?? null;
+        if ($stmt instanceof mysqli) {
+            $ins = $stmt->prepare(
+                "INSERT INTO shipping_quotes (
+                    quote_token, customer_id, subtotal, country, pincode, payment_method,
+                    base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    customer_id = VALUES(customer_id),
+                    subtotal = VALUES(subtotal),
+                    country = VALUES(country),
+                    pincode = VALUES(pincode),
+                    payment_method = VALUES(payment_method),
+                    base_shipping = VALUES(base_shipping),
+                    cod_fee = VALUES(cod_fee),
+                    shipping_total = VALUES(shipping_total),
+                    source = VALUES(source),
+                    courier_name = VALUES(courier_name),
+                    courier_id = VALUES(courier_id),
+                    expires_at = VALUES(expires_at)"
+            );
+            $countryNorm = strtolower(trim($country));
+            $pincodeNorm = trim($pincode);
+            $methodNorm = strtolower(trim($paymentMethod));
+            $baseShipping = round($baseShipping, 2);
+            $codFee = round($codFee, 2);
+            $shippingTotal = round($shippingTotal, 2);
+            $courierId = max(0, (int) $courierId);
+            $ins->bind_param(
+                'sidsssdddssis',
+                $token,
+                $customerId,
+                $subtotal,
+                $countryNorm,
+                $pincodeNorm,
+                $methodNorm,
+                $baseShipping,
+                $codFee,
+                $shippingTotal,
+                $source,
+                $courierName,
+                $courierId,
+                $expiresAt
+            );
+            $ins->execute();
+        }
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] shipping quote persist failed: ' . $e->getMessage());
+    }
+    return $token;
+}
+
+function shipping_quote_get(string $token): ?array
+{
+    $token = trim($token);
+    if ($token === '') {
+        return null;
+    }
+    $row = null;
+    if (!empty($_SESSION['shipping_quotes']) && is_array($_SESSION['shipping_quotes'])) {
+        $row = $_SESSION['shipping_quotes'][$token] ?? null;
+    }
+    if (!is_array($row)) {
+        try {
+            $conn = $GLOBALS['conn'] ?? null;
+            if ($conn instanceof mysqli) {
+                $stmt = $conn->prepare(
+                    "SELECT subtotal, country, pincode, payment_method, base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at
+                     FROM shipping_quotes
+                     WHERE quote_token = ?
+                     LIMIT 1"
+                );
+                $stmt->bind_param('s', $token);
+                $stmt->execute();
+                $dbRow = $stmt->get_result()->fetch_assoc();
+                if (is_array($dbRow)) {
+                    $exp = strtotime((string) ($dbRow['expires_at'] ?? ''));
+                    if ($exp !== false && $exp > time()) {
+                        $row = [
+                            'subtotal' => (float) ($dbRow['subtotal'] ?? 0),
+                            'country' => (string) ($dbRow['country'] ?? ''),
+                            'pincode' => (string) ($dbRow['pincode'] ?? ''),
+                            'payment_method' => (string) ($dbRow['payment_method'] ?? ''),
+                            'base_shipping' => (float) ($dbRow['base_shipping'] ?? 0),
+                            'cod_fee' => (float) ($dbRow['cod_fee'] ?? 0),
+                            'shipping_total' => (float) ($dbRow['shipping_total'] ?? 0),
+                            'source' => (string) ($dbRow['source'] ?? 'manual'),
+                            'courier_name' => (string) ($dbRow['courier_name'] ?? ''),
+                            'courier_id' => (int) ($dbRow['courier_id'] ?? 0),
+                            'created_at' => time(),
+                        ];
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('[amberfabrics] shipping quote read failed: ' . $e->getMessage());
+        }
+        if (!is_array($row)) {
+            return null;
+        }
+    }
+    $created = (int) ($row['created_at'] ?? 0);
+    if ($created <= 0 || (time() - $created) > 1800) {
+        unset($_SESSION['shipping_quotes'][$token]);
+        return null;
+    }
+    return $row;
+}
+
+/**
+ * Return the first active variant for a fabric (fallback for legacy quick-add flows).
+ */
+function get_first_active_variant(mysqli $conn, int $fabricId): ?array
+{
+    if ($fabricId <= 0) {
+        return null;
+    }
+    $stmt = $conn->prepare(
+        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active, sort_order
+         FROM fabric_variants
+         WHERE fabric_id = ? AND is_active = 1
+         ORDER BY sort_order ASC, id ASC
+         LIMIT 1"
+    );
+    $stmt->bind_param('i', $fabricId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc() ?: null;
+}
+
+/**
+ * Return the first active in-stock variant for a fabric.
+ * Falls back to first active variant when all are out of stock.
+ */
+function get_first_active_in_stock_variant(mysqli $conn, int $fabricId, string $unitType): ?array
+{
+    if ($fabricId <= 0) {
+        return null;
+    }
+    $isWhole = in_array($unitType, ['piece', 'set'], true);
+    $stockColumn = $isWhole ? 'stock' : 'stock_meters';
+    $stmt = $conn->prepare(
+        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active, sort_order
+         FROM fabric_variants
+         WHERE fabric_id = ? AND is_active = 1
+         ORDER BY CASE WHEN COALESCE($stockColumn, 0) > 0 THEN 0 ELSE 1 END, sort_order ASC, id ASC
+         LIMIT 1"
+    );
+    $stmt->bind_param('i', $fabricId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc() ?: null;
+}
+
+/**
+ * Find an active variant by fabric, color and size. Returns null if not found.
+ */
+function find_variant(mysqli $conn, int $fabricId, string $color, string $size): ?array
+{
+    $stmt = $conn->prepare(
+        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active, sort_order
+         FROM fabric_variants
+         WHERE fabric_id = ? AND color = ? AND size = ? AND is_active = 1
+         LIMIT 1"
+    );
+    $stmt->bind_param('iss', $fabricId, $color, $size);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc() ?: null;
+}
+
+/**
+ * Batch-fetch active variants by a list of variant IDs.
+ * Returns array keyed by variant id.
+ */
+function get_variants_by_ids(mysqli $conn, array $variantIds): array
+{
+    $ids = array_values(array_filter(array_map('intval', $variantIds)));
+    if (empty($ids)) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $types = str_repeat('i', count($ids));
+    $stmt = $conn->prepare(
+        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active
+         FROM fabric_variants
+         WHERE id IN ($placeholders)"
+    );
+    $stmt->bind_param($types, ...$ids);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $map = [];
+    foreach ($rows as $row) {
+        $map[(int) $row['id']] = $row;
+    }
+    return $map;
+}
+
+/**
  * Restore all order item quantities back into inventory.
  */
 function orders_supports_inventory_tracking(mysqli $conn): bool
@@ -325,7 +951,7 @@ function reserve_order_inventory(mysqli $conn, int $orderId): void
     }
 
     $itemsStmt = $conn->prepare(
-        "SELECT fabric_id, unit_type, quantity_meters
+        "SELECT id, fabric_id, variant_id, unit_type, quantity_meters
          FROM order_items
          WHERE order_id = ?"
     );
@@ -341,7 +967,27 @@ function reserve_order_inventory(mysqli $conn, int $orderId): void
             ? (string) $item['unit_type']
             : 'meter';
         $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
-        adjust_fabric_stock($conn, $fabricId, $itemUnit, (float) $qty, 'decrease');
+        $variantId = (int) ($item['variant_id'] ?? 0);
+        if ($variantId > 0) {
+            adjust_variant_stock($conn, $variantId, $itemUnit, (float) $qty, 'decrease');
+        } else {
+            adjust_fabric_stock($conn, $fabricId, $itemUnit, (float) $qty, 'decrease');
+        }
+        log_stock_ledger(
+            $conn,
+            $orderId,
+            (int) ($item['id'] ?? 0),
+            0,
+            0,
+            $fabricId,
+            $variantId,
+            $itemUnit,
+            (float) $qty,
+            'reserve',
+            'out',
+            'order_flow',
+            'Order inventory reserved'
+        );
     }
 
     mark_order_inventory_reserved($conn, $orderId);
@@ -366,7 +1012,7 @@ function restore_order_inventory(mysqli $conn, int $orderId): void
     }
 
     $itemsStmt = $conn->prepare(
-        "SELECT fabric_id, unit_type, quantity_meters
+        "SELECT id, fabric_id, variant_id, unit_type, quantity_meters
          FROM order_items
          WHERE order_id = ?"
     );
@@ -382,7 +1028,27 @@ function restore_order_inventory(mysqli $conn, int $orderId): void
             ? (string) $item['unit_type']
             : 'meter';
         $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
-        adjust_fabric_stock($conn, $fabricId, $itemUnit, (float) $qty, 'increase');
+        $variantId = (int) ($item['variant_id'] ?? 0);
+        if ($variantId > 0) {
+            adjust_variant_stock($conn, $variantId, $itemUnit, (float) $qty, 'increase');
+        } else {
+            adjust_fabric_stock($conn, $fabricId, $itemUnit, (float) $qty, 'increase');
+        }
+        log_stock_ledger(
+            $conn,
+            $orderId,
+            (int) ($item['id'] ?? 0),
+            0,
+            0,
+            $fabricId,
+            $variantId,
+            $itemUnit,
+            (float) $qty,
+            'release',
+            'in',
+            'order_flow',
+            'Order inventory released'
+        );
     }
 
     if ($supportsTracking) {
@@ -492,6 +1158,436 @@ function random_filename(string $originalName): string
     return uniqid('fabric_', true) . ($ext ? ".{$ext}" : '');
 }
 
+function image_upload_max_mb(): int
+{
+    $mb = (int) _cfg('IMAGE_UPLOAD_MAX_MB', '5');
+    return $mb > 0 ? $mb : 5;
+}
+
+function image_upload_max_bytes(): int
+{
+    return image_upload_max_mb() * 1024 * 1024;
+}
+
+function image_pipeline_webp_quality(): int
+{
+    $quality = (int) _cfg('IMAGE_WEBP_QUALITY', '82');
+    if ($quality < 40) {
+        return 40;
+    }
+    if ($quality > 95) {
+        return 95;
+    }
+    return $quality;
+}
+
+function image_pipeline_max_width(): int
+{
+    $maxWidth = (int) _cfg('IMAGE_MAX_WIDTH', '1920');
+    return $maxWidth > 0 ? $maxWidth : 1920;
+}
+
+function image_pipeline_webp_widths(): array
+{
+    $raw = trim(_cfg('IMAGE_RESPONSIVE_WIDTHS', '360,720,1200'));
+    $parts = array_filter(array_map('trim', explode(',', $raw)), static fn($v) => $v !== '');
+    $widths = [];
+    foreach ($parts as $part) {
+        if (!is_numeric($part)) {
+            continue;
+        }
+        $w = (int) $part;
+        if ($w > 0) {
+            $widths[] = $w;
+        }
+    }
+    if (empty($widths)) {
+        $widths = [360, 720, 1200];
+    }
+    $widths = array_values(array_unique($widths));
+    sort($widths);
+    return $widths;
+}
+
+function image_pipeline_thumb_dimensions(): array
+{
+    $w = (int) _cfg('IMAGE_THUMB_WIDTH', '360');
+    $h = (int) _cfg('IMAGE_THUMB_HEIGHT', '360');
+    return [max(64, $w), max(64, $h)];
+}
+
+function image_pipeline_create_resource(string $path, string $mime)
+{
+    if ($mime === 'image/jpeg') {
+        return @imagecreatefromjpeg($path);
+    }
+    if ($mime === 'image/png') {
+        return @imagecreatefrompng($path);
+    }
+    if ($mime === 'image/webp' && function_exists('imagecreatefromwebp')) {
+        return @imagecreatefromwebp($path);
+    }
+    return false;
+}
+
+function image_pipeline_create_canvas(int $width, int $height)
+{
+    $canvas = imagecreatetruecolor($width, $height);
+    if ($canvas === false) {
+        return false;
+    }
+    imagealphablending($canvas, false);
+    imagesavealpha($canvas, true);
+    $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+    imagefilledrectangle($canvas, 0, 0, $width, $height, $transparent);
+    return $canvas;
+}
+
+function image_pipeline_save_resource($resource, string $path, string $mime, int $quality): bool
+{
+    if ($mime === 'image/jpeg') {
+        if (function_exists('imageinterlace')) {
+            imageinterlace($resource, true);
+        }
+        return (bool) @imagejpeg($resource, $path, $quality);
+    }
+    if ($mime === 'image/png') {
+        $compression = (int) round((100 - $quality) / 10);
+        $compression = max(0, min(9, $compression));
+        return (bool) @imagepng($resource, $path, $compression);
+    }
+    if ($mime === 'image/webp' && function_exists('imagewebp')) {
+        return (bool) @imagewebp($resource, $path, $quality);
+    }
+    return false;
+}
+
+function image_pipeline_resize_to_width($source, int $srcWidth, int $srcHeight, int $targetWidth)
+{
+    if ($targetWidth <= 0 || $srcWidth <= 0 || $srcHeight <= 0) {
+        return false;
+    }
+    $targetHeight = (int) round(($srcHeight * $targetWidth) / $srcWidth);
+    $target = image_pipeline_create_canvas($targetWidth, max(1, $targetHeight));
+    if ($target === false) {
+        return false;
+    }
+    imagecopyresampled($target, $source, 0, 0, 0, 0, $targetWidth, max(1, $targetHeight), $srcWidth, $srcHeight);
+    return $target;
+}
+
+function image_pipeline_resize_cover($source, int $srcWidth, int $srcHeight, int $targetWidth, int $targetHeight)
+{
+    if ($srcWidth <= 0 || $srcHeight <= 0 || $targetWidth <= 0 || $targetHeight <= 0) {
+        return false;
+    }
+    $srcRatio = $srcWidth / $srcHeight;
+    $targetRatio = $targetWidth / $targetHeight;
+
+    if ($srcRatio > $targetRatio) {
+        $cropHeight = $srcHeight;
+        $cropWidth = (int) round($srcHeight * $targetRatio);
+        $srcX = (int) floor(($srcWidth - $cropWidth) / 2);
+        $srcY = 0;
+    } else {
+        $cropWidth = $srcWidth;
+        $cropHeight = (int) round($srcWidth / $targetRatio);
+        $srcX = 0;
+        $srcY = (int) floor(($srcHeight - $cropHeight) / 2);
+    }
+
+    $target = image_pipeline_create_canvas($targetWidth, $targetHeight);
+    if ($target === false) {
+        return false;
+    }
+    imagecopyresampled($target, $source, 0, 0, $srcX, $srcY, $targetWidth, $targetHeight, $cropWidth, $cropHeight);
+    return $target;
+}
+
+function image_pipeline_generate_derivatives(string $absoluteImagePath): void
+{
+    if (!is_file($absoluteImagePath) || !extension_loaded('gd') || !function_exists('imagecreatetruecolor')) {
+        return;
+    }
+
+    $info = @getimagesize($absoluteImagePath);
+    if (!is_array($info) || !isset($info[0], $info[1], $info['mime'])) {
+        return;
+    }
+
+    $mime = strtolower((string) $info['mime']);
+    if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+        return;
+    }
+
+    $source = image_pipeline_create_resource($absoluteImagePath, $mime);
+    if ($source === false) {
+        return;
+    }
+
+    $quality = image_pipeline_webp_quality();
+    $srcWidth = (int) $info[0];
+    $srcHeight = (int) $info[1];
+    $maxWidth = image_pipeline_max_width();
+
+    if ($maxWidth > 0 && $srcWidth > $maxWidth) {
+        $resizedOriginal = image_pipeline_resize_to_width($source, $srcWidth, $srcHeight, $maxWidth);
+        if ($resizedOriginal !== false) {
+            if (image_pipeline_save_resource($resizedOriginal, $absoluteImagePath, $mime, $quality)) {
+                imagedestroy($source);
+                $source = $resizedOriginal;
+                $srcWidth = imagesx($source);
+                $srcHeight = imagesy($source);
+            } else {
+                imagedestroy($resizedOriginal);
+            }
+        }
+    }
+
+    $dir = dirname($absoluteImagePath);
+    $base = pathinfo($absoluteImagePath, PATHINFO_FILENAME);
+    $ext = strtolower(pathinfo($absoluteImagePath, PATHINFO_EXTENSION));
+
+    if (function_exists('imagewebp')) {
+        $widths = image_pipeline_webp_widths();
+        foreach ($widths as $width) {
+            if ($width <= 0 || $width > $srcWidth) {
+                continue;
+            }
+            $resized = image_pipeline_resize_to_width($source, $srcWidth, $srcHeight, $width);
+            if ($resized === false) {
+                continue;
+            }
+            $targetPath = $dir . DIRECTORY_SEPARATOR . $base . '-' . $width . 'w.webp';
+            image_pipeline_save_resource($resized, $targetPath, 'image/webp', $quality);
+            imagedestroy($resized);
+        }
+
+        [$thumbW, $thumbH] = image_pipeline_thumb_dimensions();
+        $thumbWebp = image_pipeline_resize_cover($source, $srcWidth, $srcHeight, $thumbW, $thumbH);
+        if ($thumbWebp !== false) {
+            $thumbWebpPath = $dir . DIRECTORY_SEPARATOR . $base . '-thumb.webp';
+            image_pipeline_save_resource($thumbWebp, $thumbWebpPath, 'image/webp', $quality);
+            imagedestroy($thumbWebp);
+        }
+    }
+
+    [$thumbW, $thumbH] = image_pipeline_thumb_dimensions();
+    $thumbFallback = image_pipeline_resize_cover($source, $srcWidth, $srcHeight, $thumbW, $thumbH);
+    if ($thumbFallback !== false) {
+        $thumbExt = $ext !== '' ? $ext : ($mime === 'image/png' ? 'png' : 'jpg');
+        $thumbMime = $mime;
+        if ($thumbMime === 'image/webp' && !function_exists('imagewebp')) {
+            $thumbMime = 'image/jpeg';
+            $thumbExt = 'jpg';
+        }
+        $thumbPath = $dir . DIRECTORY_SEPARATOR . $base . '-thumb.' . $thumbExt;
+        image_pipeline_save_resource($thumbFallback, $thumbPath, $thumbMime, $quality);
+        imagedestroy($thumbFallback);
+    }
+
+    imagedestroy($source);
+}
+
+function image_pipeline_delete_files(string $directory, string $filename): void
+{
+    $filename = trim($filename);
+    if ($filename === '') {
+        return;
+    }
+
+    $directory = rtrim($directory, '/\\');
+    $filename = basename($filename);
+    $originalPath = $directory . DIRECTORY_SEPARATOR . $filename;
+    if (is_file($originalPath)) {
+        @unlink($originalPath);
+    }
+
+    $base = pathinfo($filename, PATHINFO_FILENAME);
+    if ($base === '') {
+        return;
+    }
+    $matches = glob($directory . DIRECTORY_SEPARATOR . $base . '-*');
+    if (is_array($matches)) {
+        foreach ($matches as $path) {
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+    }
+}
+
+function save_fabric_image_upload(array $file, string $label = 'Image'): string
+{
+    $allowedImageExt = ['jpg', 'jpeg', 'png', 'webp'];
+    $allowedImageMime = ['image/jpeg', 'image/png', 'image/webp'];
+    $maxImageSize = image_upload_max_bytes();
+    $minImageWidth = max(1, (int) _cfg('IMAGE_MIN_WIDTH', '600'));
+    $minImageHeight = max(1, (int) _cfg('IMAGE_MIN_HEIGHT', '800'));
+
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException($label . ' upload failed. Please try again.');
+    }
+
+    $tmpName = (string) ($file['tmp_name'] ?? '');
+    $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+    $mime = function_exists('mime_content_type') ? (mime_content_type($tmpName) ?: '') : '';
+    $size = (int) ($file['size'] ?? 0);
+    $imageInfo = @getimagesize($tmpName);
+
+    if ($size > $maxImageSize) {
+        throw new RuntimeException($label . ' must be under ' . image_upload_max_mb() . 'MB.');
+    }
+
+    if (!in_array($ext, $allowedImageExt, true) || !in_array($mime, $allowedImageMime, true) || !is_array($imageInfo)) {
+        throw new RuntimeException($label . ' must be JPG, PNG or WEBP.');
+    }
+
+    $imgWidth = (int) ($imageInfo[0] ?? 0);
+    $imgHeight = (int) ($imageInfo[1] ?? 0);
+    if ($imgWidth < $minImageWidth || $imgHeight < $minImageHeight) {
+        throw new RuntimeException($label . ' must be at least ' . $minImageWidth . 'x' . $minImageHeight . ' px for clear website display.');
+    }
+
+    $saved = random_filename((string) ($file['name'] ?? 'image.jpg'));
+    $target = __DIR__ . '/../images/fabrics/' . $saved;
+    if (!move_uploaded_file($tmpName, $target)) {
+        throw new RuntimeException($label . ' upload failed.');
+    }
+
+    image_pipeline_generate_derivatives($target);
+    return $saved;
+}
+
+function image_pipeline_asset_data(string $relativeDir, string $filename): array
+{
+    $filename = trim($filename);
+    if ($filename === '') {
+        return [
+            'src' => '',
+            'thumb_src' => '',
+            'webp_srcset' => '',
+        ];
+    }
+
+    $relativeDir = trim(str_replace('\\', '/', $relativeDir), '/');
+    $filename = basename(str_replace('\\', '/', $filename));
+    $base = pathinfo($filename, PATHINFO_FILENAME);
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $absDir = __DIR__ . '/../' . $relativeDir;
+
+    $baseUrl = '/' . $relativeDir;
+    $originalUrl = $baseUrl . '/' . $filename;
+
+    $thumbWebp = $base . '-thumb.webp';
+    $thumbWebpAbs = $absDir . DIRECTORY_SEPARATOR . $thumbWebp;
+    $thumbFallback = ($ext !== '') ? ($base . '-thumb.' . $ext) : '';
+    $thumbFallbackAbs = $thumbFallback !== '' ? ($absDir . DIRECTORY_SEPARATOR . $thumbFallback) : '';
+
+    if (is_file($thumbWebpAbs)) {
+        $thumbUrl = $baseUrl . '/' . $thumbWebp;
+    } elseif ($thumbFallbackAbs !== '' && is_file($thumbFallbackAbs)) {
+        $thumbUrl = $baseUrl . '/' . $thumbFallback;
+    } else {
+        $thumbUrl = $originalUrl;
+    }
+
+    $srcsetParts = [];
+    foreach (image_pipeline_webp_widths() as $w) {
+        $variant = $base . '-' . $w . 'w.webp';
+        $variantAbs = $absDir . DIRECTORY_SEPARATOR . $variant;
+        if (is_file($variantAbs)) {
+            $srcsetParts[] = $baseUrl . '/' . $variant . ' ' . $w . 'w';
+        }
+    }
+
+    return [
+        'src' => $originalUrl,
+        'thumb_src' => $thumbUrl,
+        'webp_srcset' => implode(', ', $srcsetParts),
+    ];
+}
+
+function fabric_image_asset_data(string $filename): array
+{
+    return image_pipeline_asset_data('images/fabrics', $filename);
+}
+
+/**
+ * Scan original fabric images and list files below configured minimum dimensions.
+ */
+function image_pipeline_low_resolution_fabric_images(int $limit = 20): array
+{
+    static $cache = [];
+
+    $minWidth = max(1, (int) _cfg('IMAGE_MIN_WIDTH', '600'));
+    $minHeight = max(1, (int) _cfg('IMAGE_MIN_HEIGHT', '800'));
+    $limit = max(1, min(5000, $limit));
+    $cacheKey = $minWidth . 'x' . $minHeight . ':' . $limit;
+
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $directory = __DIR__ . '/../images/fabrics';
+    $rows = [];
+
+    if (is_dir($directory)) {
+        try {
+            $iterator = new DirectoryIterator($directory);
+            foreach ($iterator as $fileInfo) {
+                if ($fileInfo->isDot() || !$fileInfo->isFile()) {
+                    continue;
+                }
+
+                $filename = $fileInfo->getFilename();
+                if (!preg_match('/\.(jpe?g|png|webp)$/i', $filename)) {
+                    continue;
+                }
+                if (preg_match('/-(thumb|\d+w)\.(webp|jpe?g|png)$/i', $filename)) {
+                    continue;
+                }
+
+                $info = @getimagesize($fileInfo->getPathname());
+                if (!is_array($info)) {
+                    continue;
+                }
+
+                $width = (int) ($info[0] ?? 0);
+                $height = (int) ($info[1] ?? 0);
+                if ($width < $minWidth || $height < $minHeight) {
+                    $rows[] = [
+                        'filename' => $filename,
+                        'width' => $width,
+                        'height' => $height,
+                        'area' => $width * $height,
+                    ];
+                }
+            }
+        } catch (Throwable $e) {
+            $rows = [];
+        }
+    }
+
+    usort($rows, static function (array $a, array $b): int {
+        $cmp = ((int) ($a['area'] ?? 0)) <=> ((int) ($b['area'] ?? 0));
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        return strcmp((string) ($a['filename'] ?? ''), (string) ($b['filename'] ?? ''));
+    });
+
+    $result = [
+        'min_width' => $minWidth,
+        'min_height' => $minHeight,
+        'total' => count($rows),
+        'items' => array_slice($rows, 0, $limit),
+    ];
+
+    $cache[$cacheKey] = $result;
+    return $result;
+}
+
 /**
  * Require admin session.
  */
@@ -547,29 +1643,118 @@ function list_build_query(array $params, bool $dropEmpty = true): string
 }
 
 /**
- * Lightweight session-based rate limit for public form endpoints.
+ * Public form rate-limit backed by DB when available (session fallback).
  */
 function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $windowSeconds = 600): bool
 {
+    $scope = trim($scope);
+    if ($scope === '') {
+        $scope = 'public_form';
+    }
+    $maxAttempts = max(1, (int) $maxAttempts);
+    $windowSeconds = max(60, (int) $windowSeconds);
+
+    $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
+    $ua = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+    $uaKey = substr(hash('sha256', $ua), 0, 16);
+    $key = hash('sha256', strtolower($scope) . '|' . $ip . '|' . $uaKey);
+
+    $conn = (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
+    if ($conn instanceof mysqli) {
+        try {
+            $conn->query(
+                "CREATE TABLE IF NOT EXISTS public_form_attempts (
+                    attempt_key CHAR(64) PRIMARY KEY,
+                    scope VARCHAR(80) NOT NULL,
+                    ip_address VARCHAR(45) NOT NULL,
+                    user_agent_hash CHAR(16) NOT NULL,
+                    attempts INT NOT NULL DEFAULT 0,
+                    window_started_at DATETIME NOT NULL,
+                    blocked_until DATETIME DEFAULT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_public_form_attempts_scope_updated (scope, updated_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+
+            $stmt = $conn->prepare(
+                "SELECT attempts, UNIX_TIMESTAMP(window_started_at) AS window_ts, UNIX_TIMESTAMP(blocked_until) AS blocked_ts
+                 FROM public_form_attempts
+                 WHERE attempt_key = ?
+                 LIMIT 1"
+            );
+            $stmt->bind_param('s', $key);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc() ?: null;
+            $stmt->close();
+
+            $now = time();
+            $windowStart = $now - $windowSeconds;
+            $attempts = (int) ($row['attempts'] ?? 0);
+            $windowTs = (int) ($row['window_ts'] ?? 0);
+            $blockedTs = (int) ($row['blocked_ts'] ?? 0);
+
+            if ($blockedTs > $now) {
+                return false;
+            }
+
+            if ($windowTs < $windowStart) {
+                $attempts = 0;
+                $windowTs = $now;
+            }
+
+            if ($attempts >= $maxAttempts) {
+                $blockedUntil = date('Y-m-d H:i:s', $now + $windowSeconds);
+                $upd = $conn->prepare(
+                    "INSERT INTO public_form_attempts (attempt_key, scope, ip_address, user_agent_hash, attempts, window_started_at, blocked_until)
+                     VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?)
+                     ON DUPLICATE KEY UPDATE
+                        attempts = VALUES(attempts),
+                        window_started_at = VALUES(window_started_at),
+                        blocked_until = VALUES(blocked_until),
+                        updated_at = CURRENT_TIMESTAMP"
+                );
+                $upd->bind_param('ssssiis', $key, $scope, $ip, $uaKey, $attempts, $windowTs, $blockedUntil);
+                $upd->execute();
+                $upd->close();
+                return false;
+            }
+
+            $attempts++;
+            $ins = $conn->prepare(
+                "INSERT INTO public_form_attempts (attempt_key, scope, ip_address, user_agent_hash, attempts, window_started_at, blocked_until)
+                 VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?), NULL)
+                 ON DUPLICATE KEY UPDATE
+                    attempts = VALUES(attempts),
+                    window_started_at = VALUES(window_started_at),
+                    blocked_until = NULL,
+                    updated_at = CURRENT_TIMESTAMP"
+            );
+            $ins->bind_param('ssssii', $key, $scope, $ip, $uaKey, $attempts, $windowTs);
+            $ins->execute();
+            $ins->close();
+
+            // Lightweight cleanup of stale rows.
+            $conn->query("DELETE FROM public_form_attempts WHERE updated_at < (NOW() - INTERVAL 7 DAY)");
+            return true;
+        } catch (Throwable $e) {
+            error_log('[amberfabrics] public form rate-limit fallback to session: ' . $e->getMessage());
+        }
+    }
+
     if (!isset($_SESSION['form_rate_limit']) || !is_array($_SESSION['form_rate_limit'])) {
         $_SESSION['form_rate_limit'] = [];
     }
-
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-    $key = hash('sha256', $scope . '|' . $ip);
     $now = time();
     $windowStart = $now - $windowSeconds;
     $hits = $_SESSION['form_rate_limit'][$key] ?? [];
     if (!is_array($hits)) {
         $hits = [];
     }
-
     $hits = array_values(array_filter($hits, static fn($ts) => is_int($ts) && $ts >= $windowStart));
     if (count($hits) >= $maxAttempts) {
         $_SESSION['form_rate_limit'][$key] = $hits;
         return false;
     }
-
     $hits[] = $now;
     $_SESSION['form_rate_limit'][$key] = $hits;
     return true;
@@ -738,6 +1923,375 @@ function log_refund_ledger(
         $stmt->execute();
     } catch (Throwable $e) {
         error_log('[amberfabrics] refund ledger log failed: ' . $e->getMessage());
+    }
+}
+
+function order_coupon_code_from_activity(mysqli $conn, int $orderId): string
+{
+    if ($orderId <= 0) {
+        return '';
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT details
+             FROM order_activity_logs
+             WHERE order_id = ? AND action = 'coupon_applied'
+             ORDER BY id DESC
+             LIMIT 1"
+        );
+        $stmt->bind_param('i', $orderId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $details = (string) ($row['details'] ?? '');
+        if ($details !== '' && preg_match('/Coupon code:\s*([A-Z0-9_-]+)/i', $details, $m)) {
+            return strtoupper(trim((string) ($m[1] ?? '')));
+        }
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] order coupon activity read failed: ' . $e->getMessage());
+    }
+    return '';
+}
+
+function orders_structured_financial_columns_ready(mysqli $conn): bool
+{
+    static $ready = null;
+    if ($ready !== null) {
+        return $ready;
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'orders'
+               AND COLUMN_NAME IN (
+                 'coupon_id','coupon_code','coupon_discount',
+                 'shipping_quote_token','shipping_source','courier_id','courier_name',
+                 'cod_fee','base_shipping'
+               )"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        $ready = ((int) ($row['total'] ?? 0)) === 9;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+function resolve_coupon_id_for_order(mysqli $conn, int $orderId, string $orderNotes = ''): int
+{
+    if (orders_structured_financial_columns_ready($conn) && $orderId > 0) {
+        try {
+            $stmt = $conn->prepare("SELECT coupon_id, coupon_code FROM orders WHERE id = ? LIMIT 1");
+            $stmt->bind_param('i', $orderId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc() ?: [];
+            $couponId = (int) ($row['coupon_id'] ?? 0);
+            if ($couponId > 0) {
+                return $couponId;
+            }
+            $couponCode = strtoupper(trim((string) ($row['coupon_code'] ?? '')));
+            if ($couponCode !== '') {
+                $idStmt = $conn->prepare("SELECT id FROM coupons WHERE code = ? LIMIT 1");
+                $idStmt->bind_param('s', $couponCode);
+                $idStmt->execute();
+                $couponRow = $idStmt->get_result()->fetch_assoc() ?: [];
+                $resolved = (int) ($couponRow['id'] ?? 0);
+                if ($resolved > 0) {
+                    return $resolved;
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('[amberfabrics] structured coupon resolve failed: ' . $e->getMessage());
+        }
+    }
+
+    $code = order_coupon_code_from_activity($conn, $orderId);
+    if ($code === '' && $orderNotes !== '' && preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
+        $code = strtoupper(trim((string) ($m[1] ?? '')));
+    }
+    if ($code === '') {
+        return 0;
+    }
+    try {
+        $stmt = $conn->prepare("SELECT id FROM coupons WHERE code = ? LIMIT 1");
+        $stmt->bind_param('s', $code);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return (int) ($row['id'] ?? 0);
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] coupon id resolve failed: ' . $e->getMessage());
+        return 0;
+    }
+}
+
+function razorpay_mark_order_paid(
+    mysqli $conn,
+    int $orderId,
+    string $previousPaymentStatus,
+    string $paymentId = '',
+    string $rzpOrderId = '',
+    string $signature = ''
+): void {
+    $updateOrder = $conn->prepare(
+        "UPDATE orders
+         SET payment_id = ?, payment_status = 'paid', order_status = 'confirmed', status = 'confirmed'
+         WHERE id = ? AND payment_status IN ('pending', 'failed')"
+    );
+    $updateOrder->bind_param('si', $paymentId, $orderId);
+    $updateOrder->execute();
+    if ($conn->affected_rows === 0 && strtolower($previousPaymentStatus) !== 'paid') {
+        throw new RuntimeException('Order payment state changed unexpectedly during Razorpay capture.');
+    }
+
+    $updatePayment = $conn->prepare(
+        "UPDATE payments
+         SET payment_status = 'paid',
+             transaction_id = CASE WHEN ? <> '' THEN ? ELSE transaction_id END,
+             razorpay_order_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_order_id END,
+             razorpay_payment_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_payment_id END,
+             razorpay_signature = CASE WHEN ? <> '' THEN ? ELSE razorpay_signature END
+         WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending', 'failed')"
+    );
+    $updatePayment->bind_param(
+        'ssssssssi',
+        $paymentId,
+        $paymentId,
+        $rzpOrderId,
+        $rzpOrderId,
+        $paymentId,
+        $paymentId,
+        $signature,
+        $signature,
+        $orderId
+    );
+    $updatePayment->execute();
+}
+
+function razorpay_mark_order_failed(
+    mysqli $conn,
+    int $orderId,
+    string $previousPaymentStatus,
+    string $note,
+    string $paymentId = '',
+    string $rzpOrderId = ''
+): bool {
+    if (strtolower($previousPaymentStatus) === 'paid') {
+        return false;
+    }
+
+    $updatePayment = $conn->prepare(
+        "UPDATE payments
+         SET payment_status = 'failed',
+             transaction_id = CASE WHEN ? <> '' THEN ? ELSE transaction_id END,
+             razorpay_payment_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_payment_id END,
+             razorpay_order_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_order_id END
+         WHERE order_id = ? AND payment_method = 'razorpay'"
+    );
+    $updatePayment->bind_param('ssssssi', $paymentId, $paymentId, $paymentId, $paymentId, $rzpOrderId, $rzpOrderId, $orderId);
+    $updatePayment->execute();
+
+    $updateOrder = $conn->prepare(
+        "UPDATE orders
+         SET payment_status = 'failed',
+             notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+             updated_at = NOW()
+         WHERE id = ?"
+    );
+    $updateOrder->bind_param('ssi', $note, $note, $orderId);
+    $updateOrder->execute();
+
+    return true;
+}
+
+function consume_coupon_after_razorpay_capture(
+    mysqli $conn,
+    int $orderId,
+    int $customerId,
+    int $preferredCouponId = 0,
+    string $orderNotes = ''
+): bool {
+    $resolvedCouponId = $preferredCouponId > 0 ? $preferredCouponId : resolve_coupon_id_for_order($conn, $orderId, $orderNotes);
+    if ($resolvedCouponId <= 0) {
+        return false;
+    }
+    if (has_customer_used_coupon($conn, $resolvedCouponId, $customerId)) {
+        throw new RuntimeException('Coupon already used by this customer.');
+    }
+
+    $couponStmt = $conn->prepare(
+        "UPDATE coupons SET used_count = used_count + 1
+         WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
+    );
+    $couponStmt->bind_param('i', $resolvedCouponId);
+    $couponStmt->execute();
+    if ($conn->affected_rows <= 0) {
+        throw new RuntimeException('Coupon usage limit reached.');
+    }
+
+    if (!mark_coupon_used_once($conn, $resolvedCouponId, $customerId, $orderId)) {
+        throw new RuntimeException('Unable to mark coupon usage for this order.');
+    }
+    log_order_activity($conn, $orderId, 'coupon_consumed', 'system', 0, 'system', 'Coupon usage count incremented after payment.');
+    return true;
+}
+
+function razorpay_validate_remote_capture(string $paymentId, string $rzpOrderId, float $expectedAmountInr): array
+{
+    $paymentId = trim($paymentId);
+    $rzpOrderId = trim($rzpOrderId);
+    $expectedPaise = (int) round(max(0.0, $expectedAmountInr) * 100);
+    if ($paymentId === '' || $rzpOrderId === '' || $expectedPaise <= 0) {
+        return ['ok' => false, 'error' => 'invalid_validation_inputs'];
+    }
+
+    $keyId = _cfg('RAZORPAY_KEY_ID', '');
+    $keySecret = _cfg('RAZORPAY_KEY_SECRET', '');
+    if ($keyId === '' || $keySecret === '') {
+        return ['ok' => false, 'error' => 'razorpay_credentials_missing'];
+    }
+    if (!function_exists('curl_init')) {
+        return ['ok' => false, 'error' => 'curl_missing'];
+    }
+
+    $url = 'https://api.razorpay.com/v1/payments/' . rawurlencode($paymentId);
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['ok' => false, 'error' => 'curl_init_failed'];
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+        CURLOPT_USERPWD => $keyId . ':' . $keySecret,
+        CURLOPT_HTTPHEADER => ['Accept: application/json'],
+    ]);
+    $raw = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $err = curl_error($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+
+    if ($errno !== 0) {
+        return ['ok' => false, 'error' => 'curl_error:' . ($err !== '' ? $err : (string) $errno)];
+    }
+    if ($status < 200 || $status >= 300) {
+        return ['ok' => false, 'error' => 'gateway_http_' . $status];
+    }
+
+    $payload = json_decode((string) $raw, true);
+    if (!is_array($payload)) {
+        return ['ok' => false, 'error' => 'invalid_gateway_json'];
+    }
+
+    $remoteOrderId = trim((string) ($payload['order_id'] ?? ''));
+    $remoteCurrency = strtoupper(trim((string) ($payload['currency'] ?? '')));
+    $remoteAmount = (int) ($payload['amount'] ?? 0);
+    $remoteStatus = strtolower(trim((string) ($payload['status'] ?? '')));
+    $remoteCaptured = (int) ($payload['captured'] ?? 0);
+
+    if ($remoteOrderId !== $rzpOrderId) {
+        return ['ok' => false, 'error' => 'gateway_order_mismatch'];
+    }
+    if ($remoteCurrency !== 'INR') {
+        return ['ok' => false, 'error' => 'gateway_currency_mismatch'];
+    }
+    if ($remoteAmount !== $expectedPaise) {
+        return ['ok' => false, 'error' => 'gateway_amount_mismatch'];
+    }
+    if (!in_array($remoteStatus, ['captured', 'authorized'], true) || $remoteCaptured !== 1) {
+        return ['ok' => false, 'error' => 'gateway_not_captured'];
+    }
+
+    return ['ok' => true];
+}
+
+function extract_razorpay_refund_id_from_notes(string $notes): string
+{
+    if (preg_match('/refund_id:\s*(rfnd_[A-Za-z0-9]+)/i', $notes, $m)) {
+        return trim((string) ($m[1] ?? ''));
+    }
+    return '';
+}
+
+function latest_refund_ledger_gateway_refund_id(mysqli $conn, int $orderId, string $gateway = 'razorpay'): string
+{
+    if ($orderId <= 0) {
+        return '';
+    }
+    $gateway = trim(strtolower($gateway));
+    if ($gateway === '') {
+        return '';
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT gateway_refund_id
+             FROM refund_ledger
+             WHERE order_id = ?
+               AND gateway = ?
+               AND gateway_refund_id IS NOT NULL
+               AND gateway_refund_id <> ''
+             ORDER BY id DESC
+             LIMIT 1"
+        );
+        $stmt->bind_param('is', $orderId, $gateway);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return trim((string) ($row['gateway_refund_id'] ?? ''));
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
+function refund_ledger_event_exists(
+    mysqli $conn,
+    int $orderId,
+    int $paymentId,
+    string $status,
+    string $gateway = '',
+    string $gatewayRefundId = ''
+): bool {
+    if ($orderId <= 0 || $paymentId <= 0) {
+        return false;
+    }
+    $status = trim(strtolower($status));
+    if ($status === '') {
+        return false;
+    }
+    $gateway = trim(strtolower($gateway));
+    $gatewayRefundId = trim($gatewayRefundId);
+    try {
+        if ($gatewayRefundId !== '') {
+            $stmt = $conn->prepare(
+                "SELECT id
+                 FROM refund_ledger
+                 WHERE order_id = ?
+                   AND payment_id = ?
+                   AND status = ?
+                   AND gateway = ?
+                   AND gateway_refund_id = ?
+                 LIMIT 1"
+            );
+            $stmt->bind_param('iisss', $orderId, $paymentId, $status, $gateway, $gatewayRefundId);
+        } else {
+            $stmt = $conn->prepare(
+                "SELECT id
+                 FROM refund_ledger
+                 WHERE order_id = ?
+                   AND payment_id = ?
+                   AND status = ?
+                   AND gateway = ?
+                 LIMIT 1"
+            );
+            $stmt->bind_param('iiss', $orderId, $paymentId, $status, $gateway);
+        }
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return !empty($row);
+    } catch (Throwable $e) {
+        return false;
     }
 }
 
@@ -1432,14 +2986,392 @@ function cart_items_supports_key_columns(mysqli $conn): bool
     return $supported;
 }
 
+/**
+ * Parse a cart key in the format "{fabricId}::{variantId}".
+ * Returns [fabricId, variantId] — both integers.
+ * variantId = 0 means no variant (legacy key or default).
+ * Legacy keys like "{fabricId}::{size-text}" are treated as variantId = 0.
+ */
 function cart_parse_key(string $rawKey): array
 {
-    $parts = explode('::', $rawKey, 2);
-    $pid = (int) ($parts[0] ?? 0);
-    $encodedSize = (string) ($parts[1] ?? '');
-    $decodedSize = rawurldecode($encodedSize);
-    $size = $decodedSize === '_' ? '' : trim($decodedSize);
-    return [$pid, $size];
+    $parts = explode('::', trim($rawKey), 2);
+    $fabricId = (int) ($parts[0] ?? 0);
+    $variantPart = trim((string) ($parts[1] ?? ''));
+    $variantId = ($variantPart !== '' && ctype_digit($variantPart))
+        ? (int) $variantPart
+        : 0;
+    return [$fabricId, $variantId];
+}
+
+/**
+ * Upsert payment attempt audit row by provider + gateway attempt reference.
+ * attemptRef should be gateway order id (e.g. Razorpay order id).
+ */
+function payment_attempt_touch(
+    mysqli $conn,
+    string $provider,
+    string $attemptRef,
+    int $orderId = 0,
+    int $paymentId = 0,
+    string $status = 'created',
+    string $source = 'create',
+    string $gatewayPaymentId = '',
+    string $gatewaySignature = '',
+    string $errorCode = '',
+    string $errorMessage = '',
+    string $webhookEventId = '',
+    string $webhookSignature = '',
+    ?string $payloadJson = null,
+    bool $incrementRetry = false
+): void {
+    $provider = trim($provider);
+    $attemptRef = trim($attemptRef);
+    if ($provider === '' || $attemptRef === '') {
+        return;
+    }
+    $status = trim($status) !== '' ? trim($status) : 'created';
+    $source = trim($source) !== '' ? trim($source) : 'create';
+    $gatewayPaymentId = trim($gatewayPaymentId);
+    $gatewaySignature = trim($gatewaySignature);
+    $errorCode = trim($errorCode);
+    $errorMessage = trim($errorMessage);
+    $webhookEventId = trim($webhookEventId);
+    $webhookSignature = trim($webhookSignature);
+    if ($payloadJson === null) {
+        $payloadJson = '';
+    }
+
+    try {
+        $retryBump = $incrementRetry ? 1 : 0;
+        $stmt = $conn->prepare(
+            "INSERT INTO payment_attempts (
+                order_id, payment_id, provider, attempt_ref, status, source,
+                gateway_payment_id, gateway_signature, error_code, error_message,
+                webhook_event_id, webhook_signature, payload_json,
+                retry_count, first_seen_at, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE
+                order_id = CASE WHEN VALUES(order_id) > 0 THEN VALUES(order_id) ELSE order_id END,
+                payment_id = CASE WHEN VALUES(payment_id) > 0 THEN VALUES(payment_id) ELSE payment_id END,
+                status = VALUES(status),
+                source = VALUES(source),
+                gateway_payment_id = CASE WHEN VALUES(gateway_payment_id) <> '' THEN VALUES(gateway_payment_id) ELSE gateway_payment_id END,
+                gateway_signature = CASE WHEN VALUES(gateway_signature) <> '' THEN VALUES(gateway_signature) ELSE gateway_signature END,
+                error_code = CASE WHEN VALUES(error_code) <> '' THEN VALUES(error_code) ELSE error_code END,
+                error_message = CASE WHEN VALUES(error_message) <> '' THEN VALUES(error_message) ELSE error_message END,
+                webhook_event_id = CASE WHEN VALUES(webhook_event_id) <> '' THEN VALUES(webhook_event_id) ELSE webhook_event_id END,
+                webhook_signature = CASE WHEN VALUES(webhook_signature) <> '' THEN VALUES(webhook_signature) ELSE webhook_signature END,
+                payload_json = CASE WHEN VALUES(payload_json) <> '' THEN VALUES(payload_json) ELSE payload_json END,
+                retry_count = retry_count + VALUES(retry_count),
+                last_seen_at = NOW()"
+        );
+        $stmt->bind_param(
+            'iissssssssssis',
+            $orderId,
+            $paymentId,
+            $provider,
+            $attemptRef,
+            $status,
+            $source,
+            $gatewayPaymentId,
+            $gatewaySignature,
+            $errorCode,
+            $errorMessage,
+            $webhookEventId,
+            $webhookSignature,
+            $payloadJson,
+            $retryBump
+        );
+        $stmt->execute();
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] payment_attempt_touch failed: ' . $e->getMessage());
+    }
+}
+
+function log_stock_ledger(
+    mysqli $conn,
+    int $orderId,
+    int $orderItemId,
+    int $returnId,
+    int $returnItemId,
+    int $fabricId,
+    int $variantId,
+    string $unitType,
+    float $quantity,
+    string $movement,
+    string $direction,
+    string $source = '',
+    string $notes = ''
+): void {
+    try {
+        $unitType = in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
+        $movement = in_array($movement, ['reserve', 'release', 'return_restock', 'adjustment'], true) ? $movement : 'adjustment';
+        $direction = in_array($direction, ['in', 'out'], true) ? $direction : 'in';
+        if ($quantity <= 0) {
+            return;
+        }
+        $stmt = $conn->prepare(
+            "INSERT INTO stock_ledger (
+                order_id, order_item_id, return_id, return_item_id, fabric_id, variant_id,
+                unit_type, quantity, movement, direction, source, notes
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param(
+            'iiiiiisdssss',
+            $orderId,
+            $orderItemId,
+            $returnId,
+            $returnItemId,
+            $fabricId,
+            $variantId,
+            $unitType,
+            $quantity,
+            $movement,
+            $direction,
+            $source,
+            $notes
+        );
+        $stmt->execute();
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] stock ledger log failed: ' . $e->getMessage());
+    }
+}
+
+function restock_return_items_inventory(mysqli $conn, int $returnId): float
+{
+    if ($returnId <= 0) {
+        return 0.0;
+    }
+    $stmt = $conn->prepare(
+        "SELECT ri.id, ri.return_id, ri.order_item_id, ri.fabric_id, ri.variant_id, ri.unit_type, ri.quantity, ri.restocked_qty,
+                r.order_id
+         FROM return_items ri
+         JOIN returns r ON r.id = ri.return_id
+         WHERE ri.return_id = ?
+         FOR UPDATE"
+    );
+    $stmt->bind_param('i', $returnId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $totalRestocked = 0.0;
+    foreach ($rows as $row) {
+        $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $row['unit_type'] : 'meter';
+        $qtyRequested = (float) ($row['quantity'] ?? 0);
+        $qtyRestocked = (float) ($row['restocked_qty'] ?? 0);
+        $qtyToRestock = round(max(0.0, $qtyRequested - $qtyRestocked), 2);
+        if ($qtyToRestock <= 0) {
+            continue;
+        }
+        $fabricId = (int) ($row['fabric_id'] ?? 0);
+        $variantId = (int) ($row['variant_id'] ?? 0);
+        if ($variantId > 0) {
+            adjust_variant_stock($conn, $variantId, $unitType, $qtyToRestock, 'increase');
+        } elseif ($fabricId > 0) {
+            adjust_fabric_stock($conn, $fabricId, $unitType, $qtyToRestock, 'increase');
+        } else {
+            continue;
+        }
+        $update = $conn->prepare(
+            "UPDATE return_items
+             SET restocked_qty = restocked_qty + ?,
+                 restocked_at = CASE WHEN restocked_at IS NULL THEN NOW() ELSE restocked_at END
+             WHERE id = ?"
+        );
+        $returnItemId = (int) ($row['id'] ?? 0);
+        $update->bind_param('di', $qtyToRestock, $returnItemId);
+        $update->execute();
+        log_stock_ledger(
+            $conn,
+            (int) ($row['order_id'] ?? 0),
+            (int) ($row['order_item_id'] ?? 0),
+            $returnId,
+            $returnItemId,
+            $fabricId,
+            $variantId,
+            $unitType,
+            $qtyToRestock,
+            'return_restock',
+            'in',
+            'returns_module',
+            'Restocked from return'
+        );
+        $totalRestocked += $qtyToRestock;
+    }
+    return round($totalRestocked, 2);
+}
+
+/**
+ * Category-wise variant size policy.
+ * Returns: ['mode' => 'preset_with_custom'|'hidden', 'sizes' => string[]]
+ */
+function get_variant_size_policy_by_category(string $category): array
+{
+    $normalized = mb_strtolower(trim($category));
+    $normalized = preg_replace('/[^a-z0-9]+/u', '-', $normalized ?? '');
+    $normalized = trim((string) $normalized, '-');
+
+    $presetMap = [
+        'towel' => ['Face', 'Hand', 'Bath', 'Bath Sheet'],
+        'bedsheet' => ['Single', 'Double', 'Queen', 'King'],
+        'table-cover' => ['4 Seater', '6 Seater', '8 Seater'],
+    ];
+
+    if (in_array($normalized, ['fabric-by-meter', 'fabric-meter', 'meter-fabric', 'fabrics-by-meter'], true)) {
+        return ['mode' => 'hidden', 'sizes' => []];
+    }
+    if ($normalized === 'table-covers' || $normalized === 'tablecover' || $normalized === 'table-covers') {
+        $normalized = 'table-cover';
+    }
+    if ($normalized === 'bed-sheet' || $normalized === 'bed-sheets') {
+        $normalized = 'bedsheet';
+    }
+    if (isset($presetMap[$normalized])) {
+        return ['mode' => 'preset_with_custom', 'sizes' => $presetMap[$normalized]];
+    }
+    return ['mode' => 'preset_with_custom', 'sizes' => []];
+}
+
+function normalize_variant_size_text(string $value): string
+{
+    $value = preg_replace('/\s+/u', ' ', trim($value));
+    return trim((string) $value);
+}
+
+/**
+ * Check whether the cart_items table has a variant_id column.
+ */
+function cart_items_supports_variant(mysqli $conn): bool
+{
+    static $checked   = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'cart_items'
+               AND COLUMN_NAME = 'variant_id'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
+}
+
+/**
+ * Check whether the order_items table has a variant_id column.
+ */
+function order_items_supports_variant(mysqli $conn): bool
+{
+    static $checked   = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'order_items'
+               AND COLUMN_NAME = 'variant_id'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
+}
+
+function order_items_supports_tax_snapshot(mysqli $conn): bool
+{
+    static $checked = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'order_items'
+               AND COLUMN_NAME IN (
+                    'taxable_amount',
+                    'discount_amount',
+                    'gst_rate_snapshot',
+                    'gst_amount',
+                    'cgst_amount',
+                    'sgst_amount',
+                    'igst_amount',
+                    'tax_type',
+                    'hsn_code_snapshot'
+               )"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) === 9;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
+}
+
+function cart_items_supports_unit_type(mysqli $conn): bool
+{
+    static $supports = null;
+    if ($supports !== null) {
+        return $supports;
+    }
+    try {
+        $res = $conn->query(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'cart_items'
+               AND COLUMN_NAME = 'unit_type'"
+        );
+        $supports = ((int) ($res->fetch_assoc()['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $supports = false;
+    }
+    return $supports;
+}
+
+function order_items_supports_cost_snapshot(mysqli $conn): bool
+{
+    static $checked = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'order_items'
+               AND COLUMN_NAME = 'cost_price_snapshot'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
 }
 
 function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null): void
@@ -1458,10 +3390,60 @@ function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $met
             return;
         }
         $supportsMeterLength = cart_items_supports_meter_length($conn);
-        $supportsKeyColumns = cart_items_supports_key_columns($conn);
-        if ($supportsKeyColumns && $supportsMeterLength) {
+        $supportsKeyColumns  = cart_items_supports_key_columns($conn);
+        $supportsVariant     = cart_items_supports_variant($conn);
+        $supportsUnitType    = cart_items_supports_unit_type($conn);
+
+        $productIds = [];
+        $variantIds = [];
+        foreach ($cart as $cartKey => $qty) {
+            [$pid, $variantId] = cart_parse_key((string) $cartKey);
+            if ($pid > 0) {
+                $productIds[] = $pid;
+            }
+            if ($variantId > 0) {
+                $variantIds[] = $variantId;
+            }
+        }
+        $productIds = array_values(array_unique($productIds));
+        $variantIds = array_values(array_unique($variantIds));
+        $productUnitMap = [];
+        if (!empty($productIds)) {
+            $ph = implode(',', array_fill(0, count($productIds), '?'));
+            $typ = str_repeat('i', count($productIds));
+            $uStmt = $conn->prepare("SELECT id, unit_type FROM fabrics WHERE id IN ($ph)");
+            $uStmt->bind_param($typ, ...$productIds);
+            $uStmt->execute();
+            $uRows = $uStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            foreach ($uRows as $ur) {
+                $productUnitMap[(int) ($ur['id'] ?? 0)] = (string) ($ur['unit_type'] ?? 'meter');
+            }
+        }
+        $variantMap = !empty($variantIds) ? get_variants_by_ids($conn, $variantIds) : [];
+
+        if ($supportsKeyColumns && $supportsMeterLength && $supportsVariant && $supportsUnitType) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length, cart_key, selected_size, variant_id, unit_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+        } elseif ($supportsKeyColumns && $supportsMeterLength && $supportsVariant) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length, cart_key, selected_size, variant_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+        } elseif ($supportsKeyColumns && $supportsMeterLength && $supportsUnitType) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length, cart_key, selected_size, unit_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+        } elseif ($supportsKeyColumns && $supportsMeterLength) {
             $ins = $conn->prepare(
                 "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length, cart_key, selected_size)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+        } elseif ($supportsKeyColumns && $supportsUnitType) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, cart_key, selected_size, unit_type)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             );
         } elseif ($supportsKeyColumns) {
@@ -1469,9 +3451,19 @@ function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $met
                 "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, cart_key, selected_size)
                  VALUES (?, ?, ?, ?, ?, ?, ?)"
             );
+        } elseif ($supportsMeterLength && $supportsUnitType) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length, unit_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+            );
         } elseif ($supportsMeterLength) {
             $ins = $conn->prepare(
                 "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, meter_length)
+                 VALUES (?, ?, ?, ?, ?, ?)"
+            );
+        } elseif ($supportsUnitType) {
+            $ins = $conn->prepare(
+                "INSERT INTO cart_items (cart_id, product_id, quantity, fabric_id, quantity_meters, unit_type)
                  VALUES (?, ?, ?, ?, ?, ?)"
             );
         } else {
@@ -1482,24 +3474,59 @@ function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $met
         }
         foreach ($cart as $cartKey => $qty) {
             $rawKey = (string) $cartKey;
-            [$pid, $selectedSize] = cart_parse_key($rawKey);
+            [$pid, $variantId] = cart_parse_key($rawKey);
             if ($pid <= 0) {
                 continue;
             }
-            $q = normalize_meter_quantity($qty);
-
+            $unitType = in_array((string) ($productUnitMap[$pid] ?? 'meter'), ['meter', 'piece', 'set'], true)
+                ? (string) $productUnitMap[$pid]
+                : 'meter';
+            if ($variantId > 0 && isset($variantMap[$variantId])) {
+                $variantUnit = in_array((string) ($variantMap[$variantId]['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+                    ? (string) $variantMap[$variantId]['unit_type']
+                    : '';
+                if ($variantUnit !== '') {
+                    $unitType = $variantUnit;
+                }
+            }
+            $q = normalize_quantity_by_unit($qty, $unitType);
+            // For display in legacy columns, preserve size from session when variant not present.
+            $selectedSize = '';
+            if ($variantId <= 0) {
+                $selectedSize = trim((string) ($_SESSION['cart_size'][$rawKey] ?? ''));
+                if ($selectedSize === '') {
+                    $parts = explode('::', $rawKey, 2);
+                    $legacyToken = trim((string) ($parts[1] ?? ''));
+                    if ($legacyToken !== '' && !ctype_digit($legacyToken)) {
+                        $selectedSize = trim(rawurldecode($legacyToken));
+                    }
+                }
+            }
             $meterLength = null;
             if (isset($meterMap[$rawKey]) && is_numeric($meterMap[$rawKey]) && (float) $meterMap[$rawKey] > 0) {
                 $meterLength = round((float) $meterMap[$rawKey], 2);
             } elseif (isset($meterMap[$pid]) && is_numeric($meterMap[$pid]) && (float) $meterMap[$pid] > 0) {
                 $meterLength = round((float) $meterMap[$pid], 2);
             }
-            if ($supportsKeyColumns && $supportsMeterLength) {
+            $variantIdVal = $variantId > 0 ? $variantId : null;
+            if ($supportsKeyColumns && $supportsMeterLength && $supportsVariant && $supportsUnitType) {
+                $ins->bind_param('iididdssis', $cartId, $pid, $q, $pid, $q, $meterLength, $rawKey, $selectedSize, $variantIdVal, $unitType);
+            } elseif ($supportsKeyColumns && $supportsMeterLength && $supportsVariant) {
+                $ins->bind_param('iididdssi', $cartId, $pid, $q, $pid, $q, $meterLength, $rawKey, $selectedSize, $variantIdVal);
+            } elseif ($supportsKeyColumns && $supportsMeterLength && $supportsUnitType) {
+                $ins->bind_param('iididdsss', $cartId, $pid, $q, $pid, $q, $meterLength, $rawKey, $selectedSize, $unitType);
+            } elseif ($supportsKeyColumns && $supportsMeterLength) {
                 $ins->bind_param('iididdss', $cartId, $pid, $q, $pid, $q, $meterLength, $rawKey, $selectedSize);
+            } elseif ($supportsKeyColumns && $supportsUnitType) {
+                $ins->bind_param('iididsss', $cartId, $pid, $q, $pid, $q, $rawKey, $selectedSize, $unitType);
             } elseif ($supportsKeyColumns) {
                 $ins->bind_param('iididss', $cartId, $pid, $q, $pid, $q, $rawKey, $selectedSize);
+            } elseif ($supportsMeterLength && $supportsUnitType) {
+                $ins->bind_param('iididds', $cartId, $pid, $q, $pid, $q, $meterLength, $unitType);
             } elseif ($supportsMeterLength) {
                 $ins->bind_param('iididd', $cartId, $pid, $q, $pid, $q, $meterLength);
+            } elseif ($supportsUnitType) {
+                $ins->bind_param('iidids', $cartId, $pid, $q, $pid, $q, $unitType);
             } else {
                 $ins->bind_param('iidid', $cartId, $pid, $q, $pid, $q);
             }
@@ -1528,10 +3555,41 @@ function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
 {
     try {
         $supportsMeterLength = cart_items_supports_meter_length($conn);
-        $supportsKeyColumns = cart_items_supports_key_columns($conn);
-        if ($supportsKeyColumns && $supportsMeterLength) {
+        $supportsKeyColumns  = cart_items_supports_key_columns($conn);
+        $supportsVariant     = cart_items_supports_variant($conn);
+        $supportsUnitType    = cart_items_supports_unit_type($conn);
+
+        if ($supportsKeyColumns && $supportsMeterLength && $supportsVariant && $supportsUnitType) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.meter_length, ci.cart_key, ci.selected_size, ci.variant_id, ci.unit_type
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
+        } elseif ($supportsKeyColumns && $supportsMeterLength && $supportsVariant) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.meter_length, ci.cart_key, ci.selected_size, ci.variant_id
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
+        } elseif ($supportsKeyColumns && $supportsMeterLength && $supportsUnitType) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.meter_length, ci.cart_key, ci.selected_size, ci.unit_type
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
+        } elseif ($supportsKeyColumns && $supportsMeterLength) {
             $stmt = $conn->prepare(
                 "SELECT ci.product_id, ci.quantity, ci.meter_length, ci.cart_key, ci.selected_size
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
+        } elseif ($supportsKeyColumns && $supportsUnitType) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.cart_key, ci.selected_size, ci.unit_type
                  FROM cart c
                  JOIN cart_items ci ON ci.cart_id = c.id
                  WHERE c.customer_id = ?"
@@ -1543,9 +3601,23 @@ function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
                  JOIN cart_items ci ON ci.cart_id = c.id
                  WHERE c.customer_id = ?"
             );
+        } elseif ($supportsMeterLength && $supportsUnitType) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.meter_length, ci.unit_type
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
         } elseif ($supportsMeterLength) {
             $stmt = $conn->prepare(
                 "SELECT ci.product_id, ci.quantity, ci.meter_length
+                 FROM cart c
+                 JOIN cart_items ci ON ci.cart_id = c.id
+                 WHERE c.customer_id = ?"
+            );
+        } elseif ($supportsUnitType) {
+            $stmt = $conn->prepare(
+                "SELECT ci.product_id, ci.quantity, ci.unit_type
                  FROM cart c
                  JOIN cart_items ci ON ci.cart_id = c.id
                  WHERE c.customer_id = ?"
@@ -1561,17 +3633,25 @@ function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
         $stmt->bind_param('i', $customerId);
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $cart = [];
+        $cart     = [];
         $meterMap = [];
         foreach ($rows as $row) {
             if ((int) $row['product_id'] > 0) {
-                $pid = (int) $row['product_id'];
-                $size = trim((string) ($row['selected_size'] ?? ''));
-                $cartKey = trim((string) ($row['cart_key'] ?? ''));
+                $pid       = (int) $row['product_id'];
+                $variantId = (int) ($row['variant_id'] ?? 0);
+                $cartKey   = trim((string) ($row['cart_key'] ?? ''));
                 if ($cartKey === '') {
-                    $cartKey = $pid . '::' . rawurlencode($size);
+                    // Reconstruct key: prefer variant id, fall back to legacy size-based key.
+                    if ($variantId > 0) {
+                        $cartKey = $pid . '::' . $variantId;
+                    } else {
+                        $cartKey = $pid . '::0';
+                    }
                 }
-                $cart[$cartKey] = normalize_meter_quantity($row['quantity'] ?? 1);
+                $itemUnit = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+                    ? (string) $row['unit_type']
+                    : 'meter';
+                $cart[$cartKey] = normalize_quantity_by_unit($row['quantity'] ?? 1, $itemUnit);
                 if ($supportsMeterLength && isset($row['meter_length']) && is_numeric($row['meter_length']) && (float) $row['meter_length'] > 0) {
                     $meterMap[$cartKey] = round((float) $row['meter_length'], 2);
                 }
@@ -1617,7 +3697,7 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
         $conn->begin_transaction();
 
         $orderStmt = $conn->prepare(
-            "SELECT id, order_number, payment_method, payment_status, order_status
+            "SELECT id, order_number, payment_method, payment_status, order_status, notes
              FROM orders
              WHERE id = ?
              FOR UPDATE"
@@ -1647,6 +3727,7 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
         $payStmt->bind_param('is', $orderId, $method);
         $payStmt->execute();
         $payment = $payStmt->get_result()->fetch_assoc();
+        $resolvedGatewayRefundId = '';
 
         if ($method === 'razorpay') {
             if (!$payment) {
@@ -1676,8 +3757,9 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
             $refundStatus = '';
             $existingRefundId = '';
             $existingNotes = (string) ($order['notes'] ?? '');
-            if (preg_match('/refund_id:\s*(rfnd_[A-Za-z0-9]+)/i', $existingNotes, $m)) {
-                $existingRefundId = trim((string) ($m[1] ?? ''));
+            $existingRefundId = extract_razorpay_refund_id_from_notes($existingNotes);
+            if ($existingRefundId === '') {
+                $existingRefundId = latest_refund_ledger_gateway_refund_id($conn, $orderId, 'razorpay');
             }
             try {
                 $api = new Razorpay\Api\Api($keyId, $keySecret);
@@ -1693,6 +3775,7 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
                     $refund = $api->payment->fetch($paymentId)->refund($payload);
                     $refundId = trim((string) ($refund['id'] ?? ''));
                 }
+                $resolvedGatewayRefundId = $refundId;
                 $refundStatus = strtolower(trim((string) ($refund['status'] ?? '')));
                 if ($existingRefundId === '') {
                     $refundNote = '[System] Razorpay refund initiated';
@@ -1714,7 +3797,11 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
 
                     $paymentRowId = (int) ($payment['id'] ?? 0);
                     $refundAmount = isset($payment['amount']) ? (float) $payment['amount'] : 0.0;
-                    if ($paymentRowId > 0 && $refundAmount > 0) {
+                    if (
+                        $paymentRowId > 0 &&
+                        $refundAmount > 0 &&
+                        !refund_ledger_event_exists($conn, $orderId, $paymentRowId, 'initiated', 'razorpay', $refundId)
+                    ) {
                         log_refund_ledger(
                             $conn,
                             $orderId,
@@ -1763,7 +3850,10 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
             $updPayment->bind_param('i', $paymentRowId);
             $updPayment->execute();
             $refundAmount = isset($payment['amount']) ? (float) $payment['amount'] : 0.0;
-            if ($refundAmount > 0) {
+            if (
+                $refundAmount > 0 &&
+                !refund_ledger_event_exists($conn, $orderId, $paymentRowId, 'processed', $method, $resolvedGatewayRefundId)
+            ) {
                 log_refund_ledger(
                     $conn,
                     $orderId,
@@ -1772,7 +3862,7 @@ function admin_mark_order_refunded(mysqli $conn, int $orderId): array
                     'INR',
                     'processed',
                     $method,
-                    '',
+                    $resolvedGatewayRefundId,
                     'Refund marked processed from admin flow.'
                 );
             }
@@ -1823,12 +3913,12 @@ function admin_sync_razorpay_refund_status(mysqli $conn, int $orderId): array
         }
 
         $notes = (string) ($order['notes'] ?? '');
-        if (!preg_match('/refund_id:\s*(rfnd_[A-Za-z0-9]+)/i', $notes, $m)) {
-            throw new RuntimeException('No Razorpay refund_id found in order notes.');
-        }
-        $refundId = trim((string) ($m[1] ?? ''));
+        $refundId = extract_razorpay_refund_id_from_notes($notes);
         if ($refundId === '') {
-            throw new RuntimeException('Invalid refund_id in order notes.');
+            $refundId = latest_refund_ledger_gateway_refund_id($conn, $orderId, 'razorpay');
+        }
+        if ($refundId === '') {
+            throw new RuntimeException('No Razorpay refund_id found in order notes.');
         }
 
         require_once __DIR__ . '/../vendor/autoload.php';
@@ -1871,7 +3961,10 @@ function admin_sync_razorpay_refund_status(mysqli $conn, int $orderId): array
                 $payAmtStmt->execute();
                 $payAmtRow = $payAmtStmt->get_result()->fetch_assoc() ?: [];
                 $refundAmount = (float) ($payAmtRow['amount'] ?? 0);
-                if ($refundAmount > 0) {
+                if (
+                    $refundAmount > 0 &&
+                    !refund_ledger_event_exists($conn, $orderId, $paymentId, 'processed', 'razorpay', $refundId)
+                ) {
                     log_refund_ledger(
                         $conn,
                         $orderId,
@@ -2382,12 +4475,22 @@ function shiprocket_calculate_forward_rate(float $subtotal, string $pickupPincod
         return ((float) ($a['rate'] ?? 0)) <=> ((float) ($b['rate'] ?? 0));
     });
     $best = $options[0];
+    $normalizedOptions = [];
+    foreach (array_slice($options, 0, 8) as $opt) {
+        $normalizedOptions[] = [
+            'courier_id' => (int) ($opt['courier_company_id'] ?? 0),
+            'courier_name' => (string) ($opt['courier_name'] ?? ''),
+            'rate' => round((float) ($opt['rate'] ?? 0), 2),
+            'estimated_days' => (int) ($opt['estimated_delivery_days'] ?? 0),
+        ];
+    }
     return [
         'ok' => true,
         'manual_fallback' => false,
         'rate' => round((float) ($best['rate'] ?? 0), 2),
         'courier_name' => (string) ($best['courier_name'] ?? ''),
         'courier_id' => (int) ($best['courier_company_id'] ?? 0),
+        'options' => $normalizedOptions,
         'raw' => $best,
     ];
 }

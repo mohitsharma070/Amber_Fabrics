@@ -24,6 +24,9 @@ include __DIR__ . '/includes/header.php';
 
         <h3>Cookies and Analytics</h3>
         <p>We may use cookies and similar technologies for session management, cart continuity, login status, and basic analytics. You can control cookies through your browser settings, but some features may stop working.</p>
+        <p class="mb-4">
+            <button type="button" class="btn btn-sm btn-outline-dark" data-open-cookie-consent>Cookie Preferences</button>
+        </p>
 
         <h3>Information Sharing</h3>
         <p>We share data only with trusted service providers such as payment processors, shipping partners, technology vendors, and legal authorities where required by law.</p>

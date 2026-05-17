@@ -40,46 +40,29 @@ if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION
 }
 
 $cart = $_SESSION['cart'];
-$cartLines = [];
-foreach ($cart as $cartKey => $qty) {
-    $rawKey = (string) $cartKey;
-    $parts = explode('::', $rawKey, 2);
-    $pid = (int) ($parts[0] ?? 0);
-    if ($pid <= 0) {
-        continue;
+$cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
+$cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
+
+$hydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+if (!empty($hydrated['removed_keys'])) {
+    foreach ($hydrated['removed_keys'] as $badKey) {
+        unset($cart[$badKey], $cartSizes[$badKey], $cartMeterMap[$badKey]);
     }
-    $cartLines[] = ['product_id' => $pid, 'qty' => (float) $qty];
-}
-$ids = array_values(array_unique(array_map(static fn($line) => (int) $line['product_id'], $cartLines)));
-$subtotal = 0.00;
+    $_SESSION['cart'] = $cart;
+    $_SESSION['cart_size'] = $cartSizes;
+    $_SESSION['cart_meter_length'] = $cartMeterMap;
 
-if (!empty($ids)) {
-    $placeholders = implode(',', array_fill(0, count($ids), '?'));
-    $types = str_repeat('i', count($ids));
-    $sql = "SELECT id, unit_type, price, sale_price, price_inr FROM fabrics WHERE status = 'active' AND id IN ($placeholders)";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param($types, ...$ids);
-    $stmt->execute();
-    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
-    foreach ($rows as $row) {
-        $pid = (int) $row['id'];
-        $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-            ? (string) $row['unit_type']
-            : 'meter';
-        $lineQty = 0.0;
-        foreach ($cartLines as $line) {
-            if ((int) $line['product_id'] === $pid) {
-                $lineQty += (float) $line['qty'];
-            }
-        }
-        $qty = normalize_quantity_by_unit($lineQty > 0 ? $lineQty : 1, $unitType);
-        $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
-        $sale = (float) ($row['sale_price'] ?? 0);
-        $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
-        $subtotal += ($unitPrice * $qty);
+    $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+    if ($customerId > 0) {
+        cart_save_to_db($conn, $customerId, $cart, $cartMeterMap);
     }
 }
+if (empty($hydrated['items'])) {
+    unset($_SESSION['applied_coupon_code']);
+    flash('error', 'Your cart is empty after removing unavailable items.');
+    redirect(coupon_redirect_target('/cart.php'));
+}
+$subtotal = cart_items_subtotal($hydrated['items']);
 
 $selectedPayment = in_array((string) ($_SESSION['checkout_old']['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $_SESSION['checkout_old']['payment_method']

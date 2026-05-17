@@ -199,7 +199,7 @@ $metaDescription = 'Create, edit and delete product categories.';
 $metaKeywords = 'admin, categories, manage';
 include 'partials/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1 class="mb-1">Categories</h1>
         <p class="text-muted mb-0">Locked taxonomy: top-level only -> Fabric by Meter, Bedsheets, Towels, Table Covers.</p>
@@ -220,7 +220,7 @@ include 'partials/header.php';
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
-        <form method="post" class="row g-3" enctype="multipart/form-data">
+        <form method="post" class="row g-3 admin-filter-form" enctype="multipart/form-data">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="create">
             <div class="col-md-3">
@@ -251,7 +251,7 @@ include 'partials/header.php';
 </div>
 
 <div class="table-responsive">
-    <table class="table table-striped align-middle">
+    <table class="table table-striped align-middle admin-no-card-table">
         <thead>
         <tr>
             <th>ID</th>

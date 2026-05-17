@@ -190,14 +190,17 @@ $metaTitle = 'Orders | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1>Orders</h1>
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0">Orders</h1>
     <?php if (!$refundQueue): ?>
-        <a href="orders.php?refund_queue=1" class="btn btn-outline-danger">Refund Queue</a>
+        <a href="orders.php?refund_queue=1" class="btn btn-outline-danger"><i class="bi bi-cash-stack me-1"></i>Refund Queue</a>
     <?php endif; ?>
 </div>
 
-<form class="row g-2 mb-4" method="GET" action="orders.php">
+<form class="row g-2 mb-4 admin-filter-form" method="GET" action="orders.php">
+    <?php if ($refundQueue): ?>
+        <input type="hidden" name="refund_queue" value="1">
+    <?php endif; ?>
     <div class="col-md-3">
         <input class="form-control" name="q" value="<?php echo e($search); ?>" placeholder="Order #, name or phone">
     </div>
@@ -229,9 +232,9 @@ include 'partials/header.php';
             <option value="amount_low" <?php echo $sort === 'amount_low' ? 'selected' : ''; ?>>Amount Low-High</option>
         </select>
     </div>
-    <div class="col-md-auto d-flex gap-2">
-        <button class="btn btn-primary">Filter</button>
-        <a href="orders.php" class="btn btn-outline-secondary">Reset</a>
+    <div class="col-md-auto d-flex gap-2 admin-filter-actions">
+        <button class="btn btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+        <a href="orders.php<?php echo $refundQueue ? '?refund_queue=1' : ''; ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
     </div>
 </form>
 
@@ -242,7 +245,7 @@ include 'partials/header.php';
 <?php endif; ?>
 
 <div class="table-responsive">
-    <table class="table table-hover align-middle">
+    <table class="table table-hover align-middle admin-card-table">
         <thead>
             <tr>
                 <th>Order #</th>
@@ -261,7 +264,7 @@ include 'partials/header.php';
         </thead>
         <tbody>
             <?php if (empty($orders)): ?>
-                <tr>
+                <tr class="admin-empty-row">
                     <td colspan="12" class="text-center text-muted py-4">No orders found.</td>
                 </tr>
             <?php endif; ?>
@@ -274,10 +277,10 @@ include 'partials/header.php';
                     $trackingId = (string) ($orderTrackingMap[$oid] ?? '');
                 ?>
                 <tr>
-                    <td class="fw-semibold"><?php echo e($order['order_number']); ?></td>
-                    <td><?php echo e($order['customer_name']); ?></td>
-                    <td><?php echo e($order['customer_phone']); ?></td>
-                    <td>
+                    <td class="fw-semibold" data-label="Order #"><?php echo e($order['order_number']); ?></td>
+                    <td data-label="Customer"><?php echo e($order['customer_name']); ?></td>
+                    <td data-label="Phone"><?php echo e($order['customer_phone']); ?></td>
+                    <td data-label="Products">
                         <?php if (!empty($productNames)): ?>
                             <?php foreach ($productNames as $pname): ?>
                                 <div><?php echo e($pname); ?></div>
@@ -286,7 +289,7 @@ include 'partials/header.php';
                             -
                         <?php endif; ?>
                     </td>
-                    <td>
+                    <td data-label="Quantity">
                         <?php if (!empty($qtyDisplay)): ?>
                             <?php foreach ($qtyDisplay as $qtext): ?>
                                 <div><?php echo e($qtext); ?></div>
@@ -295,26 +298,26 @@ include 'partials/header.php';
                             -
                         <?php endif; ?>
                     </td>
-                    <td>Rs <?php echo number_format((float) ($order['total_amount'] ?? 0), 2); ?></td>
-                    <td><?php echo strtoupper(e((string) $order['payment_method'])); ?></td>
-                    <td>
+                    <td data-label="Total">Rs <?php echo number_format((float) ($order['total_amount'] ?? 0), 2); ?></td>
+                    <td data-label="Payment"><?php echo strtoupper(e((string) $order['payment_method'])); ?></td>
+                    <td data-label="Payment Status">
                         <?php $pb = payment_status_meta((string) ($order['payment_status'] ?? 'pending')); ?>
                         <span class="badge bg-<?php echo e($pb['class']); ?>"><?php echo e($pb['label']); ?></span>
                     </td>
-                    <td>
+                    <td data-label="Order Status">
                         <?php $sb = order_status_meta((string) ($order['order_status'] ?? 'pending')); ?>
                         <span class="badge bg-<?php echo e($sb['class']); ?>"><?php echo e($sb['label']); ?></span>
                     </td>
-                    <td><?php echo $trackingId !== '' ? e($trackingId) : '-'; ?></td>
-                    <td><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></td>
-                    <td>
-                        <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
+                    <td data-label="Tracking"><?php echo $trackingId !== '' ? e($trackingId) : '-'; ?></td>
+                    <td data-label="Created"><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></td>
+                    <td data-label="Action" class="admin-row-actions">
+                        <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View</a>
                         <?php if (($order['order_status'] ?? '') === 'cancelled' && ($order['payment_status'] ?? '') === 'paid'): ?>
-                            <form method="POST" action="orders.php?refund_queue=1" class="d-inline" onsubmit="return confirm('Mark this order as refunded?');">
+                            <form method="POST" action="orders.php?refund_queue=1" class="d-inline" data-confirm-modal data-confirm-title="Mark Refunded" data-confirm-message="Mark this cancelled paid order as refunded?" data-confirm-ok="Mark Refunded">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="mark_refunded">
                                 <input type="hidden" name="order_id" value="<?php echo (int) $order['id']; ?>">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Mark Refunded</button>
+                                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-check2-circle me-1"></i>Mark Refunded</button>
                             </form>
                         <?php endif; ?>
                     </td>

@@ -9,7 +9,22 @@ include 'includes/header.php'; ?>
 $siteSettings = get_site_settings();
 
 // Latest 8 active fabrics — no filter/pagination on home page
-$stmt = $conn->prepare("SELECT id, name, image, material, size, unit_type, price, sale_price, price_inr, min_order_meters, stock, stock_meters, is_available FROM fabrics WHERE status = 'active' ORDER BY created_at DESC LIMIT 8");
+$stmt = $conn->prepare(
+    "SELECT
+        f.id, f.name, f.image, f.material, f.size, f.unit_type, f.price, f.sale_price, f.price_inr,
+        f.min_order_meters, f.stock, f.stock_meters, f.is_available,
+        COALESCE(vs.active_variant_count, 0) AS active_variant_count
+     FROM fabrics f
+     LEFT JOIN (
+        SELECT fabric_id, COUNT(*) AS active_variant_count
+        FROM fabric_variants
+        WHERE is_active = 1
+        GROUP BY fabric_id
+     ) vs ON vs.fabric_id = f.id
+     WHERE f.status = 'active'
+     ORDER BY f.created_at DESC
+     LIMIT 8"
+);
 $stmt->execute();
 $homeProducts = $stmt->get_result();
 
@@ -203,15 +218,33 @@ $announcementKey = md5(implode('|', $announcementMessages));
                 $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
                     ? (string) $row['unit_type']
                     : 'meter';
+                $cardImage = (string) ($row['image'] ?? '');
+                if ($cardImage === '') {
+                    $fv = get_first_active_variant($conn, (int) ($row['id'] ?? 0));
+                    if (is_array($fv)) {
+                        foreach (['image', 'image2', 'image3', 'image4'] as $ik) {
+                            $cand = trim((string) ($fv[$ik] ?? ''));
+                            if ($cand !== '') { $cardImage = $cand; break; }
+                        }
+                    }
+                }
+                $cardImageAsset = $cardImage !== '' ? fabric_image_asset_data($cardImage) : null;
                 $displayStock = $unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
                 $cardIsInStock = !empty($row['is_available']) && $displayStock > 0;
                 $hasSizeOptions = !empty(parse_size_options((string) ($row['size'] ?? '')));
+                $activeVariantCount = (int) ($row['active_variant_count'] ?? 0);
+                $needsVariantSelection = $activeVariantCount > 1;
             ?>
             <div class="prod-slide">
                 <article class="card h-100">
                     <div class="fabric-thumb-wrap">
-                        <?php if (!empty($row['image'])): ?>
-                            <img src="images/fabrics/<?php echo e($row['image']); ?>" class="fabric-thumb" alt="<?php echo e($row['name']); ?>" loading="lazy">
+                        <?php if ($cardImage !== ''): ?>
+                            <picture>
+                                <?php if (!empty($cardImageAsset['webp_srcset'])): ?>
+                                    <source type="image/webp" srcset="<?php echo e($cardImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 80vw, 280px">
+                                <?php endif; ?>
+                                <img src="<?php echo e((string) ($cardImageAsset['thumb_src'] ?? '')); ?>" class="fabric-thumb" alt="<?php echo e($row['name']); ?>" loading="lazy">
+                            </picture>
                         <?php else: ?>
                             <div class="fabric-thumb-empty">No image</div>
                         <?php endif; ?>
@@ -243,6 +276,8 @@ $announcementKey = md5(implode('|', $announcementMessages));
                             <?php if ($cardIsInStock): ?>
                                 <?php if ($unitType === 'meter'): ?>
                                     <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Meter</a>
+                                <?php elseif ($needsVariantSelection): ?>
+                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Options</a>
                                 <?php elseif ($hasSizeOptions): ?>
                                     <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Size</a>
                                 <?php else: ?>

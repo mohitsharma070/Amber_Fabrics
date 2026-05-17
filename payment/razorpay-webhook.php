@@ -96,7 +96,7 @@ if ($eventType === 'payment.failed') {
         $conn->begin_transaction();
 
         $paymentStmt = $conn->prepare(
-            "SELECT order_id
+            "SELECT id, order_id
              FROM payments
              WHERE payment_method = 'razorpay' AND razorpay_order_id = ?
              LIMIT 1"
@@ -106,12 +106,30 @@ if ($eventType === 'payment.failed') {
         $paymentRow = $paymentStmt->get_result()->fetch_assoc();
 
         if (!$paymentRow) {
+            payment_attempt_touch(
+                $conn,
+                'razorpay',
+                $rzpOrderId,
+                0,
+                0,
+                'webhook_unmapped',
+                'webhook',
+                $paymentId,
+                '',
+                'payment_row_missing',
+                'payment row not found for webhook',
+                $eventId,
+                $signature,
+                $payload,
+                false
+            );
             $conn->commit();
             http_response_code(200);
             echo 'Ignored';
             exit;
         }
 
+        $paymentRowId = (int) ($paymentRow['id'] ?? 0);
         $orderId = (int) ($paymentRow['order_id'] ?? 0);
         if ($orderId <= 0) {
             throw new RuntimeException('Invalid order id mapped to razorpay_order_id=' . $rzpOrderId);
@@ -131,15 +149,23 @@ if ($eventType === 'payment.failed') {
         }
 
         if (strtolower((string) ($order['payment_status'] ?? '')) !== 'paid') {
-            $updatePayment = $conn->prepare(
-                "UPDATE payments
-                 SET payment_status = 'failed',
-                     transaction_id = CASE WHEN ? <> '' THEN ? ELSE transaction_id END,
-                     razorpay_payment_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_payment_id END
-                 WHERE order_id = ? AND payment_method = 'razorpay'"
+            payment_attempt_touch(
+                $conn,
+                'razorpay',
+                $rzpOrderId,
+                $orderId,
+                $paymentRowId,
+                'webhook_failed',
+                'webhook',
+                $paymentId,
+                '',
+                $errorCode,
+                $errorDescription !== '' ? $errorDescription : 'Razorpay payment failed webhook',
+                $eventId,
+                $signature,
+                $payload,
+                false
             );
-            $updatePayment->bind_param('ssssi', $paymentId, $paymentId, $paymentId, $paymentId, $orderId);
-            $updatePayment->execute();
 
             $parts = ['Razorpay payment failed (webhook)'];
             if ($errorCode !== '') {
@@ -149,15 +175,14 @@ if ($eventType === 'payment.failed') {
                 $parts[] = 'reason: ' . $errorDescription;
             }
             $note = implode(' | ', $parts);
-            $updateOrder = $conn->prepare(
-                "UPDATE orders
-                 SET payment_status = 'failed',
-                     notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
-                     updated_at = NOW()
-                 WHERE id = ?"
+            razorpay_mark_order_failed(
+                $conn,
+                $orderId,
+                (string) ($order['payment_status'] ?? ''),
+                $note,
+                $paymentId,
+                $rzpOrderId
             );
-            $updateOrder->bind_param('ssi', $note, $note, $orderId);
-            $updateOrder->execute();
             restore_order_inventory($conn, $orderId);
             log_order_activity($conn, $orderId, 'payment_failed', 'webhook', 0, 'razorpay', $note);
         }
@@ -179,44 +204,11 @@ if ($eventType === 'payment.failed') {
     exit;
 }
 
-function webhook_increment_coupon_used_count(mysqli $conn, int $customerId, int $orderId, string $orderNotes): void
-{
-    if (!preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
-        return;
-    }
-    $code = strtoupper(trim((string) ($m[1] ?? '')));
-    if ($code === '') {
-        return;
-    }
-    $couponIdStmt = $conn->prepare("SELECT id FROM coupons WHERE code = ? LIMIT 1");
-    $couponIdStmt->bind_param('s', $code);
-    $couponIdStmt->execute();
-    $couponRow = $couponIdStmt->get_result()->fetch_assoc();
-    $couponId = (int) ($couponRow['id'] ?? 0);
-    if ($couponId <= 0) {
-        return;
-    }
-    if (has_customer_used_coupon($conn, $couponId, $customerId)) {
-        throw new RuntimeException('Coupon already used by this customer.');
-    }
-
-    $stmt = $conn->prepare(
-        "UPDATE coupons SET used_count = used_count + 1
-         WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
-    );
-    $stmt->bind_param('i', $couponId);
-    $stmt->execute();
-    if ($conn->affected_rows <= 0) {
-        throw new RuntimeException('Coupon usage limit reached.');
-    }
-    mark_coupon_used_once($conn, $couponId, $customerId, $orderId);
-}
-
 try {
     $conn->begin_transaction();
 
     $paymentStmt = $conn->prepare(
-        "SELECT order_id, payment_status
+        "SELECT id, order_id, payment_status
          FROM payments
          WHERE payment_method = 'razorpay' AND razorpay_order_id = ?
          LIMIT 1"
@@ -225,16 +217,34 @@ try {
     $paymentStmt->execute();
     $paymentRow = $paymentStmt->get_result()->fetch_assoc();
     if (!$paymentRow) {
+        payment_attempt_touch(
+            $conn,
+            'razorpay',
+            $rzpOrderId,
+            0,
+            0,
+            'webhook_unmapped',
+            'webhook',
+            $paymentId,
+            '',
+            'payment_row_missing',
+            'payment row not found for webhook',
+            $eventId,
+            $signature,
+            $payload,
+            false
+        );
         throw new RuntimeException('Payment row not found for razorpay_order_id=' . $rzpOrderId);
     }
 
+    $paymentRowId = (int) ($paymentRow['id'] ?? 0);
     $orderId = (int) ($paymentRow['order_id'] ?? 0);
     if ($orderId <= 0) {
         throw new RuntimeException('Invalid order id mapped to razorpay_order_id=' . $rzpOrderId);
     }
 
     $orderStmt = $conn->prepare(
-        "SELECT id, customer_id, order_number, order_status, payment_status, order_notes
+        "SELECT id, customer_id, order_number, order_status, payment_status, order_notes, total_amount
          FROM orders
          WHERE id = ? AND payment_method = 'razorpay'
          FOR UPDATE"
@@ -257,35 +267,73 @@ try {
     if (!in_array((string) ($order['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
         throw new RuntimeException('Order not in payable state for order_id=' . $orderId);
     }
-
-    $updateOrder = $conn->prepare(
-        "UPDATE orders
-         SET payment_id = ?, payment_status = 'paid', order_status = 'confirmed', status = 'confirmed'
-         WHERE id = ? AND payment_status IN ('pending', 'failed')"
-    );
-    $updateOrder->bind_param('si', $paymentId, $orderId);
-    $updateOrder->execute();
-    if ($conn->affected_rows === 0 && (string) ($order['payment_status'] ?? '') !== 'paid') {
-        throw new RuntimeException('Order payment state changed unexpectedly during webhook processing.');
+    if ($paymentId === '') {
+        throw new RuntimeException('Missing razorpay payment id for capture event.');
     }
 
-    $updatePayment = $conn->prepare(
-        "UPDATE payments
-         SET payment_status = 'paid',
-             transaction_id = CASE WHEN ? <> '' THEN ? ELSE transaction_id END,
-             razorpay_payment_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_payment_id END,
-             razorpay_signature = ?
-         WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending', 'failed')"
+    $remoteValidation = razorpay_validate_remote_capture(
+        $paymentId,
+        $rzpOrderId,
+        (float) ($order['total_amount'] ?? 0)
     );
-    $updatePayment->bind_param('sssssi', $paymentId, $paymentId, $paymentId, $paymentId, $signature, $orderId);
-    $updatePayment->execute();
+    if (empty($remoteValidation['ok'])) {
+        payment_attempt_touch(
+            $conn,
+            'razorpay',
+            $rzpOrderId,
+            $orderId,
+            $paymentRowId,
+            'webhook_rejected',
+            'webhook',
+            $paymentId,
+            $signature,
+            'gateway_validation_failed',
+            (string) ($remoteValidation['error'] ?? 'unknown'),
+            $eventId,
+            $signature,
+            $payload,
+            false
+        );
+        throw new RuntimeException('Razorpay gateway validation failed.');
+    }
 
-    webhook_increment_coupon_used_count(
+    razorpay_mark_order_paid(
         $conn,
-        (int) ($order['customer_id'] ?? 0),
         $orderId,
+        (string) ($order['payment_status'] ?? ''),
+        $paymentId,
+        $rzpOrderId,
+        $signature
+    );
+    payment_attempt_touch(
+        $conn,
+        'razorpay',
+        $rzpOrderId,
+        $orderId,
+        $paymentRowId,
+        'webhook_captured',
+        'webhook',
+        $paymentId,
+        $signature,
+        '',
+        '',
+        $eventId,
+        $signature,
+        $payload,
+        false
+    );
+
+    consume_coupon_after_razorpay_capture(
+        $conn,
+        $orderId,
+        (int) ($order['customer_id'] ?? 0),
+        0,
         (string) ($order['order_notes'] ?? '')
     );
+    $orderCustomerId = (int) ($order['customer_id'] ?? 0);
+    if ($orderCustomerId > 0) {
+        cart_clear_db($conn, $orderCustomerId);
+    }
     log_order_activity(
         $conn,
         $orderId,

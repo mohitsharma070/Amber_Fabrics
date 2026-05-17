@@ -94,6 +94,32 @@
     <span aria-hidden="true">&uarr;</span>
 </button>
 
+<?php $marketingConsentStatus = function_exists('marketing_consent_status') ? marketing_consent_status() : 'unknown'; ?>
+<div
+    id="cookieConsentBanner"
+    data-consent-status="<?php echo e($marketingConsentStatus); ?>"
+    class="position-fixed bottom-0 start-0 end-0 p-3 <?php echo $marketingConsentStatus === 'unknown' ? '' : 'd-none'; ?>"
+    style="z-index:1085;"
+>
+    <div class="container">
+        <div class="card border-0 shadow">
+            <div class="card-body d-flex flex-column flex-lg-row align-items-lg-center gap-3">
+                <div class="flex-grow-1">
+                    <h6 class="mb-1">Cookie Preferences</h6>
+                    <p class="mb-0 small text-muted">
+                        We use marketing cookies for Meta Pixel, Meta CAPI, and UTM attribution only after your consent.
+                        You can review details in our <a href="/privacy-policy.php">Privacy Policy</a>.
+                    </p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-consent-choice="reject">Reject</button>
+                    <button type="button" class="btn btn-dark btn-sm" data-consent-choice="accept">Accept</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <?php do_action('page.footer', [
     'page' => basename($_SERVER['PHP_SELF'] ?? ''),

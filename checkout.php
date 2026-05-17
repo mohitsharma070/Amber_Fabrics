@@ -12,99 +12,19 @@ if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
 $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
-$items = [];
-$subtotal = 0.00;
+$hydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$items = $hydrated['items'];
+$subtotal = cart_items_subtotal($items);
 
-$cartParseKey = static function (string $rawKey): array {
-    $parts = explode('::', $rawKey, 2);
-    $pid = (int) ($parts[0] ?? 0);
-    $size = '';
-    if (isset($parts[1])) {
-        $decoded = rawurldecode((string) $parts[1]);
-        if ($decoded !== '_' && $decoded !== '') {
-            $size = $decoded;
-        }
+if (!empty($hydrated['removed_keys'])) {
+    foreach ($hydrated['removed_keys'] as $cartKey) {
+        unset($_SESSION['cart'][$cartKey], $_SESSION['cart_size'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
     }
-    return [$pid, $size];
-};
-
-if (!empty($cart)) {
-    $ids = [];
-    foreach (array_keys($cart) as $key) {
-        [$pid] = $cartParseKey((string) $key);
-        if ($pid > 0) {
-            $ids[] = $pid;
-        }
+    if (!empty($_SESSION['customer_id'])) {
+        cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
     }
-    $ids = array_values(array_unique($ids));
-
-    if (!empty($ids)) {
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $types = str_repeat('i', count($ids));
-        $sql = "SELECT id, name, image, unit_type, price, sale_price, price_inr, stock, stock_meters, is_available
-                FROM fabrics
-                WHERE status = 'active' AND id IN ($placeholders)";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param($types, ...$ids);
-        $stmt->execute();
-        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
-        $rowMap = [];
-        foreach ($rows as $row) {
-            $rowMap[(int) $row['id']] = $row;
-        }
-
-        foreach ($cart as $cartKey => $cartQty) {
-            [$pid, $sizeFromKey] = $cartParseKey((string) $cartKey);
-            if ($pid <= 0 || !isset($rowMap[$pid])) {
-                continue;
-            }
-            $row = $rowMap[$pid];
-            $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-                ? (string) $row['unit_type']
-                : 'meter';
-            $qty = normalize_quantity_by_unit($cartQty ?? 1, $unitType);
-            $meterLength = null;
-            $bundleQty = null;
-            if ($unitType === 'meter' && isset($cartMeterMap[$cartKey]) && is_numeric($cartMeterMap[$cartKey]) && (float) $cartMeterMap[$cartKey] > 0) {
-                $meterLength = (float) $cartMeterMap[$cartKey];
-                $bundleQty = max(1, (int) round($qty / $meterLength));
-            }
-            $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
-            $sale = (float) ($row['sale_price'] ?? 0);
-            $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
-            $lineTotal = round($unitPrice * $qty, 2);
-            $subtotal = round($subtotal + $lineTotal, 2);
-            $unitLabel = 'meter';
-            if ($unitType === 'piece') {
-                $unitLabel = ((float) $qty === 1.0) ? 'piece' : 'pieces';
-            } elseif ($unitType === 'set') {
-                $unitLabel = ((float) $qty === 1.0) ? 'set' : 'sets';
-            }
-
-            $displayStock = ($unitType === 'piece' || $unitType === 'set')
-                ? (float) ($row['stock'] ?? 0)
-                : (float) ($row['stock_meters'] ?? 0);
-            $inStock = !empty($row['is_available']) && $displayStock > 0;
-
-            $items[] = [
-                'id' => $pid,
-                'cart_key' => (string) $cartKey,
-                'name' => (string) $row['name'],
-                'image' => (string) ($row['image'] ?? ''),
-                'quantity' => $qty,
-                'quantity_text' => format_quantity_by_unit($qty, $unitType),
-                'quantity_unit_label' => $unitLabel,
-                'unit_type' => $unitType,
-                'selected_size' => (string) ($cartSizes[$cartKey] ?? $sizeFromKey),
-                'unit_price' => $unitPrice,
-                'subtotal' => $lineTotal,
-                'stock' => $displayStock,
-                'in_stock' => $inStock,
-                'meter_length' => $meterLength,
-                'bundle_quantity' => $bundleQty,
-            ];
-        }
+    if (!empty($hydrated['invalid_variant_found'])) {
+        flash('error', 'Some unavailable variants were removed from your cart. Please review before checkout.');
     }
 }
 
@@ -190,6 +110,8 @@ if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'
     $errors = $_SESSION['checkout_errors'];
     unset($_SESSION['checkout_errors']);
 }
+// India-only checkout path: keep country fixed for consistent pricing/shipping rules.
+$old['country'] = 'India';
 
 $savedAddresses = [];
 $selectedAddressId = (int) ($old['shipping_address_id'] ?? 0);
@@ -210,7 +132,7 @@ if ($customerId > 0 && customer_addresses_table_ready($conn)) {
         $target['city'] = (string) ($addr['city'] ?? $target['city']);
         $target['state'] = (string) ($addr['state'] ?? $target['state']);
         $target['pincode'] = (string) ($addr['pincode'] ?? $target['pincode']);
-        $target['country'] = (string) ($addr['country'] ?? $target['country']);
+        $target['country'] = 'India';
     };
 
     $requestedAddressId = (int) ($_GET['address_id'] ?? 0);
@@ -267,6 +189,17 @@ if ($isIndia) {
         $shippingRateCourier = (string) ($forwardRate['courier_name'] ?? '');
     }
 }
+$shippingQuoteToken = shipping_quote_store(
+    (float) $subtotal,
+    (string) $countryForCalc,
+    (string) ($old['pincode'] ?? ''),
+    (string) $selectedPayment,
+    (float) $baseShippingAmount,
+    (float) $codFeeAmount,
+    (float) $shippingAmount,
+    (string) $shippingRateSource,
+    (string) $shippingRateCourier
+);
 $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
 $couponInfo = get_active_coupon_discount($conn, $couponCode, (float) $subtotal);
 if (!$couponInfo['valid'] && $couponCode !== '') {
@@ -330,13 +263,15 @@ include __DIR__ . '/includes/header.php';
 
         <div class="row g-4">
             <div class="col-lg-7">
-                <form method="POST" action="/place-order.php" novalidate>
+                <form id="checkout_form" method="POST" action="/place-order.php" novalidate>
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="order_nonce" value="<?php echo e($_SESSION['order_nonce']); ?>">
                     <input type="hidden" name="online_method" id="online_method" value="<?php echo e($selectedOnlineMethod); ?>">
                     <input type="hidden" name="shipping_address_id" id="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
+                    <input type="hidden" name="shipping_quote_token" id="shipping_quote_token" value="<?php echo e($shippingQuoteToken); ?>">
 
                     <div class="surface-panel p-4 mb-4">
+                        <div class="small text-muted mb-3">Step 1 of 4: Delivery Address</div>
                         <h5 class="mb-3">Delivery Details</h5>
                         <?php if (!empty($savedAddresses)): ?>
                             <div class="mb-3">
@@ -408,7 +343,9 @@ include __DIR__ . '/includes/header.php';
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">Country *</label>
-                                <input type="text" id="checkout_country" name="country" class="<?php echo form_class($errors, 'country'); ?>" required value="<?php echo e($old['country']); ?>">
+                                <select id="checkout_country" name="country" class="<?php echo form_class($errors, 'country'); ?>" required>
+                                    <option value="India" selected>India</option>
+                                </select>
                                 <?php echo form_error($errors, 'country'); ?>
                             </div>
                             <div class="col-12">
@@ -419,6 +356,7 @@ include __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="surface-panel p-4 mb-4">
+                        <div class="small text-muted mb-3">Step 2 of 4: Payment</div>
                         <h5 class="mb-3">Payment Method</h5>
                         <div class="checkout-payment-options">
                             <label class="checkout-pay-option" for="payment_cod" data-pay-option="cod">
@@ -495,7 +433,7 @@ include __DIR__ . '/includes/header.php';
                     </div>
 
                     <?php if ($isIndia): ?>
-                        <button type="submit" class="btn btn-primary btn-lg w-100">Place Order</button>
+                        <button type="submit" class="btn btn-primary btn-lg w-100">Step 4: Place Order</button>
                     <?php else: ?>
                         <a href="<?php echo e($internationalQuoteUrl); ?>" class="btn btn-primary btn-lg w-100">Request International Quote</a>
                     <?php endif; ?>
@@ -504,6 +442,7 @@ include __DIR__ . '/includes/header.php';
 
             <div class="col-lg-5">
                 <div class="surface-panel p-4 checkout-summary-sticky">
+                    <div class="small text-muted mb-3">Step 3 of 4: Review</div>
                     <h5 class="mb-3">Order Summary</h5>
                     <?php foreach ($items as $item): ?>
                         <div class="d-flex justify-content-between mb-2 small">
@@ -513,6 +452,9 @@ include __DIR__ . '/includes/header.php';
                                     <span class="text-muted"> - <?php echo e((string) $item['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>m = <?php echo e($item['quantity_text']); ?>m</span>
                                 <?php else: ?>
                                     <span class="text-muted"> - <?php echo e($item['quantity_text']); ?> <?php echo e($item['quantity_unit_label']); ?></span>
+                                    <?php if ($item['unit_type'] === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
+                                        <span class="text-muted"> (<?php echo (int) $item['quantity']; ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) $item['quantity'] * (int) $item['units_per_set']; ?> pieces)</span>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if ($item['selected_size'] !== ''): ?>
                                     <span class="text-muted"> (<?php echo e($item['selected_size']); ?>)</span>
@@ -580,17 +522,31 @@ include __DIR__ . '/includes/header.php';
                             Manual shipping fallback active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
                         <?php endif; ?>
                     </div>
+                    <div class="mt-2" id="courier_select_wrap" style="display:none;">
+                        <label for="courier_select" class="form-label small mb-1">Courier Option</label>
+                        <select id="courier_select" class="form-select form-select-sm"></select>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </section>
+<?php if ($isIndia): ?>
+<div class="d-lg-none position-fixed bottom-0 start-0 end-0 bg-white border-top p-3" style="z-index:1050;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small text-muted">Total</span>
+        <strong id="mobile_summary_total">Rs <?php echo number_format($totalAmount, 2); ?></strong>
+    </div>
+    <button type="button" id="mobile_place_order_btn" class="btn btn-primary w-100">Place Order</button>
+</div>
+<div class="d-lg-none" style="height:88px;"></div>
+<?php endif; ?>
 
 <script nonce="<?php echo $cspNonce; ?>">
 (function () {
     var codRadio = document.getElementById('payment_cod');
     var razorpayRadio = document.getElementById('payment_razorpay');
-    var countryInput = document.querySelector('input[name="country"]');
+    var countryInput = document.querySelector('[name="country"]');
     var savedAddressSelect = document.getElementById('saved_address_select');
     var shippingAddressIdInput = document.getElementById('shipping_address_id');
     var fullNameInput = document.getElementById('checkout_full_name');
@@ -614,6 +570,13 @@ include __DIR__ . '/includes/header.php';
     var onlineMethodButtons = document.querySelectorAll('.checkout-online-method');
     var onlinePanels = document.querySelectorAll('.checkout-online-panel');
     var onlineMethodInput = document.getElementById('online_method');
+    var shippingQuoteTokenInput = document.getElementById('shipping_quote_token');
+    var courierSelectWrap = document.getElementById('courier_select_wrap');
+    var courierSelect = document.getElementById('courier_select');
+    var liveCourierOptions = [];
+    var mobileTotalEl = document.getElementById('mobile_summary_total');
+    var mobileSubmitBtn = document.getElementById('mobile_place_order_btn');
+    var checkoutForm = document.getElementById('checkout_form');
 
     if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
         return;
@@ -634,7 +597,7 @@ include __DIR__ . '/includes/header.php';
         if (cityInput) cityInput.value = optionEl.getAttribute('data-city') || '';
         if (stateInput) stateInput.value = optionEl.getAttribute('data-state') || '';
         if (pincodeInput) pincodeInput.value = optionEl.getAttribute('data-pincode') || '';
-        if (countryFieldInput) countryFieldInput.value = optionEl.getAttribute('data-country') || '';
+        if (countryFieldInput) countryFieldInput.value = 'India';
     }
 
     function toMoney(v) {
@@ -660,6 +623,9 @@ include __DIR__ . '/includes/header.php';
         shippingEl.textContent = toMoney(shipping);
         codFeeEl.textContent = toMoney(codFee);
         totalEl.textContent = toMoney(total);
+        if (mobileTotalEl) {
+            mobileTotalEl.textContent = toMoney(total);
+        }
     }
 
     function maybeFetchLiveRate() {
@@ -669,7 +635,11 @@ include __DIR__ . '/includes/header.php';
             return;
         }
         var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
-        fetch('/shipping-rate.php?pincode=' + encodeURIComponent(pincode) + '&subtotal=' + encodeURIComponent(String(subtotal)) + '&payment_method=' + encodeURIComponent(paymentMethod), {
+        var query = '/shipping-rate.php?pincode=' + encodeURIComponent(pincode) + '&subtotal=' + encodeURIComponent(String(subtotal)) + '&payment_method=' + encodeURIComponent(paymentMethod);
+        if (courierSelect && courierSelect.value) {
+            query += '&courier_id=' + encodeURIComponent(courierSelect.value);
+        }
+        fetch(query, {
             method: 'GET',
             headers: { 'Accept': 'application/json' }
         }).then(function (res) {
@@ -680,11 +650,41 @@ include __DIR__ . '/includes/header.php';
             }
             var liveShipping = Number(data.base_shipping || 0);
             var liveCodFee = Number(data.cod_fee || 0);
+            if (shippingQuoteTokenInput && data.quote_token) {
+                shippingQuoteTokenInput.value = String(data.quote_token);
+            }
+            if (courierSelectWrap && courierSelect) {
+                liveCourierOptions = Array.isArray(data.courier_options) ? data.courier_options : [];
+                if (liveCourierOptions.length > 0 && data.source === 'live') {
+                    courierSelect.innerHTML = '';
+                    liveCourierOptions.forEach(function (opt) {
+                        var o = document.createElement('option');
+                        var cid = Number(opt.courier_id || 0);
+                        o.value = String(cid);
+                        var label = String(opt.courier_name || 'Courier') + ' - Rs ' + Number(opt.rate || 0).toFixed(2);
+                        if (Number(opt.estimated_days || 0) > 0) {
+                            label += ' (' + Number(opt.estimated_days) + 'd)';
+                        }
+                        o.textContent = label;
+                        if (Number(data.courier_id || 0) === cid) {
+                            o.selected = true;
+                        }
+                        courierSelect.appendChild(o);
+                    });
+                    courierSelectWrap.style.display = '';
+                } else {
+                    courierSelect.innerHTML = '';
+                    courierSelectWrap.style.display = 'none';
+                }
+            }
             var taxable = Math.max(0, subtotal - discount);
             var total = taxable + liveShipping + liveCodFee;
             shippingEl.textContent = toMoney(liveShipping);
             codFeeEl.textContent = toMoney(liveCodFee);
             totalEl.textContent = toMoney(total);
+            if (mobileTotalEl) {
+                mobileTotalEl.textContent = toMoney(total);
+            }
         }).catch(function () {});
     }
 
@@ -762,6 +762,16 @@ include __DIR__ . '/includes/header.php';
         syncSummary();
     }
     maybeFetchLiveRate();
+    if (courierSelect) {
+        courierSelect.addEventListener('change', function () {
+            maybeFetchLiveRate();
+        });
+    }
+    if (mobileSubmitBtn && checkoutForm) {
+        mobileSubmitBtn.addEventListener('click', function () {
+            checkoutForm.requestSubmit();
+        });
+    }
     activateOnlineMethod(onlineMethodInput && onlineMethodInput.value ? onlineMethodInput.value : 'upi');
     syncPaymentPanels();
 })();

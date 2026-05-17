@@ -12,6 +12,13 @@ if (PHP_SAPI !== 'cli') {
 }
 
 release_stale_pending_razorpay_orders_global($conn, 30, 200);
+try {
+    if (function_exists('save_site_settings_to_db')) {
+        save_site_settings_to_db($conn, ['cron_last_run_at' => date('Y-m-d H:i:s')]);
+    }
+} catch (Throwable $e) {
+    error_log('[cron] cron_last_run_at save failed: ' . $e->getMessage());
+}
 
 do_action('cron.tick', [
     'conn' => $conn,

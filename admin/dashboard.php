@@ -2,13 +2,35 @@
 require_once __DIR__ . '/../includes/init.php';
 require_admin();
 
-$month = trim((string) ($_GET['month'] ?? ''));
-if ($month === '' || !preg_match('/^\d{4}-\d{2}$/', $month)) {
-    $month = date('Y-m');
+$today = date('Y-m-d');
+$monthStart = date('Y-m-01');
+$rangeFrom = trim((string) ($_GET['from'] ?? $monthStart));
+$rangeTo = trim((string) ($_GET['to'] ?? $today));
+
+$isValidDate = static function (string $value): bool {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        return false;
+    }
+    $dt = DateTime::createFromFormat('Y-m-d', $value);
+    return $dt instanceof DateTime && $dt->format('Y-m-d') === $value;
+};
+
+if (!$isValidDate($rangeFrom)) {
+    $rangeFrom = $monthStart;
+}
+if (!$isValidDate($rangeTo)) {
+    $rangeTo = $today;
+}
+if ($rangeFrom > $rangeTo) {
+    [$rangeFrom, $rangeTo] = [$rangeTo, $rangeFrom];
 }
 
-$monthOrderClause = "DATE_FORMAT(created_at, '%Y-%m') = ?";
-$monthExpenseClause = "DATE_FORMAT(expense_date, '%Y-%m') = ?";
+$rangeStartAt = $rangeFrom . ' 00:00:00';
+$rangeEndExclusive = date('Y-m-d H:i:s', strtotime($rangeTo . ' +1 day'));
+$rangeLabel = date('d M Y', strtotime($rangeFrom)) . ' - ' . date('d M Y', strtotime($rangeTo));
+
+$orderRangeClause = "created_at >= ? AND created_at < ?";
+$expenseRangeClause = "expense_date >= ? AND expense_date <= ?";
 $activeOrderClause = "NOT (
     order_status = 'pending'
     AND
@@ -24,38 +46,60 @@ $totalOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOr
 $pendingOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOrderClause} AND order_status = 'pending'")->fetch_row()[0] ?? 0);
 $deliveredOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOrderClause} AND order_status = 'delivered'")->fetch_row()[0] ?? 0);
 $cancelledOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOrderClause} AND order_status = 'cancelled'")->fetch_row()[0] ?? 0);
+$staleOnlinePending = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE payment_method IN ('razorpay','upi') AND payment_status = 'pending' AND order_status IN ('pending','confirmed') AND created_at < (NOW() - INTERVAL 30 MINUTE)")->fetch_row()[0] ?? 0);
+$refundPendingCount = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE payment_status = 'paid' AND order_status = 'cancelled'")->fetch_row()[0] ?? 0);
+$codPendingConfirm = (int) ($conn->query("SELECT COUNT(*) FROM cod_confirmations WHERE status = 'pending'")->fetch_row()[0] ?? 0);
+$cronLastRunAt = '';
+try {
+    $cronStmt = $conn->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'cron_last_run_at' LIMIT 1");
+    $cronStmt->execute();
+    $cronLastRunAt = (string) ($cronStmt->get_result()->fetch_assoc()['setting_value'] ?? '');
+} catch (Throwable $e) {
+    $cronLastRunAt = '';
+}
+$cronLagMinutes = null;
+if ($cronLastRunAt !== '') {
+    $cronTs = strtotime($cronLastRunAt);
+    if ($cronTs !== false) {
+        $cronLagMinutes = max(0, (int) floor((time() - $cronTs) / 60));
+    }
+}
 $lowStockProducts = (int) ($conn->query("SELECT COUNT(*) FROM fabrics WHERE status = 'active' AND (CASE WHEN unit_type = 'meter' THEN COALESCE(stock_meters, 0) ELSE COALESCE(stock, 0) END) <= 3")->fetch_row()[0] ?? 0);
 $exportInquiries = (int) ($conn->query("SELECT COUNT(*) FROM inquiries WHERE inquiry_type = 'export'")->fetch_row()[0] ?? 0);
 
-$salesStmt = $conn->prepare("SELECT COALESCE(SUM(total_amount), 0) AS total_sales FROM orders WHERE payment_status = 'paid' AND {$monthOrderClause}");
-$salesStmt->bind_param('s', $month);
+$salesStmt = $conn->prepare("SELECT COALESCE(SUM(total_amount), 0) AS total_sales FROM orders WHERE payment_status = 'paid' AND {$orderRangeClause}");
+$salesStmt->bind_param('ss', $rangeStartAt, $rangeEndExclusive);
 $salesStmt->execute();
 $totalSalesMonth = (float) ($salesStmt->get_result()->fetch_assoc()['total_sales'] ?? 0);
 
+$supportsCostSnapshot = order_items_supports_cost_snapshot($conn);
+$costExpression = $supportsCostSnapshot
+    ? "COALESCE(oi.cost_price_snapshot, COALESCE(f.cost_price, 0))"
+    : "COALESCE(f.cost_price, 0)";
 $productCostStmt = $conn->prepare(
     "SELECT COALESCE(SUM(
         (CASE
             WHEN oi.quantity IS NOT NULL AND oi.quantity > 0 THEN oi.quantity
             WHEN oi.quantity_meters IS NOT NULL AND oi.quantity_meters > 0 THEN oi.quantity_meters
             ELSE 0
-         END) * COALESCE(f.cost_price, 0)
+         END) * {$costExpression}
     ), 0) AS total_product_cost
      FROM order_items oi
      INNER JOIN orders o ON o.id = oi.order_id
      LEFT JOIN fabrics f ON f.id = oi.product_id
-     WHERE o.payment_status = 'paid' AND DATE_FORMAT(o.created_at, '%Y-%m') = ?"
+     WHERE o.payment_status = 'paid' AND o.created_at >= ? AND o.created_at < ?"
 );
-$productCostStmt->bind_param('s', $month);
+$productCostStmt->bind_param('ss', $rangeStartAt, $rangeEndExclusive);
 $productCostStmt->execute();
 $productCostEstimate = (float) ($productCostStmt->get_result()->fetch_assoc()['total_product_cost'] ?? 0);
 
 $expenseBreakdownStmt = $conn->prepare(
     "SELECT type, COALESCE(SUM(amount), 0) AS total_amount
      FROM expenses
-     WHERE {$monthExpenseClause}
+     WHERE {$expenseRangeClause}
      GROUP BY type"
 );
-$expenseBreakdownStmt->bind_param('s', $month);
+$expenseBreakdownStmt->bind_param('ss', $rangeFrom, $rangeTo);
 $expenseBreakdownStmt->execute();
 $expenseRows = $expenseBreakdownStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -85,7 +129,7 @@ $shippingExpense = (float) ($expenseMap['Shipping'] ?? 0.00);
 $paymentFeesStmt = $conn->prepare(
     "SELECT COALESCE(SUM(amount), 0) AS total_fees
      FROM expenses
-     WHERE {$monthExpenseClause}
+     WHERE {$expenseRangeClause}
        AND (
             LOWER(COALESCE(note, '')) LIKE '%payment fee%'
          OR LOWER(COALESCE(note, '')) LIKE '%gateway%'
@@ -93,17 +137,17 @@ $paymentFeesStmt = $conn->prepare(
          OR LOWER(COALESCE(note, '')) LIKE '%transaction fee%'
        )"
 );
-$paymentFeesStmt->bind_param('s', $month);
+$paymentFeesStmt->bind_param('ss', $rangeFrom, $rangeTo);
 $paymentFeesStmt->execute();
 $paymentFeesExpense = (float) ($paymentFeesStmt->get_result()->fetch_assoc()['total_fees'] ?? 0);
 
 $returnsStmt = $conn->prepare(
     "SELECT COALESCE(SUM(total_amount), 0) AS total_returns
      FROM orders
-     WHERE {$monthOrderClause}
+     WHERE {$orderRangeClause}
        AND (payment_status = 'refunded' OR order_status IN ('returned', 'refunded'))"
 );
-$returnsStmt->bind_param('s', $month);
+$returnsStmt->bind_param('ss', $rangeStartAt, $rangeEndExclusive);
 $returnsStmt->execute();
 $returnsExpense = (float) ($returnsStmt->get_result()->fetch_assoc()['total_returns'] ?? 0);
 
@@ -112,12 +156,12 @@ $netProfit = $totalSalesMonth - $productCostEstimate - $shippingExpense - $marke
 $recentOrdersStmt = $conn->prepare(
     "SELECT id, order_number, customer_name, total_amount, payment_status, order_status, created_at
      FROM orders
-     WHERE DATE_FORMAT(created_at, '%Y-%m') = ?
+     WHERE created_at >= ? AND created_at < ?
        AND {$activeOrderClause}
      ORDER BY created_at DESC
      LIMIT 8"
 );
-$recentOrdersStmt->bind_param('s', $month);
+$recentOrdersStmt->bind_param('ss', $rangeStartAt, $rangeEndExclusive);
 $recentOrdersStmt->execute();
 $recentOrders = $recentOrdersStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -154,12 +198,12 @@ $topProductsStmt = $conn->prepare(
      FROM order_items oi
      INNER JOIN orders o ON o.id = oi.order_id
      WHERE o.payment_status = 'paid'
-       AND DATE_FORMAT(o.created_at, '%Y-%m') = ?
+       AND o.created_at >= ? AND o.created_at < ?
      GROUP BY product_name
      ORDER BY qty_sold DESC
      LIMIT 5"
 );
-$topProductsStmt->bind_param('s', $month);
+$topProductsStmt->bind_param('ss', $rangeStartAt, $rangeEndExclusive);
 $topProductsStmt->execute();
 $topProducts = $topProductsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -181,20 +225,38 @@ include 'partials/header.php';
 ?>
 
 <div class="dashboard-container">
-    <div class="dashboard-header d-flex justify-content-between align-items-end flex-wrap gap-3">
+    <div class="dashboard-header admin-page-header d-flex justify-content-between align-items-end flex-wrap gap-3">
         <div>
             <h1 class="mb-1">Store Dashboard</h1>
-            <p class="text-muted mb-0">Performance snapshot for <?php echo e($month); ?></p>
+            <p class="text-muted mb-0">Performance snapshot for <?php echo e($rangeLabel); ?></p>
         </div>
-        <form method="GET" class="d-flex gap-2 align-items-end">
+        <form method="GET" class="d-flex gap-2 align-items-end admin-dashboard-filter">
             <div>
-                <label class="form-label mb-1">Month</label>
-                <input type="month" name="month" class="form-control" value="<?php echo e($month); ?>">
+                <label class="form-label mb-1">From</label>
+                <input type="date" name="from" class="form-control" value="<?php echo e($rangeFrom); ?>">
             </div>
-            <button class="btn btn-primary" type="submit">Apply</button>
+            <div>
+                <label class="form-label mb-1">To</label>
+                <input type="date" name="to" class="form-control" value="<?php echo e($rangeTo); ?>">
+            </div>
+            <div class="admin-filter-actions">
+                <button class="btn btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
+                <a class="btn btn-outline-secondary" href="dashboard.php"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
+            </div>
         </form>
     </div>
 
+    <?php if ($staleOnlinePending > 0 || $refundPendingCount > 0 || $codPendingConfirm > 0 || $cronLagMinutes === null || $cronLagMinutes > 20): ?>
+    <div class="alert alert-warning mb-3">
+        <div class="fw-semibold mb-1">Operational Alerts</div>
+        <div class="small">
+            <?php if ($staleOnlinePending > 0): ?>Stale online pending orders: <strong><?php echo $staleOnlinePending; ?></strong>. <?php endif; ?>
+            <?php if ($refundPendingCount > 0): ?>Refund queue (cancelled + paid): <strong><?php echo $refundPendingCount; ?></strong>. <?php endif; ?>
+            <?php if ($codPendingConfirm > 0): ?>Pending COD confirmations: <strong><?php echo $codPendingConfirm; ?></strong>. <?php endif; ?>
+            <?php if ($cronLagMinutes === null): ?>Cron last-run timestamp not found.<?php elseif ($cronLagMinutes > 20): ?>Cron last run <?php echo (int) $cronLagMinutes; ?> minutes ago.<?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
     <div class="dashboard-kpi-grid">
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Total Sales</p>
@@ -209,7 +271,7 @@ include 'partials/header.php';
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Net Profit / Loss</p>
             <h3 class="kpi-value <?php echo $netProfit >= 0 ? 'kpi-positive' : 'kpi-negative'; ?>">Rs <?php echo number_format($netProfit, 2); ?></h3>
-            <p class="kpi-sub">For <?php echo e($month); ?> based on formula</p>
+            <p class="kpi-sub">For selected date range</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Total Orders</p>
@@ -239,12 +301,12 @@ include 'partials/header.php';
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Product Cost</p>
             <h3 class="kpi-value">Rs <?php echo number_format($productCostEstimate, 2); ?></h3>
-            <p class="kpi-sub">COGS in <?php echo e($month); ?></p>
+            <p class="kpi-sub">COGS in selected range</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Total Expenses</p>
             <h3 class="kpi-value">Rs <?php echo number_format($totalExpenses, 2); ?></h3>
-            <p class="kpi-sub">Recorded in <?php echo e($month); ?></p>
+            <p class="kpi-sub">Recorded in selected range</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Shipping (Expense)</p>
@@ -290,7 +352,7 @@ include 'partials/header.php';
     <div class="card mt-4 mb-4">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0">Net Profit Formula Breakdown (<?php echo e($month); ?>)</h5>
+                <h5 class="mb-0">Net Profit Formula Breakdown (<?php echo e($rangeLabel); ?>)</h5>
                 <span class="badge <?php echo $netProfit >= 0 ? 'bg-success' : 'bg-danger'; ?>">
                     <?php echo $netProfit >= 0 ? 'Profit' : 'Loss'; ?>
                 </span>
@@ -350,7 +412,7 @@ include 'partials/header.php';
             <div class="card h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between mb-3">
-                        <h5 class="mb-0">Recent Orders (<?php echo e($month); ?>)</h5>
+                        <h5 class="mb-0">Recent Orders (<?php echo e($rangeLabel); ?>)</h5>
                         <a href="orders.php" class="small">View all -></a>
                     </div>
                     <?php if (!empty($recentOrders)): ?>
@@ -391,7 +453,7 @@ include 'partials/header.php';
                         </table>
                     </div>
                     <?php else: ?>
-                        <p class="text-muted mb-0">No orders found for this month.</p>
+                        <p class="text-muted mb-0">No orders found for this date range.</p>
                     <?php endif; ?>
                 </div>
             </div>
@@ -433,9 +495,9 @@ include 'partials/header.php';
             </div>
             <div class="card mt-4">
                 <div class="card-body">
-                    <h6 class="card-title mb-3">Top Selling Products (<?php echo e($month); ?>)</h6>
+                    <h6 class="card-title mb-3">Top Selling Products (<?php echo e($rangeLabel); ?>)</h6>
                     <?php if (empty($topProducts)): ?>
-                        <p class="text-muted small mb-0">No paid sales for this month yet.</p>
+                        <p class="text-muted small mb-0">No paid sales in this date range yet.</p>
                     <?php else: ?>
                         <div class="dashboard-mini-list">
                             <?php foreach ($topProducts as $tp): ?>

@@ -40,8 +40,14 @@ $trackingUrl = safe_external_url($shipment['tracking_url'] ?? '');
 $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
 $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
 $paymentLabel = ucfirst(str_replace('_', ' ', $paymentMethod));
+$codConfirmation = null;
+if ($paymentMethod === 'cod' && function_exists('cod_guard_get_confirmation')) {
+    $codConfirmation = cod_guard_get_confirmation($conn, $orderId);
+}
 
-$metaTitle = 'Order Confirmed | Amber Fabrics';
+$metaTitle = ($paymentMethod === 'cod' && is_array($codConfirmation) && strtolower((string) ($codConfirmation['status'] ?? '')) === 'pending')
+    ? 'Order Placed | Amber Fabrics'
+    : 'Order Confirmed | Amber Fabrics';
 include __DIR__ . '/includes/header.php';
 ?>
 
@@ -69,7 +75,11 @@ include __DIR__ . '/includes/header.php';
                         <div class="d-flex justify-content-between"><span>Order Status</span><strong><?php echo e(ucfirst((string) $order['order_status'])); ?></strong></div>
                     </div>
 
-                    <?php if ($paymentMethod === 'cod'): ?>
+                    <?php if ($paymentMethod === 'cod' && is_array($codConfirmation) && strtolower((string) ($codConfirmation['status'] ?? '')) === 'pending'): ?>
+                    <div class="alert alert-warning text-start mb-3">
+                        Please reply YES to the confirmation message to confirm this COD order, or NO to cancel it.
+                    </div>
+                    <?php elseif ($paymentMethod === 'cod'): ?>
                     <div class="alert alert-info text-start mb-3">
                         COD selected. Please keep exact amount ready at delivery.
                     </div>

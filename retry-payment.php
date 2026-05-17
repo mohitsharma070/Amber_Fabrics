@@ -74,18 +74,9 @@ $_SESSION['pending_order_id']     = $order['id'];
 $_SESSION['pending_order_number'] = $order['order_number'];
 $_SESSION['pending_coupon_id']    = 0;
 
-$orderNotes = (string) ($order['order_notes'] ?? '');
-if ($orderNotes !== '' && preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
-    $couponCode = strtoupper(trim((string) ($m[1] ?? '')));
-    if ($couponCode !== '') {
-        $couponStmt = $conn->prepare("SELECT id FROM coupons WHERE code = ? LIMIT 1");
-        $couponStmt->bind_param('s', $couponCode);
-        $couponStmt->execute();
-        $coupon = $couponStmt->get_result()->fetch_assoc();
-        if ($coupon && (int) ($coupon['id'] ?? 0) > 0) {
-            $_SESSION['pending_coupon_id'] = (int) $coupon['id'];
-        }
-    }
+$resolvedCouponId = resolve_coupon_id_for_order($conn, (int) $order['id'], (string) ($order['order_notes'] ?? ''));
+if ($resolvedCouponId > 0) {
+    $_SESSION['pending_coupon_id'] = $resolvedCouponId;
 }
 
 if ($order['payment_method'] === 'razorpay') {

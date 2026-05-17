@@ -101,6 +101,13 @@ function utm_attribution_capture_request(array $context): void
         return;
     }
 
+    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+        if (function_exists('marketing_consent_denied') && marketing_consent_denied()) {
+            unset($_SESSION['utm_attribution']);
+        }
+        return;
+    }
+
     if (utm_attribution_has_request_data()) {
         $data = utm_attribution_from_request();
         $_SESSION['utm_attribution'] = $data;
@@ -128,6 +135,9 @@ function utm_attribution_capture_request(array $context): void
 
 function utm_attribution_active_data(): array
 {
+    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+        return [];
+    }
     $data = $_SESSION['utm_attribution'] ?? [];
     return is_array($data) ? $data : [];
 }

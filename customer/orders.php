@@ -121,7 +121,56 @@ include __DIR__ . '/../includes/header.php';
                 <a href="/catalog.php" class="btn btn-primary">Browse Fabrics</a>
             </div>
         <?php else: ?>
-            <div class="table-responsive">
+            <div class="d-md-none">
+                <?php foreach ($orders as $o):
+                    $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
+                    $s = order_status_meta($effectiveOrderStatus);
+                    $payMeta = payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
+                    $symbol = $o['currency'] === 'USD' ? '$' : '&#8377;';
+                    $totalQty = (float) ($o['total_qty'] ?? 0);
+                    $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
+                    $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
+                ?>
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <div class="fw-semibold"><?php echo e($o['order_number']); ?></div>
+                                <div class="small text-muted"><?php echo date('d M Y', strtotime($o['created_at'])); ?></div>
+                            </div>
+                            <div class="text-end">
+                                <div><span class="badge bg-<?php echo e($s['class']); ?>"><?php echo e($s['label']); ?></span></div>
+                                <div class="mt-1"><span class="badge bg-<?php echo e($payMeta['class']); ?>"><?php echo e($payMeta['label']); ?></span></div>
+                            </div>
+                        </div>
+                        <div class="small mb-2">
+                            <div>Items: <?php echo e(format_meter_quantity($totalQty)); ?></div>
+                            <div>Total: <strong><?php echo $symbol . number_format((float) $o['total'], 2); ?> <?php echo e($o['currency']); ?></strong></div>
+                            <div>Payment: <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?></div>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <a href="/customer/order-view.php?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
+                            <?php if ($canRetry): ?>
+                            <form method="POST" action="/retry-payment.php" class="d-inline">
+                                <?php echo csrf_field(); ?>
+                                <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-warning">Retry Payment</button>
+                            </form>
+                            <?php endif; ?>
+                            <?php if ($canCancel): ?>
+                            <form method="POST" action="/customer/cancel-order.php" class="d-inline" onsubmit="return confirm('Cancel this order?');">
+                                <?php echo csrf_field(); ?>
+                                <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+
+            <div class="table-responsive d-none d-md-block">
                 <table class="table table-hover align-middle">
                     <thead>
                         <tr>

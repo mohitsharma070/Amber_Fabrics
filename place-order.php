@@ -37,7 +37,11 @@ $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
 $onlineMethod = sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
 $shippingAddressId = (int) ($_POST['shipping_address_id'] ?? 0);
+$shippingQuoteToken = trim((string) ($_POST['shipping_quote_token'] ?? ''));
 $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
+$selectedCourierName = '';
+$selectedCourierId = 0;
+$shippingRateSource = 'manual';
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
@@ -107,26 +111,39 @@ if (!empty($errors)) {
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
 $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
-$cartParseKey = static function (string $rawKey): array {
-    $parts = explode('::', $rawKey, 2);
-    $pid = (int) ($parts[0] ?? 0);
-    $size = '';
-    if (isset($parts[1])) {
-        $decoded = rawurldecode((string) $parts[1]);
-        if ($decoded !== '_' && $decoded !== '') {
-            $size = $decoded;
-        }
+
+// Re-hydrate cart from canonical shared logic so checkout and order placement stay consistent.
+$hydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+if (!empty($hydrated['removed_keys'])) {
+    foreach ($hydrated['removed_keys'] as $cartKey) {
+        unset($_SESSION['cart'][$cartKey], $_SESSION['cart_size'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
     }
-    return [$pid, $size];
-};
-$ids = [];
+    if ($customerId > 0) {
+        cart_save_to_db($conn, $customerId, $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
+    }
+    flash('error', 'Some unavailable items were removed from your cart. Please review and place your order again.');
+    redirect('/checkout.php');
+}
+$cart = $_SESSION['cart'] ?? [];
+$cartSubtotal = cart_items_subtotal($hydrated['items']);
+if (empty($cart) || $cartSubtotal <= 0) {
+    flash('error', 'Your cart is empty.');
+    redirect('/cart.php');
+}
+
+$ids        = [];
+$variantIds = [];
 foreach (array_keys($cart) as $key) {
-    [$pid] = $cartParseKey((string) $key);
+    [$pid, $variantId] = cart_parse_key((string) $key);
     if ($pid > 0) {
         $ids[] = $pid;
     }
+    if ($variantId > 0) {
+        $variantIds[] = $variantId;
+    }
 }
-$ids = array_values(array_unique($ids));
+$ids        = array_values(array_unique($ids));
+$variantIds = array_values(array_unique($variantIds));
 
 if (empty($ids)) {
     flash('error', 'Your cart is empty.');
@@ -138,7 +155,7 @@ try {
 
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
-    $sql = "SELECT id, name, sku, unit_type, min_order_meters, stock, stock_meters, is_available, status, price, sale_price, price_inr, size, color
+    $sql = "SELECT id, name, sku, unit_type, min_order_meters, stock, stock_meters, is_available, status, price, sale_price, price_inr, cost_price, size, color
             FROM fabrics
             WHERE id IN ($placeholders)
             FOR UPDATE";
@@ -152,17 +169,37 @@ try {
         $productMap[(int) $row['id']] = $row;
     }
 
+    // Batch-load variants for stock / price / color / size
+    $variantMap = !empty($variantIds) ? get_variants_by_ids($conn, $variantIds) : [];
+    $siteSettings = get_site_settings();
+    $gstRateSnapshot = max(0.0, (float) ($siteSettings['gst_rate'] ?? 18));
+    $hsnCodeSnapshot = trim((string) ($siteSettings['hsn_code'] ?? '5208'));
+    $companyState = strtolower(trim((string) ($siteSettings['company_state'] ?? '')));
+    $buyerState = strtolower(trim((string) $state));
+    $isIndiaOrder = strcasecmp(trim((string) $country), 'india') === 0;
+    if (!$isIndiaOrder || $gstRateSnapshot <= 0) {
+        $orderTaxType = 'none';
+    } elseif ($companyState !== '' && $buyerState !== '' && $companyState !== $buyerState) {
+        $orderTaxType = 'igst';
+    } else {
+        $orderTaxType = 'cgst_sgst';
+    }
+
     $orderItems = [];
     $subtotal = 0.00;
 
     foreach ($cart as $cartKey => $qtyRaw) {
-        [$productId, $sizeFromKey] = $cartParseKey((string) $cartKey);
+        [$productId, $variantId] = cart_parse_key((string) $cartKey);
 
         if (!isset($productMap[$productId])) {
             throw new RuntimeException('One of the products is no longer available.');
         }
 
         $product = $productMap[$productId];
+        $variant = ($variantId > 0 && isset($variantMap[$variantId])) ? $variantMap[$variantId] : null;
+        if ($variantId > 0 && (!$variant || (int) ($variant['fabric_id'] ?? 0) !== $productId || (int) ($variant['is_active'] ?? 0) !== 1)) {
+            throw new RuntimeException('Selected variant is unavailable for ' . ($product['name'] ?? 'product'));
+        }
         $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
             ? (string) $product['unit_type']
             : 'meter';
@@ -172,24 +209,42 @@ try {
             throw new RuntimeException('Product unavailable: ' . ($product['name'] ?? 'Unknown'));
         }
 
-        $selectedSize = trim((string) ($cartSizes[$cartKey] ?? $sizeFromKey));
-        $validSizes = parse_size_options((string) ($product['size'] ?? ''));
-        if (!empty($validSizes) && !in_array($selectedSize, $validSizes, true)) {
-            throw new RuntimeException('Please reselect product size before placing order.');
+        // Color + size: prefer variant data; fall back to fabric fields / legacy session size.
+        if ($variant) {
+            $selectedColor = (string) ($variant['color'] ?? '');
+            $selectedSize  = variant_size_display($variant, $unitType);
+        } else {
+            $selectedColor = (string) ($product['color'] ?? '');
+            $selectedSize  = trim((string) ($cartSizes[$cartKey] ?? ''));
         }
+        $unitsPerSet = ($variant && $unitType === 'set') ? normalize_units_per_set($variant['units_per_set'] ?? 1) : null;
+        $packLabel = ($variant && $unitType === 'set')
+            ? trim((string) (($variant['pack_label'] ?? '') ?: format_pack_label((int) $unitsPerSet)))
+            : null;
 
-        $availableStock = ($unitType === 'piece' || $unitType === 'set')
-            ? (float) ($product['stock'] ?? 0)
-            : (float) ($product['stock_meters'] ?? 0);
+        // Stock check: prefer variant-level; fall back to fabric-level.
+        if ($variant) {
+            $availableStock = ($unitType === 'piece' || $unitType === 'set')
+                ? (float) ($variant['stock'] ?? 0)
+                : (float) ($variant['stock_meters'] ?? 0);
+        } else {
+            $availableStock = ($unitType === 'piece' || $unitType === 'set')
+                ? (float) ($product['stock'] ?? 0)
+                : (float) ($product['stock_meters'] ?? 0);
+        }
         if ($availableStock < $qty) {
             throw new RuntimeException('Insufficient stock for ' . ($product['name'] ?? 'product'));
         }
 
         $regular = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
-        $sale = (float) ($product['sale_price'] ?? 0);
-        $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
+        $sale    = (float) ($product['sale_price'] ?? 0);
+        if ($variant && $variant['price_override'] !== null && (float) $variant['price_override'] > 0) {
+            $unitPrice = (float) $variant['price_override'];
+        } else {
+            $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
+        }
         $lineTotal = round($unitPrice * $qty, 2);
-        $subtotal = round($subtotal + $lineTotal, 2);
+        $subtotal  = round($subtotal + $lineTotal, 2);
 
         // Preserve bundle display info for invoice (e.g. "1 × 5m")
         $bundleMeterLength = null;
@@ -203,14 +258,18 @@ try {
             'product_id'     => $productId,
             'product_name'   => (string) ($product['name'] ?? ''),
             'size'           => $selectedSize,
-            'color'          => (string) ($product['color'] ?? ''),
+            'color'          => $selectedColor,
             'unit_type'      => $unitType,
             'quantity'       => $qty,
             'price'          => $unitPrice,
             'total'          => $lineTotal,
             'sku'            => (string) ($product['sku'] ?? ''),
-            'bundle_quantity'  => $bundleQtyVal,
-            'meter_length'     => $bundleMeterLength,
+            'variant_id'     => $variantId,
+            'bundle_quantity' => $bundleQtyVal,
+            'meter_length'    => $bundleMeterLength,
+            'pack_label'      => $packLabel,
+            'units_per_set'   => $unitsPerSet,
+            'cost_price_snapshot' => max(0.0, (float) ($product['cost_price'] ?? 0.0)),
         ];
     }
 
@@ -219,9 +278,35 @@ try {
     $codFeeAmount = (float) $shipping['cod_fee'];
     $shippingAmount = (float) $shipping['shipping_total'];
 
+    if (strcasecmp($country, 'india') === 0) {
+        $quote = shipping_quote_get($shippingQuoteToken);
+        if (!$quote) {
+            throw new RuntimeException('Shipping quote expired. Please review checkout and place order again.');
+        }
+        $quoteSubtotal = round((float) ($quote['subtotal'] ?? -1), 2);
+        $quotePincode = trim((string) ($quote['pincode'] ?? ''));
+        $quoteCountry = strtolower(trim((string) ($quote['country'] ?? '')));
+        $quotePayment = strtolower(trim((string) ($quote['payment_method'] ?? '')));
+        if (
+            abs($quoteSubtotal - round((float) $subtotal, 2)) > 0.001 ||
+            strtolower(trim((string) $country)) !== $quoteCountry ||
+            trim((string) $pincode) !== $quotePincode ||
+            strtolower((string) $paymentMethod) !== $quotePayment
+        ) {
+            throw new RuntimeException('Shipping quote changed. Please review checkout totals and try again.');
+        }
+        $baseShippingAmount = round((float) ($quote['base_shipping'] ?? $baseShippingAmount), 2);
+        $codFeeAmount = round((float) ($quote['cod_fee'] ?? $codFeeAmount), 2);
+        $shippingAmount = round((float) ($quote['shipping_total'] ?? $shippingAmount), 2);
+        $selectedCourierName = trim((string) ($quote['courier_name'] ?? ''));
+        $selectedCourierId = (int) ($quote['courier_id'] ?? 0);
+        $shippingRateSource = trim((string) ($quote['source'] ?? '')) ?: 'manual';
+    }
+
     $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
     $discountAmount = 0.00;
     $couponId = 0;
+    $couponCodeNormalized = '';
 
     if ($couponCode !== '') {
         $couponStmt = $conn->prepare(
@@ -244,6 +329,7 @@ try {
                 }
                 $discountAmount = (float) $validated['discount'];
                 $couponId = (int) $coupon['id'];
+                $couponCodeNormalized = (string) $normalizedCode;
             } else {
                 unset($_SESSION['applied_coupon_code']);
             }
@@ -253,6 +339,48 @@ try {
     }
 
     $discountAmount     = min($discountAmount, $subtotal); // discount applies to product subtotal only — shipping is never discounted
+    $remainingDiscount  = $discountAmount;
+    $itemsCount         = count($orderItems);
+    foreach ($orderItems as $idx => &$item) {
+        $lineTotal = (float) ($item['total'] ?? 0.0);
+        if ($itemsCount === 1 || $idx === ($itemsCount - 1)) {
+            $itemDiscount = round($remainingDiscount, 2);
+        } else {
+            $itemDiscount = ($subtotal > 0 && $discountAmount > 0)
+                ? round(($lineTotal / $subtotal) * $discountAmount, 2)
+                : 0.0;
+            $itemDiscount = min($itemDiscount, $remainingDiscount);
+        }
+        $itemDiscount = min($itemDiscount, $lineTotal);
+        $remainingDiscount = round(max(0.0, $remainingDiscount - $itemDiscount), 2);
+
+        $taxableAmount = round(max(0.0, $lineTotal - $itemDiscount), 2);
+        $itemGstRate = ($orderTaxType === 'none') ? 0.0 : $gstRateSnapshot;
+        $gstAmount = ($itemGstRate > 0 && $taxableAmount > 0)
+            ? round($taxableAmount * $itemGstRate / (100 + $itemGstRate), 2)
+            : 0.0;
+        $cgstAmount = 0.0;
+        $sgstAmount = 0.0;
+        $igstAmount = 0.0;
+        if ($orderTaxType === 'cgst_sgst' && $gstAmount > 0) {
+            $cgstAmount = round($gstAmount / 2, 2);
+            $sgstAmount = round($gstAmount - $cgstAmount, 2);
+        } elseif ($orderTaxType === 'igst' && $gstAmount > 0) {
+            $igstAmount = $gstAmount;
+        }
+
+        $item['discount_amount'] = $itemDiscount;
+        $item['taxable_amount'] = $taxableAmount;
+        $item['gst_rate_snapshot'] = round($itemGstRate, 3);
+        $item['gst_amount'] = $gstAmount;
+        $item['cgst_amount'] = $cgstAmount;
+        $item['sgst_amount'] = $sgstAmount;
+        $item['igst_amount'] = $igstAmount;
+        $item['tax_type'] = $orderTaxType;
+        $item['hsn_code_snapshot'] = $hsnCodeSnapshot;
+    }
+    unset($item);
+
     $taxableAmountOrder = max(0.0, $subtotal - $discountAmount);
     // Tax-inclusive pricing: GST is already in product prices. Total = taxable + shipping only.
     $totalAmount        = round($taxableAmountOrder + $shippingAmount, 2);
@@ -265,6 +393,9 @@ try {
         $orderNotesWithCoupon = trim($orderNotesWithCoupon . "\n" . $couponNote);
     }
     $shippingNote = "Shipping: Rs " . number_format($baseShippingAmount, 2) . " | COD Fee: Rs " . number_format($codFeeAmount, 2);
+    if ($selectedCourierName !== '') {
+        $shippingNote .= " | Courier: " . $selectedCourierName;
+    }
     $orderNotesWithCoupon = trim($orderNotesWithCoupon . "\n" . $shippingNote);
     $shippingAddressJson = json_encode([
         'address_id' => $shippingAddressId,
@@ -281,70 +412,263 @@ try {
         $shippingAddressJson = null;
     }
 
-    $insertOrder = $conn->prepare(
-        "INSERT INTO orders (
-            order_number, customer_name, customer_phone, customer_email,
-            address, city, state, pincode, country,
-            subtotal, shipping_amount, discount_amount, total_amount,
-            payment_method, payment_status, order_status, order_notes, shipping_address,
-            customer_id, currency, shipping_cost, total, status, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?, 'INR', ?, ?, 'pending', ?)"
-    );
-    $insertOrder->bind_param(
-        'sssssssssddddsssidds',
-        $orderNumber,
-        $fullName,
-        $phone,
-        $email,
-        $address,
-        $city,
-        $state,
-        $pincode,
-        $country,
-        $subtotal,
-        $shippingAmount,
-        $discountAmount,
-        $totalAmount,
-        $paymentMethod,
-        $orderNotesWithCoupon,
-        $shippingAddressJson,
-        $customerId,
-        $shippingAmount,
-        $totalAmount,
-        $orderNotesWithCoupon
-    );
+    if (orders_structured_financial_columns_ready($conn)) {
+        $insertOrder = $conn->prepare(
+            "INSERT INTO orders (
+                order_number, customer_name, customer_phone, customer_email,
+                address, city, state, pincode, country,
+                subtotal, shipping_amount, discount_amount, total_amount,
+                payment_method, payment_status, order_status, order_notes, shipping_address,
+                customer_id, currency, shipping_cost, total, status, notes,
+                coupon_id, coupon_code, coupon_discount,
+                shipping_quote_token, shipping_source, courier_id, courier_name, cod_fee, base_shipping
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?, 'INR', ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $insertOrder->bind_param(
+            'sssssssssddddsssiddsisdssisdd',
+            $orderNumber,
+            $fullName,
+            $phone,
+            $email,
+            $address,
+            $city,
+            $state,
+            $pincode,
+            $country,
+            $subtotal,
+            $shippingAmount,
+            $discountAmount,
+            $totalAmount,
+            $paymentMethod,
+            $orderNotesWithCoupon,
+            $shippingAddressJson,
+            $customerId,
+            $shippingAmount,
+            $totalAmount,
+            $orderNotesWithCoupon,
+            $couponId,
+            $couponCodeNormalized,
+            $discountAmount,
+            $shippingQuoteToken,
+            $shippingRateSource,
+            $selectedCourierId,
+            $selectedCourierName,
+            $codFeeAmount,
+            $baseShippingAmount
+        );
+    } else {
+        $insertOrder = $conn->prepare(
+            "INSERT INTO orders (
+                order_number, customer_name, customer_phone, customer_email,
+                address, city, state, pincode, country,
+                subtotal, shipping_amount, discount_amount, total_amount,
+                payment_method, payment_status, order_status, order_notes, shipping_address,
+                customer_id, currency, shipping_cost, total, status, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?, 'INR', ?, ?, 'pending', ?)"
+        );
+        $insertOrder->bind_param(
+            'sssssssssddddsssidds',
+            $orderNumber,
+            $fullName,
+            $phone,
+            $email,
+            $address,
+            $city,
+            $state,
+            $pincode,
+            $country,
+            $subtotal,
+            $shippingAmount,
+            $discountAmount,
+            $totalAmount,
+            $paymentMethod,
+            $orderNotesWithCoupon,
+            $shippingAddressJson,
+            $customerId,
+            $shippingAmount,
+            $totalAmount,
+            $orderNotesWithCoupon
+        );
+    }
     $insertOrder->execute();
     $orderId = (int) $conn->insert_id;
 
-    $insertOrderItem = $conn->prepare(
-        "INSERT INTO order_items (
-            order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
-            fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total,
-            bundle_quantity, meter_length
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    );
+    $supportsVariantCol = order_items_supports_variant($conn);
+    $supportsTaxSnapshot = order_items_supports_tax_snapshot($conn);
+    $supportsCostSnapshot = order_items_supports_cost_snapshot($conn);
+    if ($supportsVariantCol && $supportsTaxSnapshot && $supportsCostSnapshot) {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total, cost_price_snapshot,
+                bundle_quantity, meter_length, pack_label, units_per_set, variant_id,
+                taxable_amount, discount_amount, gst_rate_snapshot, gst_amount, cgst_amount, sgst_amount, igst_amount, tax_type, hsn_code_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    } elseif ($supportsVariantCol && $supportsTaxSnapshot) {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total,
+                bundle_quantity, meter_length, pack_label, units_per_set, variant_id,
+                taxable_amount, discount_amount, gst_rate_snapshot, gst_amount, cgst_amount, sgst_amount, igst_amount, tax_type, hsn_code_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    } elseif ($supportsVariantCol && $supportsCostSnapshot) {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total, cost_price_snapshot,
+                bundle_quantity, meter_length, pack_label, units_per_set, variant_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    } elseif ($supportsVariantCol) {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total,
+                bundle_quantity, meter_length, pack_label, units_per_set, variant_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    } elseif ($supportsTaxSnapshot && $supportsCostSnapshot) {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total, cost_price_snapshot,
+                bundle_quantity, meter_length, pack_label, units_per_set,
+                taxable_amount, discount_amount, gst_rate_snapshot, gst_amount, cgst_amount, sgst_amount, igst_amount, tax_type, hsn_code_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    } elseif ($supportsTaxSnapshot) {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total,
+                bundle_quantity, meter_length, pack_label, units_per_set,
+                taxable_amount, discount_amount, gst_rate_snapshot, gst_amount, cgst_amount, sgst_amount, igst_amount, tax_type, hsn_code_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    } elseif ($supportsCostSnapshot) {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total, cost_price_snapshot,
+                bundle_quantity, meter_length, pack_label, units_per_set
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    } else {
+        $insertOrderItem = $conn->prepare(
+            "INSERT INTO order_items (
+                order_id, product_id, product_name, size, color, unit_type, quantity, price, total,
+                fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters, price_per_meter, line_total,
+                bundle_quantity, meter_length, pack_label, units_per_set
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    }
 
     foreach ($orderItems as $item) {
-        $pid       = (int) $item['product_id'];
-        $pname     = $item['product_name'];
-        $psize     = $item['size'];
-        $pcolor    = $item['color'];
-        $punit     = $item['unit_type'];
-        $qty       = (float) $item['quantity'];
-        $price     = (float) $item['price'];
-        $total     = (float) $item['total'];
-        $sku       = $item['sku'];
-        $bQty      = isset($item['bundle_quantity']) ? (int) $item['bundle_quantity'] : null;
-        $bMeter    = isset($item['meter_length'])    ? (float) $item['meter_length']   : null;
+        $pid    = (int)   $item['product_id'];
+        $pname  =         $item['product_name'];
+        $psize  =         $item['size'];
+        $pcolor =         $item['color'];
+        $punit  =         $item['unit_type'];
+        $qty    = (float) $item['quantity'];
+        $price  = (float) $item['price'];
+        $total  = (float) $item['total'];
+        $sku    =         $item['sku'];
+        $bQty   = isset($item['bundle_quantity']) ? (int)   $item['bundle_quantity'] : null;
+        $bMeter = isset($item['meter_length'])    ? (float) $item['meter_length']    : null;
+        $pLabel = isset($item['pack_label'])      ? (string) $item['pack_label']     : null;
+        $uSet   = isset($item['units_per_set'])   ? (int) $item['units_per_set']     : null;
+        $vId    = ($supportsVariantCol && ($item['variant_id'] ?? 0) > 0) ? (int) $item['variant_id'] : null;
+        $costSnapshot = (float) ($item['cost_price_snapshot'] ?? 0.0);
+        $taxableAmount = (float) ($item['taxable_amount'] ?? $total);
+        $itemDiscount = (float) ($item['discount_amount'] ?? 0.0);
+        $itemGstRate = (float) ($item['gst_rate_snapshot'] ?? 0.0);
+        $itemGstAmount = (float) ($item['gst_amount'] ?? 0.0);
+        $itemCgstAmount = (float) ($item['cgst_amount'] ?? 0.0);
+        $itemSgstAmount = (float) ($item['sgst_amount'] ?? 0.0);
+        $itemIgstAmount = (float) ($item['igst_amount'] ?? 0.0);
+        $itemTaxType = (string) ($item['tax_type'] ?? 'none');
+        $itemHsnCode = (string) ($item['hsn_code_snapshot'] ?? '');
 
-        $insertOrderItem->bind_param(
-            'iissssdddissdddid',
-            $orderId, $pid, $pname, $psize, $pcolor, $punit,
-            $qty, $price, $total,
-            $pid, $pname, $sku,
-            $qty, $price, $total,
-            $bQty, $bMeter
-        );
+        if ($supportsVariantCol && $supportsTaxSnapshot && $supportsCostSnapshot) {
+            $insertOrderItem->bind_param(
+                'iissssdddissddddidsiidddddddss',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total, $costSnapshot,
+                $bQty, $bMeter, $pLabel, $uSet, $vId,
+                $taxableAmount, $itemDiscount, $itemGstRate, $itemGstAmount, $itemCgstAmount, $itemSgstAmount, $itemIgstAmount, $itemTaxType, $itemHsnCode
+            );
+        } elseif ($supportsVariantCol && $supportsTaxSnapshot) {
+            $insertOrderItem->bind_param(
+                'iissssdddissdddidsiidddddddss',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total,
+                $bQty, $bMeter, $pLabel, $uSet, $vId,
+                $taxableAmount, $itemDiscount, $itemGstRate, $itemGstAmount, $itemCgstAmount, $itemSgstAmount, $itemIgstAmount, $itemTaxType, $itemHsnCode
+            );
+        } elseif ($supportsVariantCol && $supportsCostSnapshot) {
+            $insertOrderItem->bind_param(
+                'iissssdddissddddidsii',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total, $costSnapshot,
+                $bQty, $bMeter, $pLabel, $uSet, $vId
+            );
+        } elseif ($supportsVariantCol) {
+            $insertOrderItem->bind_param(
+                'iissssdddissdddidsii',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total,
+                $bQty, $bMeter, $pLabel, $uSet, $vId
+            );
+        } elseif ($supportsTaxSnapshot && $supportsCostSnapshot) {
+            $insertOrderItem->bind_param(
+                'iissssdddissddddidsidddddddss',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total, $costSnapshot,
+                $bQty, $bMeter, $pLabel, $uSet,
+                $taxableAmount, $itemDiscount, $itemGstRate, $itemGstAmount, $itemCgstAmount, $itemSgstAmount, $itemIgstAmount, $itemTaxType, $itemHsnCode
+            );
+        } elseif ($supportsTaxSnapshot) {
+            $insertOrderItem->bind_param(
+                'iissssdddissdddidsidddddddss',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total,
+                $bQty, $bMeter, $pLabel, $uSet,
+                $taxableAmount, $itemDiscount, $itemGstRate, $itemGstAmount, $itemCgstAmount, $itemSgstAmount, $itemIgstAmount, $itemTaxType, $itemHsnCode
+            );
+        } elseif ($supportsCostSnapshot) {
+            $insertOrderItem->bind_param(
+                'iissssdddissddddidsi',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total, $costSnapshot,
+                $bQty, $bMeter, $pLabel, $uSet
+            );
+        } else {
+            $insertOrderItem->bind_param(
+                'iissssdddissdddidsi',
+                $orderId, $pid, $pname, $psize, $pcolor, $punit,
+                $qty, $price, $total,
+                $pid, $pname, $sku,
+                $qty, $price, $total,
+                $bQty, $bMeter, $pLabel, $uSet
+            );
+        }
         $insertOrderItem->execute();
     }
     reserve_order_inventory($conn, $orderId);
@@ -355,6 +679,17 @@ try {
     );
     $insertPayment->bind_param('isd', $orderId, $paymentMethod, $totalAmount);
     $insertPayment->execute();
+    if ($selectedCourierName !== '') {
+        $insShipment = $conn->prepare(
+            "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at)
+             VALUES (?, ?, '', '', ?, NULL, NULL)
+             ON DUPLICATE KEY UPDATE
+                courier_name = VALUES(courier_name),
+                shipping_cost = VALUES(shipping_cost)"
+        );
+        $insShipment->bind_param('isd', $orderId, $selectedCourierName, $baseShippingAmount);
+        $insShipment->execute();
+    }
 
     log_order_activity(
         $conn,
@@ -379,13 +714,24 @@ try {
     if ($paymentMethod === 'razorpay') {
         log_order_activity($conn, $orderId, 'inventory_reserved', 'system', 0, 'system', 'Stock reserved before online payment.');
     }
+    if ($selectedCourierName !== '') {
+        log_order_activity(
+            $conn,
+            $orderId,
+            'shipping_quote_locked',
+            'system',
+            0,
+            'system',
+            'Courier: ' . $selectedCourierName . ($selectedCourierId > 0 ? (' (#' . $selectedCourierId . ')') : '')
+        );
+    }
     if ($paymentMethod === 'cod') {
         log_order_activity($conn, $orderId, 'payment_pending_cod', 'system', 0, 'system', 'COD order created.');
     } else {
         log_order_activity($conn, $orderId, 'payment_pending_online', 'system', 0, 'system', 'Awaiting Razorpay payment.');
     }
 
-    do_action('order.after_create', [
+    $orderHookContext = [
         'conn' => $conn,
         'order_id' => $orderId,
         'order_number' => $orderNumber,
@@ -399,7 +745,8 @@ try {
         'shipping_amount' => $shippingAmount,
         'discount_amount' => $discountAmount,
         'total_amount' => $totalAmount,
-    ]);
+    ];
+    do_action('order.after_create', $orderHookContext);
 
     // For COD: increment coupon usage only after the order is committed (payment confirmed
     // on delivery is outside our system's control, but the order is real and the discount
@@ -422,6 +769,7 @@ try {
     }
 
     $conn->commit();
+    do_action('order.after_commit', $orderHookContext);
 
     $_SESSION['last_order'] = [
         'id' => $orderId,

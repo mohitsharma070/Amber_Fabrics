@@ -96,14 +96,14 @@ $metaTitle = 'Export Inquiries | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1 class="mb-1">Export Inquiries</h1>
         <p class="text-muted mb-0">Showing <?php echo count($inquiries); ?> of <?php echo $total; ?> export inquiries</p>
     </div>
 </div>
 
-<form class="row g-2 mb-3" method="GET">
+<form class="row g-2 mb-3 admin-filter-form" method="GET">
     <div class="col-md-3">
         <input class="form-control" name="q" placeholder="Name, email, company, product" value="<?php echo e($search); ?>">
     </div>
@@ -132,9 +132,9 @@ include 'partials/header.php';
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-auto d-flex gap-2">
-        <button class="btn btn-primary" type="submit">Apply</button>
-        <a class="btn btn-outline-secondary" href="export-inquiries.php">Reset</a>
+    <div class="col-md-auto d-flex gap-2 admin-filter-actions">
+        <button class="btn btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
+        <a class="btn btn-outline-secondary" href="export-inquiries.php"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
     </div>
 </form>
 
@@ -171,7 +171,7 @@ include 'partials/header.php';
                 <td><?php echo e($row['quantity']); ?></td>
                 <td><?php echo ucfirst(e($row['status'])); ?></td>
                 <td><?php echo e($row['created_at']); ?></td>
-                <td class="text-end"><a class="btn btn-sm btn-primary" href="inquiry-view.php?id=<?php echo (int) $row['id']; ?>">View</a></td>
+                <td class="text-end admin-row-actions"><a class="btn btn-sm btn-primary" href="inquiry-view.php?id=<?php echo (int) $row['id']; ?>"><i class="bi bi-eye me-1"></i>View</a></td>
             </tr>
             <?php endforeach; ?>
         </tbody>

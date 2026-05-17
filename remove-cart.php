@@ -12,11 +12,10 @@ if (!verify_csrf()) {
 $cartKey = trim((string) ($_POST['cart_key'] ?? ''));
 $productId = 0;
 if ($cartKey !== '') {
-    $parts = explode('::', $cartKey, 2);
-    $productId = (int) ($parts[0] ?? 0);
+    [$productId] = cart_parse_key($cartKey);
 }
 $productId = $productId > 0 ? $productId : (int) ($_POST['product_id'] ?? 0);
-$cartKey = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::_') : '');
+$cartKey = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::0') : '');
 if ($productId <= 0) {
     flash('error', 'Invalid cart item.');
     redirect('/cart.php');

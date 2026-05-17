@@ -62,22 +62,24 @@ $metaTitle = 'Customers | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
     <h1 class="mb-0">Customers</h1>
     <span class="badge bg-secondary fs-6"><?php echo number_format($total); ?> total</span>
 </div>
 
-<form method="GET" class="mb-4">
-    <div class="input-group" style="max-width:380px;">
+<form method="GET" class="row g-2 mb-4 admin-filter-form">
+    <div class="col-md-5">
         <input type="text" name="search" class="form-control" placeholder="Search name, email, country..." value="<?php echo e($search); ?>">
-        <button class="btn btn-outline-secondary">Search</button>
-        <?php if ($search): ?><a href="customers.php" class="btn btn-outline-danger">Clear</a><?php endif; ?>
+    </div>
+    <div class="col-md-auto d-flex gap-2 admin-filter-actions">
+        <button class="btn btn-outline-secondary"><i class="bi bi-search me-1"></i>Search</button>
+        <?php if ($search): ?><a href="customers.php" class="btn btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Clear</a><?php endif; ?>
     </div>
 </form>
 
 <div class="card">
     <div class="table-responsive">
-        <table class="table table-hover mb-0">
+        <table class="table table-hover mb-0 admin-card-table">
             <thead>
                 <tr>
                     <th>Name</th>
@@ -95,7 +97,7 @@ include 'partials/header.php';
                 <?php else: ?>
                     <?php foreach ($customers as $c): ?>
                     <tr>
-                        <td><?php echo e($c['name']); ?></td>
+                        <td><a href="customer-view.php?id=<?php echo (int) ($c['id'] ?? 0); ?>"><?php echo e($c['name']); ?></a></td>
                         <td><a href="mailto:<?php echo e($c['email']); ?>"><?php echo e($c['email']); ?></a></td>
                         <td><?php echo e($c['country'] ?: '-'); ?></td>
                         <td><?php echo e($c['phone'] ?: '-'); ?></td>

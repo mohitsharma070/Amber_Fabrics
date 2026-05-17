@@ -12,6 +12,9 @@ function meta_pixel_id(): string
 
 function meta_pixel_enabled(): bool
 {
+    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+        return false;
+    }
     return meta_pixel_id() !== '';
 }
 

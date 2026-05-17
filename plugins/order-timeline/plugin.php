@@ -18,6 +18,10 @@ function order_timeline_label_map(): array
         'cod_guard_auto_confirmed' => 'Order Confirmed',
         'cod_guard_whatsapp_confirmation' => 'Order Confirmation Pending',
         'cod_guard_call_confirmation' => 'Call Confirmation Pending',
+        'cod_guard_message_sent' => 'Confirmation Message Sent',
+        'cod_guard_message_failed' => 'Confirmation Message Failed',
+        'cod_guard_message_not_configured' => 'Confirmation Message Not Configured',
+        'cod_guard_customer_ack_sent' => 'Customer Reply Acknowledged',
         'cod_guard_confirmed' => 'Order Confirmed',
         'payment_success' => 'Payment Received',
         'order_shipped' => 'Order Shipped',
@@ -95,4 +99,3 @@ function order_timeline_filter_events($events, array $context)
 
     return array_values($filtered);
 }
-

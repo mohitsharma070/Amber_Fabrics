@@ -61,7 +61,10 @@ if ($amountPaise <= 0) {
 try {
     $conn->begin_transaction();
     $payLockStmt = $conn->prepare(
-        "SELECT id FROM payments WHERE order_id = ? AND payment_method = 'razorpay' LIMIT 1 FOR UPDATE"
+        "SELECT id, razorpay_order_id
+         FROM payments
+         WHERE order_id = ? AND payment_method = 'razorpay'
+         LIMIT 1 FOR UPDATE"
     );
     $payLockStmt->bind_param('i', $orderId);
     $payLockStmt->execute();
@@ -70,27 +73,67 @@ try {
         throw new RuntimeException('Payment row not found for this order.');
     }
 
-    $api = new Razorpay\Api\Api($keyId, $keySecret);
-    $rzpOrder = $api->order->create([
-        'amount' => $amountPaise,
-        'currency' => 'INR',
-        'receipt' => $order['order_number'],
-        'payment_capture' => 1,
-        'notes' => [
-            'local_order_id' => (string) $orderId,
-            'order_number' => (string) $order['order_number'],
-        ],
-    ]);
-    $rzpOrderId = (string) $rzpOrder['id'];
+    $existingRzpOrderId = trim((string) ($payRow['razorpay_order_id'] ?? ''));
+    $paymentRowId = (int) ($payRow['id'] ?? 0);
+    if ($existingRzpOrderId !== '') {
+        $rzpOrderId = $existingRzpOrderId;
+        payment_attempt_touch(
+            $conn,
+            'razorpay',
+            $rzpOrderId,
+            $orderId,
+            $paymentRowId,
+            'checkout_opened',
+            'create',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            json_encode(['order_number' => (string) $order['order_number'], 'amount_paise' => $amountPaise], JSON_UNESCAPED_UNICODE),
+            true
+        );
+    } else {
+        $api = new Razorpay\Api\Api($keyId, $keySecret);
+        $rzpOrder = $api->order->create([
+            'amount' => $amountPaise,
+            'currency' => 'INR',
+            'receipt' => $order['order_number'],
+            'payment_capture' => 1,
+            'notes' => [
+                'local_order_id' => (string) $orderId,
+                'order_number' => (string) $order['order_number'],
+            ],
+        ]);
+        $rzpOrderId = (string) $rzpOrder['id'];
 
-    $payStmt = $conn->prepare(
-        "UPDATE payments
-         SET razorpay_order_id = ?, transaction_id = ?
-         WHERE order_id = ? AND payment_method = 'razorpay'"
-    );
-    $payStmt->bind_param('ssi', $rzpOrderId, $rzpOrderId, $orderId);
-    $payStmt->execute();
-    log_order_activity($conn, $orderId, 'payment_session_created', 'system', 0, 'system', 'Razorpay order id: ' . $rzpOrderId);
+        $payStmt = $conn->prepare(
+            "UPDATE payments
+             SET razorpay_order_id = ?, transaction_id = ?
+             WHERE order_id = ? AND payment_method = 'razorpay'"
+        );
+        $payStmt->bind_param('ssi', $rzpOrderId, $rzpOrderId, $orderId);
+        $payStmt->execute();
+        payment_attempt_touch(
+            $conn,
+            'razorpay',
+            $rzpOrderId,
+            $orderId,
+            $paymentRowId,
+            'created',
+            'create',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            json_encode(['order_number' => (string) $order['order_number'], 'amount_paise' => $amountPaise], JSON_UNESCAPED_UNICODE),
+            false
+        );
+        log_order_activity($conn, $orderId, 'payment_session_created', 'system', 0, 'system', 'Razorpay order id: ' . $rzpOrderId);
+    }
     $conn->commit();
 } catch (Throwable $e) {
     try {

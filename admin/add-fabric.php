@@ -54,13 +54,13 @@ if(isset($_POST['submit'])){
     $salePrice     = trim($_POST['sale_price']    ?? '');
     $costPrice     = trim($_POST['cost_price']    ?? '');
     $stock         = trim($_POST['stock']         ?? '0');
-    $size          = trim($_POST['size']          ?? '');
+    $size          = '';
     $meterOptions  = trim($_POST['meter_options']  ?? '');
-    $color         = trim($_POST['color']         ?? '');
+    $color         = '';
     $printStyle    = trim($_POST['print_style']    ?? '');
     $material      = trim($_POST['material']      ?? '');
     $gsm           = trim($_POST['gsm']           ?? '');
-    $sku           = generate_unique_fabric_sku($conn, $category, $material, $color, $gsm);
+    $sku           = generate_unique_fabric_sku($conn, $category, $material, '', $gsm);
     $width         = trim($_POST['width']         ?? '');
     $moq           = trim($_POST['moq']           ?? '');
     $lead          = trim($_POST['lead_time']     ?? '');
@@ -134,9 +134,6 @@ if(isset($_POST['submit'])){
     $image3Name = null;
     $image4Name = null;
     $videoName = null;
-    $maxImageSize = 5 * 1024 * 1024;
-    $allowedImageExt = ['jpg','jpeg','png','webp'];
-    $allowedImageMime = ['image/jpeg','image/png','image/webp'];
 
     $imageFields = [
         'image' => 'Main image',
@@ -149,24 +146,10 @@ if(isset($_POST['submit'])){
             continue;
         }
         $file = $_FILES[$field];
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            $errors[$field] = $label . ' upload failed. Please try again.';
-            continue;
-        }
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $mime = mime_content_type($file['tmp_name']) ?: '';
-        if ($file['size'] > $maxImageSize) {
-            $errors[$field] = $label . ' must be under 5MB.';
-            continue;
-        }
-        if (!in_array($ext, $allowedImageExt, true) || !in_array($mime, $allowedImageMime, true) || !@getimagesize($file['tmp_name'])) {
-            $errors[$field] = $label . ' must be JPG, PNG or WEBP.';
-            continue;
-        }
-        $saved = random_filename($file['name']);
-        $target = __DIR__ . "/../images/fabrics/{$saved}";
-        if (!move_uploaded_file($file['tmp_name'], $target)) {
-            $errors[$field] = $label . ' upload failed.';
+        try {
+            $saved = save_fabric_image_upload($file, $label);
+        } catch (Throwable $e) {
+            $errors[$field] = $e->getMessage();
             continue;
         }
         if ($field === 'image') { $imageName = $saved; }
@@ -210,7 +193,10 @@ if(isset($_POST['submit'])){
             $stockVal = 0;
             $minOrderVal = round($minOrder, 2);
         }
-        $isAvailable   = ($status === 'active' && $isAvailInput === 1) ? 1 : 0;
+        $hasInitialStock = ($unitType === 'meter')
+            ? ((float) $stockMeters > 0)
+            : ((float) $stockVal > 0);
+        $isAvailable   = ($status === 'active' && $hasInitialStock) ? 1 : 0;
         $priceInrVal   = $priceVal; // map regular price for existing listing compatibility
         $priceUsdVal   = null;
 
@@ -233,8 +219,9 @@ if(isset($_POST['submit'])){
             $isFeatured, $status, $isAvailable
         );
         $stmt->execute();
-        flash('success', 'Product added.');
-        redirect('fabrics.php');
+        $newId = (int) $conn->insert_id;
+        flash('success', 'Product created. Now add colour &amp; size variants below.');
+        redirect('edit-fabric.php?id=' . $newId . '&new_product=1');
     }
 }
 ?>
@@ -251,7 +238,17 @@ include 'partials/header.php'; ?>
     <div class="alert alert-warning">Please fix the errors below.</div>
 <?php endif; ?>
 
-<form method="POST" enctype="multipart/form-data" class="row g-3">
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <ul class="nav nav-pills product-editor-tabs" id="productEditorTabs">
+            <li class="nav-item"><button type="button" class="nav-link active product-editor-tab" data-editor-tab="details">Details</button></li>
+            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="pricing">Pricing & Inventory</button></li>
+            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="content">Content</button></li>
+        </ul>
+    </div>
+</div>
+
+<form method="POST" enctype="multipart/form-data" class="row g-3" id="product-editor-form">
     <?php echo csrf_field(); ?>
     <div class="col-sm-6">
         <label class="form-label">Product Name *</label>
@@ -301,11 +298,6 @@ include 'partials/header.php'; ?>
         <?php echo form_error($errors, 'cost_price'); ?>
     </div>
     <div class="col-6 col-md-3">
-        <label class="form-label">Stock * <small class="text-muted">(decimal supported)</small></label>
-        <input type="number" step="0.01" min="0" name="stock" class="<?php echo form_class($errors, 'stock'); ?>" required placeholder="e.g. 20 or 97.5" value="<?php echo e($old['stock']); ?>">
-        <?php echo form_error($errors, 'stock'); ?>
-    </div>
-    <div class="col-6 col-md-3">
         <label class="form-label">Min. Order Qty</label>
         <input type="number" step="0.01" min="0" name="min_order_meters" class="form-control" value="<?php echo e($old['min_order_meters']); ?>" placeholder="e.g. 1">
     </div>
@@ -313,17 +305,9 @@ include 'partials/header.php'; ?>
         <label class="form-label">Quantity Step <small class="text-muted">(0 = auto)</small></label>
         <input type="number" step="0.0001" min="0" name="qty_step" class="form-control" value="<?php echo e($old['qty_step']); ?>" placeholder="e.g. 0.5">
     </div>
-    <div class="col-6 col-md-4" id="size_row">
-        <label class="form-label">Sizes <small class="text-muted">(comma separated, e.g. S, M, L, XL)</small></label>
-        <input type="text" name="size" class="form-control" value="<?php echo e($old['size']); ?>">
-    </div>
     <div class="col-6 col-md-4" id="meter_options_row">
         <label class="form-label">Meter Options <small class="text-muted">(quick quantity options, comma separated: e.g. 1, 1.5, 2, 2.5)</small></label>
         <input type="text" name="meter_options" class="form-control" placeholder="e.g. 1, 1.5, 2, 2.5" value="<?php echo e($old['meter_options']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">Color</label>
-        <input type="text" name="color" class="form-control" value="<?php echo e($old['color']); ?>">
     </div>
     <div class="col-sm-6">
         <label class="form-label">Material / Fabric</label>
@@ -353,31 +337,6 @@ include 'partials/header.php'; ?>
         <label class="form-label">Dispatch Time (India Orders)</label>
         <input type="text" name="dispatch_time" class="form-control" value="<?php echo e($old['dispatch_time']); ?>">
     </div>
-    <div class="col-12 col-md-8">
-        <label class="form-label">Main Product Image</label>
-        <input type="file" name="image" accept="image/*" class="<?php echo form_class($errors, 'image'); ?>">
-        <?php echo form_error($errors, 'image'); ?>
-    </div>
-    <div class="col-12 col-md-4">
-        <label class="form-label">Image 2</label>
-        <input type="file" name="image2" accept="image/*" class="<?php echo form_class($errors, 'image2'); ?>">
-        <?php echo form_error($errors, 'image2'); ?>
-    </div>
-    <div class="col-12 col-md-4">
-        <label class="form-label">Image 3</label>
-        <input type="file" name="image3" accept="image/*" class="<?php echo form_class($errors, 'image3'); ?>">
-        <?php echo form_error($errors, 'image3'); ?>
-    </div>
-    <div class="col-12 col-md-4">
-        <label class="form-label">Image 4</label>
-        <input type="file" name="image4" accept="image/*" class="<?php echo form_class($errors, 'image4'); ?>">
-        <?php echo form_error($errors, 'image4'); ?>
-    </div>
-    <div class="col-12 col-md-4">
-        <label class="form-label">Product Video (optional)</label>
-        <input type="file" name="video" accept="video/mp4,video/webm,video/ogg" class="<?php echo form_class($errors, 'video'); ?>">
-        <?php echo form_error($errors, 'video'); ?>
-    </div>
     <div class="col-12 col-md-4">
         <label class="form-label">Status *</label>
         <select name="status" class="<?php echo form_class($errors, 'status', 'form-select'); ?>" required>
@@ -391,10 +350,7 @@ include 'partials/header.php'; ?>
             <input class="form-check-input" type="checkbox" name="is_featured" id="is_featured" <?php echo $old['is_featured'] ? 'checked' : ''; ?>>
             <label class="form-check-label" for="is_featured">Featured Product</label>
         </div>
-        <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" name="is_available" id="is_available" <?php echo $old['is_available'] ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="is_available">Available for purchase</label>
-        </div>
+        <span class="text-muted small ms-2">Availability is derived from variants after setup.</span>
     </div>
     <div class="col-12">
         <label class="form-label">Wash Care</label>
@@ -412,31 +368,67 @@ include 'partials/header.php'; ?>
 
 <script nonce="<?php echo $cspNonce; ?>">
 (function () {
+    var formEl = document.getElementById('product-editor-form');
+    var tabButtons = Array.prototype.slice.call(document.querySelectorAll('.product-editor-tab'));
     var unitSelect = document.querySelector('select[name="unit_type"]');
-    var stockInput = document.querySelector('input[name="stock"]');
     var minOrderInput = document.querySelector('input[name="min_order_meters"]');
     var qtyStepInput = document.querySelector('input[name="qty_step"]');
     var categoryInput = document.querySelector('select[name="category"]');
     var materialInput = document.querySelector('input[name="material"]');
-    var colorInput = document.querySelector('input[name="color"]');
     var gsmInput = document.querySelector('input[name="gsm"]');
     var skuPreview = document.getElementById('sku_preview');
     var skuHidden = document.getElementById('sku_hidden');
-    if (!unitSelect || !stockInput) return;
+    if (!unitSelect) return;
+
+    function assignSections() {
+        if (!formEl) return;
+        Array.prototype.forEach.call(formEl.children, function (col) {
+            if (!col || !col.querySelector) return;
+            var submitBtn = col.querySelector('button[name=\"submit\"]');
+            var labelEl = col.querySelector('label.form-label, .form-check-label');
+            if (submitBtn) {
+                col.dataset.editorSection = 'actions';
+                return;
+            }
+            var text = (labelEl ? labelEl.textContent : '').toLowerCase();
+            var section = 'details';
+            if (
+                text.indexOf('price') !== -1 ||
+                text.indexOf('order qty') !== -1 ||
+                text.indexOf('quantity step') !== -1 ||
+                text.indexOf('status') !== -1 ||
+                text.indexOf('featured') !== -1 ||
+                text.indexOf('available') !== -1
+            ) {
+                section = 'pricing';
+            }
+            if (text.indexOf('wash care') !== -1 || text.indexOf('description') !== -1) {
+                section = 'content';
+            }
+            col.dataset.editorSection = section;
+        });
+    }
+
+    function setSection(section) {
+        if (!formEl) return;
+        Array.prototype.forEach.call(formEl.children, function (col) {
+            var colSection = col.dataset.editorSection || 'details';
+            var show = colSection === section || colSection === 'actions';
+            col.classList.toggle('d-none', !show);
+        });
+        tabButtons.forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-editor-tab') === section);
+        });
+    }
 
     function applyUnitRules() {
         var unit = unitSelect.value;
         var isMeter = unit === 'meter';
         var isPiece = unit === 'piece';
         var isWhole = isPiece || unit === 'set';
-        stockInput.step = isWhole ? '1' : '0.01';
         var meterOptionsRow = document.getElementById('meter_options_row');
-        var sizeRow = document.getElementById('size_row');
         if (meterOptionsRow) {
             meterOptionsRow.style.display = isMeter ? '' : 'none';
-        }
-        if (sizeRow) {
-            sizeRow.style.display = isPiece ? '' : 'none';
         }
         if (minOrderInput) {
             minOrderInput.step = isWhole ? '1' : '0.01';
@@ -462,7 +454,6 @@ include 'partials/header.php'; ?>
         var parts = [
             categoryInput ? skuPart(categoryInput.value) : '',
             materialInput ? skuPart(materialInput.value) : '',
-            colorInput ? skuPart(colorInput.value) : '',
             gsmInput ? skuPart(gsmInput.value) : ''
         ].filter(Boolean);
         var sku = parts.length ? parts.join('-') : 'SKU';
@@ -470,12 +461,21 @@ include 'partials/header.php'; ?>
         skuHidden.value = sku;
     }
 
-    [categoryInput, materialInput, colorInput, gsmInput].forEach(function (el) {
+    [categoryInput, materialInput, gsmInput].forEach(function (el) {
         if (el) {
             el.addEventListener('input', updateSkuPreview);
             el.addEventListener('change', updateSkuPreview);
         }
     });
+
+    tabButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            setSection(btn.getAttribute('data-editor-tab') || 'details');
+        });
+    });
+
+    assignSections();
+    setSection('details');
     updateSkuPreview();
 })();
 </script>

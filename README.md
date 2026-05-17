@@ -175,6 +175,32 @@ Run it via CLI or secured HTTP:
 
 For IIS, create a Task Scheduler job (every 5-10 minutes) that executes the CLI command, or calls the secured HTTP URL.
 
+## COD Guard WhatsApp confirmation
+
+For COD orders at or above `COD_GUARD_WHATSAPP_THRESHOLD` (default `1000`), COD Guard creates a pending confirmation and sends a WhatsApp confirmation message after the order is committed. Orders at or above `COD_GUARD_CALL_THRESHOLD` (default `2000`) still receive the message and remain flagged for higher-touch confirmation.
+
+Set these in `config/app-config.php`:
+
+```env
+COD_GUARD_WHATSAPP_PHONE_NUMBER_ID=your-meta-phone-number-id
+COD_GUARD_WHATSAPP_ACCESS_TOKEN=your-meta-whatsapp-token
+COD_GUARD_WHATSAPP_TEMPLATE_NAME=optional-approved-template-name
+COD_GUARD_WHATSAPP_TEMPLATE_LANGUAGE=en
+COD_GUARD_WHATSAPP_APP_SECRET=your-meta-app-secret
+COD_GUARD_WEBHOOK_VERIFY_TOKEN=random-token-for-webhook-setup
+COD_GUARD_WEBHOOK_TOKEN=random-token-if-app-secret-is-not-used
+```
+
+If `COD_GUARD_WHATSAPP_TEMPLATE_NAME` is set, the approved template should accept body parameters in this order: customer name, order number, amount. If it is empty, COD Guard sends a plain text message.
+
+Webhook URL:
+
+```text
+https://your-domain/cod-guard-webhook.php
+```
+
+When the customer replies `YES <order number>`, the order moves to `confirmed` and the customer receives a confirmation acknowledgement. When they reply `NO <order number>`, the order is cancelled, reserved stock/coupon usage is released, and the customer receives a cancellation acknowledgement. If the customer only replies `YES` or `NO`, COD Guard will process it only when that WhatsApp number has exactly one pending COD confirmation; otherwise it asks the customer to include the order number.
+
 ## Razorpay test flow (local)
 
 1. Add products to cart and go to checkout.

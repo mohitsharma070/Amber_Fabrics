@@ -97,14 +97,14 @@ $metaTitle = 'Shipping Rates | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1>Shipping Rates</h1>
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0">Shipping Rates</h1>
 </div>
 
 <div class="card mb-4">
     <div class="card-body">
         <h5 class="mb-3">Forward Rates</h5>
-        <form method="GET" class="row g-2 mb-3">
+        <form method="GET" class="row g-2 mb-3 admin-filter-form">
             <div class="col-md-3">
                 <label class="form-label">Pickup Pincode</label>
                 <input class="form-control" name="forward_pickup" value="<?php echo e($forwardPickup); ?>">
@@ -143,7 +143,7 @@ include 'partials/header.php';
                 <?php endforeach; ?>
             </div>
             <div class="table-responsive">
-                <table class="table table-bordered table-sm align-middle">
+                <table class="table table-bordered table-sm align-middle admin-no-card-table">
                     <thead>
                         <tr>
                             <th>Weight Slab</th>
@@ -180,7 +180,7 @@ include 'partials/header.php';
 <div class="card mb-4">
     <div class="card-body">
         <h5 class="mb-3">Return Rates</h5>
-        <form method="GET" class="row g-2 mb-3">
+        <form method="GET" class="row g-2 mb-3 admin-filter-form">
             <input type="hidden" name="forward_pickup" value="<?php echo e($forwardPickup); ?>">
             <input type="hidden" name="forward_delivery" value="<?php echo e($forwardDelivery); ?>">
             <input type="hidden" name="forward_cod" value="<?php echo $codForward ? '1' : '0'; ?>">
@@ -209,7 +209,7 @@ include 'partials/header.php';
                 <?php endforeach; ?>
             </div>
             <div class="table-responsive">
-                <table class="table table-bordered table-sm align-middle">
+                <table class="table table-bordered table-sm align-middle admin-no-card-table">
                     <thead>
                         <tr>
                             <th>Weight Slab</th>

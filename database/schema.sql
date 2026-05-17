@@ -146,6 +146,30 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS fabric_variants (
+    id             INT           AUTO_INCREMENT PRIMARY KEY,
+    fabric_id      INT           NOT NULL,
+    color          VARCHAR(100)  NOT NULL DEFAULT '',
+    size           VARCHAR(100)  NOT NULL DEFAULT '',
+    sku            VARCHAR(100)  UNIQUE DEFAULT NULL,
+    image          VARCHAR(255)  DEFAULT NULL,
+    image2         VARCHAR(255)  DEFAULT NULL,
+    image3         VARCHAR(255)  DEFAULT NULL,
+    image4         VARCHAR(255)  DEFAULT NULL,
+    video          VARCHAR(255)  DEFAULT NULL,
+    pack_label     VARCHAR(120)  DEFAULT NULL,
+    units_per_set  INT           DEFAULT NULL,
+    price_override DECIMAL(10,2) DEFAULT NULL,
+    stock          DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    stock_meters   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    is_active      TINYINT(1)    NOT NULL DEFAULT 1,
+    sort_order     SMALLINT      NOT NULL DEFAULT 0,
+    created_at     TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_fv_fabric (fabric_id),
+    UNIQUE KEY uq_fabric_color_size (fabric_id, color, size)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS customer_addresses (
     id                  INT AUTO_INCREMENT PRIMARY KEY,
     customer_id         INT NOT NULL,
@@ -173,6 +197,18 @@ CREATE TABLE IF NOT EXISTS customer_login_attempts (
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS public_form_attempts (
+    attempt_key      CHAR(64) PRIMARY KEY,
+    scope            VARCHAR(80) NOT NULL,
+    ip_address       VARCHAR(45) NOT NULL,
+    user_agent_hash  CHAR(16) NOT NULL,
+    attempts         INT NOT NULL DEFAULT 0,
+    window_started_at DATETIME NOT NULL,
+    blocked_until    DATETIME DEFAULT NULL,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_public_form_attempts_scope_updated (scope, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- â”€â”€â”€ Persistent shopping cart (one per customer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE IF NOT EXISTS cart (
     id          INT       AUTO_INCREMENT PRIMARY KEY,
@@ -194,11 +230,13 @@ CREATE TABLE IF NOT EXISTS cart_items (
     created_at         TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     -- Legacy columns used by cart_save_to_db / cart_load_from_db
     fabric_id          INT           NOT NULL,
+    variant_id         INT           DEFAULT NULL,
     quantity_meters    DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     meter_length       DECIMAL(10,2) DEFAULT NULL,
     UNIQUE KEY uq_cart_key      (cart_id, cart_key),
     INDEX idx_cart_product      (cart_id, product_id),
     INDEX idx_cart_fabric       (cart_id, fabric_id),
+    INDEX idx_cart_items_variant (variant_id),
     INDEX idx_cart_items_cart_id (cart_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -322,6 +360,15 @@ CREATE TABLE IF NOT EXISTS orders (
     payment_status  ENUM('pending','paid','failed','refunded') DEFAULT 'pending',
     order_status    ENUM('pending','confirmed','packed','shipped','delivered','cancelled','returned','refunded') DEFAULT 'pending',
     order_notes     TEXT,
+    coupon_id       INT           DEFAULT NULL,
+    coupon_code     VARCHAR(50)   DEFAULT NULL,
+    coupon_discount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    shipping_quote_token VARCHAR(64) DEFAULT NULL,
+    shipping_source VARCHAR(40)   DEFAULT NULL,
+    courier_id      INT           DEFAULT NULL,
+    courier_name    VARCHAR(255)  DEFAULT NULL,
+    cod_fee         DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    base_shipping   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     -- Legacy / compatibility columns
     customer_id     INT           DEFAULT NULL,
     payment_id      VARCHAR(255)  DEFAULT NULL,
@@ -340,7 +387,10 @@ CREATE TABLE IF NOT EXISTS orders (
     INDEX idx_orders_status         (status),
     INDEX idx_orders_order_status   (order_status),
     INDEX idx_orders_created_at     (created_at),
-    INDEX idx_orders_customer_email (customer_email)
+    INDEX idx_orders_customer_email (customer_email),
+    INDEX idx_orders_coupon_id      (coupon_id),
+    INDEX idx_orders_coupon_code    (coupon_code),
+    INDEX idx_orders_shipping_quote_token (shipping_quote_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- â”€â”€â”€ Order line items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -358,15 +408,29 @@ CREATE TABLE IF NOT EXISTS order_items (
     total                DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     -- Legacy columns used by admin/orders.php and cancel-order.php
     fabric_id            INT           DEFAULT NULL,
+    variant_id           INT           DEFAULT NULL,
     fabric_name_snapshot VARCHAR(255)  DEFAULT NULL,
     fabric_sku_snapshot  VARCHAR(50)   DEFAULT NULL,
     quantity_meters      DECIMAL(10,2) DEFAULT NULL,
     price_per_meter      DECIMAL(10,2) DEFAULT NULL,
     line_total           DECIMAL(12,2) DEFAULT NULL,
+    cost_price_snapshot  DECIMAL(12,2) DEFAULT NULL,
     bundle_quantity      INT           DEFAULT NULL,
     meter_length         DECIMAL(10,2) DEFAULT NULL,
+    pack_label           VARCHAR(120)  DEFAULT NULL,
+    units_per_set        INT           DEFAULT NULL,
+    taxable_amount       DECIMAL(12,2) DEFAULT NULL,
+    discount_amount      DECIMAL(12,2) DEFAULT NULL,
+    gst_rate_snapshot    DECIMAL(6,3)  DEFAULT NULL,
+    gst_amount           DECIMAL(12,2) DEFAULT NULL,
+    cgst_amount          DECIMAL(12,2) DEFAULT NULL,
+    sgst_amount          DECIMAL(12,2) DEFAULT NULL,
+    igst_amount          DECIMAL(12,2) DEFAULT NULL,
+    tax_type             ENUM('none','cgst_sgst','igst') DEFAULT 'none',
+    hsn_code_snapshot    VARCHAR(32)   DEFAULT NULL,
     INDEX idx_order_items_order_id   (order_id),
-    INDEX idx_order_items_product_id (product_id)
+    INDEX idx_order_items_product_id (product_id),
+    INDEX idx_order_items_variant (variant_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- â”€â”€â”€ Payments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -554,8 +618,90 @@ CREATE TABLE IF NOT EXISTS refund_ledger (
     INDEX idx_refund_ledger_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE shipping_rto_risks
-    ADD CONSTRAINT fk_shipping_rto_risks_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE;
+CREATE TABLE IF NOT EXISTS stock_ledger (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id          INT DEFAULT NULL,
+    order_item_id     INT DEFAULT NULL,
+    return_id         INT DEFAULT NULL,
+    return_item_id    INT DEFAULT NULL,
+    fabric_id         INT DEFAULT NULL,
+    variant_id        INT DEFAULT NULL,
+    unit_type         ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
+    quantity          DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    movement          ENUM('reserve','release','return_restock','adjustment') NOT NULL DEFAULT 'adjustment',
+    direction         ENUM('in','out') NOT NULL DEFAULT 'in',
+    source            VARCHAR(64) DEFAULT NULL,
+    notes             TEXT,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_stock_ledger_order (order_id),
+    INDEX idx_stock_ledger_return (return_id),
+    INDEX idx_stock_ledger_fabric_variant (fabric_id, variant_id),
+    INDEX idx_stock_ledger_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payment_attempts (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id          INT DEFAULT NULL,
+    payment_id        INT DEFAULT NULL,
+    provider          VARCHAR(32)  NOT NULL,
+    attempt_ref       VARCHAR(191) NOT NULL,
+    status            VARCHAR(40)  NOT NULL DEFAULT 'created',
+    source            VARCHAR(40)  NOT NULL DEFAULT 'create',
+    gateway_payment_id VARCHAR(191) DEFAULT NULL,
+    gateway_signature VARCHAR(255) DEFAULT NULL,
+    error_code        VARCHAR(80)  DEFAULT NULL,
+    error_message     TEXT,
+    webhook_event_id  VARCHAR(191) DEFAULT NULL,
+    webhook_signature VARCHAR(255) DEFAULT NULL,
+    payload_json      LONGTEXT,
+    retry_count       INT NOT NULL DEFAULT 0,
+    first_seen_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_payment_attempt_provider_ref (provider, attempt_ref),
+    INDEX idx_payment_attempt_order_id (order_id),
+    INDEX idx_payment_attempt_payment_id (payment_id),
+    INDEX idx_payment_attempt_status (status),
+    INDEX idx_payment_attempt_webhook_event (webhook_event_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_quotes (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    quote_token    CHAR(32) NOT NULL UNIQUE,
+    customer_id    INT DEFAULT NULL,
+    subtotal       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    country        VARCHAR(120) NOT NULL,
+    pincode        VARCHAR(20) DEFAULT NULL,
+    payment_method VARCHAR(32) NOT NULL,
+    base_shipping  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    cod_fee        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    source         VARCHAR(32) NOT NULL DEFAULT 'manual',
+    courier_name   VARCHAR(255) DEFAULT NULL,
+    courier_id     INT DEFAULT NULL,
+    expires_at     DATETIME NOT NULL,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_shipping_quotes_customer_expires (customer_id, expires_at),
+    INDEX idx_shipping_quotes_expires_at (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+SET @fk_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+      AND CONSTRAINT_NAME = 'fk_shipping_rto_risks_order'
+      AND TABLE_NAME = 'shipping_rto_risks'
+);
+SET @fk_sql := IF(
+    @fk_exists = 0,
+    'ALTER TABLE shipping_rto_risks ADD CONSTRAINT fk_shipping_rto_risks_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE',
+    'SELECT 1'
+);
+PREPARE stmt_add_fk_shipping_rto_risks_order FROM @fk_sql;
+EXECUTE stmt_add_fk_shipping_rto_risks_order;
+DEALLOCATE PREPARE stmt_add_fk_shipping_rto_risks_order;
 
 -- COD confirmation gate for high-value cash orders
 CREATE TABLE IF NOT EXISTS cod_confirmations (
@@ -565,13 +711,25 @@ CREATE TABLE IF NOT EXISTS cod_confirmations (
     status       ENUM('pending','confirmed','cancelled','auto_cancelled') NOT NULL DEFAULT 'pending',
     deadline_at  DATETIME DEFAULT NULL,
     attempts     INT NOT NULL DEFAULT 0,
+    response_token CHAR(32) DEFAULT NULL,
+    message_provider VARCHAR(40) DEFAULT NULL,
+    message_id VARCHAR(191) DEFAULT NULL,
+    message_status VARCHAR(40) DEFAULT 'queued',
+    message_error TEXT,
+    message_sent_at DATETIME DEFAULT NULL,
+    message_attempts INT NOT NULL DEFAULT 0,
+    last_inbound_message_id VARCHAR(191) DEFAULT NULL,
+    last_inbound_text TEXT,
+    last_inbound_at DATETIME DEFAULT NULL,
     notes        TEXT,
     confirmed_at DATETIME DEFAULT NULL,
     cancelled_at DATETIME DEFAULT NULL,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_cod_confirmations_order_id (order_id),
+    UNIQUE KEY uq_cod_confirmations_response_token (response_token),
     INDEX idx_cod_confirmations_status_deadline (status, deadline_at),
+    INDEX idx_cod_confirmations_message_status (message_status, message_attempts),
     CONSTRAINT fk_cod_confirmations_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -617,6 +775,10 @@ CREATE TABLE IF NOT EXISTS return_items (
     product_name      VARCHAR(255) NOT NULL,
     unit_type         ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
     quantity          DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+    variant_id        INT DEFAULT NULL,
+    restocked_qty     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    refund_amount     DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    restocked_at      DATETIME DEFAULT NULL,
     line_total        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_return_items_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,

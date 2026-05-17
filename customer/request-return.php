@@ -16,6 +16,7 @@ $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 $orderId = (int) ($_POST['order_id'] ?? 0);
 $reason = trim((string) ($_POST['reason'] ?? ''));
 $customerNote = trim((string) ($_POST['customer_note'] ?? ''));
+$returnQtyMap = (isset($_POST['return_qty']) && is_array($_POST['return_qty'])) ? $_POST['return_qty'] : [];
 $saved = [];
 
 if ($customerId <= 0 || $orderId <= 0 || $reason === '') {
@@ -159,7 +160,7 @@ try {
     $noteStmt->execute();
 
     $itemStmt = $conn->prepare(
-        "SELECT id, fabric_id, product_name, fabric_name_snapshot, unit_type, quantity, quantity_meters, total, line_total
+        "SELECT id, fabric_id, variant_id, product_name, fabric_name_snapshot, unit_type, quantity, quantity_meters, total, line_total
          FROM order_items
          WHERE order_id = ?"
     );
@@ -167,22 +168,42 @@ try {
     $itemStmt->execute();
     $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+    $selectedCount = 0;
     $insertItem = $conn->prepare(
-        "INSERT INTO return_items (return_id, order_item_id, fabric_id, product_name, unit_type, quantity, line_total)
-         VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO return_items (return_id, order_item_id, fabric_id, variant_id, product_name, unit_type, quantity, line_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     );
     foreach ($items as $item) {
         $orderItemId = (int) ($item['id'] ?? 0);
         $fabricId = (int) ($item['fabric_id'] ?? 0);
+        $variantId = (int) ($item['variant_id'] ?? 0);
         $productName = trim((string) ($item['product_name'] ?? ''));
         if ($productName === '') {
             $productName = trim((string) ($item['fabric_name_snapshot'] ?? 'Product'));
         }
         $unitType = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $item['unit_type'] : 'meter';
-        $quantity = (($item['quantity'] ?? 0) > 0) ? (float) $item['quantity'] : (float) ($item['quantity_meters'] ?? 0);
+        $maxQuantity = (($item['quantity'] ?? 0) > 0) ? (float) $item['quantity'] : (float) ($item['quantity_meters'] ?? 0);
+        $requestedRaw = $returnQtyMap[(string) $orderItemId] ?? 0;
+        $quantity = is_numeric($requestedRaw) ? (float) $requestedRaw : 0.0;
+        if ($unitType === 'meter') {
+            $quantity = round($quantity, 2);
+        } else {
+            $quantity = (float) max(0, (int) round($quantity));
+        }
+        if ($quantity <= 0) {
+            continue;
+        }
+        if ($quantity > $maxQuantity) {
+            $quantity = $maxQuantity;
+        }
         $lineTotal = (($item['total'] ?? 0) > 0) ? (float) $item['total'] : (float) ($item['line_total'] ?? 0);
-        $insertItem->bind_param('iiissdd', $returnId, $orderItemId, $fabricId, $productName, $unitType, $quantity, $lineTotal);
+        $lineTotal = round(($maxQuantity > 0) ? (($lineTotal * $quantity) / $maxQuantity) : 0.0, 2);
+        $insertItem->bind_param('iiiissdd', $returnId, $orderItemId, $fabricId, $variantId, $productName, $unitType, $quantity, $lineTotal);
         $insertItem->execute();
+        $selectedCount++;
+    }
+    if ($selectedCount <= 0) {
+        throw new RuntimeException('Select at least one item quantity to return.');
     }
 
     $conn->commit();

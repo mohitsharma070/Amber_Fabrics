@@ -2,17 +2,36 @@
 require_once __DIR__ . '/../includes/init.php';
 require_admin();
 
+$validStatuses = ['requested','approved','rejected','pickup_scheduled','in_transit','received','refund_initiated','refund_completed','cancelled'];
+$perPageOptions = [10, 20, 50];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $filterStatus = trim((string) ($_POST['filter_status'] ?? ''));
+    if (!in_array($filterStatus, $validStatuses, true)) {
+        $filterStatus = '';
+    }
+    $filterPerPage = list_sanitize_per_page((int) ($_POST['filter_per_page'] ?? $perPageOptions[0]), $perPageOptions);
+    $filterPage = list_sanitize_page((int) ($_POST['filter_page'] ?? 1));
+    $returnState = [
+        'status' => $filterStatus,
+        'per_page' => $filterPerPage,
+        'page' => $filterPage,
+    ];
+    $returnUrl = 'returns.php';
+    $returnQuery = list_build_query($returnState);
+    if ($returnQuery !== '') {
+        $returnUrl .= '?' . $returnQuery;
+    }
+
     if (!verify_csrf()) {
         flash('error', 'Invalid token. Please try again.');
-        redirect('returns.php');
+        redirect($returnUrl);
     }
 
     $returnId = (int) ($_POST['return_id'] ?? 0);
     $newStatus = trim((string) ($_POST['status'] ?? ''));
     $adminNote = trim((string) ($_POST['admin_note'] ?? ''));
     $refundAmount = (float) ($_POST['refund_amount'] ?? 0);
-    $validStatuses = ['requested','approved','rejected','pickup_scheduled','in_transit','received','refund_initiated','refund_completed','cancelled'];
     $allowedTransitions = [
         'requested' => ['approved', 'rejected', 'cancelled', 'requested'],
         'approved' => ['pickup_scheduled', 'cancelled', 'approved'],
@@ -30,9 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->begin_transaction();
 
             $ctxStmt = $conn->prepare(
-                "SELECT r.id, r.order_id, r.status AS return_status, o.payment_method, o.payment_status, o.total_amount
+                "SELECT r.id, r.order_id, r.status AS return_status, o.payment_method, o.payment_status, o.total_amount,
+                        COALESCE(ri_tot.return_total, 0) AS return_total
                  FROM returns r
                  JOIN orders o ON o.id = r.order_id
+                 LEFT JOIN (
+                    SELECT return_id, SUM(line_total) AS return_total
+                    FROM return_items
+                    GROUP BY return_id
+                 ) ri_tot ON ri_tot.return_id = r.id
                  WHERE r.id = ?
                  FOR UPDATE"
             );
@@ -47,12 +72,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $paymentStatus = strtolower((string) ($ctx['payment_status'] ?? ''));
             $currentStatus = strtolower((string) ($ctx['return_status'] ?? ''));
             $orderTotal = max(0, (float) ($ctx['total_amount'] ?? 0));
+            $returnTotal = max(0, (float) ($ctx['return_total'] ?? 0));
 
             if ($refundAmount < 0) {
                 throw new RuntimeException('Refund amount cannot be negative.');
             }
-            if ($refundAmount > $orderTotal) {
-                throw new RuntimeException('Refund amount cannot exceed order total.');
+            if ($refundAmount > $returnTotal) {
+                throw new RuntimeException('Refund amount cannot exceed returned items total.');
             }
 
             $allowedNext = $allowedTransitions[$currentStatus] ?? [$currentStatus];
@@ -94,18 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($newStatus === 'refund_completed') {
                 if ($currentStatus !== 'refund_completed') {
-                    restore_order_inventory($conn, (int) ($ctx['order_id'] ?? 0));
+                    restock_return_items_inventory($conn, $returnId);
                 }
-                $syncStmt = $conn->prepare(
-                    "UPDATE orders o
-                     JOIN returns r ON r.order_id = o.id
-                     SET o.order_status = 'refunded',
-                         o.payment_status = CASE WHEN o.payment_status = 'paid' THEN 'refunded' ELSE o.payment_status END,
-                         o.updated_at = NOW()
-                     WHERE r.id = ?"
-                );
-                $syncStmt->bind_param('i', $returnId);
-                $syncStmt->execute();
 
                 $payStmt = $conn->prepare(
                     "SELECT id, amount, payment_method
@@ -120,8 +136,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pay = $payStmt->get_result()->fetch_assoc() ?: [];
                 $paymentId = (int) ($pay['id'] ?? 0);
                 $paymentAmount = (float) ($pay['amount'] ?? 0);
+                $amount = $refundAmount > 0 ? $refundAmount : min($paymentAmount, $returnTotal);
                 if ($paymentId > 0) {
-                    $amount = $refundAmount > 0 ? $refundAmount : $paymentAmount;
                     if ($amount > 0) {
                         log_refund_ledger(
                             $conn,
@@ -136,9 +152,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         );
                     }
                 }
+                if ($amount > 0 && $returnTotal > 0) {
+                    $allocStmt = $conn->prepare(
+                        "UPDATE return_items
+                         SET refund_amount = ROUND((line_total / ?) * ?, 2)
+                         WHERE return_id = ?"
+                    );
+                    $allocStmt->bind_param('ddi', $returnTotal, $amount, $returnId);
+                    $allocStmt->execute();
+                }
+                $isFullRefund = $amount >= ($orderTotal - 0.01) && $orderTotal > 0;
+                $syncStmt = $conn->prepare(
+                    "UPDATE orders o
+                     JOIN returns r ON r.order_id = o.id
+                     SET o.order_status = CASE WHEN ? = 1 THEN 'refunded' ELSE 'returned' END,
+                         o.payment_status = CASE WHEN ? = 1 AND o.payment_status = 'paid' THEN 'refunded' ELSE o.payment_status END,
+                         o.updated_at = NOW()
+                     WHERE r.id = ?"
+                );
+                $fullFlag = $isFullRefund ? 1 : 0;
+                $syncStmt->bind_param('iii', $fullFlag, $fullFlag, $returnId);
+                $syncStmt->execute();
                 $adminId = (int) ($_SESSION['admin_id'] ?? 0);
                 $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
-                log_order_activity($conn, $orderIdForRefund, 'refund_completed', 'admin', $adminId, $adminName, 'Return #' . $returnId . ' marked refund completed.');
+                log_order_activity($conn, $orderIdForRefund, 'refund_completed', 'admin', $adminId, $adminName, 'Return #' . $returnId . ' marked refund completed. Amount: ' . number_format($amount, 2, '.', ''));
             }
 
             $conn->commit();
@@ -153,44 +190,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         flash('error', 'Invalid return update.');
     }
-    redirect('returns.php');
+    redirect($returnUrl);
 }
 
 $statusFilter = trim((string) ($_GET['status'] ?? ''));
-$validStatuses = ['requested','approved','rejected','pickup_scheduled','in_transit','received','refund_initiated','refund_completed','cancelled'];
 if (!in_array($statusFilter, $validStatuses, true)) {
     $statusFilter = '';
 }
+$perPage = list_sanitize_per_page((int) ($_GET['per_page'] ?? $perPageOptions[0]), $perPageOptions);
+$page = list_sanitize_page((int) ($_GET['page'] ?? 1));
 
-$sql = "SELECT r.*, o.order_number, o.payment_method, o.payment_status, o.total_amount, c.name AS customer_name, c.email AS customer_email
-        FROM returns r
-        JOIN orders o ON o.id = r.order_id
-        JOIN customers c ON c.id = r.customer_id";
+$countSql = "SELECT COUNT(*) AS total FROM returns r";
 $types = '';
 $params = [];
 if ($statusFilter !== '') {
-    $sql .= " WHERE r.status = ?";
+    $countSql .= " WHERE r.status = ?";
     $types = 's';
     $params[] = $statusFilter;
 }
-$sql .= " ORDER BY r.requested_at DESC";
+$countStmt = $conn->prepare($countSql);
+if ($types !== '') {
+    $countStmt->bind_param($types, ...$params);
+}
+$countStmt->execute();
+$total = (int) ($countStmt->get_result()->fetch_assoc()['total'] ?? 0);
+$pages = max(1, (int) ceil($total / $perPage));
+$page = list_clamp_page($page, $pages);
+$offset = ($page - 1) * $perPage;
+
+$sql = "SELECT r.*, o.order_number, o.payment_method, o.payment_status, o.total_amount, c.name AS customer_name, c.email AS customer_email,
+               COALESCE(ri_tot.return_total, 0) AS return_total
+        FROM returns r
+        JOIN orders o ON o.id = r.order_id
+        JOIN customers c ON c.id = r.customer_id
+        LEFT JOIN (
+            SELECT return_id, SUM(line_total) AS return_total
+            FROM return_items
+            GROUP BY return_id
+        ) ri_tot ON ri_tot.return_id = r.id";
+if ($statusFilter !== '') {
+    $sql .= " WHERE r.status = ?";
+}
+$sql .= " ORDER BY r.requested_at DESC LIMIT ? OFFSET ?";
 
 $stmt = $conn->prepare($sql);
-if ($types !== '') {
-    $stmt->bind_param($types, ...$params);
-}
+$listTypes = $types . 'ii';
+$listParams = array_merge($params, [$perPage, $offset]);
+$stmt->bind_param($listTypes, ...$listParams);
 $stmt->execute();
 $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$returnItemsMap = [];
+if (!empty($rows)) {
+    $returnIds = array_values(array_filter(array_map(static function (array $row): int {
+        return (int) ($row['id'] ?? 0);
+    }, $rows)));
+    if (!empty($returnIds)) {
+        $placeholders = implode(',', array_fill(0, count($returnIds), '?'));
+        $types = str_repeat('i', count($returnIds));
+        $itemStmt = $conn->prepare(
+            "SELECT return_id, product_name, unit_type, quantity, line_total, restocked_qty, refund_amount
+             FROM return_items
+             WHERE return_id IN ($placeholders)
+             ORDER BY return_id ASC, id ASC"
+        );
+        $itemStmt->bind_param($types, ...$returnIds);
+        $itemStmt->execute();
+        $riRows = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        foreach ($riRows as $ri) {
+            $rid = (int) ($ri['return_id'] ?? 0);
+            if ($rid <= 0) {
+                continue;
+            }
+            if (!isset($returnItemsMap[$rid])) {
+                $returnItemsMap[$rid] = [];
+            }
+            $returnItemsMap[$rid][] = $ri;
+        }
+    }
+}
 
 $metaTitle = 'Returns | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1>Returns</h1>
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0">Returns</h1>
 </div>
 
-<form class="row g-2 mb-4" method="GET" action="returns.php">
+<form class="row g-2 mb-4 admin-filter-form" method="GET" action="returns.php">
     <div class="col-md-4">
         <select name="status" class="form-select">
             <option value="">All Status</option>
@@ -199,14 +286,21 @@ include 'partials/header.php';
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-auto d-flex gap-2">
-        <button class="btn btn-primary">Filter</button>
-        <a href="returns.php" class="btn btn-outline-secondary">Reset</a>
+    <div class="col-md-2">
+        <select name="per_page" class="form-select">
+            <?php foreach ($perPageOptions as $opt): ?>
+                <option value="<?php echo (int) $opt; ?>" <?php echo $perPage === (int) $opt ? 'selected' : ''; ?>><?php echo (int) $opt; ?> / page</option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-md-auto d-flex gap-2 admin-filter-actions">
+        <button class="btn btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+        <a href="returns.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
     </div>
 </form>
 
 <div class="table-responsive">
-    <table class="table table-hover align-middle">
+    <table class="table table-hover align-middle admin-card-table">
         <thead>
             <tr>
                 <th>Return #</th>
@@ -225,6 +319,7 @@ include 'partials/header.php';
                 <tr><td colspan="9" class="text-center text-muted py-4">No return requests found.</td></tr>
             <?php endif; ?>
             <?php foreach ($rows as $r): ?>
+                <?php $returnItems = $returnItemsMap[(int) ($r['id'] ?? 0)] ?? []; ?>
                 <tr>
                     <td class="fw-semibold"><?php echo e((string) $r['return_number']); ?></td>
                     <td><a href="order-view.php?id=<?php echo (int) $r['order_id']; ?>"><?php echo e((string) $r['order_number']); ?></a></td>
@@ -242,12 +337,39 @@ include 'partials/header.php';
                             -
                         <?php endif; ?>
                     </td>
-                    <td>Rs <?php echo number_format((float) $r['refund_amount'], 2); ?></td>
-                    <td><?php echo date('d M Y, h:i A', strtotime((string) $r['requested_at'])); ?></td>
                     <td>
+                        Rs <?php echo number_format((float) $r['refund_amount'], 2); ?>
+                        <div class="small text-muted">Return total: Rs <?php echo number_format((float) ($r['return_total'] ?? 0), 2); ?></div>
+                        <?php if (!empty($returnItems)): ?>
+                            <div class="return-breakdown-mobile">
+                                <div class="small fw-semibold mb-1">Return Item Breakdown</div>
+                                <?php foreach ($returnItems as $ri): ?>
+                                    <?php
+                                    $riUnit = in_array((string) ($ri['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $ri['unit_type'] : 'meter';
+                                    $riQty = (float) ($ri['quantity'] ?? 0);
+                                    $riRestocked = (float) ($ri['restocked_qty'] ?? 0);
+                                    ?>
+                                    <div class="return-breakdown-mobile-item">
+                                        <div class="small fw-semibold"><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></div>
+                                        <div class="small text-muted">
+                                            Returned: <?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?> |
+                                            Line: Rs <?php echo number_format((float) ($ri['line_total'] ?? 0), 2); ?> |
+                                            Restocked: <?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?> |
+                                            Refund: Rs <?php echo number_format((float) ($ri['refund_amount'] ?? 0), 2); ?>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </td>
+                    <td><?php echo date('d M Y, h:i A', strtotime((string) $r['requested_at'])); ?></td>
+                    <td class="admin-row-actions">
                         <form method="POST" action="returns.php" class="d-flex gap-2 flex-column">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="return_id" value="<?php echo (int) $r['id']; ?>">
+                            <input type="hidden" name="filter_status" value="<?php echo e($statusFilter); ?>">
+                            <input type="hidden" name="filter_per_page" value="<?php echo (int) $perPage; ?>">
+                            <input type="hidden" name="filter_page" value="<?php echo (int) $page; ?>">
                             <select name="status" class="form-select form-select-sm">
                                 <?php foreach ($validStatuses as $status): ?>
                                     <option value="<?php echo e($status); ?>" <?php echo ((string) $r['status'] === $status) ? 'selected' : ''; ?>>
@@ -257,13 +379,54 @@ include 'partials/header.php';
                             </select>
                             <input type="number" step="0.01" min="0" name="refund_amount" class="form-control form-control-sm" value="<?php echo e((string) $r['refund_amount']); ?>" placeholder="Refund amount">
                             <input type="text" name="admin_note" class="form-control form-control-sm" value="<?php echo e((string) ($r['admin_note'] ?? '')); ?>" placeholder="Admin note">
-                            <button type="submit" class="btn btn-sm btn-outline-primary">Update</button>
+                            <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2-circle me-1"></i>Update</button>
                         </form>
+                    </td>
+                </tr>
+                <tr class="table-light return-breakdown-row">
+                    <td></td>
+                    <td colspan="8">
+                        <?php if (empty($returnItems)): ?>
+                            <div class="small text-muted">No return items captured.</div>
+                        <?php else: ?>
+                            <div class="small fw-semibold mb-2">Return Item Breakdown</div>
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Item</th>
+                                            <th class="text-end">Returned Qty</th>
+                                            <th class="text-end">Line Total</th>
+                                            <th class="text-end">Restocked Qty</th>
+                                            <th class="text-end">Allocated Refund</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($returnItems as $ri): ?>
+                                            <?php
+                                            $riUnit = in_array((string) ($ri['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $ri['unit_type'] : 'meter';
+                                            $riQty = (float) ($ri['quantity'] ?? 0);
+                                            $riRestocked = (float) ($ri['restocked_qty'] ?? 0);
+                                            ?>
+                                            <tr>
+                                                <td><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></td>
+                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?></td>
+                                                <td class="text-end">Rs <?php echo number_format((float) ($ri['line_total'] ?? 0), 2); ?></td>
+                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?></td>
+                                                <td class="text-end">Rs <?php echo number_format((float) ($ri['refund_amount'] ?? 0), 2); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
         </tbody>
     </table>
 </div>
+
+<?php echo render_pagination($page, $pages, ['status' => $statusFilter, 'per_page' => $perPage], 'page', $total, $perPage); ?>
 
 <?php include 'partials/footer.php'; ?>

@@ -9,6 +9,9 @@ add_action('order.after_payment_success', 'meta_capi_handle_paid_purchase', 10);
 
 function meta_capi_enabled(): bool
 {
+    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+        return false;
+    }
     $token = trim((string) plugin_setting('meta-capi', 'access_token', ''));
     if ($token === '') {
         return false;
@@ -56,6 +59,10 @@ function meta_capi_capture_browser_ids(array $context): void
     if (PHP_SAPI === 'cli') {
         return;
     }
+    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+        unset($_SESSION['meta_fbp'], $_SESSION['meta_fbc']);
+        return;
+    }
     $fbp = trim((string) ($_COOKIE['_fbp'] ?? ''));
     $fbc = trim((string) ($_COOKIE['_fbc'] ?? ''));
     if ($fbp !== '') {
@@ -68,6 +75,10 @@ function meta_capi_capture_browser_ids(array $context): void
 
 function meta_capi_user_data(array $context = []): array
 {
+    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+        return [];
+    }
+
     $email = (string) ($context['email'] ?? ($_SESSION['checkout_old']['email'] ?? ''));
     $phone = (string) ($context['phone'] ?? ($_SESSION['checkout_old']['phone'] ?? ''));
     $customerId = (int) ($context['customer_id'] ?? ($_SESSION['customer_id'] ?? 0));

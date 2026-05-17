@@ -27,131 +27,40 @@ $wishlistSizes = $_SESSION['wishlist_size'];
 $cartMeterMap = $_SESSION['cart_meter_length'];
 $wishlistMeterMap = $_SESSION['wishlist_meter_length'];
 
-function cart_view_parse_key(string $rawKey): array
-{
-    $parts = explode('::', $rawKey, 2);
-    $pid = (int) ($parts[0] ?? 0);
-    $size = '';
-    if (isset($parts[1])) {
-        $decoded = rawurldecode((string) $parts[1]);
-        if ($decoded !== '_' && $decoded !== '') {
-            $size = $decoded;
-        }
+$cartHydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$wishlistHydrated = cart_hydrate_items($conn, $wishlist, $wishlistSizes, $wishlistMeterMap);
+
+$sessionAdjusted = false;
+if (!empty($cartHydrated['removed_keys'])) {
+    foreach ($cartHydrated['removed_keys'] as $cartKey) {
+        unset($cart[$cartKey], $cartSizes[$cartKey], $cartMeterMap[$cartKey]);
     }
-    return [$pid, $size];
+    $sessionAdjusted = true;
+}
+if (!empty($wishlistHydrated['removed_keys'])) {
+    foreach ($wishlistHydrated['removed_keys'] as $wishKey) {
+        unset($wishlist[$wishKey], $wishlistSizes[$wishKey], $wishlistMeterMap[$wishKey]);
+    }
+    $sessionAdjusted = true;
+}
+if ($sessionAdjusted) {
+    $_SESSION['cart'] = $cart;
+    $_SESSION['cart_size'] = $cartSizes;
+    $_SESSION['cart_meter_length'] = $cartMeterMap;
+    $_SESSION['wishlist'] = $wishlist;
+    $_SESSION['wishlist_size'] = $wishlistSizes;
+    $_SESSION['wishlist_meter_length'] = $wishlistMeterMap;
+
+    $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+    if ($customerId > 0) {
+        cart_save_to_db($conn, $customerId, $cart, $cartMeterMap);
+        wishlist_save_to_db($conn, $customerId, $wishlist, $wishlistMeterMap, $wishlistSizes);
+    }
 }
 
-function cart_load_items(mysqli $conn, array $source, array $sizeMap, array $meterMap = []): array
-{
-    if (empty($source)) {
-        return [];
-    }
-
-    $ids = [];
-    foreach (array_keys($source) as $key) {
-        [$pid] = cart_view_parse_key((string) $key);
-        if ($pid > 0) {
-            $ids[] = $pid;
-        }
-    }
-    $ids = array_values(array_unique($ids));
-    if (empty($ids)) {
-        return [];
-    }
-
-    $placeholders = implode(',', array_fill(0, count($ids), '?'));
-    $types = str_repeat('i', count($ids));
-    $sql = "SELECT id, name, image, unit_type, price, sale_price, price_inr, stock, stock_meters, is_available, dispatch_time
-            FROM fabrics
-            WHERE status = 'active' AND id IN ($placeholders)";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param($types, ...$ids);
-    $stmt->execute();
-    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $rowMap = [];
-    foreach ($rows as $row) {
-        $rowMap[(int) $row['id']] = $row;
-    }
-
-    $items = [];
-    foreach ($source as $cartKey => $sourceQty) {
-        [$pid, $sizeFromKey] = cart_view_parse_key((string) $cartKey);
-        if ($pid <= 0 || !isset($rowMap[$pid])) {
-            continue;
-        }
-        $row = $rowMap[$pid];
-        $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-            ? (string) $row['unit_type']
-            : 'meter';
-        $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType);
-        $meterLength = null;
-        $bundleQty = null;
-        if ($unitType === 'meter' && isset($meterMap[$cartKey]) && is_numeric($meterMap[$cartKey]) && (float) $meterMap[$cartKey] > 0) {
-            $meterLength = (float) $meterMap[$cartKey];
-            $bundleQty = max(1, (int) round($qty / $meterLength));
-        }
-        $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
-        $sale = (float) ($row['sale_price'] ?? 0);
-        $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
-        $lineTotal = round($unitPrice * $qty, 2);
-
-        $unitLabel = 'meter';
-        if ($unitType === 'piece') {
-            $unitLabel = ((float) $qty === 1.0) ? 'piece' : 'pieces';
-        } elseif ($unitType === 'set') {
-            $unitLabel = ((float) $qty === 1.0) ? 'set' : 'sets';
-        }
-
-        $displayStock = ($unitType === 'piece' || $unitType === 'set')
-            ? (float) ($row['stock'] ?? 0)
-            : (float) ($row['stock_meters'] ?? 0);
-        $inStock = !empty($row['is_available']) && $displayStock > 0;
-        $maxBundleQty = null;
-        if ($unitType === 'meter' && $meterLength !== null && $meterLength > 0 && $displayStock > 0) {
-            $maxBundleQty = max(1, (int) floor($displayStock / $meterLength));
-        }
-
-        $items[] = [
-            'cart_key' => (string) $cartKey,
-            'id' => $pid,
-            'name' => (string) $row['name'],
-            'image' => (string) ($row['image'] ?? ''),
-            'quantity' => $qty,
-            'quantity_text' => format_quantity_by_unit($qty, $unitType),
-            'quantity_unit_label' => $unitLabel,
-            'unit_type' => $unitType,
-            'selected_size' => (string) ($sizeMap[$cartKey] ?? $sizeFromKey),
-            'regular_price' => $regular,
-            'sale_price' => $sale,
-            'unit_price' => $unitPrice,
-            'subtotal' => $lineTotal,
-            'stock' => $displayStock,
-            'in_stock' => $inStock,
-            'dispatch_time' => trim((string) ($row['dispatch_time'] ?? '')),
-            'meter_length' => $meterLength,
-            'bundle_quantity' => $bundleQty,
-            'max_bundle_qty' => $maxBundleQty,
-        ];
-    }
-
-    usort($items, static function (array $a, array $b): int {
-        $cmp = $a['id'] <=> $b['id'];
-        if ($cmp !== 0) {
-            return $cmp;
-        }
-        return strcmp((string) ($a['selected_size'] ?? ''), (string) ($b['selected_size'] ?? ''));
-    });
-
-    return $items;
-}
-
-$items = cart_load_items($conn, $cart, $cartSizes, $cartMeterMap);
-$wishlistItems = cart_load_items($conn, $wishlist, $wishlistSizes, $wishlistMeterMap);
-
-$subtotal = 0.00;
-foreach ($items as $item) {
-    $subtotal = round($subtotal + (float) $item['subtotal'], 2);
-}
+$items = $cartHydrated['items'];
+$wishlistItems = $wishlistHydrated['items'];
+$subtotal = cart_items_subtotal($items);
 
 $freeShippingThreshold = 999.00;
 $shippingRemaining = max(0, $freeShippingThreshold - $subtotal);
@@ -226,11 +135,12 @@ include __DIR__ . '/includes/header.php';
             <div class="row g-4">
                 <div class="col-lg-8">
                     <?php foreach ($items as $item): ?>
+                    <?php $cartImageAsset = ($item['image'] !== '') ? fabric_image_asset_data((string) $item['image']) : null; ?>
                     <div class="surface-panel p-3 mb-3">
                         <div class="d-flex gap-3 align-items-start cart-line-item">
                             <?php if ($item['image'] !== ''): ?>
                                 <a href="/fabric.php?id=<?php echo $item['id']; ?>">
-                                    <img src="/images/fabrics/<?php echo e($item['image']); ?>" alt="<?php echo e($item['name']); ?>" class="rounded cart-item-img">
+                                    <img src="<?php echo e((string) ($cartImageAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($item['name']); ?>" class="rounded cart-item-img" loading="lazy">
                                 </a>
                             <?php else: ?>
                                 <div class="rounded cart-item-img bg-light"></div>
@@ -245,6 +155,9 @@ include __DIR__ . '/includes/header.php';
                                                 Qty: <?php echo e((string) $item['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>m = <?php echo e($item['quantity_text']); ?>m
                                             <?php else: ?>
                                                 Qty: <?php echo e($item['quantity_text']); ?> <?php echo e($item['quantity_unit_label']); ?>
+                                                <?php if ($item['unit_type'] === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
+                                                    (<?php echo (int) $item['quantity']; ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) $item['quantity'] * (int) $item['units_per_set']; ?> pieces)
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                             <?php if ($item['selected_size'] !== ''): ?>
                                                 | Size: <strong><?php echo e($item['selected_size']); ?></strong>

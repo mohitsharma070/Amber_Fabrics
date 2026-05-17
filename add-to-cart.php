@@ -14,9 +14,11 @@ if (!verify_csrf()) {
 }
 
 // Accept product_id (form POST) or fabric_id (AJAX)
-$productId = (int) ($_POST['product_id'] ?? $_POST['fabric_id'] ?? 0);
-$selectedSize = trim((string) ($_POST['selected_size'] ?? ''));
-$redirectTo = (string) ($_POST['redirect_to'] ?? '');
+$productId     = (int) ($_POST['product_id'] ?? $_POST['fabric_id'] ?? 0);
+$selectedSize  = trim((string) ($_POST['selected_size'] ?? ''));
+$selectedColor = trim((string) ($_POST['selected_color'] ?? ''));
+$postedVariantId = (int) ($_POST['variant_id'] ?? 0);
+$redirectTo    = (string) ($_POST['redirect_to'] ?? '');
 
 if ($productId <= 0) {
     if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Invalid product selected.']); exit; }
@@ -24,7 +26,7 @@ if ($productId <= 0) {
     redirect('/catalog.php');
 }
 
-$stmt = $conn->prepare("SELECT id, name, size, unit_type, min_order_meters, stock, stock_meters, is_available, status FROM fabrics WHERE id = ? LIMIT 1");
+$stmt = $conn->prepare("SELECT id, name, size, color, unit_type, min_order_meters, stock, stock_meters, is_available, status, price, sale_price, price_inr FROM fabrics WHERE id = ? LIMIT 1");
 $stmt->bind_param('i', $productId);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
@@ -69,23 +71,59 @@ if ($unitType === 'meter') {
 
 $sizeOptions = parse_size_options((string) ($product['size'] ?? ''));
 
-if (!empty($sizeOptions)) {
-    if ($selectedSize === '') {
-        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Please select a size.']); exit; }
-        flash('error', 'Please select a size.');
-        redirect('/fabric.php?id=' . $productId);
-    }
-    if (!in_array($selectedSize, $sizeOptions, true)) {
-        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Selected size is invalid.']); exit; }
-        flash('error', 'Selected size is invalid.');
-        redirect('/fabric.php?id=' . $productId);
+// ── Variant lookup ──────────────────────────────────────────────────────────
+// Try explicit variant first (from product page), then color+size, then first active variant.
+$variant = null;
+if ($postedVariantId > 0) {
+    $candidate = get_variant_by_id($conn, $postedVariantId);
+    if ($candidate && (int) ($candidate['fabric_id'] ?? 0) === $productId && (int) ($candidate['is_active'] ?? 0) === 1) {
+        $variant = $candidate;
     }
 }
+if (!$variant && ($selectedColor !== '' || $selectedSize !== '')) {
+    $variant = find_variant($conn, $productId, $selectedColor, $selectedSize);
+}
+if (!$variant) {
+    $variant = get_first_active_in_stock_variant($conn, $productId, $unitType);
+}
+if (!$variant && ($selectedColor !== '' || $selectedSize !== '')) {
+    if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Selected colour/size combination is unavailable.']);
+        exit;
+    }
+    flash('error', 'Selected colour/size combination is unavailable.');
+    redirect('/fabric.php?id=' . $productId);
+}
+$variantId = $variant ? (int) ($variant['id'] ?? 0) : 0;
+if ($variant) {
+    $selectedColor = trim((string) ($variant['color'] ?? $selectedColor));
+    $selectedSize = variant_size_display($variant, $unitType);
+}
 
-$stock = ($unitType === 'piece' || $unitType === 'set')
-    ? (float) ($product['stock'] ?? 0)
-    : (float) ($product['stock_meters'] ?? 0);
+// Use variant stock; fall back to fabric-level stock for legacy items with no variant.
+$stock = 0.0;
+if ($variantId > 0) {
+    $stock = ($unitType === 'piece' || $unitType === 'set')
+        ? (float) ($variant['stock'] ?? 0)
+        : (float) ($variant['stock_meters'] ?? 0);
+} else {
+    $stock = ($unitType === 'piece' || $unitType === 'set')
+        ? (float) ($product['stock'] ?? 0)
+        : (float) ($product['stock_meters'] ?? 0);
+}
 $stock = max(0.0, $stock);
+
+// Determine unit price: variant override first, then sale price, then base price.
+$regularPrice = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
+$salePrice    = (float) ($product['sale_price'] ?? 0);
+$overridePrice = ($variant && $variant['price_override'] !== null) ? (float) $variant['price_override'] : null;
+if ($overridePrice !== null && $overridePrice > 0) {
+    $unitPrice = $overridePrice;
+} else {
+    $unitPrice = ($salePrice > 0 && $salePrice < $regularPrice) ? $salePrice : $regularPrice;
+}
+
 $outOfStock = $stock <= 0;
 if ($outOfStock) {
     if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'This product is out of stock.']); exit; }
@@ -105,8 +143,8 @@ if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_le
     $_SESSION['cart_meter_length'] = [];
 }
 
-$sizeToken = ($selectedSize !== '') ? $selectedSize : '';
-$cartKey = $productId . '::' . rawurlencode($sizeToken);
+// New cart key format: "{fabricId}::{variantId}" (or ::0 for legacy fallback).
+$cartKey = $productId . '::' . ($variantId > 0 ? $variantId : 0);
 
 $existing = isset($_SESSION['cart'][$cartKey])
     ? normalize_quantity_by_unit($_SESSION['cart'][$cartKey], $unitType, (float) $minOrder)
@@ -121,6 +159,7 @@ $addedQty = max(0.0, round($newQty - $existing, 2));
 if ($unitType === 'meter' && $selectedMeterLength !== null) {
     $_SESSION['cart_meter_length'][$cartKey] = round((float) $selectedMeterLength, 2);
 }
+// cart_size is no longer the primary key, but keep for legacy fallback display.
 if (!isset($_SESSION['cart_size']) || !is_array($_SESSION['cart_size'])) {
     $_SESSION['cart_size'] = [];
 }
@@ -163,4 +202,3 @@ $flashMsg = $cappedByStock
 flash('success', $flashMsg);
 $target = ($redirectTo === 'checkout') ? '/checkout.php' : '/cart.php';
 redirect($target);
-

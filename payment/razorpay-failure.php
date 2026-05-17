@@ -46,7 +46,7 @@ try {
     }
 
     $payStmt = $conn->prepare(
-        "SELECT razorpay_order_id
+        "SELECT id, razorpay_order_id
          FROM payments
          WHERE order_id = ? AND payment_method = 'razorpay'
          LIMIT 1"
@@ -54,31 +54,54 @@ try {
     $payStmt->bind_param('i', $orderId);
     $payStmt->execute();
     $paymentRow = $payStmt->get_result()->fetch_assoc();
+    $paymentRowId = (int) ($paymentRow['id'] ?? 0);
 
     if ($paymentRow && $rzpOrderId !== '' && (string) ($paymentRow['razorpay_order_id'] ?? '') !== '' && (string) $paymentRow['razorpay_order_id'] !== $rzpOrderId) {
+        payment_attempt_touch(
+            $conn,
+            'razorpay',
+            $rzpOrderId,
+            $orderId,
+            $paymentRowId,
+            'failure_rejected',
+            'failure_callback',
+            $paymentId,
+            '',
+            'order_id_mismatch',
+            'Razorpay order ID mismatch on failure callback',
+            '',
+            '',
+            '',
+            false
+        );
         throw new RuntimeException('Razorpay order ID mismatch on failure callback.');
     }
 
     if ((string) ($order['payment_status'] ?? '') !== 'paid') {
-        $updatePayment = $conn->prepare(
-            "UPDATE payments
-             SET payment_status = 'failed',
-                 transaction_id = CASE WHEN ? <> '' THEN ? ELSE transaction_id END,
-                 razorpay_payment_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_payment_id END,
-                 razorpay_order_id = CASE WHEN ? <> '' THEN ? ELSE razorpay_order_id END
-             WHERE order_id = ? AND payment_method = 'razorpay'"
-        );
-        $updatePayment->bind_param(
-            'ssssssi',
-            $paymentId,
-            $paymentId,
-            $paymentId,
-            $paymentId,
-            $rzpOrderId,
-            $rzpOrderId,
-            $orderId
-        );
-        $updatePayment->execute();
+        $attemptRef = $rzpOrderId !== '' ? $rzpOrderId : (string) ($paymentRow['razorpay_order_id'] ?? '');
+        if ($attemptRef !== '') {
+            payment_attempt_touch(
+                $conn,
+                'razorpay',
+                $attemptRef,
+                $orderId,
+                $paymentRowId,
+                $eventType === 'cancelled' ? 'cancelled' : 'failed',
+                'failure_callback',
+                $paymentId,
+                '',
+                $errorCode,
+                $errorDescription !== '' ? $errorDescription : ('Razorpay payment ' . $eventType),
+                '',
+                '',
+                json_encode([
+                    'event_type' => $eventType,
+                    'error_code' => $errorCode,
+                    'error_description' => $errorDescription,
+                ], JSON_UNESCAPED_UNICODE),
+                false
+            );
+        }
 
         $parts = ['Razorpay payment ' . $eventType];
         if ($errorCode !== '') {
@@ -88,16 +111,14 @@ try {
             $parts[] = 'reason: ' . $errorDescription;
         }
         $note = implode(' | ', $parts);
-
-        $updateOrder = $conn->prepare(
-            "UPDATE orders
-             SET payment_status = 'failed',
-                 notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\\n', ?) END,
-                 updated_at = NOW()
-             WHERE id = ?"
+        razorpay_mark_order_failed(
+            $conn,
+            $orderId,
+            (string) ($order['payment_status'] ?? ''),
+            $note,
+            $paymentId,
+            $rzpOrderId
         );
-        $updateOrder->bind_param('ssi', $note, $note, $orderId);
-        $updateOrder->execute();
         restore_order_inventory($conn, $orderId);
         log_order_activity($conn, $orderId, 'payment_failed', 'customer', $customerId, 'customer', $note);
     }

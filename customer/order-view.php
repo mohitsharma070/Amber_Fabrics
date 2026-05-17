@@ -61,6 +61,19 @@ $returnStmt = $conn->prepare(
 $returnStmt->bind_param('i', $orderId);
 $returnStmt->execute();
 $returnRequest = $returnStmt->get_result()->fetch_assoc() ?: null;
+$returnItems = [];
+if ($returnRequest) {
+    $riStmt = $conn->prepare(
+        "SELECT product_name, unit_type, quantity, line_total, refund_amount
+         FROM return_items
+         WHERE return_id = ?
+         ORDER BY id ASC"
+    );
+    $rid = (int) ($returnRequest['id'] ?? 0);
+    $riStmt->bind_param('i', $rid);
+    $riStmt->execute();
+    $returnItems = $riStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
 
 $activityStmt = $conn->prepare(
     "SELECT action, actor_type, actor_name, details, created_at
@@ -77,6 +90,14 @@ $orderActivity = apply_filters('order.timeline.events', is_array($orderActivity)
     'order_id' => $orderId,
     'customer_id' => $customerId,
 ]);
+$latestShipmentEvent = null;
+foreach ($orderActivity as $ev) {
+    $action = strtolower((string) ($ev['action'] ?? ''));
+    if (in_array($action, ['shipment_updated', 'order_shipped', 'order_delivered', 'awb_created'], true)) {
+        $latestShipmentEvent = $ev;
+        break;
+    }
+}
 
 $shipping = json_decode($order['shipping_address'] ?? '{}', true) ?: [];
 if (empty($shipping)) {
@@ -160,7 +181,12 @@ include __DIR__ . '/../includes/header.php';
                             <?php if ($item['fabric_sku_snapshot']): ?>
                                 <div class="text-muted small">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></div>
                             <?php endif; ?>
-                            <div class="text-muted small"><?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo quantity_unit_suffix($unitType); ?> x <?php echo $symbol . number_format($unitPrice, 2); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></div>
+                            <div class="text-muted small">
+                                <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo quantity_unit_suffix($unitType); ?> x <?php echo $symbol . number_format($unitPrice, 2); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?>
+                                <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
+                                    | <?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="fw-semibold"><?php echo $symbol . number_format($lineTotal, 2); ?></div>
                     </div>
@@ -229,6 +255,11 @@ include __DIR__ . '/../includes/header.php';
                         Refund initiated. Amount will be returned to your original payment method as per bank/payment timelines.
                     </div>
                     <?php endif; ?>
+                    <?php if ($latestShipmentEvent): ?>
+                    <div class="alert alert-primary mt-3 mb-0 py-2 small">
+                        Shipment Update: <?php echo e((string) ($latestShipmentEvent['display_details'] ?? $latestShipmentEvent['details'] ?? 'Your shipment has been updated.')); ?>
+                    </div>
+                    <?php endif; ?>
                     <?php if (strtolower((string) ($order['payment_status'] ?? '')) === 'refunded'): ?>
                     <div class="alert alert-success mt-3 mb-0 py-2 small">
                         Refund processed on payment gateway. Bank/card/UPI credit can take 2-7 working days (sometimes up to 10 working days).
@@ -269,6 +300,30 @@ include __DIR__ . '/../includes/header.php';
                     <form method="POST" action="/customer/request-return.php" class="mt-2" enctype="multipart/form-data">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="order_id" value="<?php echo (int) $order['id']; ?>">
+                        <div class="small text-muted mb-2">Step 1: Select items and quantities</div>
+                        <div class="mb-2 p-2 border rounded bg-light">
+                            <div class="small fw-semibold mb-2">Select items/qty to return</div>
+                            <?php foreach ($items as $item): ?>
+                                <?php
+                                $riOrderItemId = (int) ($item['id'] ?? 0);
+                                $riUnitType = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $item['unit_type'] : 'meter';
+                                $riQty = (($item['quantity'] ?? 0) > 0 ? (float) $item['quantity'] : (float) ($item['quantity_meters'] ?? 0));
+                                if ($riQty <= 0 || $riOrderItemId <= 0) { continue; }
+                                ?>
+                                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                    <div class="small text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo quantity_unit_suffix($riUnitType); ?>)</div>
+                                    <input type="number"
+                                           class="form-control form-control-sm"
+                                           name="return_qty[<?php echo $riOrderItemId; ?>]"
+                                           min="0"
+                                           max="<?php echo e((string) $riQty); ?>"
+                                           step="<?php echo $riUnitType === 'meter' ? '0.01' : '1'; ?>"
+                                           value="0"
+                                           style="max-width:110px;">
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="small text-muted mb-2">Step 2: Tell us why</div>
                         <div class="mb-2">
                             <select name="reason" class="form-select form-select-sm" required>
                                 <option value="">Select return reason</option>
@@ -282,6 +337,7 @@ include __DIR__ . '/../includes/header.php';
                         <div class="mb-2">
                             <textarea name="customer_note" class="form-control form-control-sm" rows="2" placeholder="Optional note"></textarea>
                         </div>
+                        <div class="small text-muted mb-2">Step 3: Upload issue photos</div>
                         <div class="mb-2">
                             <label class="form-label small mb-1">Image 1 (required)</label>
                             <input type="file" name="image_1" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
@@ -290,8 +346,8 @@ include __DIR__ . '/../includes/header.php';
                             <label class="form-label small mb-1">Image 2 (required)</label>
                             <input type="file" name="image_2" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
                         </div>
-                        <div class="small text-muted mb-2">Return allowed only within 7 days from delivery date.</div>
-                        <button type="submit" class="btn btn-outline-secondary w-100">Request Return</button>
+                        <div class="small text-muted mb-2">Step 4: Review and submit. Return allowed only within 7 days from delivery date.</div>
+                        <button type="submit" class="btn btn-outline-secondary w-100">Submit Return Request</button>
                     </form>
                     <?php endif; ?>
                     <?php if (strtolower($effectiveOrderStatus) === 'delivered' && !$returnRequest && !$isWithinReturnWindow): ?>
@@ -314,6 +370,12 @@ include __DIR__ . '/../includes/header.php';
                         <?php endif; ?>
                         <?php if (!empty($returnRequest['admin_note'])): ?>
                             <div>Admin Note: <?php echo e((string) $returnRequest['admin_note']); ?></div>
+                        <?php endif; ?>
+                        <?php if (!empty($returnItems)): ?>
+                            <div class="mt-2">Items:</div>
+                            <?php foreach ($returnItems as $ri): ?>
+                                <div>- <?php echo e((string) ($ri['product_name'] ?? 'Item')); ?>: <?php echo e(format_quantity_by_unit((float) ($ri['quantity'] ?? 0), (string) ($ri['unit_type'] ?? 'meter'))); ?><?php echo quantity_unit_suffix((string) ($ri['unit_type'] ?? 'meter')); ?> (Rs <?php echo number_format((float) ($ri['line_total'] ?? 0), 2); ?>)</div>
+                            <?php endforeach; ?>
                         <?php endif; ?>
                         <?php if (!empty($returnRequest['image_1'])): ?>
                             <div class="mt-2">Image 1: <a href="/<?php echo e((string) $returnRequest['image_1']); ?>" target="_blank" rel="noopener noreferrer">View</a></div>

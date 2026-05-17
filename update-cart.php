@@ -11,15 +11,15 @@ if (!verify_csrf()) {
 
 $cartKey = trim((string) ($_POST['cart_key'] ?? ''));
 $productId = 0;
+$variantId = 0;
 if ($cartKey !== '') {
-    $parts = explode('::', $cartKey, 2);
-    $productId = (int) ($parts[0] ?? 0);
+    [$productId, $variantId] = cart_parse_key($cartKey);
 }
 $productId = $productId > 0 ? $productId : (int) ($_POST['product_id'] ?? 0);
-$cartKey = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::') : '');
-$quantityInput = $_POST['quantity'] ?? 1;
-$bundleQtyInput = $_POST['bundle_quantity'] ?? null;
-$meterLengthInput = $_POST['meter_length'] ?? null;
+$cartKey   = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::0') : '');
+$quantityInput    = $_POST['quantity']       ?? 1;
+$bundleQtyInput   = $_POST['bundle_quantity'] ?? null;
+$meterLengthInput = $_POST['meter_length']    ?? null;
 
 if ($productId <= 0) {
     flash('error', 'Invalid cart item.');
@@ -66,9 +66,25 @@ if ($quantity < 1) {
 }
 
 if ($product) {
-    $stock = ($unitType === 'piece' || $unitType === 'set')
-        ? (float) ($product['stock'] ?? 0)
-        : (float) ($product['stock_meters'] ?? 0);
+    // Use variant stock when available; fall back to fabric-level.
+    $stock = 0.0;
+    if ($variantId > 0) {
+        $variantRow = get_variant_by_id($conn, $variantId);
+        if (!$variantRow || (int) ($variantRow['fabric_id'] ?? 0) !== $productId || (int) ($variantRow['is_active'] ?? 0) !== 1) {
+            unset($_SESSION['cart'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
+            flash('error', 'Selected variant is unavailable and was removed from your cart.');
+            redirect('/cart.php');
+        }
+        if ($variantRow) {
+            $stock = ($unitType === 'piece' || $unitType === 'set')
+                ? (float) ($variantRow['stock'] ?? 0)
+                : (float) ($variantRow['stock_meters'] ?? 0);
+        }
+    } else {
+        $stock = ($unitType === 'piece' || $unitType === 'set')
+            ? (float) ($product['stock'] ?? 0)
+            : (float) ($product['stock_meters'] ?? 0);
+    }
     if ($stock <= 0) {
         unset($_SESSION['cart'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
         flash('error', 'This product is out of stock and was removed from your cart.');
@@ -87,4 +103,3 @@ if (!empty($_SESSION['customer_id'])) {
 
 flash('success', 'Cart updated.');
 redirect('/cart.php');
-

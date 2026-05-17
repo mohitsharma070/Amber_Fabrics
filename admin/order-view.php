@@ -30,16 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('order-view.php?id=' . $id);
     }
 
-    if ($action === 'update_order') {
-        $newOrderStatus = trim((string) ($_POST['order_status'] ?? ''));
-        $newPaymentStatus = trim((string) ($_POST['payment_status'] ?? ''));
-
-        if (!in_array($newOrderStatus, $validOrderStatuses, true)) {
-            flash('error', 'Invalid order status.');
-            redirect('order-view.php?id=' . $id);
-        }
-        if (!in_array($newPaymentStatus, $validPaymentStatuses, true)) {
-            flash('error', 'Invalid payment status.');
+    if ($action === 'workflow_transition') {
+        $targetStatus = trim((string) ($_POST['target_status'] ?? ''));
+        if (!in_array($targetStatus, $validOrderStatuses, true)) {
+            flash('error', 'Invalid target status.');
             redirect('order-view.php?id=' . $id);
         }
 
@@ -50,43 +44,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currentOrderStatus = (string) ($currentRow['order_status'] ?? '');
         $currentPaymentStatus = (string) ($currentRow['payment_status'] ?? 'pending');
         $method = strtolower((string) ($currentRow['payment_method'] ?? ''));
-        if (!can_transition_order_status($currentOrderStatus, $newOrderStatus)) {
+        if (!can_transition_order_status($currentOrderStatus, $targetStatus)) {
             flash('error', 'Invalid order status transition.');
             redirect('order-view.php?id=' . $id);
         }
-
-        // Prevent manual refund-related status bypass for Razorpay/UPI.
-        if ($newPaymentStatus === 'refunded' || $newOrderStatus === 'refunded') {
-            if (in_array($method, ['razorpay', 'upi'], true)) {
-                flash('error', 'Use Mark Refunded button. It verifies refund status with payment gateway.');
-                redirect('order-view.php?id=' . $id);
-            }
+        if (in_array($targetStatus, ['shipped', 'delivered'], true) && in_array($method, ['razorpay', 'upi'], true) && strtolower($currentPaymentStatus) !== 'paid') {
+            flash('error', 'Online-paid orders can be shipped only after payment is captured.');
+            redirect('order-view.php?id=' . $id);
         }
 
         try {
             $conn->begin_transaction();
+            $legacyStatus = in_array($targetStatus, ['pending','confirmed','shipped','delivered','cancelled'], true)
+                ? $targetStatus
+                : 'processing';
             $update = $conn->prepare(
                 "UPDATE orders
-                 SET order_status = ?, payment_status = ?, status = ?, updated_at = NOW()
+                 SET order_status = ?, status = ?, updated_at = NOW()
                  WHERE id = ?"
             );
-            $legacyStatus = in_array($newOrderStatus, ['pending','confirmed','shipped','delivered','cancelled'], true)
-                ? $newOrderStatus
-                : 'processing';
-            $update->bind_param('sssi', $newOrderStatus, $newPaymentStatus, $legacyStatus, $id);
+            $update->bind_param('ssi', $targetStatus, $legacyStatus, $id);
             $update->execute();
-            if (in_array($method, ['razorpay', 'upi'], true)) {
-                $payUpdate = $conn->prepare(
-                    "UPDATE payments
-                     SET payment_status = ?
-                     WHERE order_id = ? AND payment_method = ?"
-                );
-                $payUpdate->bind_param('sis', $newPaymentStatus, $id, $method);
-                $payUpdate->execute();
-            }
 
-            // Keep shipment timeline in sync with order status transitions.
-            if ($newOrderStatus === 'shipped' || $newOrderStatus === 'delivered') {
+            if ($targetStatus === 'shipped' || $targetStatus === 'delivered') {
                 $shipStmt = $conn->prepare("SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE");
                 $shipStmt->bind_param('i', $id);
                 $shipStmt->execute();
@@ -94,10 +74,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $shippedAt = !empty($existingShipment['shipped_at']) ? (string) $existingShipment['shipped_at'] : null;
                 $deliveredAt = !empty($existingShipment['delivered_at']) ? (string) $existingShipment['delivered_at'] : null;
                 $now = date('Y-m-d H:i:s');
-                if ($newOrderStatus === 'shipped' && $shippedAt === null) {
+                if ($targetStatus === 'shipped' && $shippedAt === null) {
                     $shippedAt = $now;
                 }
-                if ($newOrderStatus === 'delivered') {
+                if ($targetStatus === 'delivered') {
                     if ($shippedAt === null) {
                         $shippedAt = $now;
                     }
@@ -120,20 +100,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            if ($currentOrderStatus !== 'cancelled' && $newOrderStatus === 'cancelled') {
+            if ($currentOrderStatus !== 'cancelled' && $targetStatus === 'cancelled') {
                 restore_order_inventory($conn, $id);
                 release_coupon_usage_for_order($conn, $id);
             }
-            $adminId = (int) ($_SESSION['admin_id'] ?? 0);
-            $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
             log_order_activity(
                 $conn,
                 $id,
                 'admin_status_update',
                 'admin',
-                $adminId,
-                $adminName,
-                'Order: ' . $currentOrderStatus . ' -> ' . $newOrderStatus . ' | Payment: ' . $currentPaymentStatus . ' -> ' . $newPaymentStatus
+                (int) ($_SESSION['admin_id'] ?? 0),
+                (string) ($_SESSION['admin_name'] ?? 'admin'),
+                'Order: ' . $currentOrderStatus . ' -> ' . $targetStatus
             );
             $conn->commit();
         } catch (Throwable $e) {
@@ -146,8 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('order-view.php?id=' . $id);
         }
 
-        send_order_status_update_email($conn, $id, $newOrderStatus);
-        if (in_array($newOrderStatus, ['confirmed', 'packed', 'shipped', 'delivered'], true)) {
+        if (in_array($targetStatus, ['confirmed', 'packed', 'shipped', 'delivered'], true)) {
             $awbResult = shiprocket_auto_create_awb_for_order($conn, $id);
             if (empty($awbResult['ok'])) {
                 log_order_activity(
@@ -161,7 +138,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
             }
         }
-        flash('success', 'Order updated successfully.');
+
+        send_order_status_update_email($conn, $id, $targetStatus);
+        flash('success', 'Order moved to ' . ucfirst($targetStatus) . '.');
+        redirect('order-view.php?id=' . $id);
+    }
+
+    if ($action === 'update_order') {
+        flash('error', 'Direct status editing is disabled. Use workflow action buttons.');
         redirect('order-view.php?id=' . $id);
     }
 
@@ -185,11 +169,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('order-view.php?id=' . $id);
     }
 
-    if (in_array($action, ['save_shipment', 'mark_shipped', 'mark_delivered'], true)) {
+    if ($action === 'save_shipment') {
         $courierName = trim((string) ($_POST['courier_name'] ?? ''));
         $trackingId = trim((string) ($_POST['tracking_id'] ?? ''));
         $trackingUrl = trim((string) ($_POST['tracking_url'] ?? ''));
         $shippingCost = (float) ($_POST['shipping_cost'] ?? 0);
+        $shipmentChanged = false;
+        $previousTrackingId = '';
+        $shipmentEmailStatus = '';
 
         if ($shippingCost < 0) {
             $shippingCost = 0;
@@ -217,15 +204,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Order not found.');
             }
             $isOnline = in_array($paymentMethod, ['razorpay', 'upi'], true);
-            if (in_array($action, ['mark_shipped', 'mark_delivered'], true) && $isOnline && $paymentStatus !== 'paid') {
-                throw new RuntimeException('Online-paid orders can be shipped only after payment is captured.');
-            }
-            if ($action === 'mark_shipped' && !can_transition_order_status($currentOrderStatus, 'shipped')) {
-                throw new RuntimeException('Order cannot be marked shipped from its current status.');
-            }
-            if ($action === 'mark_delivered' && !can_transition_order_status($currentOrderStatus, 'delivered')) {
-                throw new RuntimeException('Order cannot be marked delivered from its current status.');
-            }
             if ($action === 'save_shipment' && in_array($currentOrderStatus, ['cancelled', 'refunded'], true)) {
                 throw new RuntimeException('Shipment details cannot be edited for cancelled/refunded orders.');
             }
@@ -234,26 +212,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $shipStmt->bind_param('i', $id);
             $shipStmt->execute();
             $existingShipment = $shipStmt->get_result()->fetch_assoc();
+            $previousTrackingId = trim((string) ($existingShipment['tracking_id'] ?? ''));
 
             $shippedAt = $existingShipment['shipped_at'] ?? null;
             $deliveredAt = $existingShipment['delivered_at'] ?? null;
-
-            if ($action === 'mark_shipped') {
-                $shippedAt = date('Y-m-d H:i:s');
-                $orderUpdate = $conn->prepare("UPDATE orders SET order_status = 'shipped', status = 'shipped', updated_at = NOW() WHERE id = ?");
-                $orderUpdate->bind_param('i', $id);
-                $orderUpdate->execute();
-            }
-
-            if ($action === 'mark_delivered') {
-                if (empty($shippedAt)) {
-                    $shippedAt = date('Y-m-d H:i:s');
-                }
-                $deliveredAt = date('Y-m-d H:i:s');
-                $orderUpdate = $conn->prepare("UPDATE orders SET order_status = 'delivered', status = 'delivered', updated_at = NOW() WHERE id = ?");
-                $orderUpdate->bind_param('i', $id);
-                $orderUpdate->execute();
-            }
 
             if ($existingShipment) {
                 $shipmentId = (int) $existingShipment['id'];
@@ -264,6 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $updateShip->bind_param('sssdssi', $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
                 $updateShip->execute();
+                $shipmentChanged = true;
             } else {
                 $insertShip = $conn->prepare(
                     "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at)
@@ -271,6 +234,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $insertShip->bind_param('isssdss', $id, $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt);
                 $insertShip->execute();
+                $shipmentChanged = true;
+            }
+            if ($shipmentChanged) {
+                $adminId = (int) ($_SESSION['admin_id'] ?? 0);
+                $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
+                $details = 'Courier: ' . ($courierName !== '' ? $courierName : '-') .
+                    ' | Tracking ID: ' . ($trackingId !== '' ? $trackingId : '-') .
+                    ($trackingUrl !== '' ? (' | URL: ' . $trackingUrl) : '');
+                log_order_activity($conn, $id, 'shipment_updated', 'admin', $adminId, $adminName, $details);
             }
             $conn->commit();
         } catch (Throwable $e) {
@@ -284,18 +256,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $flashMsg = 'Shipment details saved.';
-        if ($action === 'mark_shipped') {
-            $flashMsg = 'Order marked shipped and shipment updated.';
-            $adminId = (int) ($_SESSION['admin_id'] ?? 0);
-            $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
-            log_order_activity($conn, $id, 'order_shipped', 'admin', $adminId, $adminName, 'Shipment marked shipped.');
-            send_order_status_update_email($conn, $id, 'shipped');
-        } elseif ($action === 'mark_delivered') {
-            $flashMsg = 'Order marked delivered and shipment updated.';
-            $adminId = (int) ($_SESSION['admin_id'] ?? 0);
-            $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
-            log_order_activity($conn, $id, 'order_delivered', 'admin', $adminId, $adminName, 'Shipment marked delivered.');
-            send_order_status_update_email($conn, $id, 'delivered');
+        if ($shipmentChanged && $trackingId !== '' && $trackingId !== $previousTrackingId) {
+            $shipmentEmailStatus = 'shipped';
+        }
+
+        if ($shipmentEmailStatus !== '') {
+            send_order_status_update_email($conn, $id, $shipmentEmailStatus);
         }
 
         flash('success', $flashMsg);
@@ -303,11 +269,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$financialSelect = orders_structured_financial_columns_ready($conn)
+    ? "coupon_id, coupon_code, coupon_discount, shipping_quote_token, shipping_source, courier_id, courier_name, cod_fee, base_shipping"
+    : "NULL AS coupon_id, NULL AS coupon_code, 0.00 AS coupon_discount, NULL AS shipping_quote_token, NULL AS shipping_source, NULL AS courier_id, NULL AS courier_name, 0.00 AS cod_fee, 0.00 AS base_shipping";
 $orderStmt = $conn->prepare(
     "SELECT id, order_number, customer_name, customer_phone, customer_email,
             address, city, state, pincode, country,
             subtotal, shipping_amount, discount_amount, total_amount,
-            payment_method, payment_status, order_status, order_notes, notes, admin_notes, created_at
+            payment_method, payment_status, order_status, order_notes, notes, admin_notes, created_at,
+            {$financialSelect}
      FROM orders
      WHERE id = ?
      LIMIT 1"
@@ -379,6 +349,22 @@ $orderActivity = apply_filters('order.timeline.events', is_array($orderActivity)
 ]);
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
 $gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
+$workflowStatuses = ['pending', 'confirmed', 'packed', 'shipped', 'delivered'];
+$currentWorkflowStatus = strtolower((string) ($order['order_status'] ?? 'pending'));
+$currentWorkflowIndex = array_search($currentWorkflowStatus, $workflowStatuses, true);
+$currentWorkflowIndex = ($currentWorkflowIndex === false) ? 0 : (int) $currentWorkflowIndex;
+$nextStatusActions = [];
+$paymentMethodNow = strtolower((string) ($order['payment_method'] ?? ''));
+$paymentStatusNow = strtolower((string) ($order['payment_status'] ?? 'pending'));
+foreach ($validOrderStatuses as $candidateStatus) {
+    if (!can_transition_order_status((string) ($order['order_status'] ?? ''), $candidateStatus)) {
+        continue;
+    }
+    if (in_array($candidateStatus, ['shipped', 'delivered'], true) && in_array($paymentMethodNow, ['razorpay', 'upi'], true) && $paymentStatusNow !== 'paid') {
+        continue;
+    }
+    $nextStatusActions[] = $candidateStatus;
+}
 $metaTitle = 'Order ' . e((string) $order['order_number']) . ' | Admin';
 include 'partials/header.php';
 ?>
@@ -388,6 +374,19 @@ include 'partials/header.php';
         <a href="orders.php" class="app-back-link">&larr; Back to Orders</a>
         <h1 class="mt-1">Order <?php echo e((string) $order['order_number']); ?></h1>
         <span class="text-muted small"><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></span>
+        <div class="order-workflow-steps" aria-label="Order workflow">
+            <?php foreach ($workflowStatuses as $index => $workflowStatus): ?>
+                <?php
+                $stepClass = 'order-workflow-step';
+                if ($index < $currentWorkflowIndex) {
+                    $stepClass .= ' is-done';
+                } elseif ($index === $currentWorkflowIndex) {
+                    $stepClass .= ' is-current';
+                }
+                ?>
+                <span class="<?php echo e($stepClass); ?>"><?php echo e(ucfirst($workflowStatus)); ?></span>
+            <?php endforeach; ?>
+        </div>
     </div>
     <div>
     </div>
@@ -418,6 +417,9 @@ include 'partials/header.php';
                             <div class="fw-semibold"><?php echo e($name); ?></div>
                             <div class="text-muted small">
                                 Qty: <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo quantity_unit_suffix($unitType); ?>
+                                <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
+                                    (<?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces)
+                                <?php endif; ?>
                                 <?php if (!empty($item['size'])): ?> | Size: <?php echo e((string) $item['size']); ?><?php endif; ?>
                                 <?php if (!empty($item['color'])): ?> | Color: <?php echo e((string) $item['color']); ?><?php endif; ?>
                             </div>
@@ -444,32 +446,23 @@ include 'partials/header.php';
 
         <div class="card mb-4">
             <div class="card-body">
-                <h5 class="card-title">Update Order</h5>
-                <form method="POST" action="order-view.php?id=<?php echo $id; ?>">
-                    <?php echo csrf_field(); ?>
-                    <input type="hidden" name="action" value="update_order">
-                    <div class="mb-3">
-                        <label class="form-label">Order Status</label>
-                        <select name="order_status" class="form-select">
-                            <?php foreach ($validOrderStatuses as $status): ?>
-                                <option value="<?php echo e($status); ?>" <?php echo $order['order_status'] === $status ? 'selected' : ''; ?>>
-                                    <?php echo ucfirst($status); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                <h5 class="card-title">Order Actions</h5>
+                <?php if (empty($nextStatusActions)): ?>
+                    <p class="text-muted small mb-0">No further workflow actions available for this order.</p>
+                <?php else: ?>
+                    <div class="d-flex flex-wrap gap-2">
+                        <?php foreach ($nextStatusActions as $nextStatus): ?>
+                            <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="d-inline">
+                                <?php echo csrf_field(); ?>
+                                <input type="hidden" name="action" value="workflow_transition">
+                                <input type="hidden" name="target_status" value="<?php echo e($nextStatus); ?>">
+                                <button class="btn btn-sm <?php echo $nextStatus === 'cancelled' ? 'btn-outline-danger' : 'btn-outline-primary'; ?>" type="submit">
+                                    <?php echo ucfirst($nextStatus); ?>
+                                </button>
+                            </form>
+                        <?php endforeach; ?>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Payment Status</label>
-                        <select name="payment_status" class="form-select">
-                            <?php foreach ($validPaymentStatuses as $status): ?>
-                                <option value="<?php echo e($status); ?>" <?php echo $order['payment_status'] === $status ? 'selected' : ''; ?>>
-                                    <?php echo ucfirst($status); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <button class="btn btn-primary">Save Changes</button>
-                </form>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -497,9 +490,7 @@ include 'partials/header.php';
                         <input type="number" class="form-control" step="0.01" min="0" name="shipping_cost" value="<?php echo e((string) ($shipment['shipping_cost'] ?? '0.00')); ?>">
                     </div>
                     <div class="d-flex gap-2 flex-wrap mt-3 pt-2 border-top">
-                        <button class="btn btn-primary" type="submit">Save Shipment</button>
-                        <button class="btn btn-outline-warning" type="submit" name="action" value="mark_shipped">Mark Shipped</button>
-                        <button class="btn btn-outline-success" type="submit" name="action" value="mark_delivered">Mark Delivered</button>
+                        <button class="btn btn-primary" type="submit"><i class="bi bi-save2 me-1" aria-hidden="true"></i>Save Shipment</button>
                     </div>
                 </form>
 
@@ -540,9 +531,9 @@ include 'partials/header.php';
                 <h6 class="card-title">Quick Actions</h6>
                 <div class="d-flex flex-column gap-2">
                     <a href="invoice.php?order=<?php echo e((string) $order['order_number']); ?>" target="_blank"
-                       class="btn btn-outline-primary btn-sm">&#128438; Print Invoice</a>
+                       class="btn btn-outline-primary btn-sm"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print Invoice</a>
                     <a href="packing-slip.php?order=<?php echo e((string) $order['order_number']); ?>" target="_blank"
-                       class="btn btn-outline-secondary btn-sm">&#128230; Packing Slip</a>
+                       class="btn btn-outline-secondary btn-sm"><i class="bi bi-box2 me-1" aria-hidden="true"></i>Packing Slip</a>
                 </div>
             </div>
         </div>
@@ -581,19 +572,30 @@ include 'partials/header.php';
                 <div class="small text-muted">
                     <div>Method: <strong><?php echo strtoupper(e((string) $order['payment_method'])); ?></strong></div>
                     <div>Status: <strong><?php echo ucfirst(e((string) $order['payment_status'])); ?></strong></div>
+                    <?php if (!empty($order['coupon_code'])): ?>
+                        <div>Coupon: <strong><?php echo e((string) $order['coupon_code']); ?></strong> (Rs <?php echo number_format((float) ($order['coupon_discount'] ?? 0), 2); ?>)</div>
+                    <?php endif; ?>
+                    <div>Base Shipping: <strong>Rs <?php echo number_format((float) ($order['base_shipping'] ?? 0), 2); ?></strong></div>
+                    <div>COD Fee: <strong>Rs <?php echo number_format((float) ($order['cod_fee'] ?? 0), 2); ?></strong></div>
+                    <?php if (!empty($order['shipping_source'])): ?>
+                        <div>Shipping Source: <strong><?php echo e((string) $order['shipping_source']); ?></strong></div>
+                    <?php endif; ?>
+                    <?php if (!empty($order['courier_name'])): ?>
+                        <div>Checkout Courier: <strong><?php echo e((string) $order['courier_name']); ?></strong></div>
+                    <?php endif; ?>
                 </div>
                 <?php if (($order['order_status'] ?? '') === 'cancelled' && ($order['payment_status'] ?? '') === 'paid'): ?>
-                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" onsubmit="return confirm('Mark this order as refunded?');">
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" data-confirm-modal data-confirm-title="Confirm Refund" data-confirm-message="Mark this order as refunded now?" data-confirm-ok="Mark Refunded">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="mark_refunded">
-                        <button type="submit" class="btn btn-sm btn-outline-danger w-100">Mark Refunded</button>
+                        <button type="submit" class="btn btn-sm btn-outline-danger w-100"><i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Mark Refunded</button>
                     </form>
                 <?php endif; ?>
                 <?php if (strtolower((string) ($order['payment_method'] ?? '')) === 'razorpay'): ?>
-                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-2" onsubmit="return confirm('Sync refund status from Razorpay now?');">
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-2" data-confirm-modal data-confirm-title="Sync Refund Status" data-confirm-message="Sync refund status from Razorpay now?" data-confirm-ok="Sync Now">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="sync_refund_status">
-                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100">Sync Refund Status</button>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100"><i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>Sync Refund Status</button>
                     </form>
                 <?php endif; ?>
             </div>

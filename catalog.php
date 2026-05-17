@@ -7,12 +7,12 @@ include 'includes/header.php';
 
 $perPageOptions = [10, 20, 30];
 $sortMap = [
-    'newest' => 'created_at DESC',
-    'oldest' => 'created_at ASC',
-    'name_asc' => 'name ASC',
-    'name_desc' => 'name DESC',
-    'price_asc' => 'price ASC',
-    'price_desc' => 'price DESC',
+    'newest' => 'f.created_at DESC',
+    'oldest' => 'f.created_at ASC',
+    'name_asc' => 'f.name ASC',
+    'name_desc' => 'f.name DESC',
+    'price_asc' => 'effective_price ASC',
+    'price_desc' => 'effective_price DESC',
 ];
 $sellableCategorySlugs = ['fabric-by-meter', 'bedsheets', 'towels', 'table-covers'];
 $sellablePlaceholders = implode(',', array_fill(0, count($sellableCategorySlugs), '?'));
@@ -35,6 +35,13 @@ try {
 $state = [
     'q' => trim((string) ($_GET['q'] ?? '')),
     'category' => trim((string) ($_GET['category'] ?? '')),
+    'min_price' => max(0, (int) ($_GET['min_price'] ?? 0)),
+    'max_price' => max(0, (int) ($_GET['max_price'] ?? 0)),
+    'in_stock' => (string) ($_GET['in_stock'] ?? ''),
+    'material' => trim((string) ($_GET['material'] ?? '')),
+    'color' => trim((string) ($_GET['color'] ?? '')),
+    'size' => trim((string) ($_GET['size'] ?? '')),
+    'dispatch' => trim((string) ($_GET['dispatch'] ?? '')),
     'sort' => list_sanitize_sort(trim((string) ($_GET['sort'] ?? 'newest')), $sortMap),
     'per_page' => list_sanitize_per_page((int) ($_GET['per_page'] ?? $perPageOptions[0]), $perPageOptions),
     'page' => list_sanitize_page((int) ($_GET['page'] ?? 1)),
@@ -50,6 +57,17 @@ $perPage = $state['per_page'];
 $page = $state['page'];
 $offset = ($page - 1) * $perPage;
 $orderBy = $sortMap[$sort];
+$minPrice = (int) ($state['min_price'] ?? 0);
+$maxPrice = (int) ($state['max_price'] ?? 0);
+$inStock = ($state['in_stock'] === '1') ? '1' : '';
+$materialFilter = $state['material'];
+$colorFilter = $state['color'];
+$sizeFilter = $state['size'];
+$dispatchFilter = $state['dispatch'];
+if ($maxPrice > 0 && $maxPrice < $minPrice) {
+    $maxPrice = $minPrice;
+    $state['max_price'] = $maxPrice;
+}
 $sortLabels = [
     'newest' => 'Newest',
     'oldest' => 'Oldest',
@@ -59,13 +77,22 @@ $sortLabels = [
     'price_desc' => 'Price High-Low',
 ];
 
-$where = ["status = 'active'", "category IN ($sellablePlaceholders)"];
+$effectivePriceExpr = "LEAST(
+    CASE
+        WHEN COALESCE(v.price_override, 0) > 0 THEN v.price_override
+        WHEN COALESCE(f.sale_price, 0) > 0 AND f.sale_price < COALESCE(NULLIF(f.price, 0), f.price_inr, 99999999) THEN f.sale_price
+        ELSE COALESCE(NULLIF(f.price, 0), f.price_inr, 99999999)
+    END,
+    99999999
+)";
+
+$where = ["f.status = 'active'", "f.category IN ($sellablePlaceholders)"];
 $types = '';
 $params = $sellableCategorySlugs;
 $types .= str_repeat('s', count($sellableCategorySlugs));
 
 if ($search !== '') {
-    $where[] = "(name LIKE ? OR sku LIKE ? OR material LIKE ?)";
+    $where[] = "(f.name LIKE ? OR f.sku LIKE ? OR f.material LIKE ?)";
     $like = "%{$search}%";
     $types .= 'sss';
     $params[] = $like;
@@ -73,14 +100,61 @@ if ($search !== '') {
     $params[] = $like;
 }
 if ($category !== '') {
-    $where[] = "category = ?";
+    $where[] = "f.category = ?";
     $types .= 's';
     $params[] = $category;
+}
+if ($minPrice > 0) {
+    $where[] = $effectivePriceExpr . " >= ?";
+    $types .= 'd';
+    $params[] = (float) $minPrice;
+}
+if ($maxPrice > 0) {
+    $where[] = $effectivePriceExpr . " <= ?";
+    $types .= 'd';
+    $params[] = (float) $maxPrice;
+}
+if ($inStock === '1') {
+    $where[] = "(f.is_available = 1 AND ((f.unit_type IN ('piece','set') AND (COALESCE(v.stock, f.stock) > 0)) OR (f.unit_type = 'meter' AND (COALESCE(v.stock_meters, f.stock_meters) > 0))))";
+}
+if ($materialFilter !== '') {
+    $where[] = "f.material LIKE ?";
+    $types .= 's';
+    $params[] = '%' . $materialFilter . '%';
+}
+if ($colorFilter !== '') {
+    $where[] = "COALESCE(NULLIF(v.color, ''), f.color) LIKE ?";
+    $types .= 's';
+    $params[] = '%' . $colorFilter . '%';
+}
+if ($sizeFilter !== '') {
+    $where[] = "COALESCE(NULLIF(v.size, ''), f.size) LIKE ?";
+    $types .= 's';
+    $params[] = '%' . $sizeFilter . '%';
+}
+if ($dispatchFilter !== '') {
+    $where[] = "f.dispatch_time LIKE ?";
+    $types .= 's';
+    $params[] = '%' . $dispatchFilter . '%';
 }
 
 $whereSql = 'WHERE ' . implode(' AND ', $where);
 
-$countSql = "SELECT COUNT(*) AS total FROM fabrics {$whereSql}";
+$countSql = "SELECT COUNT(*) AS total
+             FROM fabrics f
+             LEFT JOIN (
+                SELECT
+                    id,
+                    fabric_id,
+                    color,
+                    size,
+                    price_override,
+                    stock,
+                    stock_meters
+                FROM fabric_variants
+                WHERE is_active = 1
+             ) v ON v.fabric_id = f.id
+             {$whereSql}";
 $countStmt = $conn->prepare($countSql);
 if (!empty($params)) {
     $countStmt->bind_param($types, ...$params);
@@ -95,8 +169,42 @@ if ($page > $pages) {
     $offset = ($page - 1) * $perPage;
 }
 
-$listSql = "SELECT id, name, category, image, material, size, unit_type, price, sale_price, price_inr, stock, stock_meters, is_available
-            FROM fabrics {$whereSql}
+$listSql = "SELECT
+                f.id, f.name, f.category, f.image, f.material, f.size, f.unit_type,
+                f.price, f.sale_price, f.price_inr, f.stock, f.stock_meters, f.is_available, f.dispatch_time,
+                COALESCE(v.id, 0) AS variant_id,
+                COALESCE(v.color, '') AS variant_color,
+                COALESCE(v.size, '') AS variant_size,
+                COALESCE(v.price_override, 0) AS variant_price_override,
+                COALESCE(v.stock, 0) AS variant_stock,
+                COALESCE(v.stock_meters, 0) AS variant_stock_meters,
+                COALESCE(v.image, '') AS variant_image,
+                COALESCE(v.image2, '') AS variant_image2,
+                COALESCE(v.image3, '') AS variant_image3,
+                COALESCE(v.image4, '') AS variant_image4,
+                COALESCE(v.pack_label, '') AS variant_pack_label,
+                COALESCE(v.units_per_set, 0) AS variant_units_per_set,
+                {$effectivePriceExpr} AS effective_price
+            FROM fabrics f
+            LEFT JOIN (
+                SELECT
+                    id,
+                    fabric_id,
+                    color,
+                    size,
+                    price_override,
+                    stock,
+                    stock_meters,
+                    image,
+                    image2,
+                    image3,
+                    image4,
+                    pack_label,
+                    units_per_set
+                FROM fabric_variants
+                WHERE is_active = 1
+            ) v ON v.fabric_id = f.id
+            {$whereSql}
             ORDER BY {$orderBy} LIMIT ? OFFSET ?";
 $stmt = $conn->prepare($listSql);
 
@@ -128,6 +236,46 @@ if ($category !== '') {
     $activeFilters[] = [
         'label' => 'Category: ' . ($matchedCategory ?? $category),
         'remove_state' => array_merge($state, ['category' => '', 'page' => 1]),
+    ];
+}
+if ($minPrice > 0 || $maxPrice > 0) {
+    $label = 'Price: ';
+    $label .= ($minPrice > 0) ? ('Rs ' . $minPrice) : 'Any';
+    $label .= ' - ';
+    $label .= ($maxPrice > 0) ? ('Rs ' . $maxPrice) : 'Any';
+    $activeFilters[] = [
+        'label' => $label,
+        'remove_state' => array_merge($state, ['min_price' => 0, 'max_price' => 0, 'page' => 1]),
+    ];
+}
+if ($inStock === '1') {
+    $activeFilters[] = [
+        'label' => 'Availability: In Stock',
+        'remove_state' => array_merge($state, ['in_stock' => '', 'page' => 1]),
+    ];
+}
+if ($materialFilter !== '') {
+    $activeFilters[] = [
+        'label' => 'Material: ' . $materialFilter,
+        'remove_state' => array_merge($state, ['material' => '', 'page' => 1]),
+    ];
+}
+if ($colorFilter !== '') {
+    $activeFilters[] = [
+        'label' => 'Color: ' . $colorFilter,
+        'remove_state' => array_merge($state, ['color' => '', 'page' => 1]),
+    ];
+}
+if ($sizeFilter !== '') {
+    $activeFilters[] = [
+        'label' => 'Size/Pack: ' . $sizeFilter,
+        'remove_state' => array_merge($state, ['size' => '', 'page' => 1]),
+    ];
+}
+if ($dispatchFilter !== '') {
+    $activeFilters[] = [
+        'label' => 'Dispatch: ' . $dispatchFilter,
+        'remove_state' => array_merge($state, ['dispatch' => '', 'page' => 1]),
     ];
 }
 
@@ -163,6 +311,13 @@ function catalog_query(array $params): string {
             </div>
             <form class="catalog-search-strip" method="GET" action="catalog.php" role="search">
                 <input type="hidden" name="category" value="<?php echo e($category); ?>">
+                <input type="hidden" name="min_price" value="<?php echo (int) $minPrice; ?>">
+                <input type="hidden" name="max_price" value="<?php echo (int) $maxPrice; ?>">
+                <input type="hidden" name="in_stock" value="<?php echo e($inStock); ?>">
+                <input type="hidden" name="material" value="<?php echo e($materialFilter); ?>">
+                <input type="hidden" name="color" value="<?php echo e($colorFilter); ?>">
+                <input type="hidden" name="size" value="<?php echo e($sizeFilter); ?>">
+                <input type="hidden" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
                 <input type="hidden" name="sort" value="<?php echo e($sort); ?>">
                 <input type="hidden" name="per_page" value="<?php echo $perPage; ?>">
                 <input type="hidden" name="page" value="1">
@@ -187,6 +342,33 @@ function catalog_query(array $params): string {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Price Range (Rs)</label>
+                                <div class="row g-2">
+                                    <div class="col-6"><input type="number" min="0" name="min_price" class="form-control" value="<?php echo (int) $minPrice; ?>" placeholder="Min"></div>
+                                    <div class="col-6"><input type="number" min="0" name="max_price" class="form-control" value="<?php echo (int) $maxPrice; ?>" placeholder="Max"></div>
+                                </div>
+                            </div>
+                            <div class="col-12 form-check mt-2 ms-1">
+                                <input class="form-check-input" type="checkbox" value="1" id="in_stock_only" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="in_stock_only">In Stock Only</label>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Material</label>
+                                <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>" placeholder="Cotton, Linen...">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Color</label>
+                                <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>" placeholder="Indigo, Red...">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Size / Pack</label>
+                                <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>" placeholder="L, Queen, Pack of 2...">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Dispatch Time</label>
+                                <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>" placeholder="2-3 days, 1 week...">
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Sort</label>
@@ -219,7 +401,7 @@ function catalog_query(array $params): string {
 
             <div class="catalog-results">
 
-                <?php $activeFilterCount = ($search !== '' ? 1 : 0) + ($category !== '' ? 1 : 0); ?>
+                <?php $activeFilterCount = count($activeFilters); ?>
                 <!-- Mobile filter bar (hidden on desktop) -->
                 <div class="d-lg-none mobile-filter-bar mb-3">
                     <button type="button" class="mobile-filter-btn" data-bs-toggle="offcanvas" data-bs-target="#catalogFiltersDrawer" aria-controls="catalogFiltersDrawer">
@@ -240,17 +422,88 @@ function catalog_query(array $params): string {
                     <?php
                         $regularPrice = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
                         $salePrice    = (float) ($row['sale_price'] ?? 0);
+                        $variantId = (int) ($row['variant_id'] ?? 0);
+                        $variantColor = trim((string) ($row['variant_color'] ?? ''));
+                        $variantRawSize = trim((string) ($row['variant_size'] ?? ''));
+                        $variantPackLabel = trim((string) ($row['variant_pack_label'] ?? ''));
+                        $variantUnitsPerSet = (int) ($row['variant_units_per_set'] ?? 0);
                         $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $row['unit_type'] : 'meter';
-                        $displayStock = ($unitType === 'piece' || $unitType === 'set') ? (float) ($row['stock'] ?? 0) : (float) ($row['stock_meters'] ?? 0);
-                        $inStock      = !empty($row['is_available']) && $displayStock > 0;
+
+                        $variantSizeLabel = '';
+                        if ($variantId > 0) {
+                            $variantSizeLabel = variant_size_display([
+                                'size' => $variantRawSize,
+                                'pack_label' => $variantPackLabel,
+                                'units_per_set' => $variantUnitsPerSet,
+                            ], $unitType);
+                        }
+
+                        $variantTitleParts = [];
+                        if ($variantColor !== '' && strtolower($variantColor) !== 'default') {
+                            $variantTitleParts[] = $variantColor;
+                        }
+                        if ($variantSizeLabel !== '') {
+                            $variantTitleParts[] = $variantSizeLabel;
+                        }
+                        $displayName = (string) ($row['name'] ?? '');
+                        if ($variantId > 0 && !empty($variantTitleParts)) {
+                            $displayName .= ' - ' . implode(' / ', $variantTitleParts);
+                        }
+
+                        $imageCandidates = [];
+                        if ($variantId > 0) {
+                            $imageCandidates[] = (string) ($row['variant_image'] ?? '');
+                            $imageCandidates[] = (string) ($row['variant_image2'] ?? '');
+                            $imageCandidates[] = (string) ($row['variant_image3'] ?? '');
+                            $imageCandidates[] = (string) ($row['variant_image4'] ?? '');
+                        }
+                        $imageCandidates[] = (string) ($row['image'] ?? '');
+
+                        $cardImage = '';
+                        foreach ($imageCandidates as $candidateImage) {
+                            $candidateImage = trim((string) $candidateImage);
+                            if ($candidateImage !== '') {
+                                $cardImage = $candidateImage;
+                                break;
+                            }
+                        }
+
+                        $cardImageAsset = $cardImage !== '' ? fabric_image_asset_data($cardImage) : null;
+
+                        if ($variantId > 0) {
+                            $displayStock = ($unitType === 'piece' || $unitType === 'set')
+                                ? (float) ($row['variant_stock'] ?? 0)
+                                : (float) ($row['variant_stock_meters'] ?? 0);
+                        } else {
+                            $displayStock = ($unitType === 'piece' || $unitType === 'set') ? (float) ($row['stock'] ?? 0) : (float) ($row['stock_meters'] ?? 0);
+                        }
+                        $inStock = !empty($row['is_available']) && $displayStock > 0;
+
+                        $variantPriceOverride = ($variantId > 0) ? (float) ($row['variant_price_override'] ?? 0) : 0.0;
+                        if ($variantPriceOverride > 0) {
+                            $unitPrice = $variantPriceOverride;
+                        } else {
+                            $unitPrice = ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice) ? $salePrice : $regularPrice;
+                        }
+                        $showStrikePrice = $regularPrice > 0 && $unitPrice > 0 && $unitPrice < $regularPrice;
+
                         $hasSizeOptions = !empty(parse_size_options((string) ($row['size'] ?? '')));
+                        $productUrl = 'fabric.php?id=' . (int) ($row['id'] ?? 0);
+                        if ($variantId > 0) {
+                            $productUrl .= '&variant=' . $variantId;
+                        }
                     ?>
                     <div class="animate-in">
                         <article class="card h-100">
                             <div class="fabric-thumb-wrap">
-                                <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="fabric-thumb-link" aria-label="View <?php echo e($row['name']); ?>">
-                                    <?php if (!empty($row['image'])): ?>
-                                        <img src="images/fabrics/<?php echo e($row['image']); ?>" class="fabric-thumb" alt="<?php echo e($row['name']); ?>" loading="lazy" width="600" height="800">
+                                <a href="<?php echo e($productUrl); ?>" class="fabric-thumb-link" aria-label="View <?php echo e($displayName); ?>">
+                                    <?php if ($cardImage !== ''): ?>
+                                        <picture>
+                                            <?php if (!empty($cardImageAsset['webp_srcset'])): ?>
+                                                <source type="image/webp" srcset="<?php echo e($cardImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 80vw, (max-width: 1199px) 40vw, 320px">
+                                            <?php endif; ?>
+                                            <img src="<?php echo e((string) ($cardImageAsset['src'] ?? '')); ?>" class="fabric-thumb" alt="<?php echo e($displayName); ?>" loading="lazy" width="600" height="800">
+                                        </picture>
                                     <?php else: ?>
                                         <div class="fabric-thumb-empty">No image</div>
                                     <?php endif; ?>
@@ -264,16 +517,16 @@ function catalog_query(array $params): string {
                                 <?php if (!empty($row['category'])): ?>
                                     <p class="fabric-card-category"><?php echo e($row['category']); ?></p>
                                 <?php endif; ?>
-                                <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="fabric-card-title-link">
-                                    <p class="fabric-card-title"><?php echo e($row['name']); ?></p>
+                                <a href="<?php echo e($productUrl); ?>" class="fabric-card-title-link">
+                                    <p class="fabric-card-title"><?php echo e($displayName); ?></p>
                                 </a>
 
                                 <div class="fabric-price mb-2">
-                                    <?php if ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice): ?>
-                                        <span class="price-inr fw-bold">Rs <?php echo number_format($salePrice, 2); ?></span>
+                                    <?php if ($showStrikePrice): ?>
+                                        <span class="price-inr fw-bold">Rs <?php echo number_format($unitPrice, 2); ?></span>
                                         <span class="text-muted small ms-1"><del>Rs <?php echo number_format($regularPrice, 2); ?></del></span>
-                                    <?php elseif ($regularPrice > 0): ?>
-                                        <span class="price-inr">Rs <?php echo number_format($regularPrice, 2); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></span>
+                                    <?php elseif ($unitPrice > 0): ?>
+                                        <span class="price-inr">Rs <?php echo number_format($unitPrice, 2); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></span>
                                     <?php else: ?>
                                         <span class="text-muted small">Price on request</span>
                                     <?php endif; ?>
@@ -281,12 +534,22 @@ function catalog_query(array $params): string {
                                 <p class="fabric-trust-note">Fast dispatch | Quality checked</p>
 
                                 <div class="d-flex gap-1 mt-auto">
-                                    <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="btn btn-outline-dark btn-sm">View</a>
+                                    <a href="<?php echo e($productUrl); ?>" class="btn btn-outline-dark btn-sm">View</a>
                                     <?php if ($inStock): ?>
                                         <?php if ($unitType === 'meter'): ?>
-                                            <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Meter</a>
+                                            <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">Select Meter</a>
+                                        <?php elseif ($variantId > 0): ?>
+                                            <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
+                                                <?php echo csrf_field(); ?>
+                                                <input type="hidden" name="product_id" value="<?php echo (int) $row['id']; ?>">
+                                                <input type="hidden" name="variant_id" value="<?php echo $variantId; ?>">
+                                                <input type="hidden" name="selected_color" value="<?php echo e($variantColor); ?>">
+                                                <input type="hidden" name="selected_size" value="<?php echo e($variantSizeLabel); ?>">
+                                                <input type="hidden" name="quantity" value="1">
+                                                <button type="submit" class="btn btn-primary btn-sm w-100">Add to Cart</button>
+                                            </form>
                                         <?php elseif ($hasSizeOptions): ?>
-                                            <a href="fabric.php?id=<?php echo (int) $row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Size</a>
+                                            <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">Select Size</a>
                                         <?php else: ?>
                                             <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
                                                 <?php echo csrf_field(); ?>
@@ -359,6 +622,34 @@ function catalog_query(array $params): string {
                         <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?> items</option>
                     <?php endforeach; ?>
                 </select>
+            </div>
+            <div class="col-6">
+                <label class="form-label fw-semibold">Min Price</label>
+                <input type="number" min="0" name="min_price" class="form-control" value="<?php echo (int) $minPrice; ?>">
+            </div>
+            <div class="col-6">
+                <label class="form-label fw-semibold">Max Price</label>
+                <input type="number" min="0" name="max_price" class="form-control" value="<?php echo (int) $maxPrice; ?>">
+            </div>
+            <div class="col-12 form-check ms-1">
+                <input class="form-check-input" type="checkbox" value="1" id="in_stock_only_mobile" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
+                <label class="form-check-label" for="in_stock_only_mobile">In Stock Only</label>
+            </div>
+            <div class="col-6">
+                <label class="form-label fw-semibold">Material</label>
+                <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>">
+            </div>
+            <div class="col-6">
+                <label class="form-label fw-semibold">Color</label>
+                <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>">
+            </div>
+            <div class="col-6">
+                <label class="form-label fw-semibold">Size/Pack</label>
+                <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>">
+            </div>
+            <div class="col-6">
+                <label class="form-label fw-semibold">Dispatch</label>
+                <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
             </div>
             <div class="col-12 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1" data-bs-dismiss="offcanvas">Apply Filters</button>

@@ -9,9 +9,19 @@ return [
     'enabled' => ['cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'shipping-rto-risk', 'review-rating', 'order-timeline'],
     'settings' => [
         'cod-guard' => [
-            'whatsapp_threshold' => (float) (function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_THRESHOLD', '999') : '999'),
+            'whatsapp_threshold' => (float) (function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_THRESHOLD', '1000') : '1000'),
             'call_threshold' => (float) (function_exists('_cfg') ? _cfg('COD_GUARD_CALL_THRESHOLD', '2000') : '2000'),
             'confirmation_hours' => (int) (function_exists('_cfg') ? _cfg('COD_GUARD_CONFIRMATION_HOURS', '24') : '24'),
+            'message_max_attempts' => (int) (function_exists('_cfg') ? _cfg('COD_GUARD_MESSAGE_MAX_ATTEMPTS', '3') : '3'),
+            'whatsapp_provider' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_PROVIDER', 'whatsapp_cloud') : 'whatsapp_cloud',
+            'whatsapp_api_base_url' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_API_BASE_URL', 'https://graph.facebook.com/v21.0') : 'https://graph.facebook.com/v21.0',
+            'whatsapp_phone_number_id' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_PHONE_NUMBER_ID', '') : '',
+            'whatsapp_access_token' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_ACCESS_TOKEN', '') : '',
+            'whatsapp_template_name' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_TEMPLATE_NAME', '') : '',
+            'whatsapp_template_language' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_TEMPLATE_LANGUAGE', 'en') : 'en',
+            'whatsapp_app_secret' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_APP_SECRET', '') : '',
+            'webhook_verify_token' => function_exists('_cfg') ? _cfg('COD_GUARD_WEBHOOK_VERIFY_TOKEN', '') : '',
+            'webhook_auth_token' => function_exists('_cfg') ? _cfg('COD_GUARD_WEBHOOK_TOKEN', '') : '',
         ],
         'utm-attribution' => [
             'cookie_days' => (int) (function_exists('_cfg') ? _cfg('UTM_COOKIE_DAYS', '30') : '30'),

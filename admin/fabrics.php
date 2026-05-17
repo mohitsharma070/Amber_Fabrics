@@ -72,12 +72,31 @@ $listSql = "SELECT
                 f.price, f.sale_price, f.stock, f.unit_type,
                 f.stock_meters,
                 CASE
+                    WHEN COALESCE(fv.variant_count, 0) > 0 THEN COALESCE(fv.variant_stock, 0)
                     WHEN f.stock_meters IS NOT NULL AND f.stock_meters > 0 THEN f.stock_meters
                     ELSE COALESCE(f.stock, 0)
                 END AS effective_stock,
                 f.status, f.is_featured,
-                f.gsm, f.width, f.moq, f.lead_time
+                f.gsm, f.width, f.moq, f.lead_time,
+                COALESCE(fv.variant_count, 0) AS variant_count,
+                COALESCE(fv.variant_stock, 0) AS variant_stock
             FROM fabrics f
+            LEFT JOIN (
+                SELECT
+                    fabric_id,
+                    COUNT(*) AS variant_count,
+                    SUM(CASE WHEN unit_type_parent = 'meter' THEN stock_meters ELSE stock END) AS variant_stock
+                FROM (
+                    SELECT fv2.fabric_id,
+                           fv2.stock,
+                           fv2.stock_meters,
+                           fab.unit_type AS unit_type_parent
+                    FROM fabric_variants fv2
+                    JOIN fabrics fab ON fab.id = fv2.fabric_id
+                    WHERE fv2.is_active = 1
+                ) sub
+                GROUP BY fabric_id
+            ) fv ON fv.fabric_id = f.id
             {$whereSql}
             ORDER BY {$orderBy}
             LIMIT ? OFFSET ?";
@@ -152,6 +171,7 @@ include 'partials/header.php';
                 <th>Price</th>
                 <th>Sale Price</th>
                 <th>Stock</th>
+                <th>Variants</th>
                 <th>Status</th>
                 <th>Featured</th>
                 <th class="text-end">Actions</th>
@@ -159,13 +179,13 @@ include 'partials/header.php';
         </thead>
         <tbody>
         <?php if (empty($products)): ?>
-            <tr class="admin-empty-row"><td colspan="9" class="text-center text-muted">No products found.</td></tr>
+            <tr class="admin-empty-row"><td colspan="10" class="text-center text-muted">No products found.</td></tr>
         <?php endif; ?>
 
         <?php foreach ($products as $p): ?>
             <?php
                 $stockVal = round((float) ($p['effective_stock'] ?? 0), 2);
-                $unitType = in_array((string) ($p['unit_type'] ?? ''), ['meter', 'piece'], true) ? (string) $p['unit_type'] : 'meter';
+                $unitType = in_array((string) ($p['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $p['unit_type'] : 'meter';
                 $isLowStock = $stockVal <= 3;
                 $statusClass = ($p['status'] ?? 'inactive') === 'active' ? 'bg-success' : 'bg-secondary';
                 $featuredClass = !empty($p['is_featured']) ? 'bg-warning text-dark' : 'bg-light text-dark';
@@ -173,7 +193,8 @@ include 'partials/header.php';
             <tr class="<?php echo $isLowStock ? 'table-warning' : ''; ?>">
                 <td data-label="Image">
                     <?php if (!empty($p['image'])): ?>
-                        <img src="../images/fabrics/<?php echo e($p['image']); ?>" width="60" class="rounded" alt="<?php echo e($p['name']); ?>">
+                        <?php $adminImageAsset = fabric_image_asset_data((string) $p['image']); ?>
+                        <img src="..<?php echo e((string) ($adminImageAsset['thumb_src'] ?? '')); ?>" width="60" class="rounded" alt="<?php echo e($p['name']); ?>">
                     <?php else: ?>
                         <span class="text-muted">No image</span>
                     <?php endif; ?>
@@ -204,6 +225,15 @@ include 'partials/header.php';
                         <div class="small text-danger">Low stock</div>
                     <?php endif; ?>
                 </td>
+                <td data-label="Variants">
+                    <?php if ((int)($p['variant_count'] ?? 0) > 0): ?>
+                        <a href="edit-fabric.php?id=<?php echo (int)$p['id']; ?>#variants-card" class="badge bg-info text-dark text-decoration-none">
+                            <?php echo (int)$p['variant_count']; ?> var
+                        </a>
+                    <?php else: ?>
+                        <a href="edit-fabric.php?id=<?php echo (int)$p['id']; ?>#variants-card" class="badge bg-light text-muted text-decoration-none">Add</a>
+                    <?php endif; ?>
+                </td>
                 <td data-label="Status">
                     <span class="badge <?php echo $statusClass; ?>"><?php echo ucfirst((string) ($p['status'] ?? 'inactive')); ?></span>
                 </td>
@@ -211,11 +241,11 @@ include 'partials/header.php';
                     <span class="badge <?php echo $featuredClass; ?>"><?php echo !empty($p['is_featured']) ? 'Yes' : 'No'; ?></span>
                 </td>
                 <td data-label="Actions" class="text-end">
-                    <a class="btn btn-sm btn-outline-secondary" href="edit-fabric.php?id=<?php echo (int) $p['id']; ?>">Edit</a>
-                    <form action="delete-fabric.php" method="POST" class="d-inline" onsubmit="return confirm('Delete this product?');">
+                    <a class="btn btn-sm btn-outline-secondary" href="edit-fabric.php?id=<?php echo (int) $p['id']; ?>"><i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit</a>
+                    <form action="delete-fabric.php" method="POST" class="d-inline" data-confirm-modal data-confirm-title="Archive Product" data-confirm-message="Archive this product and hide it from storefront?" data-confirm-ok="Archive">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="id" value="<?php echo (int) $p['id']; ?>">
-                        <button class="btn btn-sm btn-outline-danger">Delete</button>
+                        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-archive me-1" aria-hidden="true"></i>Archive</button>
                     </form>
                 </td>
             </tr>

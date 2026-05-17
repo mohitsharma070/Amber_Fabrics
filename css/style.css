@@ -522,6 +522,7 @@ img {
 .fabric-thumb-wrap {
     position: relative;
     overflow: hidden;
+    background: #f2f6fb;
 }
 
 .fabric-thumb-link {
@@ -533,13 +534,16 @@ img {
 .fabric-thumb {
     aspect-ratio: 3 / 4;
     width: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    object-position: center;
     display: block;
+    background: #f2f6fb;
+    padding: 0.3rem;
     transition: transform 0.3s ease;
 }
 
 .card:hover .fabric-thumb {
-    transform: scale(1.04);
+    transform: scale(1.01);
 }
 
 .fabric-thumb-empty {
@@ -1211,6 +1215,131 @@ img {
     box-shadow: var(--shadow-soft);
 }
 
+.admin-shell .admin-nav-grid {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.admin-shell .admin-nav-grid form {
+    display: inline-flex;
+}
+
+.admin-shell .admin-nav-grid .dropdown-menu {
+    border-radius: 10px;
+    border: 1px solid rgba(18, 33, 53, 0.12);
+    box-shadow: 0 12px 28px rgba(11, 24, 40, 0.16);
+    padding: 0.35rem;
+}
+
+.admin-shell .admin-nav-grid .dropdown-item {
+    border-radius: 7px;
+    font-size: 0.92rem;
+    padding: 0.45rem 0.6rem;
+}
+
+.admin-shell .admin-nav-grid .dropdown-item.active,
+.admin-shell .admin-nav-grid .dropdown-item:active {
+    background: rgba(13, 110, 253, 0.14);
+    color: #0d3b85;
+}
+
+.admin-shell .admin-nav-grid .nav-link {
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.admin-shell .admin-nav-grid .nav-link.active {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.admin-shell .order-workflow-steps {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+}
+
+.admin-shell .order-workflow-step {
+    border: 1px solid #ced8e9;
+    border-radius: 999px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.78rem;
+    color: #44556d;
+    background: #ffffff;
+}
+
+.admin-shell .order-workflow-step.is-current {
+    border-color: #0d6efd;
+    color: #0d6efd;
+    font-weight: 600;
+}
+
+.admin-shell .order-workflow-step.is-done {
+    border-color: #198754;
+    color: #198754;
+}
+
+.admin-shell .product-editor-tabs .nav-link {
+    border-radius: 8px;
+}
+
+.admin-shell .admin-page-header {
+    gap: 0.75rem;
+}
+
+.admin-shell .admin-filter-form {
+    align-items: flex-end;
+}
+
+.admin-shell .admin-filter-actions {
+    display: inline-flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.admin-shell .admin-dashboard-filter > div {
+    min-width: 160px;
+}
+
+.admin-shell .admin-row-actions {
+    white-space: nowrap;
+}
+
+.admin-shell .admin-row-actions .btn {
+    margin-bottom: 0.3rem;
+}
+
+.admin-shell .return-breakdown-mobile {
+    display: none;
+}
+
+.admin-shell .admin-no-card-table {
+    min-width: 760px;
+}
+
+@media (min-width: 992px) {
+    .admin-shell .navbar .navbar-collapse {
+        overflow: visible;
+    }
+
+    .admin-shell .admin-nav-grid {
+        row-gap: 0.35rem;
+        column-gap: 0.25rem;
+        max-width: 100%;
+    }
+
+    .admin-shell .admin-nav-grid .nav-link {
+        padding: 0.42rem 0.62rem;
+        font-size: 0.95rem;
+    }
+}
+
 .admin-login-wrap {
     max-width: 460px;
 }
@@ -1250,6 +1379,25 @@ img {
 /* --- Use same icon behavior for admin navbar --- */
 .admin-shell .navbar .navbar-toggler-icon {
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255%2C255%2C255%2C0.9%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+.admin-shell .admin-nav-toggler {
+    position: relative;
+}
+
+.admin-shell .admin-nav-close-icon {
+    display: none;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.admin-shell .admin-nav-toggler[aria-expanded="true"] .admin-nav-open-icon {
+    display: none;
+}
+
+.admin-shell .admin-nav-toggler[aria-expanded="true"] .admin-nav-close-icon {
+    display: inline-block;
 }
 
 /* Storefront uses offcanvas drawer (legacy navbar-collapse styles removed). */
@@ -1407,10 +1555,14 @@ img {
     border: 1px solid rgba(13,37,64,0.1);
     border-radius: var(--radius-md);
     padding: 0.45rem 0.65rem;
-    position: sticky;
-    top: 62px;
-    z-index: 100;
+    position: static;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+@media (min-width: 992px) {
+    .mobile-filter-bar {
+        display: none !important;
+    }
 }
 
 .mobile-filter-btn {
@@ -1837,8 +1989,28 @@ img {
         max-width: none;
     }
 
-    .admin-card-table td[data-label="Actions"] form {
+    .admin-card-table td[data-label="Actions"] form,
+    .admin-card-table td[data-label="Action"] form {
         display: inline-block;
+    }
+
+    .admin-shell .admin-card-table tr.return-breakdown-row {
+        display: none;
+    }
+
+    .admin-shell .return-breakdown-mobile {
+        display: block;
+        margin-top: 0.45rem;
+        padding-top: 0.45rem;
+        border-top: 1px dashed #d4deec;
+    }
+
+    .admin-shell .return-breakdown-mobile-item {
+        padding: 0.35rem 0;
+    }
+
+    .admin-shell .return-breakdown-mobile-item + .return-breakdown-mobile-item {
+        border-top: 1px solid #e8eef8;
     }
 }
 
@@ -1864,17 +2036,59 @@ img {
     }
 }
 
-/* --- Admin page headers: stack on mobile --- */
-@media (max-width: 575.98px) {
-    .admin-shell .d-flex.justify-content-between {
-        flex-direction: column;
-        align-items: flex-start !important;
-        gap: 0.65rem;
-    }
-}
-
 /* --- Admin filter forms: better mobile columns --- */
 @media (max-width: 767.98px) {
+    .admin-shell .admin-page-header {
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+
+    .admin-shell .admin-filter-form > [class*="col-"] {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    .admin-shell .admin-filter-actions {
+        width: 100%;
+    }
+
+    .admin-shell .admin-filter-actions .btn {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+
+    .admin-shell .admin-dashboard-filter {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .admin-shell .admin-dashboard-filter > div {
+        min-width: 0;
+    }
+
+    .admin-shell .admin-dashboard-filter .admin-filter-actions {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-shell .admin-no-card-table {
+        min-width: 680px;
+    }
+
+    .admin-shell .admin-row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .admin-shell .admin-row-actions .btn,
+    .admin-shell .admin-row-actions form {
+        margin: 0;
+    }
+
     .admin-shell .form-label {
         font-size: 0.875rem;
         margin-bottom: 0.25rem;
@@ -2668,6 +2882,17 @@ img {
 @media (max-width: 390px) {
     .catalog-utility-row {
         gap: 0.6rem;
+    }
+
+    .catalog-products-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .fabric-thumb {
+        aspect-ratio: 4 / 5;
+        object-fit: contain;
+        background: #f2f6fb;
+        padding: 0.25rem;
     }
 
     .catalog-results-count {

@@ -187,7 +187,7 @@ $metaTitle = 'Coupons | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
     <h1 class="mb-0">Coupons</h1>
 </div>
 
@@ -254,7 +254,7 @@ include 'partials/header.php';
 
     <div class="col-lg-8">
         <div class="table-responsive">
-            <table class="table table-striped align-middle">
+            <table class="table table-striped align-middle admin-card-table">
                 <thead class="table-dark">
                     <tr>
                         <th>Code</th>
@@ -292,7 +292,7 @@ include 'partials/header.php';
                                     <?php echo ucfirst(e($coupon['status'])); ?>
                                 </span>
                             </td>
-                            <td class="text-nowrap">
+                            <td class="text-nowrap admin-row-actions" data-label="Action">
                                 <div class="d-flex flex-wrap gap-1 align-items-center">
                                 <form method="POST" action="coupons.php" class="m-0">
                                     <?php echo csrf_field(); ?>
@@ -317,7 +317,7 @@ include 'partials/header.php';
                                         data-status="<?php echo e($coupon['status']); ?>">
                                     Edit
                                 </button>
-                                <form method="POST" action="coupons.php" class="m-0" onsubmit="return confirm('Delete this coupon?');">
+                                <form method="POST" action="coupons.php" class="m-0" data-confirm-modal data-confirm-title="Delete Coupon" data-confirm-message="Delete this coupon?" data-confirm-ok="Delete">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">

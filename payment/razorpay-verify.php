@@ -46,7 +46,7 @@ try {
     $conn->begin_transaction();
 
     $orderStmt = $conn->prepare(
-        "SELECT id, payment_status, order_status, order_notes
+        "SELECT id, payment_status, order_status, order_notes, total_amount
          FROM orders
          WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
          FOR UPDATE"
@@ -67,14 +67,58 @@ try {
     // Cross-check: the razorpay_order_id submitted by the client must match
     // the one we created server-side and stored in our payments table.
     $payRowStmt = $conn->prepare(
-        "SELECT razorpay_order_id FROM payments WHERE order_id = ? AND payment_method = 'razorpay' LIMIT 1"
+        "SELECT id, razorpay_order_id FROM payments WHERE order_id = ? AND payment_method = 'razorpay' LIMIT 1"
     );
     $payRowStmt->bind_param('i', $orderId);
     $payRowStmt->execute();
     $payRow = $payRowStmt->get_result()->fetch_assoc();
 
+    $paymentRowId = (int) ($payRow['id'] ?? 0);
     if (!$payRow || (string) $payRow['razorpay_order_id'] !== $rzpOrderId) {
+        payment_attempt_touch(
+            $conn,
+            'razorpay',
+            $rzpOrderId,
+            $orderId,
+            $paymentRowId,
+            'verify_rejected',
+            'verify',
+            $paymentId,
+            $signature,
+            'order_id_mismatch',
+            'Razorpay order ID mismatch during verify',
+            '',
+            '',
+            '',
+            false
+        );
         throw new RuntimeException('Razorpay order ID mismatch — possible tampering attempt.');
+    }
+
+    $remoteValidation = razorpay_validate_remote_capture(
+        $paymentId,
+        $rzpOrderId,
+        (float) ($order['total_amount'] ?? 0)
+    );
+    if (empty($remoteValidation['ok'])) {
+        payment_attempt_touch(
+            $conn,
+            'razorpay',
+            $rzpOrderId,
+            $orderId,
+            $paymentRowId,
+            'verify_rejected',
+            'verify',
+            $paymentId,
+            $signature,
+            'gateway_validation_failed',
+            (string) ($remoteValidation['error'] ?? 'unknown'),
+            '',
+            '',
+            '',
+            false
+        );
+        throw new RuntimeException('Razorpay gateway validation failed.');
     }
 
     if (($order['payment_status'] ?? '') === 'paid') {
@@ -87,24 +131,31 @@ try {
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
 
-    $updateOrder = $conn->prepare(
-        "UPDATE orders
-         SET payment_id = ?, payment_status = 'paid', order_status = 'confirmed', status = 'confirmed'
-         WHERE id = ? AND payment_status IN ('pending', 'failed')"
+    razorpay_mark_order_paid(
+        $conn,
+        $orderId,
+        (string) ($order['payment_status'] ?? ''),
+        $paymentId,
+        $rzpOrderId,
+        $signature
     );
-    $updateOrder->bind_param('si', $paymentId, $orderId);
-    $updateOrder->execute();
-    if ($conn->affected_rows === 0 && (string) ($order['payment_status'] ?? '') !== 'paid') {
-        throw new RuntimeException('Order payment state changed unexpectedly during verification.');
-    }
-
-    $updatePayment = $conn->prepare(
-        "UPDATE payments
-         SET payment_status = 'paid', transaction_id = ?, razorpay_order_id = ?, razorpay_payment_id = ?, razorpay_signature = ?
-         WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending', 'failed')"
+    payment_attempt_touch(
+        $conn,
+        'razorpay',
+        $rzpOrderId,
+        $orderId,
+        $paymentRowId,
+        'verify_captured',
+        'verify',
+        $paymentId,
+        $signature,
+        '',
+        '',
+        '',
+        '',
+        '',
+        false
     );
-    $updatePayment->bind_param('ssssi', $paymentId, $rzpOrderId, $paymentId, $signature, $orderId);
-    $updatePayment->execute();
 
     log_order_activity(
         $conn,
@@ -116,46 +167,13 @@ try {
         'Razorpay payment id: ' . $paymentId
     );
 
-    $pendingCouponId = (int) ($_SESSION['pending_coupon_id'] ?? 0);
-    $resolvedCouponId = $pendingCouponId;
-    if ($resolvedCouponId <= 0) {
-        $orderNotes = (string) ($order['order_notes'] ?? '');
-        if ($orderNotes !== '' && preg_match('/Coupon Applied:\s*([A-Z0-9_-]+)/i', $orderNotes, $m)) {
-            $couponCode = strtoupper(trim((string) ($m[1] ?? '')));
-            if ($couponCode !== '') {
-                $couponIdStmt = $conn->prepare("SELECT id FROM coupons WHERE code = ? LIMIT 1");
-                $couponIdStmt->bind_param('s', $couponCode);
-                $couponIdStmt->execute();
-                $couponRow = $couponIdStmt->get_result()->fetch_assoc();
-                $resolvedCouponId = (int) ($couponRow['id'] ?? 0);
-            }
-        }
-    }
-
-    $couponUpdated = false;
-    if ($resolvedCouponId > 0) {
-        if (has_customer_used_coupon($conn, $resolvedCouponId, $customerId)) {
-            throw new RuntimeException('Coupon already used by this customer.');
-        }
-        // Only increment if the coupon still has capacity (usage_limit = 0 means unlimited)
-        $couponStmt = $conn->prepare(
-            "UPDATE coupons SET used_count = used_count + 1
-             WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
-        );
-        $couponStmt->bind_param('i', $resolvedCouponId);
-        $couponStmt->execute();
-        if ($conn->affected_rows > 0) {
-            mark_coupon_used_once($conn, $resolvedCouponId, $customerId, $orderId);
-            $couponUpdated = true;
-        }
-    }
-
-    if ($resolvedCouponId > 0 && !$couponUpdated) {
-        throw new RuntimeException('Coupon usage limit reached.');
-    }
-    if ($couponUpdated) {
-        log_order_activity($conn, $orderId, 'coupon_consumed', 'system', 0, 'system', 'Coupon usage count incremented after payment.');
-    }
+    consume_coupon_after_razorpay_capture(
+        $conn,
+        $orderId,
+        $customerId,
+        (int) ($_SESSION['pending_coupon_id'] ?? 0),
+        (string) ($order['order_notes'] ?? '')
+    );
 
     $conn->commit();
 

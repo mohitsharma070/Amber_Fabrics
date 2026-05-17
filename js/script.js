@@ -128,6 +128,48 @@ document.addEventListener("DOMContentLoaded", function () {
         window.addEventListener("hashchange", syncCategoriesActive);
     }());
 
+    // Admin mobile navbar: auto-close on scroll and link clicks.
+    (function () {
+        if (!document.body.classList.contains("admin-shell")) return;
+
+        var nav = document.getElementById("adminNav");
+        if (!nav || typeof bootstrap === "undefined" || !bootstrap.Collapse) return;
+
+        var toggler = document.querySelector('.admin-nav-toggler[data-bs-target="#adminNav"]');
+        var collapse = bootstrap.Collapse.getOrCreateInstance(nav, { toggle: false });
+
+        function isMobileWidth() {
+            return window.matchMedia("(max-width: 991.98px)").matches;
+        }
+
+        function closeNav() {
+            if (!isMobileWidth() || !nav.classList.contains("show")) return;
+            collapse.hide();
+        }
+
+        nav.querySelectorAll("a.nav-link, a.dropdown-item").forEach(function (link) {
+            link.addEventListener("click", function () {
+                // Keep parent dropdown toggles open on mobile; close only on real navigation links.
+                if (link.classList.contains("dropdown-toggle") || link.getAttribute("data-bs-toggle") === "dropdown") {
+                    return;
+                }
+                closeNav();
+            });
+        });
+
+        window.addEventListener("scroll", closeNav, { passive: true });
+        window.addEventListener("touchmove", closeNav, { passive: true });
+
+        if (toggler) {
+            nav.addEventListener("shown.bs.collapse", function () {
+                toggler.setAttribute("aria-expanded", "true");
+            });
+            nav.addEventListener("hidden.bs.collapse", function () {
+                toggler.setAttribute("aria-expanded", "false");
+            });
+        }
+    }());
+
     var filterToggleButtons = document.querySelectorAll(".mobile-filter-toggle");
     filterToggleButtons.forEach(function (button) {
         var targetSelector = button.getAttribute("data-bs-target");
@@ -157,6 +199,9 @@ document.addEventListener("DOMContentLoaded", function () {
     if (document.body.classList.contains("admin-shell")) {
         var adminTables = document.querySelectorAll(".table-responsive > table.table");
         adminTables.forEach(function (table) {
+            if (table.classList.contains("admin-no-card-table")) {
+                return;
+            }
             table.classList.add("admin-card-table");
 
             var headerCells = table.querySelectorAll("thead th");
@@ -441,6 +486,92 @@ document.addEventListener("DOMContentLoaded", function () {
         window.addEventListener("scroll", syncVisibility, { passive: true });
         window.addEventListener("resize", syncVisibility);
         syncVisibility();
+    }());
+
+    // Marketing cookie consent banner
+    (function () {
+        var banner = document.getElementById("cookieConsentBanner");
+        if (!banner) return;
+        var openTriggers = document.querySelectorAll("[data-open-cookie-consent]");
+
+        var buttons = banner.querySelectorAll("[data-consent-choice]");
+        if (!buttons.length) return;
+
+        function showBanner() {
+            banner.classList.remove("d-none");
+        }
+
+        function hideBanner() {
+            banner.classList.add("d-none");
+        }
+
+        if (String(banner.getAttribute("data-consent-status") || "").toLowerCase() !== "unknown") {
+            hideBanner();
+        }
+
+        openTriggers.forEach(function (trigger) {
+            trigger.addEventListener("click", function (e) {
+                e.preventDefault();
+                showBanner();
+                banner.scrollIntoView({ behavior: "smooth", block: "end" });
+            });
+        });
+
+        function setBusy(isBusy) {
+            buttons.forEach(function (btn) {
+                btn.disabled = !!isBusy;
+            });
+            banner.style.opacity = isBusy ? "0.75" : "1";
+        }
+
+        function submitChoice(choice) {
+            var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            var csrfToken = csrfMeta ? (csrfMeta.getAttribute("content") || "") : "";
+
+            var body = new URLSearchParams();
+            body.append("choice", choice);
+            if (csrfToken) {
+                body.append("csrf_token", csrfToken);
+            }
+
+            setBusy(true);
+            fetch("/cookie-consent.php", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "X-Requested-With": "XMLHttpRequest"
+                },
+                credentials: "same-origin",
+                body: body.toString()
+            })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (!data || !data.success) {
+                        throw new Error("Consent update failed");
+                    }
+                    banner.setAttribute("data-consent-status", String(data.status || ""));
+                    hideBanner();
+                    if (String(data.status || "") === "granted") {
+                        window.location.reload();
+                    }
+                })
+                .catch(function () {
+                    setBusy(false);
+                });
+        }
+
+        buttons.forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var choice = String(btn.getAttribute("data-consent-choice") || "").toLowerCase();
+                if (choice === "accept") {
+                    submitChoice("accept");
+                    return;
+                }
+                if (choice === "reject") {
+                    submitChoice("reject");
+                }
+            });
+        });
     }());
 });
 

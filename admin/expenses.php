@@ -105,7 +105,7 @@ $metaTitle = 'Expenses | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1 class="mb-1">Expenses</h1>
         <p class="text-muted mb-0">Total Expenses<?php echo $month ? ' (' . e($month) . ')' : ''; ?>: <strong>Rs <?php echo number_format($totalExpenses, 2); ?></strong></p>
@@ -153,19 +153,19 @@ include 'partials/header.php';
     </div>
 
     <div class="col-lg-8">
-        <form method="GET" class="row g-2 mb-3">
+        <form method="GET" class="row g-2 mb-3 admin-filter-form">
             <div class="col-md-4">
                 <label class="form-label">Filter by Month</label>
                 <input type="month" name="month" class="form-control" value="<?php echo e($month); ?>">
             </div>
-            <div class="col-md-auto align-self-end d-flex gap-2">
-                <button class="btn btn-primary" type="submit">Apply</button>
-                <a href="expenses.php" class="btn btn-outline-secondary">Reset</a>
+            <div class="col-md-auto align-self-end d-flex gap-2 admin-filter-actions">
+                <button class="btn btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
+                <a href="expenses.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
             </div>
         </form>
 
         <div class="table-responsive">
-            <table class="table table-striped align-middle">
+            <table class="table table-striped align-middle admin-card-table">
                 <thead class="table-dark">
                     <tr>
                         <th>Date</th>
@@ -185,13 +185,13 @@ include 'partials/header.php';
                             <td><?php echo e((string) $row['type']); ?></td>
                             <td>Rs <?php echo number_format((float) $row['amount'], 2); ?></td>
                             <td><?php echo e((string) $row['note']); ?></td>
-                            <td class="text-end">
-                                <a class="btn btn-sm btn-outline-primary" href="expenses.php?edit=<?php echo (int) $row['id']; ?><?php echo $month ? '&month=' . urlencode($month) : ''; ?>">Edit</a>
-                                <form method="POST" action="expenses.php<?php echo $month ? '?month=' . urlencode($month) : ''; ?>" class="d-inline" onsubmit="return confirm('Delete this expense?');">
+                            <td class="text-end admin-row-actions">
+                                <a class="btn btn-sm btn-outline-primary" href="expenses.php?edit=<?php echo (int) $row['id']; ?><?php echo $month ? '&month=' . urlencode($month) : ''; ?>"><i class="bi bi-pencil me-1"></i>Edit</a>
+                                <form method="POST" action="expenses.php<?php echo $month ? '?month=' . urlencode($month) : ''; ?>" class="d-inline" data-confirm-modal data-confirm-title="Delete Expense" data-confirm-message="Delete this expense entry?" data-confirm-ok="Delete">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?php echo (int) $row['id']; ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Delete</button>
                                 </form>
                             </td>
                         </tr>

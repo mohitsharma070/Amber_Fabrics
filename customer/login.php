@@ -60,14 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sessionMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])
                 ? $_SESSION['cart_meter_length']
                 : [];
-            $cartParseKey = static function (string $rawKey): array {
-                $parts = explode('::', $rawKey, 2);
-                $pid = (int) ($parts[0] ?? 0);
-                return [$pid, $parts[1] ?? ''];
-            };
             $mergedIds = array_values(array_filter(array_unique(array_map(
-                static function ($key) use ($cartParseKey) {
-                    [$pid] = $cartParseKey((string) $key);
+                static function ($key) {
+                    [$pid] = cart_parse_key((string) $key);
                     return $pid;
                 },
                 array_merge(array_keys($dbCart), array_keys($sessionCart))
@@ -87,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             foreach ($sessionCart as $cartKey => $qty) {
-                [$productId] = $cartParseKey((string) $cartKey);
+                [$productId] = cart_parse_key((string) $cartKey);
                 if ($productId <= 0) {
                     continue;
                 }
@@ -106,35 +101,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // more units in cart than are actually available.
             if (!empty($dbCart)) {
                 $mergedIds = [];
+                $mergedVariantIds = [];
                 foreach (array_keys($dbCart) as $key) {
-                    [$pid] = $cartParseKey((string) $key);
+                    [$pid, $variantId] = cart_parse_key((string) $key);
                     if ($pid > 0) {
                         $mergedIds[] = $pid;
                     }
+                    if ($variantId > 0) {
+                        $mergedVariantIds[] = $variantId;
+                    }
                 }
                 $mergedIds = array_values(array_unique($mergedIds));
+                $mergedVariantIds = array_values(array_unique($mergedVariantIds));
                 if (!empty($mergedIds)) {
                     $ph   = implode(',', array_fill(0, count($mergedIds), '?'));
                     $stok = $conn->prepare("SELECT id, unit_type, stock, stock_meters FROM fabrics WHERE id IN ($ph)");
                     $stok->bind_param(str_repeat('i', count($mergedIds)), ...$mergedIds);
                     $stok->execute();
                     $stockRows = $stok->get_result()->fetch_all(MYSQLI_ASSOC);
+                    $productStockMap = [];
                     foreach ($stockRows as $sr) {
-                        $sid = (int) $sr['id'];
-                        $unitType = in_array((string) ($sr['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-                            ? (string) $sr['unit_type']
-                            : 'meter';
+                        $sid = (int) ($sr['id'] ?? 0);
+                        if ($sid <= 0) {
+                            continue;
+                        }
+                        $productStockMap[$sid] = [
+                            'unit_type' => in_array((string) ($sr['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+                                ? (string) $sr['unit_type']
+                                : 'meter',
+                            'stock' => (float) ($sr['stock'] ?? 0),
+                            'stock_meters' => (float) ($sr['stock_meters'] ?? 0),
+                        ];
+                    }
+
+                    $variantMap = !empty($mergedVariantIds) ? get_variants_by_ids($conn, $mergedVariantIds) : [];
+                    foreach ($dbCart as $key => $qVal) {
+                        [$kPid, $variantId] = cart_parse_key((string) $key);
+                        if ($kPid <= 0 || !isset($productStockMap[$kPid])) {
+                            unset($dbCart[$key], $dbMeterMap[$key]);
+                            continue;
+                        }
+                        $unitType = (string) $productStockMap[$kPid]['unit_type'];
                         $avail = ($unitType === 'meter')
-                            ? (float) ($sr['stock_meters'] ?? 0)
-                            : (float) ($sr['stock'] ?? 0);
-                        foreach ($dbCart as $key => $qVal) {
-                            [$kPid] = $cartParseKey((string) $key);
-                            if ($kPid !== $sid) {
+                            ? (float) $productStockMap[$kPid]['stock_meters']
+                            : (float) $productStockMap[$kPid]['stock'];
+
+                        if ($variantId > 0) {
+                            $variant = $variantMap[$variantId] ?? null;
+                            if (!$variant || (int) ($variant['fabric_id'] ?? 0) !== $kPid || (int) ($variant['is_active'] ?? 0) !== 1) {
+                                unset($dbCart[$key], $dbMeterMap[$key]);
                                 continue;
                             }
-                            if ($avail > 0 && $qVal > $avail) {
-                                $dbCart[$key] = ($unitType === 'meter') ? round($avail, 2) : (int) floor($avail);
-                            }
+                            $avail = ($unitType === 'meter')
+                                ? (float) ($variant['stock_meters'] ?? 0)
+                                : (float) ($variant['stock'] ?? 0);
+                        }
+
+                        if ($avail <= 0) {
+                            unset($dbCart[$key], $dbMeterMap[$key]);
+                            continue;
+                        }
+                        if ((float) $qVal > $avail) {
+                            $dbCart[$key] = ($unitType === 'meter') ? round($avail, 2) : (int) floor($avail);
                         }
                     }
                 }
@@ -159,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? $_SESSION['wishlist_meter_length']
                 : [];
             foreach ($sessionWishlist as $wishlistKey => $wishlistQty) {
-                [$wishlistPid] = $cartParseKey((string) $wishlistKey);
+                [$wishlistPid] = cart_parse_key((string) $wishlistKey);
                 if ($wishlistPid <= 0) {
                     continue;
                 }

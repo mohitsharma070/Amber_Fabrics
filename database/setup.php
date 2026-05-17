@@ -137,6 +137,65 @@ function ensure_tables(mysqli $conn): void
         $conn->query("ALTER TABLE fabrics MODIFY COLUMN unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter'");
     }
 
+    // Variant-level inventory
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS fabric_variants (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            fabric_id INT NOT NULL,
+            color VARCHAR(100) NOT NULL DEFAULT '',
+            size VARCHAR(100) NOT NULL DEFAULT '',
+            sku VARCHAR(100) UNIQUE DEFAULT NULL,
+            image VARCHAR(255) DEFAULT NULL,
+            pack_label VARCHAR(120) DEFAULT NULL,
+            units_per_set INT DEFAULT NULL,
+            price_override DECIMAL(10,2) DEFAULT NULL,
+            stock DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            stock_meters DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            sort_order SMALLINT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_fv_fabric (fabric_id),
+            UNIQUE KEY uq_fabric_color_size (fabric_id, color, size)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    // Seed one default active variant per existing product for backward compatibility.
+    $conn->query(
+        "INSERT IGNORE INTO fabric_variants (fabric_id, color, size, stock, stock_meters, is_active)
+         SELECT id, COALESCE(NULLIF(TRIM(color), ''), ''), '', 0, 0, 1
+         FROM fabrics"
+    );
+    if (!$columnExists($conn, 'fabric_variants', 'image')) {
+        $conn->query("ALTER TABLE fabric_variants ADD COLUMN image VARCHAR(255) NULL DEFAULT NULL AFTER sku");
+    }
+    if (!$columnExists($conn, 'fabric_variants', 'image2')) {
+        $conn->query("ALTER TABLE fabric_variants ADD COLUMN image2 VARCHAR(255) NULL DEFAULT NULL AFTER image");
+    }
+    if (!$columnExists($conn, 'fabric_variants', 'image3')) {
+        $conn->query("ALTER TABLE fabric_variants ADD COLUMN image3 VARCHAR(255) NULL DEFAULT NULL AFTER image2");
+    }
+    if (!$columnExists($conn, 'fabric_variants', 'image4')) {
+        $conn->query("ALTER TABLE fabric_variants ADD COLUMN image4 VARCHAR(255) NULL DEFAULT NULL AFTER image3");
+    }
+    if (!$columnExists($conn, 'fabric_variants', 'video')) {
+        $conn->query("ALTER TABLE fabric_variants ADD COLUMN video VARCHAR(255) NULL DEFAULT NULL AFTER image4");
+    }
+    if (!$columnExists($conn, 'fabric_variants', 'pack_label')) {
+        $conn->query("ALTER TABLE fabric_variants ADD COLUMN pack_label VARCHAR(120) NULL DEFAULT NULL AFTER video");
+    }
+    if (!$columnExists($conn, 'fabric_variants', 'units_per_set')) {
+        $conn->query("ALTER TABLE fabric_variants ADD COLUMN units_per_set INT NULL DEFAULT NULL AFTER pack_label");
+    }
+    if ($columnExists($conn, 'fabric_variants', 'units_per_set')) {
+        $conn->query(
+            "UPDATE fabric_variants fv
+             JOIN fabrics f ON f.id = fv.fabric_id
+             SET fv.units_per_set = 1,
+                 fv.pack_label = COALESCE(NULLIF(TRIM(fv.pack_label), ''), 'Pack of 1')
+             WHERE f.unit_type = 'set' AND (fv.units_per_set IS NULL OR fv.units_per_set < 1)"
+        );
+    }
+
     if ($columnExists($conn, 'fabrics', 'sku')) {
         $skuIndexCheck = $conn->query("SELECT COUNT(*) AS total FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fabrics' AND INDEX_NAME = 'uq_fabrics_sku'");
         $skuIndexExists = (int) (($skuIndexCheck->fetch_assoc()['total'] ?? 0)) > 0;
@@ -299,6 +358,9 @@ function ensure_tables(mysqli $conn): void
         if (!$columnExists($conn, 'cart_items', 'meter_length')) {
             $conn->query("ALTER TABLE cart_items ADD COLUMN meter_length DECIMAL(10,2) NULL DEFAULT NULL AFTER quantity_meters");
         }
+        if (!$columnExists($conn, 'cart_items', 'variant_id')) {
+            $conn->query("ALTER TABLE cart_items ADD COLUMN variant_id INT NULL DEFAULT NULL AFTER fabric_id");
+        }
         if (!$columnExists($conn, 'cart_items', 'cart_key')) {
             $conn->query("ALTER TABLE cart_items ADD COLUMN cart_key VARCHAR(255) NULL DEFAULT NULL AFTER product_id");
         }
@@ -319,6 +381,10 @@ function ensure_tables(mysqli $conn): void
         $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cart_items' AND INDEX_NAME = 'uq_cart_key'");
         if (($indexCheck->num_rows ?? 0) === 0) {
             $conn->query("ALTER TABLE cart_items ADD UNIQUE INDEX uq_cart_key (cart_id, cart_key)");
+        }
+        $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cart_items' AND INDEX_NAME = 'idx_cart_items_variant'");
+        if (($indexCheck->num_rows ?? 0) === 0) {
+            $conn->query("CREATE INDEX idx_cart_items_variant ON cart_items (variant_id)");
         }
         if ($columnExists($conn, 'cart_items', 'price_snapshot_inr')) {
             $conn->query("ALTER TABLE cart_items DROP COLUMN price_snapshot_inr");
@@ -510,6 +576,35 @@ function ensure_tables(mysqli $conn): void
              MODIFY COLUMN payment_method ENUM('cod','upi','razorpay') NOT NULL DEFAULT 'cod'"
         );
     }
+    $ensureColumns($conn, 'orders', [
+        'coupon_id' => "INT NULL DEFAULT NULL",
+        'coupon_code' => "VARCHAR(50) NULL DEFAULT NULL",
+        'coupon_discount' => "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+        'shipping_quote_token' => "VARCHAR(64) NULL DEFAULT NULL",
+        'shipping_source' => "VARCHAR(40) NULL DEFAULT NULL",
+        'courier_id' => "INT NULL DEFAULT NULL",
+        'courier_name' => "VARCHAR(255) NULL DEFAULT NULL",
+        'cod_fee' => "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+        'base_shipping' => "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+    ]);
+    if ($columnExists($conn, 'orders', 'coupon_id')) {
+        $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND INDEX_NAME = 'idx_orders_coupon_id'");
+        if (($indexCheck->num_rows ?? 0) === 0) {
+            $conn->query("CREATE INDEX idx_orders_coupon_id ON orders (coupon_id)");
+        }
+    }
+    if ($columnExists($conn, 'orders', 'coupon_code')) {
+        $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND INDEX_NAME = 'idx_orders_coupon_code'");
+        if (($indexCheck->num_rows ?? 0) === 0) {
+            $conn->query("CREATE INDEX idx_orders_coupon_code ON orders (coupon_code)");
+        }
+    }
+    if ($columnExists($conn, 'orders', 'shipping_quote_token')) {
+        $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND INDEX_NAME = 'idx_orders_shipping_quote_token'");
+        if (($indexCheck->num_rows ?? 0) === 0) {
+            $conn->query("CREATE INDEX idx_orders_shipping_quote_token ON orders (shipping_quote_token)");
+        }
+    }
 
     // Order line items
     $conn->query(
@@ -530,8 +625,21 @@ function ensure_tables(mysqli $conn): void
             quantity_meters DECIMAL(10,2) DEFAULT NULL,
             price_per_meter DECIMAL(10,2) DEFAULT NULL,
             line_total DECIMAL(12,2) DEFAULT NULL,
+            cost_price_snapshot DECIMAL(12,2) DEFAULT NULL,
             bundle_quantity INT DEFAULT NULL,
             meter_length DECIMAL(10,2) DEFAULT NULL,
+            pack_label VARCHAR(120) DEFAULT NULL,
+            units_per_set INT DEFAULT NULL,
+            variant_id INT DEFAULT NULL,
+            taxable_amount DECIMAL(12,2) DEFAULT NULL,
+            discount_amount DECIMAL(12,2) DEFAULT NULL,
+            gst_rate_snapshot DECIMAL(6,3) DEFAULT NULL,
+            gst_amount DECIMAL(12,2) DEFAULT NULL,
+            cgst_amount DECIMAL(12,2) DEFAULT NULL,
+            sgst_amount DECIMAL(12,2) DEFAULT NULL,
+            igst_amount DECIMAL(12,2) DEFAULT NULL,
+            tax_type ENUM('none','cgst_sgst','igst') DEFAULT 'none',
+            hsn_code_snapshot VARCHAR(32) DEFAULT NULL,
             INDEX idx_order_items_order_id (order_id),
             INDEX idx_order_items_product_id (product_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -553,8 +661,51 @@ function ensure_tables(mysqli $conn): void
         if (!$columnExists($conn, 'order_items', 'bundle_quantity')) {
             $conn->query("ALTER TABLE order_items ADD COLUMN bundle_quantity INT NULL DEFAULT NULL AFTER line_total");
         }
+        if (!$columnExists($conn, 'order_items', 'cost_price_snapshot')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN cost_price_snapshot DECIMAL(12,2) NULL DEFAULT NULL AFTER line_total");
+        }
         if (!$columnExists($conn, 'order_items', 'meter_length')) {
             $conn->query("ALTER TABLE order_items ADD COLUMN meter_length DECIMAL(10,2) NULL DEFAULT NULL AFTER bundle_quantity");
+        }
+        if (!$columnExists($conn, 'order_items', 'pack_label')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN pack_label VARCHAR(120) NULL DEFAULT NULL AFTER meter_length");
+        }
+        if (!$columnExists($conn, 'order_items', 'units_per_set')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN units_per_set INT NULL DEFAULT NULL AFTER pack_label");
+        }
+        if (!$columnExists($conn, 'order_items', 'variant_id')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN variant_id INT NULL DEFAULT NULL AFTER fabric_id");
+        }
+        if (!$columnExists($conn, 'order_items', 'taxable_amount')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN taxable_amount DECIMAL(12,2) NULL DEFAULT NULL AFTER units_per_set");
+        }
+        if (!$columnExists($conn, 'order_items', 'discount_amount')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN discount_amount DECIMAL(12,2) NULL DEFAULT NULL AFTER taxable_amount");
+        }
+        if (!$columnExists($conn, 'order_items', 'gst_rate_snapshot')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN gst_rate_snapshot DECIMAL(6,3) NULL DEFAULT NULL AFTER discount_amount");
+        }
+        if (!$columnExists($conn, 'order_items', 'gst_amount')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN gst_amount DECIMAL(12,2) NULL DEFAULT NULL AFTER gst_rate_snapshot");
+        }
+        if (!$columnExists($conn, 'order_items', 'cgst_amount')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN cgst_amount DECIMAL(12,2) NULL DEFAULT NULL AFTER gst_amount");
+        }
+        if (!$columnExists($conn, 'order_items', 'sgst_amount')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN sgst_amount DECIMAL(12,2) NULL DEFAULT NULL AFTER cgst_amount");
+        }
+        if (!$columnExists($conn, 'order_items', 'igst_amount')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN igst_amount DECIMAL(12,2) NULL DEFAULT NULL AFTER sgst_amount");
+        }
+        if (!$columnExists($conn, 'order_items', 'tax_type')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN tax_type ENUM('none','cgst_sgst','igst') NOT NULL DEFAULT 'none' AFTER igst_amount");
+        }
+        if (!$columnExists($conn, 'order_items', 'hsn_code_snapshot')) {
+            $conn->query("ALTER TABLE order_items ADD COLUMN hsn_code_snapshot VARCHAR(32) NULL DEFAULT NULL AFTER tax_type");
+        }
+        $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'order_items' AND INDEX_NAME = 'idx_order_items_variant'");
+        if (($indexCheck->num_rows ?? 0) === 0) {
+            $conn->query("CREATE INDEX idx_order_items_variant ON order_items (variant_id)");
         }
     }
 
@@ -710,6 +861,19 @@ function ensure_tables(mysqli $conn): void
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS public_form_attempts (
+            attempt_key CHAR(64) PRIMARY KEY,
+            scope VARCHAR(80) NOT NULL,
+            ip_address VARCHAR(45) NOT NULL,
+            user_agent_hash CHAR(16) NOT NULL,
+            attempts INT NOT NULL DEFAULT 0,
+            window_started_at DATETIME NOT NULL,
+            blocked_until DATETIME DEFAULT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_public_form_attempts_scope_updated (scope, updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
 
     $conn->query(
         "CREATE TABLE IF NOT EXISTS payment_webhook_events (
@@ -753,6 +917,79 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_refund_ledger_order_id (order_id),
             INDEX idx_refund_ledger_payment_id (payment_id),
             INDEX idx_refund_ledger_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS stock_ledger (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_id INT DEFAULT NULL,
+            order_item_id INT DEFAULT NULL,
+            return_id INT DEFAULT NULL,
+            return_item_id INT DEFAULT NULL,
+            fabric_id INT DEFAULT NULL,
+            variant_id INT DEFAULT NULL,
+            unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
+            quantity DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            movement ENUM('reserve','release','return_restock','adjustment') NOT NULL DEFAULT 'adjustment',
+            direction ENUM('in','out') NOT NULL DEFAULT 'in',
+            source VARCHAR(64) DEFAULT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_stock_ledger_order (order_id),
+            INDEX idx_stock_ledger_return (return_id),
+            INDEX idx_stock_ledger_fabric_variant (fabric_id, variant_id),
+            INDEX idx_stock_ledger_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS payment_attempts (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_id INT DEFAULT NULL,
+            payment_id INT DEFAULT NULL,
+            provider VARCHAR(32) NOT NULL,
+            attempt_ref VARCHAR(191) NOT NULL,
+            status VARCHAR(40) NOT NULL DEFAULT 'created',
+            source VARCHAR(40) NOT NULL DEFAULT 'create',
+            gateway_payment_id VARCHAR(191) DEFAULT NULL,
+            gateway_signature VARCHAR(255) DEFAULT NULL,
+            error_code VARCHAR(80) DEFAULT NULL,
+            error_message TEXT,
+            webhook_event_id VARCHAR(191) DEFAULT NULL,
+            webhook_signature VARCHAR(255) DEFAULT NULL,
+            payload_json LONGTEXT,
+            retry_count INT NOT NULL DEFAULT 0,
+            first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_payment_attempt_provider_ref (provider, attempt_ref),
+            INDEX idx_payment_attempt_order_id (order_id),
+            INDEX idx_payment_attempt_payment_id (payment_id),
+            INDEX idx_payment_attempt_status (status),
+            INDEX idx_payment_attempt_webhook_event (webhook_event_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS shipping_quotes (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            quote_token CHAR(32) NOT NULL UNIQUE,
+            customer_id INT DEFAULT NULL,
+            subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            country VARCHAR(120) NOT NULL,
+            pincode VARCHAR(20) DEFAULT NULL,
+            payment_method VARCHAR(32) NOT NULL,
+            base_shipping DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            cod_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            source VARCHAR(32) NOT NULL DEFAULT 'manual',
+            courier_name VARCHAR(255) DEFAULT NULL,
+            courier_id INT DEFAULT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_shipping_quotes_customer_expires (customer_id, expires_at),
+            INDEX idx_shipping_quotes_expires_at (expires_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
     $ensureColumns($conn, 'orders', [
@@ -799,15 +1036,72 @@ function ensure_tables(mysqli $conn): void
             status ENUM('pending','confirmed','cancelled','auto_cancelled') NOT NULL DEFAULT 'pending',
             deadline_at DATETIME DEFAULT NULL,
             attempts INT NOT NULL DEFAULT 0,
+            response_token CHAR(32) DEFAULT NULL,
+            message_provider VARCHAR(40) DEFAULT NULL,
+            message_id VARCHAR(191) DEFAULT NULL,
+            message_status VARCHAR(40) DEFAULT 'queued',
+            message_error TEXT,
+            message_sent_at DATETIME DEFAULT NULL,
+            message_attempts INT NOT NULL DEFAULT 0,
+            last_inbound_message_id VARCHAR(191) DEFAULT NULL,
+            last_inbound_text TEXT,
+            last_inbound_at DATETIME DEFAULT NULL,
             notes TEXT,
             confirmed_at DATETIME DEFAULT NULL,
             cancelled_at DATETIME DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uq_cod_confirmations_order_id (order_id),
-            INDEX idx_cod_confirmations_status_deadline (status, deadline_at)
+            UNIQUE KEY uq_cod_confirmations_response_token (response_token),
+            INDEX idx_cod_confirmations_status_deadline (status, deadline_at),
+            INDEX idx_cod_confirmations_message_status (message_status, message_attempts)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    $codGuardColumns = [];
+    $codGuardColumnRes = $conn->query(
+        "SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'cod_confirmations'"
+    );
+    while ($row = $codGuardColumnRes ? $codGuardColumnRes->fetch_assoc() : null) {
+        $codGuardColumns[(string) $row['COLUMN_NAME']] = true;
+    }
+    $codGuardColumnAdds = [
+        'response_token' => "ALTER TABLE cod_confirmations ADD COLUMN response_token CHAR(32) DEFAULT NULL AFTER attempts",
+        'message_provider' => "ALTER TABLE cod_confirmations ADD COLUMN message_provider VARCHAR(40) DEFAULT NULL AFTER response_token",
+        'message_id' => "ALTER TABLE cod_confirmations ADD COLUMN message_id VARCHAR(191) DEFAULT NULL AFTER message_provider",
+        'message_status' => "ALTER TABLE cod_confirmations ADD COLUMN message_status VARCHAR(40) DEFAULT 'queued' AFTER message_id",
+        'message_error' => "ALTER TABLE cod_confirmations ADD COLUMN message_error TEXT AFTER message_status",
+        'message_sent_at' => "ALTER TABLE cod_confirmations ADD COLUMN message_sent_at DATETIME DEFAULT NULL AFTER message_error",
+        'message_attempts' => "ALTER TABLE cod_confirmations ADD COLUMN message_attempts INT NOT NULL DEFAULT 0 AFTER message_sent_at",
+        'last_inbound_message_id' => "ALTER TABLE cod_confirmations ADD COLUMN last_inbound_message_id VARCHAR(191) DEFAULT NULL AFTER message_attempts",
+        'last_inbound_text' => "ALTER TABLE cod_confirmations ADD COLUMN last_inbound_text TEXT AFTER last_inbound_message_id",
+        'last_inbound_at' => "ALTER TABLE cod_confirmations ADD COLUMN last_inbound_at DATETIME DEFAULT NULL AFTER last_inbound_text",
+    ];
+    foreach ($codGuardColumnAdds as $column => $ddl) {
+        if (empty($codGuardColumns[$column])) {
+            $conn->query($ddl);
+        }
+    }
+
+    $codGuardIndexes = [];
+    $codGuardIndexRes = $conn->query(
+        "SELECT DISTINCT INDEX_NAME
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'cod_confirmations'"
+    );
+    while ($row = $codGuardIndexRes ? $codGuardIndexRes->fetch_assoc() : null) {
+        $codGuardIndexes[(string) $row['INDEX_NAME']] = true;
+    }
+    if (empty($codGuardIndexes['uq_cod_confirmations_response_token'])) {
+        $conn->query("ALTER TABLE cod_confirmations ADD UNIQUE KEY uq_cod_confirmations_response_token (response_token)");
+    }
+    if (empty($codGuardIndexes['idx_cod_confirmations_message_status'])) {
+        $conn->query("ALTER TABLE cod_confirmations ADD INDEX idx_cod_confirmations_message_status (message_status, message_attempts)");
+    }
 
     $codGuardFkCheck = $conn->query(
         "SELECT COUNT(*) AS total
@@ -1007,11 +1301,21 @@ function ensure_tables(mysqli $conn): void
             product_name VARCHAR(255) NOT NULL,
             unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
             quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+            variant_id INT DEFAULT NULL,
+            restocked_qty DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            refund_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            restocked_at DATETIME DEFAULT NULL,
             line_total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_return_items_return_id (return_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    $ensureColumns($conn, 'return_items', [
+        'variant_id' => "INT NULL DEFAULT NULL",
+        'restocked_qty' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+        'refund_amount' => "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+        'restocked_at' => "DATETIME NULL DEFAULT NULL",
+    ]);
 
     $ensureColumns($conn, 'returns', [
         'image_1' => "VARCHAR(255) NULL DEFAULT NULL",
