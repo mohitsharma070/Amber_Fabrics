@@ -23,6 +23,17 @@ $isCli = PHP_SAPI === 'cli';
 
 // CLI should default to local mode so setup/migration scripts don't target production by accident.
 $mode = ($isLocalHost || $isCliServer || $isCli) ? 'local' : 'production';
+$modeOverride = strtolower(trim((string) (getenv('APP_MODE') ?: ($_SERVER['APP_MODE'] ?? ''))));
+if ($modeOverride === 'prod') {
+    $modeOverride = 'production';
+}
+if ($modeOverride !== '') {
+    if (!in_array($modeOverride, ['local', 'production'], true)) {
+        http_response_code(500);
+        exit('Server configuration error. Invalid APP_MODE.');
+    }
+    $mode = $modeOverride;
+}
 $activeConfig = $allConfig[$mode] ?? [];
 if (!is_array($activeConfig)) {
     http_response_code(500);
@@ -31,6 +42,7 @@ if (!is_array($activeConfig)) {
 
 // Keep active config globally accessible for downstream helpers.
 $GLOBALS['_app_config'] = $activeConfig;
+$GLOBALS['_app_mode'] = $mode;
 
 $dbHost = trim((string) ($activeConfig['DB_HOST'] ?? ''));
 $dbPort = trim((string) ($activeConfig['DB_PORT'] ?? '3306'));

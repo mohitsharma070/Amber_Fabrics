@@ -150,11 +150,11 @@ if (isset($_POST['submit'])) {
     $price         = trim($_POST['price']         ?? '');
     $salePrice     = trim($_POST['sale_price']    ?? '');
     $costPrice     = trim($_POST['cost_price']    ?? '');
-    $stock         = (string) ($fabric['stock'] ?? '0');
-    $size          = (string) ($fabric['size'] ?? '');
+    $stock         = trim($_POST['stock']         ?? ((string) ($fabric['stock'] ?? '0')));
+    $size          = trim($_POST['size']          ?? ((string) ($fabric['size'] ?? '')));
     $meterOptions  = trim($_POST['meter_options']  ?? '');
     $printStyle    = trim($_POST['print_style']    ?? '');
-    $color         = (string) ($fabric['color'] ?? '');
+    $color         = trim($_POST['color']         ?? ((string) ($fabric['color'] ?? '')));
     $material      = trim($_POST['material']      ?? '');
     $gsm           = trim($_POST['gsm']           ?? '');
     $sku           = generate_unique_fabric_sku($conn, $category, $material, '', $gsm, $id);
@@ -167,7 +167,13 @@ if (isset($_POST['submit'])) {
     $status        = trim($_POST['status']        ?? 'active');
     $isFeatured    = isset($_POST['is_featured']) ? 1 : 0;
     $isAvailInput  = isset($_POST['is_available']) ? 1 : 0;
-    $minOrder      = normalize_meter_quantity($_POST['min_order_meters'] ?? 1, 1.0);
+    $minOrderInput = trim((string) ($_POST['min_order_meters'] ?? '1'));
+    $minOrder      = is_numeric($minOrderInput) ? (float) $minOrderInput : 1.0;
+    if ($unitType === 'piece' || $unitType === 'set') {
+        $minOrder = (float) max(1, (int) round($minOrder));
+    } else {
+        $minOrder = normalize_meter_quantity($minOrder, 1.0);
+    }
     $qtyStepRaw    = trim($_POST['qty_step'] ?? '');
     $qtyStep       = ($qtyStepRaw !== '' && is_numeric($qtyStepRaw) && (float) $qtyStepRaw > 0) ? round((float) $qtyStepRaw, 4) : 0.0;
 
@@ -219,6 +225,11 @@ if (isset($_POST['submit'])) {
     }
     if (!in_array($status, ['active', 'inactive'], true)) {
         $errors['status'] = 'Invalid status selected.';
+    }
+    if ($minOrder <= 0) {
+        $errors['min_order_meters'] = 'Min. order qty must be greater than 0.';
+    } elseif (($unitType === 'piece' || $unitType === 'set') && floor($minOrder) != $minOrder) {
+        $errors['min_order_meters'] = 'Piece/Set products require whole-number min. order qty.';
     }
 
     $imageName = (string) ($fabric['image'] ?? '');
@@ -288,7 +299,9 @@ if (isset($_POST['submit'])) {
         $stockMeters = (float) ($fabric['stock_meters'] ?? 0);
         $size = (string) ($fabric['size'] ?? '');
         $color = (string) ($fabric['color'] ?? '');
-        $minOrderVal = ($unitType === 'meter') ? round($minOrder, 2) : 1.00;
+        $minOrderVal = ($unitType === 'meter')
+            ? round($minOrder, 2)
+            : (float) max(1, (int) round($minOrder));
         $isAvailable   = ($status === 'active' && $isAvailInput === 1) ? 1 : 0;
         if ($hasRealVariants) {
             $latestVariants = get_fabric_variants($conn, $id);
@@ -348,265 +361,25 @@ include 'partials/header.php'; ?>
     </div>
 <?php endif; ?>
 
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <ul class="nav nav-pills product-editor-tabs" id="productEditorTabs">
-            <li class="nav-item"><button type="button" class="nav-link active product-editor-tab" data-editor-tab="details">Details</button></li>
-            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="pricing">Pricing & Inventory</button></li>
-            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="content">Content</button></li>
-            <li class="nav-item"><a class="nav-link" href="#variants-card">Variants</a></li>
-        </ul>
-    </div>
-</div>
-
-<form method="POST" enctype="multipart/form-data" class="row g-3" id="product-editor-form">
-    <?php echo csrf_field(); ?>
-    <div class="col-sm-6">
-        <label class="form-label">Product Name *</label>
-        <input type="text" name="name" class="<?php echo form_class($errors, 'name'); ?>" required value="<?php echo e($old['name']); ?>">
-        <?php echo form_error($errors, 'name'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Category *</label>
-        <select name="category" class="<?php echo form_class($errors, 'category', 'form-select'); ?>" required>
-            <option value="">Select Category</option>
-            <?php foreach ($categories as $cat): ?>
-                <option value="<?php echo e($cat['slug']); ?>" <?php echo $old['category'] === $cat['slug'] ? 'selected' : ''; ?>>
-                    <?php echo e($cat['name']); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <?php echo form_error($errors, 'category'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Unit Type *</label>
-        <select name="unit_type" class="<?php echo form_class($errors, 'unit_type', 'form-select'); ?>" required>
-            <option value="meter" <?php echo $old['unit_type'] === 'meter' ? 'selected' : ''; ?>>Meter (decimal qty, e.g. 1.5m)</option>
-            <option value="piece" <?php echo $old['unit_type'] === 'piece' ? 'selected' : ''; ?>>Piece (whole numbers)</option>
-            <option value="set" <?php echo $old['unit_type'] === 'set' ? 'selected' : ''; ?>>Set (whole numbers)</option>
-        </select>
-        <?php echo form_error($errors, 'unit_type'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">SKU <small class="text-muted">(auto-generated)</small></label>
-        <input type="text" id="sku_preview" class="form-control" value="<?php echo e($old['sku']); ?>" readonly>
-        <input type="hidden" name="sku" id="sku_hidden" value="<?php echo e($old['sku']); ?>">
-        <small class="text-muted">Generated from Category + Material + Color + GSM.</small>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Regular Price *</label>
-        <input type="number" step="0.01" min="0" name="price" class="<?php echo form_class($errors, 'price'); ?>" required value="<?php echo e($old['price']); ?>">
-        <?php echo form_error($errors, 'price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Sale Price</label>
-        <input type="number" step="0.01" min="0" name="sale_price" class="<?php echo form_class($errors, 'sale_price'); ?>" value="<?php echo e($old['sale_price']); ?>">
-        <?php echo form_error($errors, 'sale_price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Cost Price *</label>
-        <input type="number" step="0.01" min="0" name="cost_price" class="<?php echo form_class($errors, 'cost_price'); ?>" required value="<?php echo e($old['cost_price']); ?>">
-        <?php echo form_error($errors, 'cost_price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Min. Order Qty</label>
-        <input type="number" step="0.01" min="0" name="min_order_meters" class="form-control" value="<?php echo e($old['min_order_meters']); ?>" placeholder="e.g. 1">
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Quantity Step <small class="text-muted">(0 = auto)</small></label>
-        <input type="number" step="0.0001" min="0" name="qty_step" class="form-control" value="<?php echo e($old['qty_step']); ?>" placeholder="e.g. 0.5">
-    </div>
-    <div class="col-6 col-md-4" id="meter_options_row">
-        <label class="form-label">Meter Options <small class="text-muted">(quick quantity options, comma separated: e.g. 1, 1.5, 2, 2.5)</small></label>
-        <input type="text" name="meter_options" class="form-control" placeholder="e.g. 1, 1.5, 2, 2.5" value="<?php echo e($old['meter_options']); ?>">
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Material / Fabric</label>
-        <input type="text" name="material" class="form-control" value="<?php echo e($old['material']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">Print Style</label>
-        <input type="text" name="print_style" class="form-control" placeholder="e.g. Floral, Solid, Block Print" value="<?php echo e($old['print_style']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">GSM</label>
-        <input type="text" name="gsm" class="form-control" value="<?php echo e($old['gsm']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">Width</label>
-        <input type="text" name="width" class="form-control" value="<?php echo e($old['width']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">MOQ (International Buyers)</label>
-        <input type="text" name="moq" class="form-control" value="<?php echo e($old['moq']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">Lead Time (International Buyers)</label>
-        <input type="text" name="lead_time" class="form-control" value="<?php echo e($old['lead_time']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">Dispatch Time (India Orders)</label>
-        <input type="text" name="dispatch_time" class="form-control" value="<?php echo e($old['dispatch_time']); ?>">
-    </div>
-    <div class="col-12 col-md-4">
-        <label class="form-label">Status *</label>
-        <select name="status" class="<?php echo form_class($errors, 'status', 'form-select'); ?>" required>
-            <option value="active" <?php echo $old['status'] === 'active' ? 'selected' : ''; ?>>Active</option>
-            <option value="inactive" <?php echo $old['status'] === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
-        </select>
-        <?php echo form_error($errors, 'status'); ?>
-    </div>
-    <div class="col-12">
-        <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" name="is_featured" id="is_featured" <?php echo $old['is_featured'] ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="is_featured">Featured Product</label>
-        </div>
-        <?php if (!$hasRealVariants): ?>
-        <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" name="is_available" id="is_available" <?php echo $old['is_available'] ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="is_available">Available for purchase</label>
-        </div>
-        <?php else: ?>
-        <span class="text-muted small ms-2">Availability is auto-derived from active variants with stock.</span>
-        <?php endif; ?>
-    </div>
-    <div class="col-12">
-        <label class="form-label">Wash Care</label>
-        <textarea name="wash_care" rows="3" class="form-control"><?php echo e($old['wash_care']); ?></textarea>
-    </div>
-    <div class="col-12">
-        <label class="form-label">Description</label>
-        <textarea name="description" rows="4" class="form-control"><?php echo e($old['description']); ?></textarea>
-    </div>
-    <div class="col-12">
-        <button name="submit" class="btn btn-primary">Update Product</button>
-        <a href="fabrics.php" class="btn btn-outline-secondary">Back</a>
-    </div>
-</form>
-
-<script nonce="<?php echo $cspNonce; ?>">
-(function () {
-    var formEl = document.getElementById('product-editor-form');
-    var tabButtons = Array.prototype.slice.call(document.querySelectorAll('.product-editor-tab'));
-    var unitSelect = document.querySelector('select[name="unit_type"]');
-    var minOrderInput = document.querySelector('input[name="min_order_meters"]');
-    var qtyStepInput = document.querySelector('input[name="qty_step"]');
-    var categoryInput = document.querySelector('select[name="category"]');
-    var materialInput = document.querySelector('input[name="material"]');
-    var gsmInput = document.querySelector('input[name="gsm"]');
-    var skuPreview = document.getElementById('sku_preview');
-    var skuHidden = document.getElementById('sku_hidden');
-    if (!unitSelect) return;
-
-    function assignSections() {
-        if (!formEl) return;
-        Array.prototype.forEach.call(formEl.children, function (col) {
-            if (!col || !col.querySelector) return;
-            var submitBtn = col.querySelector('button[name=\"submit\"]');
-            var labelEl = col.querySelector('label.form-label, .form-check-label');
-            if (submitBtn) {
-                col.dataset.editorSection = 'actions';
-                return;
-            }
-            var text = (labelEl ? labelEl.textContent : '').toLowerCase();
-            var section = 'details';
-            if (
-                text.indexOf('price') !== -1 ||
-                text.indexOf('order qty') !== -1 ||
-                text.indexOf('quantity step') !== -1 ||
-                text.indexOf('status') !== -1 ||
-                text.indexOf('featured') !== -1 ||
-                text.indexOf('available') !== -1
-            ) {
-                section = 'pricing';
-            }
-            if (text.indexOf('wash care') !== -1 || text.indexOf('description') !== -1) {
-                section = 'content';
-            }
-            col.dataset.editorSection = section;
-        });
-    }
-
-    function setSection(section) {
-        if (!formEl) return;
-        Array.prototype.forEach.call(formEl.children, function (col) {
-            var colSection = col.dataset.editorSection || 'details';
-            var show = colSection === section || colSection === 'actions';
-            col.classList.toggle('d-none', !show);
-        });
-        tabButtons.forEach(function (btn) {
-            btn.classList.toggle('active', btn.getAttribute('data-editor-tab') === section);
-        });
-    }
-
-    function applyUnitRules() {
-        var unit = unitSelect.value;
-        var isMeter = unit === 'meter';
-        var isPiece = unit === 'piece';
-        var isWhole = isPiece || unit === 'set';
-        var meterOptionsRow = document.getElementById('meter_options_row');
-        if (meterOptionsRow) {
-            meterOptionsRow.style.display = isMeter ? '' : 'none';
-        }
-        if (minOrderInput) {
-            minOrderInput.step = isWhole ? '1' : '0.01';
-        }
-        if (qtyStepInput) {
-            qtyStepInput.placeholder = isMeter ? 'e.g. 0.5' : '1';
-        }
-    }
-
-    unitSelect.addEventListener('change', applyUnitRules);
-    applyUnitRules();
-
-    function skuPart(value) {
-        return String(value || '')
-            .trim()
-            .toUpperCase()
-            .replace(/[^A-Z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '');
-    }
-
-    function updateSkuPreview() {
-        if (!skuPreview || !skuHidden) return;
-        var parts = [
-            categoryInput ? skuPart(categoryInput.value) : '',
-            materialInput ? skuPart(materialInput.value) : '',
-            gsmInput ? skuPart(gsmInput.value) : ''
-        ].filter(Boolean);
-        var sku = parts.length ? parts.join('-') : 'SKU';
-        skuPreview.value = sku;
-        skuHidden.value = sku;
-    }
-
-    [categoryInput, materialInput, gsmInput].forEach(function (el) {
-        if (el) {
-            el.addEventListener('input', updateSkuPreview);
-            el.addEventListener('change', updateSkuPreview);
-        }
-    });
-
-    tabButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            setSection(btn.getAttribute('data-editor-tab') || 'details');
-        });
-    });
-
-    assignSections();
-    setSection('details');
-    updateSkuPreview();
-})();
-</script>
+<?php
+$isEdit = true;
+$submitLabel = 'Update Product';
+$cancelHref = 'fabrics.php';
+$cancelLabel = 'Back';
+include __DIR__ . '/partials/fabric-product-form.php';
+include __DIR__ . '/partials/fabric-product-form-script.php';
+?>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
      VARIANTS SECTION
 ═══════════════════════════════════════════════════════════════════════════ -->
 <?php
 $isNewProduct = !empty($_GET['new_product']);
-$variantSizePolicy = get_variant_size_policy_by_category((string) ($fabric['category'] ?? ''));
+$isSetUnitType = ((string) ($fabric['unit_type'] ?? '') === 'set');
+$variantSizePolicy = get_variant_size_policy_by_unit_type((string) ($fabric['unit_type'] ?? 'meter'));
 $variantSizeMode = (string) ($variantSizePolicy['mode'] ?? 'preset_with_custom');
 $variantSizePresets = array_values((array) ($variantSizePolicy['sizes'] ?? []));
-$isSetUnitType = ((string) ($fabric['unit_type'] ?? '') === 'set');
+$variantHasPresetSizes = !empty($variantSizePresets);
 $variantUnitType = in_array((string) ($fabric['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
     ? (string) $fabric['unit_type']
     : 'meter';
@@ -619,7 +392,7 @@ $variantUnitType = in_array((string) ($fabric['unit_type'] ?? ''), ['meter', 'pi
 </div>
 <?php endif; ?>
 
-<div class="card mt-4 mx-3 mb-4" id="variants-card">
+<div class="card mt-4 mx-3 mb-4 d-none" id="variants-card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Colour &amp; Size Variants <small class="text-muted fw-normal">(stock is tracked per variant)</small></h5>
         <button type="button" class="btn btn-sm btn-primary" id="variants-add-btn">
@@ -639,19 +412,19 @@ $variantUnitType = in_array((string) ($fabric['unit_type'] ?? ''), ['meter', 'pi
                 <div class="col-sm-3">
                     <label class="form-label form-label-sm">Size</label>
                     <div id="vf_size_group">
-                        <select id="vf_size_preset" class="form-select form-select-sm">
+                        <select id="vf_size_preset" class="form-select form-select-sm <?php echo $variantHasPresetSizes ? '' : 'd-none'; ?>">
                             <option value="">Select size</option>
 <?php foreach ($variantSizePresets as $presetSize): ?>
                             <option value="<?php echo e($presetSize); ?>"><?php echo e($presetSize); ?></option>
 <?php endforeach; ?>
                             <option value="__custom__">Custom size</option>
                         </select>
-                        <input type="text" id="vf_size_custom" class="form-control form-control-sm mt-1 d-none" placeholder="Enter one size only">
+                        <input type="text" id="vf_size_custom" class="form-control form-control-sm mt-1 <?php echo $variantHasPresetSizes ? 'd-none' : ''; ?>" placeholder="Enter one size only">
                         <input type="hidden" id="vf_size" value="">
                         <small id="vf_size_hint" class="text-muted">
                             <?php echo $variantSizeMode === 'hidden'
-                                ? 'Size is not used for Fabric by meter products.'
-                                : 'Preset sizes by category; use Custom if needed.'; ?>
+                                ? 'Size is not used for meter products.'
+                                : 'Size is required for piece/set variants.'; ?>
                         </small>
                     </div>
                 </div>
@@ -659,6 +432,7 @@ $variantUnitType = in_array((string) ($fabric['unit_type'] ?? ''), ['meter', 'pi
                     <label class="form-label form-label-sm">Units per Set</label>
                     <input type="number" id="vf_units_per_set" class="form-control form-control-sm" value="1" min="1" step="1">
                     <input type="text" id="vf_pack_label" class="form-control form-control-sm mt-1" placeholder="Pack of N">
+                    <small class="text-muted d-block mt-1">For set products, 1 quantity means 1 full set.</small>
                 </div>
                 <div class="col-sm-2">
                     <label class="form-label form-label-sm">SKU <small class="text-muted">(auto)</small></label>
@@ -694,8 +468,9 @@ $variantUnitType = in_array((string) ($fabric['unit_type'] ?? ''), ['meter', 'pi
                     <input type="number" id="vf_price_override" class="form-control form-control-sm" placeholder="Leave blank = Base Product Price" min="0" step="0.01">
                 </div>
                 <div class="col-sm-1" id="vf_stock_pcs_wrap">
-                    <label class="form-label form-label-sm">Stock (pcs)</label>
+                    <label class="form-label form-label-sm" id="vf_stock_label">Stock (pcs)</label>
                     <input type="number" id="vf_stock" class="form-control form-control-sm" value="0" min="0" step="1">
+                    <small id="vf_stock_unit_hint" class="text-muted d-block mt-1"></small>
                 </div>
                 <div class="col-sm-1" id="vf_stock_m_wrap">
                     <label class="form-label form-label-sm">Stock (m)</label>
@@ -813,8 +588,9 @@ foreach ($variants as $vrow) {
     var ENDPOINT  = 'fabric-variants.php';
     var SIZE_POLICY_MODE = <?php echo json_encode($variantSizeMode); ?>;
     var SIZE_PRESETS = <?php echo json_encode($variantSizePresets); ?>;
-    var IS_SET_UNIT = <?php echo $isSetUnitType ? 'true' : 'false'; ?>;
+    var SIZE_HAS_PRESETS = <?php echo $variantHasPresetSizes ? 'true' : 'false'; ?>;
     var VARIANT_UNIT_TYPE = <?php echo json_encode($variantUnitType); ?>;
+    var productUnitSelect = document.querySelector('select[name="unit_type"]');
 
     // In-memory variant cache from server-rendered data
     var variantCache = {};
@@ -823,15 +599,28 @@ foreach ($variants as $vrow) {
         variantCache[vid] = {id: vid};
     });
 
+    function getCurrentUnitType() {
+        var val = productUnitSelect ? String(productUnitSelect.value || '') : String(VARIANT_UNIT_TYPE || '');
+        if (val !== 'meter' && val !== 'piece' && val !== 'set') return 'meter';
+        return val;
+    }
+
+    function getEffectiveSizeMode() {
+        var currentUnit = getCurrentUnitType();
+        return currentUnit === 'meter' ? 'hidden' : 'preset_with_custom';
+    }
+
     var variantUI = window.variantUI = {
         syncSizePolicyUI: function () {
             var group = document.getElementById('vf_size_group');
             var preset = document.getElementById('vf_size_preset');
             var custom = document.getElementById('vf_size_custom');
             var hidden = document.getElementById('vf_size');
+            var hint = document.getElementById('vf_size_hint');
             if (!group || !preset || !custom || !hidden) return;
+            var effectiveMode = getEffectiveSizeMode();
 
-            if (SIZE_POLICY_MODE === 'hidden') {
+            if (effectiveMode === 'hidden') {
                 group.classList.remove('opacity-75');
                 preset.value = '';
                 custom.value = '';
@@ -840,10 +629,25 @@ foreach ($variants as $vrow) {
                 preset.disabled = true;
                 custom.disabled = true;
                 hidden.value = '';
+                if (hint) {
+                    hint.textContent = 'Size is not used for meter products.';
+                }
                 return;
             }
 
             group.classList.remove('opacity-75');
+            if (hint) {
+                hint.textContent = 'Enter one size for this variant.';
+            }
+            if (!SIZE_HAS_PRESETS) {
+                preset.classList.add('d-none');
+                preset.value = '__custom__';
+                preset.disabled = true;
+                custom.classList.remove('d-none');
+                custom.disabled = false;
+                hidden.value = custom.value.trim();
+                return;
+            }
             preset.classList.remove('d-none');
             preset.disabled = false;
             custom.disabled = false;
@@ -861,12 +665,28 @@ foreach ($variants as $vrow) {
             var mWrap = document.getElementById('vf_stock_m_wrap');
             var pcsInput = document.getElementById('vf_stock');
             var mInput = document.getElementById('vf_stock_meters');
+            var stockLabel = document.getElementById('vf_stock_label');
+            var stockHint = document.getElementById('vf_stock_unit_hint');
+            var packControls = document.getElementById('vf_pack_controls');
             if (!pcsWrap || !mWrap || !pcsInput || !mInput) return;
-            var isMeter = VARIANT_UNIT_TYPE === 'meter';
+            var currentUnit = getCurrentUnitType();
+            var isMeter = currentUnit === 'meter';
+            var isSet = currentUnit === 'set';
             pcsWrap.style.display = isMeter ? 'none' : '';
             mWrap.style.display = isMeter ? '' : 'none';
             pcsInput.disabled = isMeter;
             mInput.disabled = !isMeter;
+            if (packControls) {
+                packControls.style.display = isSet ? '' : 'none';
+            }
+            if (stockLabel) {
+                stockLabel.textContent = isSet ? 'Stock (sets)' : 'Stock (pcs)';
+            }
+            if (stockHint) {
+                stockHint.textContent = isSet
+                    ? 'Enter number of sets available.'
+                    : 'Enter number of pieces available.';
+            }
             if (isMeter) {
                 pcsInput.value = '0';
             } else {
@@ -879,10 +699,17 @@ foreach ($variants as $vrow) {
             var hidden = document.getElementById('vf_size');
             var value = String(sizeVal || '').trim();
             if (!preset || !custom || !hidden) return;
-            if (SIZE_POLICY_MODE === 'hidden') {
+            if (getEffectiveSizeMode() === 'hidden') {
                 preset.value = '';
                 custom.value = '';
                 hidden.value = '';
+                variantUI.syncSizePolicyUI();
+                return;
+            }
+            if (!SIZE_HAS_PRESETS) {
+                preset.value = '__custom__';
+                custom.value = value;
+                hidden.value = value;
                 variantUI.syncSizePolicyUI();
                 return;
             }
@@ -1004,8 +831,9 @@ foreach ($variants as $vrow) {
                 fd.append('video_file', videoFileInput.files[0]);
             }
             fd.append('price_override', document.getElementById('vf_price_override').value);
-            fd.append('units_per_set',  IS_SET_UNIT ? document.getElementById('vf_units_per_set').value : '');
-            fd.append('pack_label',     IS_SET_UNIT ? document.getElementById('vf_pack_label').value : '');
+            var currentUnit = getCurrentUnitType();
+            fd.append('units_per_set',  currentUnit === 'set' ? document.getElementById('vf_units_per_set').value : '');
+            fd.append('pack_label',     currentUnit === 'set' ? document.getElementById('vf_pack_label').value : '');
             fd.append('stock',          document.getElementById('vf_stock').value);
             fd.append('stock_meters',   document.getElementById('vf_stock_meters').value);
             fd.append('is_active',      document.getElementById('vf_is_active').checked ? '1' : '0');
@@ -1093,7 +921,7 @@ foreach ($variants as $vrow) {
                         var hasVideo = !!(v.video && String(v.video).trim() !== '');
                         var imageCell = '<span class="small">' + imageCount + ' img' + (imageCount === 1 ? '' : 's') + (hasVideo ? ' + video' : '') + '</span>';
                         var packCell = '<span class="text-muted">&mdash;</span>';
-                        if (IS_SET_UNIT) {
+                        if (VARIANT_UNIT_TYPE === 'set') {
                             var ups = parseInt(v.units_per_set || '0', 10);
                             if (!Number.isFinite(ups) || ups <= 0) ups = 1;
                             var pl = (v.pack_label && String(v.pack_label).trim() !== '') ? String(v.pack_label) : ('Pack of ' + ups);
@@ -1171,6 +999,12 @@ foreach ($variants as $vrow) {
     }
     variantUI.syncSizePolicyUI();
     variantUI.syncStockFieldUI();
+    if (productUnitSelect) {
+        productUnitSelect.addEventListener('change', function () {
+            variantUI.syncSizePolicyUI();
+            variantUI.syncStockFieldUI();
+        });
+    }
 
     var variantsTbody = document.getElementById('variants-tbody');
     if (variantsTbody) {

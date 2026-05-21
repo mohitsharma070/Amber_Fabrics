@@ -26,10 +26,17 @@ $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 
     ? (string) $product['unit_type']
     : 'meter';
 $isWholeUnit = $unitType === 'piece' || $unitType === 'set';
-// qty_step: use admin-configured value if > 0; else default per unit
+// Quantity controls from admin settings.
 $qtyStepDb = (float) ($product['qty_step'] ?? 0);
-if ($qtyStepDb > 0) {
-    $unitStep = rtrim(rtrim(number_format($qtyStepDb, 4), '0'), '.');
+if ($isWholeUnit) {
+    $minOrderQty = (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+    $qtyStepUi = $qtyStepDb > 0 ? (float) max(1, (int) round($qtyStepDb)) : 1.0;
+} else {
+    $minOrderQty = normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0);
+    $qtyStepUi = $qtyStepDb > 0 ? round($qtyStepDb, 4) : 0.01;
+}
+if ($qtyStepUi > 0) {
+    $unitStep = rtrim(rtrim(number_format($qtyStepUi, 4), '0'), '.');
 } else {
     $unitStep = $isWholeUnit ? '1' : '0.01';
 }
@@ -74,7 +81,7 @@ if (empty($galleryImages) && is_array($firstVariantWithMedia)) {
         $videoFile = (string) ($firstVariantWithMedia['video'] ?? '');
     }
 }
-$variantSizePolicy = get_variant_size_policy_by_category((string) ($product['category'] ?? ''));
+$variantSizePolicy = get_variant_size_policy_by_unit_type($unitType);
 $variantSizeMode = (string) ($variantSizePolicy['mode'] ?? 'preset_with_custom');
 $hideVariantSize = ($variantSizeMode === 'hidden');
 $requestedVariantId = (int) ($_GET['variant'] ?? 0);
@@ -193,7 +200,7 @@ if (!empty($variants)) {
 // Legacy fallback: build sizeOptions from fabric.size if no DB variants
 $sizeOptions = [];
 if (!$hideVariantSize && empty($colorGroups) && !empty($product['size'])) {
-    $parts = preg_split('/[,\|/]+/', (string) $product['size']);
+    $parts = preg_split('/[,\|\/]+/', (string) $product['size']);
     if (is_array($parts)) {
         foreach ($parts as $part) {
             $clean = trim((string) $part);
@@ -219,6 +226,9 @@ if ($unitType === 'meter' && !empty($product['meter_options'])) {
     }
     $meterOptions = array_values(array_unique($meterOptions));
     sort($meterOptions);
+    $meterOptions = array_values(array_filter($meterOptions, static function ($m) use ($minOrderQty) {
+        return (float) $m >= (float) $minOrderQty;
+    }));
 }
 
 $quantityOptions = [];
@@ -227,7 +237,7 @@ if ($unitType === 'meter') {
     $quantityOptions = $meterOptions;
     if (empty($quantityOptions)) {
         // Safe fallback when admin has not set options yet.
-        $quantityOptions = [max(1.0, (float) ($product['min_order_meters'] ?? 1))];
+        $quantityOptions = [max(1.0, (float) $minOrderQty)];
     }
     if ($displayStock > 0) {
         $quantityOptions = array_values(array_filter($quantityOptions, static function ($q) use ($displayStock) {
@@ -238,14 +248,14 @@ if ($unitType === 'meter') {
         }
     }
 } else {
-    $qtyStart = 1.0;
-    $qtyStep = 1.0;
+    $qtyStart = $minOrderQty;
+    $qtyStep = $qtyStepUi;
     $qtyLimit = $displayStock > 0 ? min($displayStock, 20.0) : 20.0;
     if ($qtyLimit < $qtyStart) {
         $qtyLimit = $qtyStart;
     }
     for ($q = $qtyStart; $q <= $qtyLimit + 0.0001; $q += $qtyStep) {
-        $normalized = (float) round($q);
+        $normalized = $isWholeUnit ? (float) round($q) : (float) round($q, 2);
         if ($normalized > 0) {
             $quantityOptions[] = $normalized;
         }
@@ -290,7 +300,7 @@ do_action('product.view', [
             <div class="col-md-5">
                 <?php if (!empty($galleryImages)): ?>
                     <?php $mainImageAsset = fabric_image_asset_data((string) $galleryImages[0]); ?>
-                    <div class="product-media-main mb-3 rounded shadow-sm overflow-hidden" style="height:420px;background:#f5f5f5;">
+                    <div class="product-media-main mb-3 shadow-sm overflow-hidden">
                         <picture id="product-main-picture" class="d-block w-100 h-100">
                             <?php if (!empty($mainImageAsset['webp_srcset'])): ?>
                                 <source id="product-main-webp-source" type="image/webp" srcset="<?php echo e($mainImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 100vw, 45vw">
@@ -300,8 +310,7 @@ do_action('product.view', [
                             <img id="product-main-image"
                                  src="<?php echo e($mainImageAsset['src']); ?>"
                                  alt="<?php echo e($product['name']); ?>"
-                                 class="w-100 h-100"
-                                 style="object-fit:contain;object-position:center;background:#f5f5f5;">
+                                 class="w-100 h-100">
                         </picture>
                         <?php if ($videoFile !== ''): ?>
                             <video id="product-main-video" class="w-100 h-100 d-none" style="object-fit:contain;background:#101418;" controls preload="metadata">
@@ -316,18 +325,16 @@ do_action('product.view', [
                                     class="btn p-0 border rounded media-thumb product-media-thumb <?php echo $index === 0 ? 'border-primary' : 'border-light'; ?>"
                                     data-type="image"
                                     data-src="<?php echo e($thumbAsset['src']); ?>"
-                                    data-webp-srcset="<?php echo e((string) ($thumbAsset['webp_srcset'] ?? '')); ?>"
-                                    style="width:76px;height:76px;overflow:hidden;">
-                                <img src="<?php echo e((string) ($thumbAsset['thumb_src'] ?? '')); ?>" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain;background:#f5f5f5;">
+                                    data-webp-srcset="<?php echo e((string) ($thumbAsset['webp_srcset'] ?? '')); ?>">
+                                <img src="<?php echo e((string) ($thumbAsset['thumb_src'] ?? '')); ?>" alt="" loading="lazy">
                             </button>
                         <?php endforeach; ?>
                         <?php if ($videoFile !== ''): ?>
                             <button type="button"
                                     class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative"
                                     data-type="video"
-                                    data-src="images/fabrics/<?php echo e($videoFile); ?>"
-                                    style="width:76px;height:76px;overflow:hidden;">
-                                <div class="w-100 h-100 d-flex align-items-center justify-content-center bg-dark text-white fw-semibold">Video</div>
+                                    data-src="images/fabrics/<?php echo e($videoFile); ?>">
+                                <div class="product-media-thumb-video">Video</div>
                             </button>
                         <?php endif; ?>
                     </div>
@@ -388,14 +395,14 @@ do_action('product.view', [
                                     var src = 'images/fabrics/' + img;
                                     html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb '
                                         + (idx === 0 ? 'border-primary' : 'border-light')
-                                        + '" data-type="image" data-src="' + src + '" data-webp-srcset="" style="width:76px;height:76px;overflow:hidden;">'
-                                        + '<img src="' + src + '" alt="" style="width:100%;height:100%;object-fit:contain;background:#f5f5f5;">'
+                                        + '" data-type="image" data-src="' + src + '" data-webp-srcset="">'
+                                        + '<img src="' + src + '" alt="">'
                                         + '</button>';
                                 });
                                 if (videoFile) {
                                     var vsrc = 'images/fabrics/' + videoFile;
-                                    html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative" data-type="video" data-src="' + vsrc + '" style="width:76px;height:76px;overflow:hidden;">'
-                                        + '<div class="w-100 h-100 d-flex align-items-center justify-content-center bg-dark text-white fw-semibold">Video</div>'
+                                    html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative" data-type="video" data-src="' + vsrc + '">'
+                                        + '<div class="product-media-thumb-video">Video</div>'
                                         + '</button>';
                                 }
                                 thumbsWrap.innerHTML = html;
@@ -421,7 +428,7 @@ do_action('product.view', [
                     <p class="text-muted mb-2"><?php echo e($product['category']); ?></p>
                 <?php endif; ?>
 
-                <div class="mb-3">
+                <div class="mb-3" id="product_price_block">
                     <?php if ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice): ?>
                         <span class="fs-4 fw-bold text-primary">₹<?php echo number_format($salePrice, 2); ?> / <?php echo e($unitSingleLabel); ?></span>
                         <span class="ms-3 text-muted"><del>₹<?php echo number_format($regularPrice, 2); ?> / <?php echo e($unitSingleLabel); ?></del></span>
@@ -436,7 +443,7 @@ do_action('product.view', [
                     <?php if (!empty($product['color'])): ?>
                         <span class="badge-soft">Color: <?php echo e($product['color']); ?></span>
                     <?php endif; ?>
-                    <span class="badge <?php echo $inStock ? 'bg-success' : 'bg-secondary'; ?>">
+                    <span class="badge <?php echo $inStock ? 'bg-success' : 'bg-secondary'; ?>" id="base_stock_badge">
                         <?php echo $inStock ? 'Stock Status: In Stock (' . format_quantity_by_unit($displayStock, $unitType) . ' ' . e($unitLabel) . ')' : 'Stock Status: Out of Stock'; ?>
                     </span>
                 </div>
@@ -542,7 +549,7 @@ do_action('product.view', [
                     <label class="form-label fw-semibold">
                         <?php echo $unitType === 'meter' ? 'Quantity (pieces)' : 'Quantity (' . e($unitLabel) . ')'; ?>
                     </label>
-                    <form method="POST" action="/add-to-cart.php">
+                    <form method="POST" action="/add-to-cart.php" id="add_to_cart_form">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="product_id" value="<?php echo (int) $product['id']; ?>">
                         <?php if ($unitType === 'meter'): ?>
@@ -587,13 +594,13 @@ do_action('product.view', [
                                 </select>
                                 <button type="button" id="qty_inc" class="btn btn-outline-secondary" aria-label="Increase quantity">+</button>
                             <?php endif; ?>
-                            <button type="submit" class="btn btn-primary flex-grow-1" <?php echo $inStock ? '' : 'disabled'; ?>>
+                            <button type="submit" id="add_to_cart_submit" class="btn btn-primary flex-grow-1" <?php echo $inStock ? '' : 'disabled'; ?>>
                                 Add to Cart
                             </button>
                         </div>
                     </form>
                     <?php if ($inStock): ?>
-                        <form method="POST" action="/add-to-cart.php" class="d-grid mt-2">
+                        <form method="POST" action="/add-to-cart.php" class="d-grid mt-2" id="buy_now_form">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="product_id" value="<?php echo (int) $product['id']; ?>">
                             <input type="hidden" name="quantity" id="buy_now_quantity" value="1">
@@ -609,8 +616,14 @@ do_action('product.view', [
                                 <input type="hidden" name="selected_size" id="selected_size_buy" value="<?php echo e($defaultSize); ?>">
                             <?php endif; ?>
                             <input type="hidden" name="redirect_to" value="checkout">
-                            <button type="submit" class="btn btn-outline-dark">Buy Now</button>
+                            <button type="submit" id="buy_now_submit" class="btn btn-outline-dark">Buy Now</button>
                         </form>
+                        <div class="trust-badge-block mt-3" aria-label="Purchase trust badges">
+                            <span class="trust-badge-pill">COD Available</span>
+                            <span class="trust-badge-pill">Secure Payment</span>
+                            <span class="trust-badge-pill">Fast Dispatch</span>
+                            <span class="trust-badge-pill">Easy Returns</span>
+                        </div>
                         <script nonce="<?php echo $cspNonce; ?>">
                         (function () {
                             var qtyInput = document.getElementById('product_quantity');
@@ -703,8 +716,8 @@ do_action('product.view', [
                             var vidAdd     = document.getElementById('selected_variant_id_add');
                             var vidBuy     = document.getElementById('selected_variant_id_buy');
 
-                            var addBtn = document.querySelector('[type=submit].btn-primary');
-                            var buyBtn = document.querySelector('.btn-outline-dark[type=submit]');
+                            var addBtn = document.getElementById('add_to_cart_submit');
+                            var buyBtn = document.getElementById('buy_now_submit');
                             var isSetUnit = <?php echo $unitType === 'set' ? 'true' : 'false'; ?>;
                             var isPackLikeSize = function (val) {
                                 return /^pack\s+of\s+\d+$/i.test(String(val || '').trim());
@@ -822,6 +835,7 @@ do_action('product.view', [
                                 if (VARIANTS.length > 0) canAdd = v && (parseFloat(v.stock) > 0 || parseFloat(v.stock_meters) > 0);
                                 if (addBtn) addBtn.disabled = VARIANTS.length > 0 ? !canAdd : addBtn.disabled;
                                 if (buyBtn) buyBtn.disabled = VARIANTS.length > 0 ? !canAdd : buyBtn.disabled;
+                                syncMobileCtaState(v);
                             }
 
                             function activateColor(color, preferredSize) {
@@ -950,6 +964,72 @@ do_action('product.view', [
                                     });
                                 });
                             }
+
+                            var mobileBar = document.getElementById('product-mobile-cta');
+                            var mobileAddBtn = document.getElementById('mobile_add_to_cart_btn');
+                            var mobileBuyBtn = document.getElementById('mobile_buy_now_btn');
+                            var mobilePrice = document.getElementById('mobile_cta_price');
+                            var mobileMeta = document.getElementById('mobile_cta_meta');
+                            var mobileStock = document.getElementById('mobile_cta_stock');
+                            var priceBlock = document.getElementById('product_price_block');
+
+                            function syncMobileCtaState(variantData) {
+                                if (!mobileBar) return;
+                                if (mobilePrice && priceBlock) {
+                                    mobilePrice.textContent = (priceBlock.textContent || '').replace(/\s+/g, ' ').trim();
+                                }
+                                if (mobileMeta) {
+                                    var metaParts = [];
+                                    if (variantData) {
+                                        var colorVal = String(variantData.color || '').trim();
+                                        var sizeVal = variantSizeLabel(variantData);
+                                        if (colorVal !== '' && colorVal.toLowerCase() !== 'default') {
+                                            metaParts.push('Color: ' + colorVal);
+                                        }
+                                        if (sizeVal !== '') {
+                                            metaParts.push('Size: ' + sizeVal);
+                                        }
+                                    }
+                                    mobileMeta.textContent = metaParts.join('  •  ');
+                                }
+                                if (mobileStock) {
+                                    mobileStock.classList.remove('is-oos');
+                                    var stockMsg = '';
+                                    if (variantData) {
+                                        var stockVal = parseFloat(variantData.stock_meters) > 0 ? parseFloat(variantData.stock_meters) : parseFloat(variantData.stock);
+                                        if (!Number.isFinite(stockVal) || stockVal <= 0) {
+                                            stockMsg = 'Out of stock';
+                                            mobileStock.classList.add('is-oos');
+                                        } else if (stockVal <= 5) {
+                                            stockMsg = 'Only ' + stockVal + ' left';
+                                        }
+                                    }
+                                    mobileStock.textContent = stockMsg;
+                                }
+                                if (mobileAddBtn && addBtn) {
+                                    mobileAddBtn.disabled = !!addBtn.disabled;
+                                }
+                                if (mobileBuyBtn && buyBtn) {
+                                    mobileBuyBtn.disabled = !!buyBtn.disabled;
+                                }
+                            }
+
+                            if (mobileAddBtn && addBtn) {
+                                mobileAddBtn.addEventListener('click', function () {
+                                    if (!addBtn.disabled) {
+                                        addBtn.click();
+                                    }
+                                });
+                            }
+                            if (mobileBuyBtn && buyBtn) {
+                                mobileBuyBtn.addEventListener('click', function () {
+                                    if (!buyBtn.disabled) {
+                                        buyBtn.click();
+                                    }
+                                });
+                            }
+
+                            syncMobileCtaState();
                         })();
                         </script>
                     <?php else: ?>
@@ -1011,6 +1091,19 @@ do_action('product.view', [
     </div>
 </section>
 
+<?php if ($inStock): ?>
+<div class="product-mobile-cta d-md-none" id="product-mobile-cta">
+    <div class="product-mobile-cta-price" id="mobile_cta_price"></div>
+    <div class="product-mobile-cta-meta" id="mobile_cta_meta"></div>
+    <div class="product-mobile-cta-stock" id="mobile_cta_stock"></div>
+    <div class="product-mobile-cta-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="mobile_add_to_cart_btn">Add to Cart</button>
+        <button type="button" class="btn btn-outline-dark btn-sm" id="mobile_buy_now_btn">Buy Now</button>
+    </div>
+</div>
+<div class="d-md-none" style="height:92px;"></div>
+<?php endif; ?>
+
 <section class="section-block pt-0">
     <div class="container">
         <div class="surface-panel">
@@ -1034,7 +1127,7 @@ do_action('product.view', [
                 </div>
             </div>
             <div class="mt-4">
-                <a href="contact.php" class="btn btn-outline-primary">Request International Quote</a>
+                <a href="international-buyers.php" class="btn btn-outline-primary">Request International Quote</a>
             </div>
         </div>
     </div>

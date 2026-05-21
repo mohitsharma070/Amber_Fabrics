@@ -6,7 +6,7 @@ DirectoryIndex index.php
 </FilesMatch>
 
 # Block direct access to selected private folders
-RedirectMatch 403 ^/(config|database|tmp_sessions|plugins|vendor)(/|$)
+RedirectMatch 403 ^/(\.git|config|database|tmp_sessions|plugins|vendor)(/|$)
 RedirectMatch 403 ^/(tmp-debug-.*\.php|cron/(?!run-plugins\.php$).*)$
 
 RewriteEngine On

@@ -68,7 +68,10 @@ if ($page > $pages) {
 }
 
 $listSql = "SELECT
-                f.id, f.name, f.category, f.image, f.sku,
+                f.id, f.name, f.category,
+                COALESCE(NULLIF(f.image, ''), fv.variant_preview_image, '') AS list_image,
+                f.image,
+                f.sku,
                 f.price, f.sale_price, f.stock, f.unit_type,
                 f.stock_meters,
                 CASE
@@ -85,11 +88,23 @@ $listSql = "SELECT
                 SELECT
                     fabric_id,
                     COUNT(*) AS variant_count,
-                    SUM(CASE WHEN unit_type_parent = 'meter' THEN stock_meters ELSE stock END) AS variant_stock
+                    SUM(CASE WHEN unit_type_parent = 'meter' THEN stock_meters ELSE stock END) AS variant_stock,
+                    MAX(
+                        COALESCE(
+                            NULLIF(image, ''),
+                            NULLIF(image2, ''),
+                            NULLIF(image3, ''),
+                            NULLIF(image4, '')
+                        )
+                    ) AS variant_preview_image
                 FROM (
                     SELECT fv2.fabric_id,
                            fv2.stock,
                            fv2.stock_meters,
+                           fv2.image,
+                           fv2.image2,
+                           fv2.image3,
+                           fv2.image4,
                            fab.unit_type AS unit_type_parent
                     FROM fabric_variants fv2
                     JOIN fabrics fab ON fab.id = fv2.fabric_id
@@ -192,8 +207,8 @@ include 'partials/header.php';
             ?>
             <tr class="<?php echo $isLowStock ? 'table-warning' : ''; ?>">
                 <td data-label="Image">
-                    <?php if (!empty($p['image'])): ?>
-                        <?php $adminImageAsset = fabric_image_asset_data((string) $p['image']); ?>
+                    <?php if (!empty($p['list_image'])): ?>
+                        <?php $adminImageAsset = fabric_image_asset_data((string) $p['list_image']); ?>
                         <img src="..<?php echo e((string) ($adminImageAsset['thumb_src'] ?? '')); ?>" width="60" class="rounded" alt="<?php echo e($p['name']); ?>">
                     <?php else: ?>
                         <span class="text-muted">No image</span>

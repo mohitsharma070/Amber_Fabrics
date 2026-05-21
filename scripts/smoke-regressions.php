@@ -284,6 +284,74 @@ smoke_case('Razorpay paid transition parity helper', function (mysqli $conn) use
     must(trim((string) ($pr['razorpay_signature'] ?? '')) !== '', 'razorpay_signature not set');
 }, $results, $conn);
 
+smoke_case('Customer paid Razorpay cancellation restores inventory', function (mysqli $conn) use ($stamp): void {
+    $email = strtolower($stamp) . '_paid_cancel@example.com';
+    $cust = $conn->prepare("INSERT INTO customers (name, email, password_hash, is_active) VALUES ('Smoke Paid Cancel', ?, 'x', 1)");
+    $cust->bind_param('s', $email);
+    $cust->execute();
+    $customerId = (int) $conn->insert_id;
+
+    $fabricSku = $stamp . 'PCANFAB';
+    $fabric = $conn->prepare(
+        "INSERT INTO fabrics (name, sku, category, unit_type, price, stock, stock_meters, min_order_meters, status, is_available)
+         VALUES ('Smoke Paid Cancel Fabric', ?, 'fabric-by-meter', 'meter', 100, 0, 20, 1, 'active', 1)"
+    );
+    $fabric->bind_param('s', $fabricSku);
+    $fabric->execute();
+    $fabricId = (int) $conn->insert_id;
+
+    $orderNo = $stamp . 'PCAN1';
+    $ord = $conn->prepare(
+        "INSERT INTO orders (order_number, customer_name, customer_phone, customer_email, subtotal, shipping_amount, discount_amount, total_amount, payment_method, payment_status, order_status, customer_id, shipping_cost, total, status)
+         VALUES (?, 'Smoke Paid Cancel', '9999999999', ?, 200, 0, 0, 200, 'razorpay', 'paid', 'confirmed', ?, 0, 200, 'confirmed')"
+    );
+    $ord->bind_param('ssi', $orderNo, $email, $customerId);
+    $ord->execute();
+    $orderId = (int) $conn->insert_id;
+
+    $item = $conn->prepare(
+        "INSERT INTO order_items (order_id, product_id, product_name, unit_type, quantity, price, total, fabric_id, fabric_name_snapshot, quantity_meters, price_per_meter, line_total)
+         VALUES (?, ?, 'Smoke Paid Cancel Fabric', 'meter', 2, 100, 200, ?, 'Smoke Paid Cancel Fabric', 2, 100, 200)"
+    );
+    $item->bind_param('iii', $orderId, $fabricId, $fabricId);
+    $item->execute();
+
+    $pay = $conn->prepare("INSERT INTO payments (order_id, payment_method, payment_status, amount, razorpay_payment_id) VALUES (?, 'razorpay', 'paid', 200, ?)");
+    $paymentId = 'pay_' . strtolower($stamp) . '_pcan';
+    $pay->bind_param('is', $orderId, $paymentId);
+    $pay->execute();
+
+    reserve_order_inventory($conn, $orderId);
+    $reservedStockStmt = $conn->prepare("SELECT stock_meters FROM fabrics WHERE id = ?");
+    $reservedStockStmt->bind_param('i', $fabricId);
+    $reservedStockStmt->execute();
+    $reservedStock = (float) (($reservedStockStmt->get_result()->fetch_assoc()['stock_meters'] ?? -1));
+    must(abs($reservedStock - 18.0) < 0.0001, 'inventory was not reserved before cancellation');
+
+    $result = customer_cancel_order($conn, $orderId, $customerId, false);
+    must(($result['payment_status'] ?? '') === 'paid', 'cancel helper did not report paid status');
+
+    $stockChk = $conn->prepare("SELECT stock_meters FROM fabrics WHERE id = ?");
+    $stockChk->bind_param('i', $fabricId);
+    $stockChk->execute();
+    $stock = (float) (($stockChk->get_result()->fetch_assoc()['stock_meters'] ?? -1));
+    must(abs($stock - 20.0) < 0.0001, 'paid Razorpay cancellation did not restore inventory');
+
+    $orderChk = $conn->prepare("SELECT order_status, status, payment_status FROM orders WHERE id = ?");
+    $orderChk->bind_param('i', $orderId);
+    $orderChk->execute();
+    $order = $orderChk->get_result()->fetch_assoc() ?: [];
+    must(($order['order_status'] ?? '') === 'cancelled', 'paid Razorpay cancellation did not cancel order');
+    must(($order['status'] ?? '') === 'cancelled', 'paid Razorpay cancellation did not update legacy status');
+    must(($order['payment_status'] ?? '') === 'paid', 'paid Razorpay cancellation should keep payment paid until refund is processed');
+
+    $refundChk = $conn->prepare("SELECT COUNT(*) AS c FROM refund_ledger WHERE order_id = ? AND status = 'initiated' AND gateway = 'razorpay'");
+    $refundChk->bind_param('i', $orderId);
+    $refundChk->execute();
+    $refundCount = (int) (($refundChk->get_result()->fetch_assoc()['c'] ?? 0));
+    must($refundCount === 1, 'paid Razorpay cancellation did not create refund ledger entry');
+}, $results, $conn);
+
 smoke_case('Razorpay failed transition parity helper', function (mysqli $conn) use ($stamp): void {
     $email = strtolower($stamp) . '_fail@example.com';
     $cust = $conn->prepare("INSERT INTO customers (name, email, password_hash, is_active) VALUES ('Smoke Fail', ?, 'x', 1)");
@@ -323,6 +391,66 @@ smoke_case('Razorpay failed transition parity helper', function (mysqli $conn) u
     $chkPay->execute();
     $pr = $chkPay->get_result()->fetch_assoc() ?: [];
     must(($pr['payment_status'] ?? '') === 'failed', 'payments.payment_status not set to failed');
+}, $results, $conn);
+
+smoke_case('Razorpay capture after failure re-reserves inventory', function (mysqli $conn) use ($stamp): void {
+    $email = strtolower($stamp) . '_fail_capture@example.com';
+    $cust = $conn->prepare("INSERT INTO customers (name, email, password_hash, is_active) VALUES ('Smoke Fail Capture', ?, 'x', 1)");
+    $cust->bind_param('s', $email);
+    $cust->execute();
+    $customerId = (int) $conn->insert_id;
+
+    $fabricSku = $stamp . 'FCAPFAB';
+    $fabric = $conn->prepare(
+        "INSERT INTO fabrics (name, sku, category, unit_type, price, stock, stock_meters, min_order_meters, status, is_available)
+         VALUES ('Smoke Fail Capture Fabric', ?, 'fabric-by-meter', 'meter', 100, 0, 20, 1, 'active', 1)"
+    );
+    $fabric->bind_param('s', $fabricSku);
+    $fabric->execute();
+    $fabricId = (int) $conn->insert_id;
+
+    $orderNo = $stamp . 'FCAP1';
+    $ord = $conn->prepare(
+        "INSERT INTO orders (order_number, customer_name, customer_phone, customer_email, subtotal, shipping_amount, discount_amount, total_amount, payment_method, payment_status, order_status, customer_id, shipping_cost, total, status)
+         VALUES (?, 'Smoke Fail Capture', '9999999999', ?, 200, 0, 0, 200, 'razorpay', 'pending', 'pending', ?, 0, 200, 'pending')"
+    );
+    $ord->bind_param('ssi', $orderNo, $email, $customerId);
+    $ord->execute();
+    $orderId = (int) $conn->insert_id;
+
+    $item = $conn->prepare(
+        "INSERT INTO order_items (order_id, product_id, product_name, unit_type, quantity, price, total, fabric_id, fabric_name_snapshot, quantity_meters, price_per_meter, line_total)
+         VALUES (?, ?, 'Smoke Fail Capture Fabric', 'meter', 2, 100, 200, ?, 'Smoke Fail Capture Fabric', 2, 100, 200)"
+    );
+    $item->bind_param('iii', $orderId, $fabricId, $fabricId);
+    $item->execute();
+
+    $rzpOrderId = 'order_' . strtolower($stamp) . '_fcap';
+    $pay = $conn->prepare(
+        "INSERT INTO payments (order_id, payment_method, payment_status, amount, razorpay_order_id)
+         VALUES (?, 'razorpay', 'pending', 200, ?)"
+    );
+    $pay->bind_param('is', $orderId, $rzpOrderId);
+    $pay->execute();
+
+    reserve_order_inventory($conn, $orderId);
+    restore_order_inventory($conn, $orderId);
+    razorpay_mark_order_failed($conn, $orderId, 'pending', 'Smoke fail before late capture', 'payf_' . strtolower($stamp) . '_fcap', $rzpOrderId);
+    razorpay_mark_order_paid($conn, $orderId, 'failed', 'pay_' . strtolower($stamp) . '_fcap', $rzpOrderId, 'sig_' . strtolower($stamp) . '_fcap');
+
+    $stockChk = $conn->prepare("SELECT stock_meters FROM fabrics WHERE id = ?");
+    $stockChk->bind_param('i', $fabricId);
+    $stockChk->execute();
+    $stock = (float) (($stockChk->get_result()->fetch_assoc()['stock_meters'] ?? -1));
+    must(abs($stock - 18.0) < 0.0001, 'late capture did not re-reserve restored inventory');
+
+    $orderChk = $conn->prepare("SELECT payment_status, order_status, status FROM orders WHERE id = ?");
+    $orderChk->bind_param('i', $orderId);
+    $orderChk->execute();
+    $order = $orderChk->get_result()->fetch_assoc() ?: [];
+    must(($order['payment_status'] ?? '') === 'paid', 'late capture did not mark order paid');
+    must(($order['order_status'] ?? '') === 'confirmed', 'late capture did not confirm order');
+    must(($order['status'] ?? '') === 'confirmed', 'late capture did not update legacy status');
 }, $results, $conn);
 
 smoke_case('Razorpay coupon consumption is idempotent', function (mysqli $conn) use ($stamp): void {

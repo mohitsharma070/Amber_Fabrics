@@ -44,6 +44,34 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     flash('error', 'Please enter a valid email address.');
     redirect('/international-buyers.php');
 }
+if (mb_strlen($name) > 120) {
+    flash('error', 'Name must be 120 characters or fewer.');
+    redirect('/international-buyers.php');
+}
+if (mb_strlen($companyName) > 150) {
+    flash('error', 'Company name must be 150 characters or fewer.');
+    redirect('/international-buyers.php');
+}
+if (!preg_match('/^[0-9+\-\s()]{7,20}$/', $whatsapp)) {
+    flash('error', 'Please enter a valid WhatsApp number.');
+    redirect('/international-buyers.php');
+}
+if (mb_strlen($country) > 100) {
+    flash('error', 'Country must be 100 characters or fewer.');
+    redirect('/international-buyers.php');
+}
+if (mb_strlen($productInterested) > 255) {
+    flash('error', 'Product interest must be 255 characters or fewer.');
+    redirect('/international-buyers.php');
+}
+if (mb_strlen($quantity) > 120) {
+    flash('error', 'Quantity details must be 120 characters or fewer.');
+    redirect('/international-buyers.php');
+}
+if (mb_strlen($message) > 2000) {
+    flash('error', 'Message must be 2000 characters or fewer.');
+    redirect('/international-buyers.php');
+}
 
 $stmt = $conn->prepare(
     "INSERT INTO inquiries (

@@ -28,6 +28,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
     } elseif (!filter_var($prefill['email'], FILTER_VALIDATE_EMAIL)) {
         $errors['email'] = 'Please enter a valid email address.';
     }
+    if ($prefill['name'] !== '' && mb_strlen($prefill['name']) > 120) {
+        $errors['name'] = 'Name must be 120 characters or fewer.';
+    }
+    if ($prefill['country'] !== '' && mb_strlen($prefill['country']) > 100) {
+        $errors['country'] = 'Country must be 100 characters or fewer.';
+    }
+    if ($prefill['phone'] !== '' && !preg_match('/^[0-9+\-\s()]{7,20}$/', $prefill['phone'])) {
+        $errors['phone'] = 'Please enter a valid phone number.';
+    }
+    if ($prefill['message'] !== '' && mb_strlen($prefill['message']) > 2000) {
+        $errors['message'] = 'Message must be 2000 characters or fewer.';
+    }
 
     if (empty($errors)) {
         $stmt = $conn->prepare("INSERT INTO inquiries (name, email, whatsapp_number, country, message) VALUES (?,?,?,?,?)");
@@ -72,15 +84,18 @@ include __DIR__ . '/includes/header.php';
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">Country</label>
-                                <input class="form-control" name="country" value="<?php echo e($prefill['country']); ?>" placeholder="Country">
+                                <input class="<?php echo form_class($errors, 'country'); ?>" name="country" value="<?php echo e($prefill['country']); ?>" placeholder="Country">
+                                <?php echo form_error($errors, 'country'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">Phone</label>
-                                <input class="form-control" name="phone" type="tel" value="<?php echo e($prefill['phone']); ?>" placeholder="+91 98765 43210">
+                                <input class="<?php echo form_class($errors, 'phone'); ?>" name="phone" type="tel" value="<?php echo e($prefill['phone']); ?>" placeholder="+91 98765 43210">
+                                <?php echo form_error($errors, 'phone'); ?>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Message</label>
-                                <textarea class="form-control" name="message" rows="5" placeholder="How can we help you?"><?php echo e($prefill['message']); ?></textarea>
+                                <textarea class="<?php echo form_class($errors, 'message'); ?>" name="message" rows="5" placeholder="How can we help you?"><?php echo e($prefill['message']); ?></textarea>
+                                <?php echo form_error($errors, 'message'); ?>
                             </div>
                             <div class="col-12">
                                 <button name="submit" class="btn btn-primary w-100">Submit Inquiry</button>

@@ -10,23 +10,27 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $secret = trim(_cfg('SHIPROCKET_WEBHOOK_SECRET', ''));
 $payload = file_get_contents('php://input');
 $signature = trim((string) ($_SERVER['HTTP_X_SHIPROCKET_SIGNATURE'] ?? ''));
+if ($secret === '') {
+    error_log('[shiprocket-webhook] missing SHIPROCKET_WEBHOOK_SECRET');
+    http_response_code(500);
+    echo 'Webhook secret missing';
+    exit;
+}
 if ($payload === false || $payload === '') {
     http_response_code(400);
     echo 'Empty payload';
     exit;
 }
-if ($secret !== '') {
-    if ($signature === '') {
-        http_response_code(400);
-        echo 'Missing signature';
-        exit;
-    }
-    $expected = hash_hmac('sha256', $payload, $secret);
-    if (!hash_equals($expected, $signature)) {
-        http_response_code(400);
-        echo 'Invalid signature';
-        exit;
-    }
+if ($signature === '') {
+    http_response_code(400);
+    echo 'Missing signature';
+    exit;
+}
+$expected = hash_hmac('sha256', $payload, $secret);
+if (!hash_equals($expected, $signature)) {
+    http_response_code(400);
+    echo 'Invalid signature';
+    exit;
 }
 
 $event = json_decode($payload, true);

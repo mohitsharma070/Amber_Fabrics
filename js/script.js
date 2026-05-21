@@ -28,7 +28,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!form || form.tagName !== "FORM") return;
 
             // Don't apply to filter/sort forms that auto-submit and need to stay responsive
-            if (form.classList.contains("js-no-loading")) return;
+            if (form.classList.contains("js-no-loading") || form.classList.contains("cart-qty-form")) return;
 
             // Find the submit button that triggered the form
             var submitBtn = form.querySelector('[type="submit"]:not(.js-no-loading)');
@@ -578,6 +578,20 @@ document.addEventListener("DOMContentLoaded", function () {
 // ─── Add to Cart (AJAX) ───────────────────────────────────────────────────────
 (function () {
     'use strict';
+
+    document.addEventListener('click', function (e) {
+        var card = e.target.closest('.product-click-card');
+        if (!card) return;
+
+        if (e.target.closest('a, button, input, select, textarea, label, form')) {
+            return;
+        }
+
+        var href = card.getAttribute('data-href');
+        if (href) {
+            window.location.href = href;
+        }
+    });
 
     function updateCartBadge(count) {
         var badges = document.querySelectorAll('.cart-badge');

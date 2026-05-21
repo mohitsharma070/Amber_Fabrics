@@ -3,8 +3,6 @@ require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/coupon-functions.php';
 require_once __DIR__ . '/includes/customer-auth.php';
 
-require_customer();
-
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
@@ -47,6 +45,7 @@ $old = [
     'payment_method' => 'cod',
     'cod_fee_apply' => 1,
     'shipping_address_id' => 0,
+    'create_account' => 0,
 ];
 
 // Prefill checkout form from customer profile + latest order address when available.
@@ -270,9 +269,21 @@ include __DIR__ . '/includes/header.php';
                     <input type="hidden" name="shipping_address_id" id="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
                     <input type="hidden" name="shipping_quote_token" id="shipping_quote_token" value="<?php echo e($shippingQuoteToken); ?>">
 
-                    <div class="surface-panel p-4 mb-4">
-                        <div class="small text-muted mb-3">Step 1 of 4: Delivery Address</div>
-                        <h5 class="mb-3">Delivery Details</h5>
+                    <div class="surface-panel p-4 mb-4 checkout-section" id="checkout_section_address">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <div>
+                                <div class="small text-muted">Step 1 of 4: Delivery Address</div>
+                                <h5 class="mb-0">Delivery Details</h5>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="checkout_edit_address">Edit</button>
+                        </div>
+                        <div class="checkout-section-summary d-none" id="checkout_address_summary"></div>
+                        <div class="checkout-section-body" id="checkout_address_body">
+                        <?php if ($customerId <= 0): ?>
+                            <div class="alert alert-light border py-2 px-3 small mb-3">
+                                Have an account? <a href="/customer/login.php?return=%2Fcheckout.php">Log in</a> for faster checkout.
+                            </div>
+                        <?php endif; ?>
                         <?php if (!empty($savedAddresses)): ?>
                             <div class="mb-3">
                                 <label class="form-label">Use Saved Address</label>
@@ -321,6 +332,31 @@ include __DIR__ . '/includes/header.php';
                                 <input type="email" id="checkout_email" name="email" class="<?php echo form_class($errors, 'email'); ?>" required value="<?php echo e($old['email']); ?>">
                                 <?php echo form_error($errors, 'email'); ?>
                             </div>
+                            <?php if ($customerId <= 0): ?>
+                                <div class="col-12">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" value="1" id="create_account" name="create_account" <?php echo !empty($old['create_account']) ? 'checked' : ''; ?>>
+                                        <label class="form-check-label" for="create_account">
+                                            Create account after order (track orders faster)
+                                        </label>
+                                    </div>
+                                    <div id="create_account_fields" style="<?php echo !empty($old['create_account']) ? '' : 'display:none;'; ?>">
+                                        <div class="row g-3">
+                                            <div class="col-sm-6">
+                                                <label class="form-label">Password</label>
+                                                <input type="password" id="create_account_password" name="create_account_password" class="<?php echo form_class($errors, 'create_account_password'); ?>" autocomplete="new-password">
+                                                <?php echo form_error($errors, 'create_account_password'); ?>
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <label class="form-label">Confirm Password</label>
+                                                <input type="password" id="create_account_confirm_password" name="create_account_confirm_password" class="<?php echo form_class($errors, 'create_account_confirm_password'); ?>" autocomplete="new-password">
+                                                <?php echo form_error($errors, 'create_account_confirm_password'); ?>
+                                            </div>
+                                        </div>
+                                        <div class="small text-muted mt-2">We will send email verification before first login.</div>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
                             <div class="col-12">
                                 <label class="form-label">Address *</label>
                                 <textarea id="checkout_address" name="address" class="<?php echo form_class($errors, 'address'); ?>" rows="2" maxlength="500" required><?php echo e($old['address']); ?></textarea>
@@ -353,11 +389,19 @@ include __DIR__ . '/includes/header.php';
                                 <textarea name="order_notes" class="form-control" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
                         </div>
+                        </div>
                     </div>
 
-                    <div class="surface-panel p-4 mb-4">
-                        <div class="small text-muted mb-3">Step 2 of 4: Payment</div>
-                        <h5 class="mb-3">Payment Method</h5>
+                    <div class="surface-panel p-4 mb-4 checkout-section" id="checkout_section_payment">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <div>
+                                <div class="small text-muted">Step 2 of 4: Payment</div>
+                                <h5 class="mb-0">Payment Method</h5>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="checkout_edit_payment">Edit</button>
+                        </div>
+                        <div class="checkout-section-summary d-none" id="checkout_payment_summary"></div>
+                        <div class="checkout-section-body" id="checkout_payment_body">
                         <div class="checkout-payment-options">
                             <label class="checkout-pay-option" for="payment_cod" data-pay-option="cod">
                                 <span class="checkout-pay-main">
@@ -430,10 +474,17 @@ include __DIR__ . '/includes/header.php';
                                 </div>
                             </div>
                         </div>
+                        </div>
                     </div>
 
                     <?php if ($isIndia): ?>
                         <button type="submit" class="btn btn-primary btn-lg w-100">Step 4: Place Order</button>
+                        <div class="trust-badge-block mt-3 mb-2" aria-label="Checkout trust badges">
+                            <span class="trust-badge-pill">COD Available</span>
+                            <span class="trust-badge-pill">Secure Payment</span>
+                            <span class="trust-badge-pill">Fast Dispatch</span>
+                            <span class="trust-badge-pill">Easy Returns</span>
+                        </div>
                     <?php else: ?>
                         <a href="<?php echo e($internationalQuoteUrl); ?>" class="btn btn-primary btn-lg w-100">Request International Quote</a>
                     <?php endif; ?>
@@ -544,6 +595,7 @@ include __DIR__ . '/includes/header.php';
 
 <script nonce="<?php echo $cspNonce; ?>">
 (function () {
+    var csrfToken = <?php echo json_encode(csrf_token()); ?>;
     var codRadio = document.getElementById('payment_cod');
     var razorpayRadio = document.getElementById('payment_razorpay');
     var countryInput = document.querySelector('[name="country"]');
@@ -577,6 +629,18 @@ include __DIR__ . '/includes/header.php';
     var mobileTotalEl = document.getElementById('mobile_summary_total');
     var mobileSubmitBtn = document.getElementById('mobile_place_order_btn');
     var checkoutForm = document.getElementById('checkout_form');
+    var sectionAddress = document.getElementById('checkout_section_address');
+    var sectionPayment = document.getElementById('checkout_section_payment');
+    var sectionAddressBody = document.getElementById('checkout_address_body');
+    var sectionPaymentBody = document.getElementById('checkout_payment_body');
+    var sectionAddressSummary = document.getElementById('checkout_address_summary');
+    var sectionPaymentSummary = document.getElementById('checkout_payment_summary');
+    var editAddressBtn = document.getElementById('checkout_edit_address');
+    var editPaymentBtn = document.getElementById('checkout_edit_payment');
+    var createAccountCheckbox = document.getElementById('create_account');
+    var createAccountFields = document.getElementById('create_account_fields');
+    var createAccountPassword = document.getElementById('create_account_password');
+    var createAccountConfirmPassword = document.getElementById('create_account_confirm_password');
 
     if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
         return;
@@ -628,6 +692,74 @@ include __DIR__ . '/includes/header.php';
         }
     }
 
+    function syncCreateAccountFields() {
+        if (!createAccountCheckbox || !createAccountFields) return;
+        var enabled = !!createAccountCheckbox.checked;
+        createAccountFields.style.display = enabled ? '' : 'none';
+        if (createAccountPassword) createAccountPassword.required = enabled;
+        if (createAccountConfirmPassword) createAccountConfirmPassword.required = enabled;
+    }
+
+    function isValidEmail(val) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(val || '').trim());
+    }
+
+    function setFieldError(input, hasError) {
+        if (!input) return;
+        input.classList.toggle('is-invalid', !!hasError);
+    }
+
+    function validateAddressSection() {
+        var hasError = false;
+        var fv = String(fullNameInput ? fullNameInput.value : '').trim();
+        var ph = String(phoneInput ? phoneInput.value : '').trim();
+        var em = String(document.getElementById('checkout_email') ? document.getElementById('checkout_email').value : '').trim();
+        var ad = String(addressInput ? addressInput.value : '').trim();
+        var ct = String(cityInput ? cityInput.value : '').trim();
+        var st = String(stateInput ? stateInput.value : '').trim();
+        var pc = String(pincodeInput ? pincodeInput.value : '').trim();
+        setFieldError(fullNameInput, fv === '');
+        setFieldError(phoneInput, !/^[0-9+\-\s()]{7,20}$/.test(ph));
+        setFieldError(document.getElementById('checkout_email'), !isValidEmail(em));
+        setFieldError(addressInput, ad === '');
+        setFieldError(cityInput, ct === '');
+        setFieldError(stateInput, st === '');
+        setFieldError(pincodeInput, !/^[1-9][0-9]{5}$/.test(pc));
+        hasError = [fullNameInput, phoneInput, document.getElementById('checkout_email'), addressInput, cityInput, stateInput, pincodeInput]
+            .some(function (el) { return !!(el && el.classList.contains('is-invalid')); });
+        return !hasError;
+    }
+
+    function updateSectionSummaries() {
+        if (sectionAddressSummary) {
+            var nm = String(fullNameInput ? fullNameInput.value : '').trim();
+            var ph = String(phoneInput ? phoneInput.value : '').trim();
+            var ct = String(cityInput ? cityInput.value : '').trim();
+            var pc = String(pincodeInput ? pincodeInput.value : '').trim();
+            sectionAddressSummary.textContent = [nm, ph, [ct, pc].filter(Boolean).join(' - ')].filter(Boolean).join(' | ');
+        }
+        if (sectionPaymentSummary) {
+            sectionPaymentSummary.textContent = codRadio.checked ? 'Cash on Delivery' : 'Online Payment (Razorpay)';
+        }
+    }
+
+    function setSectionCollapsed(sectionEl, bodyEl, summaryEl, editBtn, collapsed) {
+        if (!sectionEl || !bodyEl || !summaryEl || !editBtn) return;
+        sectionEl.classList.toggle('checkout-section-collapsed', !!collapsed);
+        bodyEl.classList.toggle('d-none', !!collapsed);
+        summaryEl.classList.toggle('d-none', !collapsed);
+        editBtn.classList.toggle('d-none', !collapsed);
+    }
+
+    function focusFirstError() {
+        if (!checkoutForm) return false;
+        var firstError = checkoutForm.querySelector('.is-invalid');
+        if (!firstError) return false;
+        firstError.focus({ preventScroll: true });
+        firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return true;
+    }
+
     function maybeFetchLiveRate() {
         var country = String(countryInput.value || '').trim().toLowerCase();
         var pincode = pincodeInput ? String(pincodeInput.value || '').trim() : '';
@@ -635,13 +767,21 @@ include __DIR__ . '/includes/header.php';
             return;
         }
         var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
-        var query = '/shipping-rate.php?pincode=' + encodeURIComponent(pincode) + '&subtotal=' + encodeURIComponent(String(subtotal)) + '&payment_method=' + encodeURIComponent(paymentMethod);
+        var body = new URLSearchParams();
+        body.set('csrf_token', csrfToken);
+        body.set('pincode', pincode);
+        body.set('subtotal', String(subtotal));
+        body.set('payment_method', paymentMethod);
         if (courierSelect && courierSelect.value) {
-            query += '&courier_id=' + encodeURIComponent(courierSelect.value);
+            body.set('courier_id', String(courierSelect.value));
         }
-        fetch(query, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' }
+        fetch('/shipping-rate.php', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            },
+            body: body.toString()
         }).then(function (res) {
             return res.ok ? res.json() : null;
         }).then(function (data) {
@@ -772,6 +912,47 @@ include __DIR__ . '/includes/header.php';
             checkoutForm.requestSubmit();
         });
     }
+    if (createAccountCheckbox) {
+        createAccountCheckbox.addEventListener('change', syncCreateAccountFields);
+        syncCreateAccountFields();
+    }
+    if (editAddressBtn) {
+        editAddressBtn.addEventListener('click', function () {
+            setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, false);
+            if (fullNameInput) fullNameInput.focus();
+        });
+    }
+    if (editPaymentBtn) {
+        editPaymentBtn.addEventListener('click', function () {
+            setSectionCollapsed(sectionPayment, sectionPaymentBody, sectionPaymentSummary, editPaymentBtn, false);
+            if (codRadio) codRadio.focus();
+        });
+    }
+    if (sectionPayment) {
+        sectionPayment.addEventListener('click', function () {
+            updateSectionSummaries();
+            if (validateAddressSection()) {
+                setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, true);
+            }
+        });
+    }
+    if (checkoutForm) {
+        checkoutForm.addEventListener('submit', function (ev) {
+            updateSectionSummaries();
+            var okAddress = validateAddressSection();
+            if (!okAddress) {
+                ev.preventDefault();
+                setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, false);
+                setSectionCollapsed(sectionPayment, sectionPaymentBody, sectionPaymentSummary, editPaymentBtn, false);
+                focusFirstError();
+                return;
+            }
+            setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, true);
+            setSectionCollapsed(sectionPayment, sectionPaymentBody, sectionPaymentSummary, editPaymentBtn, true);
+        });
+    }
+    updateSectionSummaries();
+    focusFirstError();
     activateOnlineMethod(onlineMethodInput && onlineMethodInput.value ? onlineMethodInput.value : 'upi');
     syncPaymentPanels();
 })();

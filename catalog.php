@@ -494,7 +494,7 @@ function catalog_query(array $params): string {
                         }
                     ?>
                     <div class="animate-in">
-                        <article class="card h-100">
+                        <article class="card h-100 product-click-card" data-href="<?php echo e($productUrl); ?>">
                             <div class="fabric-thumb-wrap">
                                 <a href="<?php echo e($productUrl); ?>" class="fabric-thumb-link" aria-label="View <?php echo e($displayName); ?>">
                                     <?php if ($cardImage !== ''): ?>
@@ -534,10 +534,9 @@ function catalog_query(array $params): string {
                                 <p class="fabric-trust-note">Fast dispatch | Quality checked</p>
 
                                 <div class="d-flex gap-1 mt-auto">
-                                    <a href="<?php echo e($productUrl); ?>" class="btn btn-outline-dark btn-sm">View</a>
                                     <?php if ($inStock): ?>
                                         <?php if ($unitType === 'meter'): ?>
-                                            <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">Select Meter</a>
+                                            <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                         <?php elseif ($variantId > 0): ?>
                                             <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
                                                 <?php echo csrf_field(); ?>
@@ -549,7 +548,7 @@ function catalog_query(array $params): string {
                                                 <button type="submit" class="btn btn-primary btn-sm w-100">Add to Cart</button>
                                             </form>
                                         <?php elseif ($hasSizeOptions): ?>
-                                            <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">Select Size</a>
+                                            <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                         <?php else: ?>
                                             <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
                                                 <?php echo csrf_field(); ?>
@@ -579,7 +578,7 @@ function catalog_query(array $params): string {
         <div class="surface-panel text-center">
             <h5 class="mb-2">Need International Shipping or Bulk Quantities?</h5>
             <p class="text-muted mb-3">For overseas buyers and large-volume orders, contact us through International Inquiry.</p>
-            <a href="contact.php" class="btn btn-outline-primary">International Inquiry</a>
+            <a href="international-buyers.php" class="btn btn-outline-primary">International Inquiry</a>
         </div>
     </div>
 </section>
@@ -616,14 +615,6 @@ function catalog_query(array $params): string {
                 </select>
             </div>
             <div class="col-6">
-                <label class="form-label fw-semibold">Per Page</label>
-                <select class="form-select" name="per_page">
-                    <?php foreach ($perPageOptions as $size): ?>
-                        <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?> items</option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-6">
                 <label class="form-label fw-semibold">Min Price</label>
                 <input type="number" min="0" name="min_price" class="form-control" value="<?php echo (int) $minPrice; ?>">
             </div>
@@ -635,21 +626,45 @@ function catalog_query(array $params): string {
                 <input class="form-check-input" type="checkbox" value="1" id="in_stock_only_mobile" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
                 <label class="form-check-label" for="in_stock_only_mobile">In Stock Only</label>
             </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Material</label>
-                <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>">
+            <div class="col-12">
+                <button
+                    type="button"
+                    class="btn btn-outline-secondary w-100 mobile-advanced-toggle"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#mobileAdvancedFilters"
+                    aria-expanded="<?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? 'true' : 'false'; ?>"
+                    aria-controls="mobileAdvancedFilters"
+                >
+                    Advanced Filters
+                </button>
             </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Color</label>
-                <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>">
-            </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Size/Pack</label>
-                <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>">
-            </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Dispatch</label>
-                <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
+            <div class="col-12 collapse <?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? 'show' : ''; ?>" id="mobileAdvancedFilters">
+                <div class="row g-3 mobile-advanced-group">
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Per Page</label>
+                        <select class="form-select" name="per_page">
+                            <?php foreach ($perPageOptions as $size): ?>
+                                <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?> items</option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label fw-semibold">Material</label>
+                        <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label fw-semibold">Color</label>
+                        <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label fw-semibold">Size/Pack</label>
+                        <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label fw-semibold">Dispatch</label>
+                        <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
+                    </div>
+                </div>
             </div>
             <div class="col-12 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1" data-bs-dismiss="offcanvas">Apply Filters</button>

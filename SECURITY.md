@@ -45,9 +45,9 @@ Always use HTTPS in production to protect:
 - Sensitive data transmission
 
 ### 6. Admin Account
-- Change the default admin password immediately after first login
-- Use strong passwords (minimum 12 characters)
-- Enable password reset enforcement from the admin panel
+- Admin access is OTP-only; confirm the admin email inbox can receive login OTPs
+- Keep SMTP credentials strong and rotated so admin OTP delivery remains protected
+- Remove unused or stale admin accounts promptly
 
 ### 7. Content Security Policy
 The application includes CSP headers. Review and adjust them in `includes/init.php` based on your CDN and resource requirements.

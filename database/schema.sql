@@ -1,8 +1,8 @@
-﻿-- ============================================================
--- Amber Fabrics â€“ Production Database Schema
+-- ============================================================
+-- Amber Fabrics - Production Database Schema
 -- Engine  : InnoDB | Charset : utf8mb4_unicode_ci
 -- Import  : mysql -u <user> -p < database/schema.sql
--- After   : php database/setup.php   (CLI only â€“ seeds admin)
+-- After   : php database/setup.php   (CLI only - seeds admin)
 -- ============================================================
 
 SET NAMES utf8mb4;
@@ -13,17 +13,15 @@ CREATE DATABASE IF NOT EXISTS fabric_export
     COLLATE utf8mb4_unicode_ci;
 USE fabric_export;
 
--- â”€â”€â”€ Admins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Admins
 CREATE TABLE IF NOT EXISTS admins (
     id                   INT          AUTO_INCREMENT PRIMARY KEY,
     name                 VARCHAR(255) NOT NULL,
     email                VARCHAR(255) UNIQUE NOT NULL,
-    password_hash        VARCHAR(255) NOT NULL,
-    force_password_reset TINYINT(1)   DEFAULT 0,
     created_at           TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Admin brute-force protection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Admin brute-force protection
 CREATE TABLE IF NOT EXISTS admin_login_attempts (
     attempt_key   CHAR(64)  PRIMARY KEY,
     attempts      INT       NOT NULL DEFAULT 0,
@@ -46,7 +44,7 @@ CREATE TABLE IF NOT EXISTS admin_login_otps (
     INDEX idx_admin_login_otps_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Fabrics (Products) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Fabrics (Products)
 CREATE TABLE IF NOT EXISTS fabrics (
     id               INT           AUTO_INCREMENT PRIMARY KEY,
     name             VARCHAR(255)  NOT NULL,
@@ -85,7 +83,7 @@ CREATE TABLE IF NOT EXISTS fabrics (
     created_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Product Categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Product Categories
 CREATE TABLE IF NOT EXISTS categories (
     id         INT          AUTO_INCREMENT PRIMARY KEY,
     name       VARCHAR(100) NOT NULL,
@@ -129,7 +127,7 @@ ON DUPLICATE KEY UPDATE
     parent_id = VALUES(parent_id),
     status    = VALUES(status);
 
--- â”€â”€â”€ Customers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Customers
 CREATE TABLE IF NOT EXISTS customers (
     id                  INT          AUTO_INCREMENT PRIMARY KEY,
     name                VARCHAR(255) NOT NULL,
@@ -189,7 +187,7 @@ CREATE TABLE IF NOT EXISTS customer_addresses (
     CONSTRAINT fk_customer_addresses_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Customer brute-force protection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Customer brute-force protection
 CREATE TABLE IF NOT EXISTS customer_login_attempts (
     attempt_key   CHAR(64)  PRIMARY KEY,
     attempts      INT       NOT NULL DEFAULT 0,
@@ -209,7 +207,7 @@ CREATE TABLE IF NOT EXISTS public_form_attempts (
     INDEX idx_public_form_attempts_scope_updated (scope, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Persistent shopping cart (one per customer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Persistent shopping cart (one per customer)
 CREATE TABLE IF NOT EXISTS cart (
     id          INT       AUTO_INCREMENT PRIMARY KEY,
     customer_id INT       NOT NULL,
@@ -218,7 +216,7 @@ CREATE TABLE IF NOT EXISTS cart (
     UNIQUE KEY uq_cart_customer (customer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Cart line items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Cart line items
 CREATE TABLE IF NOT EXISTS cart_items (
     id                 INT           AUTO_INCREMENT PRIMARY KEY,
     cart_id            INT           NOT NULL,
@@ -324,7 +322,7 @@ CREATE TABLE IF NOT EXISTS product_reviews (
     CONSTRAINT fk_product_reviews_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Coupons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Coupons
 CREATE TABLE IF NOT EXISTS coupons (
     id               INT           AUTO_INCREMENT PRIMARY KEY,
     code             VARCHAR(50)   NOT NULL UNIQUE,
@@ -340,7 +338,7 @@ CREATE TABLE IF NOT EXISTS coupons (
     created_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Orders
 CREATE TABLE IF NOT EXISTS orders (
     id              INT           AUTO_INCREMENT PRIMARY KEY,
     order_number    VARCHAR(50)   UNIQUE NOT NULL,
@@ -393,7 +391,7 @@ CREATE TABLE IF NOT EXISTS orders (
     INDEX idx_orders_shipping_quote_token (shipping_quote_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Order line items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Order line items
 CREATE TABLE IF NOT EXISTS order_items (
     id                   INT           AUTO_INCREMENT PRIMARY KEY,
     order_id             INT           NOT NULL,
@@ -433,7 +431,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     INDEX idx_order_items_variant (variant_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Payments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Payments
 CREATE TABLE IF NOT EXISTS payments (
     id                  INT           AUTO_INCREMENT PRIMARY KEY,
     order_id            INT           NOT NULL,
@@ -451,7 +449,7 @@ CREATE TABLE IF NOT EXISTS payments (
     INDEX idx_payments_razorpay_order_id (razorpay_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Shipments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Shipments
 CREATE TABLE IF NOT EXISTS shipments (
     id            INT           AUTO_INCREMENT PRIMARY KEY,
     order_id      INT           NOT NULL,
@@ -466,7 +464,7 @@ CREATE TABLE IF NOT EXISTS shipments (
     INDEX idx_shipments_tracking_id   (tracking_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Business Expenses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Business Expenses
 CREATE TABLE IF NOT EXISTS expenses (
     id           INT           AUTO_INCREMENT PRIMARY KEY,
     type         ENUM('Marketing','Packaging','Shipping','Product Purchase','Website','Other') NOT NULL DEFAULT 'Other',
@@ -478,7 +476,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     INDEX idx_expenses_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Inquiries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Inquiries
 CREATE TABLE IF NOT EXISTS inquiries (
     id                 INT          AUTO_INCREMENT PRIMARY KEY,
     inquiry_type       ENUM('general','export') DEFAULT 'general',
@@ -501,7 +499,7 @@ CREATE TABLE IF NOT EXISTS inquiries (
     created_at         TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Inquiry activity log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Inquiry activity log
 CREATE TABLE IF NOT EXISTS inquiry_activity_logs (
     id         INT          AUTO_INCREMENT PRIMARY KEY,
     inquiry_id INT          NOT NULL,
@@ -514,7 +512,7 @@ CREATE TABLE IF NOT EXISTS inquiry_activity_logs (
     INDEX idx_inquiry_activity_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Announcement Dismissals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Announcement Dismissals
 CREATE TABLE IF NOT EXISTS announcement_dismissals (
     id               INT       AUTO_INCREMENT PRIMARY KEY,
     session_key      CHAR(64)  NOT NULL,
@@ -527,14 +525,14 @@ CREATE TABLE IF NOT EXISTS announcement_dismissals (
     INDEX idx_announce_updated_at   (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ Site Settings (key-value store) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Site Settings (key-value store)
 CREATE TABLE IF NOT EXISTS site_settings (
     setting_key   VARCHAR(120) PRIMARY KEY,
     setting_value TEXT,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- â”€â”€â”€ About Page Media â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- About Page Media
 CREATE TABLE IF NOT EXISTS about_media (
     id           INT          AUTO_INCREMENT PRIMARY KEY,
     media_type   ENUM('image','video') NOT NULL DEFAULT 'image',

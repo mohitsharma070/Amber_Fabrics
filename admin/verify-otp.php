@@ -141,12 +141,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $inc->execute();
             $errors['otp'] = 'Invalid OTP.';
         } else {
-            $adminStmt = $conn->prepare("SELECT force_password_reset FROM admins WHERE id = ? LIMIT 1");
-            $adminStmt->bind_param('i', $pendingAdminId);
-            $adminStmt->execute();
-            $adminRow = $adminStmt->get_result()->fetch_assoc();
-            $mustResetPassword = !empty($adminRow['force_password_reset']);
-
             session_regenerate_id(true);
             $_SESSION['admin_id'] = $pendingAdminId;
             $_SESSION['admin_name'] = $pendingName;
@@ -160,13 +154,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $del->bind_param('i', $pendingAdminId);
             $del->execute();
 
-            if ($mustResetPassword) {
-                $_SESSION['must_reset_password'] = true;
-                flash('error', 'Please set a new password to continue.');
-                redirect('password-reset.php');
-            }
-
-            unset($_SESSION['must_reset_password']);
             flash('success', 'Welcome back, ' . $pendingName . '!');
             redirect('dashboard.php');
         }

@@ -70,7 +70,13 @@ if(isset($_POST['submit'])){
     $status        = trim($_POST['status']        ?? 'active');
     $isFeatured    = isset($_POST['is_featured']) ? 1 : 0;
     $isAvailInput  = isset($_POST['is_available']) ? 1 : 0;
-    $minOrder      = normalize_meter_quantity($_POST['min_order_meters'] ?? 1, 1.0);
+    $minOrderInput = trim((string) ($_POST['min_order_meters'] ?? '1'));
+    $minOrder      = is_numeric($minOrderInput) ? (float) $minOrderInput : 1.0;
+    if ($unitType === 'piece' || $unitType === 'set') {
+        $minOrder = (float) max(1, (int) round($minOrder));
+    } else {
+        $minOrder = normalize_meter_quantity($minOrder, 1.0);
+    }
     $qtyStepRaw    = trim($_POST['qty_step'] ?? '');
     $qtyStep       = ($qtyStepRaw !== '' && is_numeric($qtyStepRaw) && (float) $qtyStepRaw > 0) ? round((float) $qtyStepRaw, 4) : 0.0;
 
@@ -127,6 +133,11 @@ if(isset($_POST['submit'])){
     }
     if (!in_array($status, ['active', 'inactive'], true)) {
         $errors['status'] = 'Invalid status selected.';
+    }
+    if ($minOrder <= 0) {
+        $errors['min_order_meters'] = 'Min. order qty must be greater than 0.';
+    } elseif (($unitType === 'piece' || $unitType === 'set') && floor($minOrder) != $minOrder) {
+        $errors['min_order_meters'] = 'Piece/Set products require whole-number min. order qty.';
     }
 
     $imageName = null;
@@ -187,7 +198,7 @@ if(isset($_POST['submit'])){
         if ($unitType === 'piece' || $unitType === 'set') {
             $stockVal = normalize_piece_quantity($stock, 0);
             $stockMeters = 0.00;
-            $minOrderVal = 1.00;
+            $minOrderVal = (float) max(1, (int) round($minOrder));
         } else {
             $stockMeters = round((float) $stock, 2);
             $stockVal = 0;
@@ -238,246 +249,13 @@ include 'partials/header.php'; ?>
     <div class="alert alert-warning">Please fix the errors below.</div>
 <?php endif; ?>
 
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <ul class="nav nav-pills product-editor-tabs" id="productEditorTabs">
-            <li class="nav-item"><button type="button" class="nav-link active product-editor-tab" data-editor-tab="details">Details</button></li>
-            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="pricing">Pricing & Inventory</button></li>
-            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="content">Content</button></li>
-        </ul>
-    </div>
-</div>
-
-<form method="POST" enctype="multipart/form-data" class="row g-3" id="product-editor-form">
-    <?php echo csrf_field(); ?>
-    <div class="col-sm-6">
-        <label class="form-label">Product Name *</label>
-        <input type="text" name="name" class="<?php echo form_class($errors, 'name'); ?>" required value="<?php echo e($old['name']); ?>">
-        <?php echo form_error($errors, 'name'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Category *</label>
-        <select name="category" class="<?php echo form_class($errors, 'category', 'form-select'); ?>" required>
-            <option value="">Select Category</option>
-            <?php foreach ($categories as $cat): ?>
-                <option value="<?php echo e($cat['slug']); ?>" <?php echo $old['category'] === $cat['slug'] ? 'selected' : ''; ?>>
-                    <?php echo e($cat['name']); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <?php echo form_error($errors, 'category'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Unit Type *</label>
-        <select name="unit_type" class="<?php echo form_class($errors, 'unit_type', 'form-select'); ?>" required>
-            <option value="meter" <?php echo $old['unit_type'] === 'meter' ? 'selected' : ''; ?>>Meter (decimal qty, e.g. 1.5m)</option>
-            <option value="piece" <?php echo $old['unit_type'] === 'piece' ? 'selected' : ''; ?>>Piece (whole numbers)</option>
-            <option value="set" <?php echo $old['unit_type'] === 'set' ? 'selected' : ''; ?>>Set (whole numbers)</option>
-        </select>
-        <?php echo form_error($errors, 'unit_type'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">SKU <small class="text-muted">(auto-generated)</small></label>
-        <input type="text" id="sku_preview" class="form-control" value="<?php echo e($old['sku']); ?>" readonly>
-        <input type="hidden" name="sku" id="sku_hidden" value="<?php echo e($old['sku']); ?>">
-        <small class="text-muted">Generated from Category + Material + Color + GSM.</small>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Regular Price *</label>
-        <input type="number" step="0.01" min="0" name="price" class="<?php echo form_class($errors, 'price'); ?>" placeholder="0.00" required value="<?php echo e($old['price']); ?>">
-        <?php echo form_error($errors, 'price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Sale Price</label>
-        <input type="number" step="0.01" min="0" name="sale_price" class="<?php echo form_class($errors, 'sale_price'); ?>" placeholder="0.00" value="<?php echo e($old['sale_price']); ?>">
-        <?php echo form_error($errors, 'sale_price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Cost Price *</label>
-        <input type="number" step="0.01" min="0" name="cost_price" class="<?php echo form_class($errors, 'cost_price'); ?>" placeholder="0.00" required value="<?php echo e($old['cost_price']); ?>">
-        <?php echo form_error($errors, 'cost_price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Min. Order Qty</label>
-        <input type="number" step="0.01" min="0" name="min_order_meters" class="form-control" value="<?php echo e($old['min_order_meters']); ?>" placeholder="e.g. 1">
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Quantity Step <small class="text-muted">(0 = auto)</small></label>
-        <input type="number" step="0.0001" min="0" name="qty_step" class="form-control" value="<?php echo e($old['qty_step']); ?>" placeholder="e.g. 0.5">
-    </div>
-    <div class="col-6 col-md-4" id="meter_options_row">
-        <label class="form-label">Meter Options <small class="text-muted">(quick quantity options, comma separated: e.g. 1, 1.5, 2, 2.5)</small></label>
-        <input type="text" name="meter_options" class="form-control" placeholder="e.g. 1, 1.5, 2, 2.5" value="<?php echo e($old['meter_options']); ?>">
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Material / Fabric</label>
-        <input type="text" name="material" class="form-control" value="<?php echo e($old['material']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">Print Style</label>
-        <input type="text" name="print_style" class="form-control" placeholder="e.g. Floral, Solid, Block Print" value="<?php echo e($old['print_style']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">GSM <small class="text-muted">(optional)</small></label>
-        <input type="text" name="gsm" class="form-control" value="<?php echo e($old['gsm']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">Width <small class="text-muted">(optional)</small></label>
-        <input type="text" name="width" class="form-control" value="<?php echo e($old['width']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">MOQ (International Buyers)</label>
-        <input type="text" name="moq" class="form-control" value="<?php echo e($old['moq']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">Lead Time (International Buyers)</label>
-        <input type="text" name="lead_time" class="form-control" value="<?php echo e($old['lead_time']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">Dispatch Time (India Orders)</label>
-        <input type="text" name="dispatch_time" class="form-control" value="<?php echo e($old['dispatch_time']); ?>">
-    </div>
-    <div class="col-12 col-md-4">
-        <label class="form-label">Status *</label>
-        <select name="status" class="<?php echo form_class($errors, 'status', 'form-select'); ?>" required>
-            <option value="active" <?php echo $old['status'] === 'active' ? 'selected' : ''; ?>>Active</option>
-            <option value="inactive" <?php echo $old['status'] === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
-        </select>
-        <?php echo form_error($errors, 'status'); ?>
-    </div>
-    <div class="col-12">
-        <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" name="is_featured" id="is_featured" <?php echo $old['is_featured'] ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="is_featured">Featured Product</label>
-        </div>
-        <span class="text-muted small ms-2">Availability is derived from variants after setup.</span>
-    </div>
-    <div class="col-12">
-        <label class="form-label">Wash Care</label>
-        <textarea name="wash_care" rows="3" class="form-control"><?php echo e($old['wash_care']); ?></textarea>
-    </div>
-    <div class="col-12">
-        <label class="form-label">Description</label>
-        <textarea name="description" rows="4" class="form-control"><?php echo e($old['description']); ?></textarea>
-    </div>
-    <div class="col-12">
-        <button name="submit" class="btn btn-primary">Save Product</button>
-        <a href="fabrics.php" class="btn btn-outline-secondary">Cancel</a>
-    </div>
-</form>
-
-<script nonce="<?php echo $cspNonce; ?>">
-(function () {
-    var formEl = document.getElementById('product-editor-form');
-    var tabButtons = Array.prototype.slice.call(document.querySelectorAll('.product-editor-tab'));
-    var unitSelect = document.querySelector('select[name="unit_type"]');
-    var minOrderInput = document.querySelector('input[name="min_order_meters"]');
-    var qtyStepInput = document.querySelector('input[name="qty_step"]');
-    var categoryInput = document.querySelector('select[name="category"]');
-    var materialInput = document.querySelector('input[name="material"]');
-    var gsmInput = document.querySelector('input[name="gsm"]');
-    var skuPreview = document.getElementById('sku_preview');
-    var skuHidden = document.getElementById('sku_hidden');
-    if (!unitSelect) return;
-
-    function assignSections() {
-        if (!formEl) return;
-        Array.prototype.forEach.call(formEl.children, function (col) {
-            if (!col || !col.querySelector) return;
-            var submitBtn = col.querySelector('button[name=\"submit\"]');
-            var labelEl = col.querySelector('label.form-label, .form-check-label');
-            if (submitBtn) {
-                col.dataset.editorSection = 'actions';
-                return;
-            }
-            var text = (labelEl ? labelEl.textContent : '').toLowerCase();
-            var section = 'details';
-            if (
-                text.indexOf('price') !== -1 ||
-                text.indexOf('order qty') !== -1 ||
-                text.indexOf('quantity step') !== -1 ||
-                text.indexOf('status') !== -1 ||
-                text.indexOf('featured') !== -1 ||
-                text.indexOf('available') !== -1
-            ) {
-                section = 'pricing';
-            }
-            if (text.indexOf('wash care') !== -1 || text.indexOf('description') !== -1) {
-                section = 'content';
-            }
-            col.dataset.editorSection = section;
-        });
-    }
-
-    function setSection(section) {
-        if (!formEl) return;
-        Array.prototype.forEach.call(formEl.children, function (col) {
-            var colSection = col.dataset.editorSection || 'details';
-            var show = colSection === section || colSection === 'actions';
-            col.classList.toggle('d-none', !show);
-        });
-        tabButtons.forEach(function (btn) {
-            btn.classList.toggle('active', btn.getAttribute('data-editor-tab') === section);
-        });
-    }
-
-    function applyUnitRules() {
-        var unit = unitSelect.value;
-        var isMeter = unit === 'meter';
-        var isPiece = unit === 'piece';
-        var isWhole = isPiece || unit === 'set';
-        var meterOptionsRow = document.getElementById('meter_options_row');
-        if (meterOptionsRow) {
-            meterOptionsRow.style.display = isMeter ? '' : 'none';
-        }
-        if (minOrderInput) {
-            minOrderInput.step = isWhole ? '1' : '0.01';
-        }
-        if (qtyStepInput) {
-            qtyStepInput.placeholder = isMeter ? 'e.g. 0.5' : '1';
-        }
-    }
-
-    unitSelect.addEventListener('change', applyUnitRules);
-    applyUnitRules();
-
-    function skuPart(value) {
-        return String(value || '')
-            .trim()
-            .toUpperCase()
-            .replace(/[^A-Z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '');
-    }
-
-    function updateSkuPreview() {
-        if (!skuPreview || !skuHidden) return;
-        var parts = [
-            categoryInput ? skuPart(categoryInput.value) : '',
-            materialInput ? skuPart(materialInput.value) : '',
-            gsmInput ? skuPart(gsmInput.value) : ''
-        ].filter(Boolean);
-        var sku = parts.length ? parts.join('-') : 'SKU';
-        skuPreview.value = sku;
-        skuHidden.value = sku;
-    }
-
-    [categoryInput, materialInput, gsmInput].forEach(function (el) {
-        if (el) {
-            el.addEventListener('input', updateSkuPreview);
-            el.addEventListener('change', updateSkuPreview);
-        }
-    });
-
-    tabButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            setSection(btn.getAttribute('data-editor-tab') || 'details');
-        });
-    });
-
-    assignSections();
-    setSection('details');
-    updateSkuPreview();
-})();
-</script>
+<?php
+$isEdit = false;
+$submitLabel = 'Save Product';
+$cancelHref = 'fabrics.php';
+$cancelLabel = 'Cancel';
+include __DIR__ . '/partials/fabric-product-form.php';
+include __DIR__ . '/partials/fabric-product-form-script.php';
+?>
 
 <?php include 'partials/footer.php'; ?>

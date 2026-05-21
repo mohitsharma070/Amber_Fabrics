@@ -27,6 +27,39 @@ $stmt = $conn->prepare(
 );
 $stmt->execute();
 $homeProducts = $stmt->get_result();
+$homeProductRows = $homeProducts ? $homeProducts->fetch_all(MYSQLI_ASSOC) : [];
+
+$homeProductIds = [];
+foreach ($homeProductRows as $hpRow) {
+    $pid = (int) ($hpRow['id'] ?? 0);
+    if ($pid > 0) {
+        $homeProductIds[] = $pid;
+    }
+}
+$homeProductIds = array_values(array_unique($homeProductIds));
+
+$homeVariantRowsByFabric = [];
+if (!empty($homeProductIds)) {
+    $variantPlaceholders = implode(',', array_fill(0, count($homeProductIds), '?'));
+    $variantSql = "SELECT id, fabric_id, image, image2, image3, image4, stock, stock_meters, is_active, sort_order
+                   FROM fabric_variants
+                   WHERE is_active = 1 AND fabric_id IN ($variantPlaceholders)
+                   ORDER BY fabric_id ASC, sort_order ASC, id ASC";
+    $variantStmt = $conn->prepare($variantSql);
+    $variantStmt->bind_param(str_repeat('i', count($homeProductIds)), ...$homeProductIds);
+    $variantStmt->execute();
+    $variantRows = $variantStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($variantRows as $vRow) {
+        $fid = (int) ($vRow['fabric_id'] ?? 0);
+        if ($fid <= 0) {
+            continue;
+        }
+        if (!isset($homeVariantRowsByFabric[$fid])) {
+            $homeVariantRowsByFabric[$fid] = [];
+        }
+        $homeVariantRowsByFabric[$fid][] = $vRow;
+    }
+}
 
 // Active categories for the category grid
 $homeCategoriesResult = $conn->query("SELECT id, name, slug, image FROM categories WHERE status = 'active' ORDER BY name ASC");
@@ -108,52 +141,6 @@ $announcementKey = md5(implode('|', $announcementMessages));
 <!-- ═══════════════════════════════════════ -->
 <!-- TRUST BAR                              -->
 <!-- ═══════════════════════════════════════ -->
-<div class="trust-bar">
-    <div class="container">
-        <div class="trust-bar-inner">
-            <div class="trust-item animate-in">
-                <div class="trust-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z"/></svg>
-                </div>
-                <div>
-                    <div class="trust-value">3 Core</div>
-                    <div class="trust-label">Category Focus</div>
-                </div>
-            </div>
-            <div class="trust-divider" aria-hidden="true"></div>
-            <div class="trust-item animate-in">
-                <div class="trust-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/></svg>
-                </div>
-                <div>
-                    <div class="trust-value">Fast</div>
-                    <div class="trust-label">Growing Catalog</div>
-                </div>
-            </div>
-            <div class="trust-divider" aria-hidden="true"></div>
-            <div class="trust-item animate-in">
-                <div class="trust-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
-                </div>
-                <div>
-                    <div class="trust-value">48&ndash;72 Hrs</div>
-                    <div class="trust-label">Ready Stock Dispatch</div>
-                </div>
-            </div>
-            <div class="trust-divider" aria-hidden="true"></div>
-            <div class="trust-item animate-in">
-                <div class="trust-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.669.864 8 0 6.331.864l-1.858.282-.842 1.68-1.337 1.32L2.6 6l-.306 1.854 1.337 1.32.842 1.68 1.858.282L8 12l1.669-.864 1.858-.282.842-1.68 1.337-1.32L13.4 6l.306-1.854-1.337-1.32-.842-1.68L9.669.864zm1.196 1.193.684 1.365 1.086 1.072L12.387 6l.248 1.506-1.086 1.072-.684 1.365-1.51.229L8 11l-1.355-.828-1.51-.229-.684-1.365-1.086-1.072L3.612 6l-.248-1.506 1.086-1.072.684-1.365 1.51-.229L8 1l1.355.828 1.51.229z"/><path d="M4 11.794V16l4-1 4 1v-4.206l-2.018.306L8 13.126 6.018 12.1 4 11.794z"/></svg>
-                </div>
-                <div>
-                    <div class="trust-value">100%</div>
-                    <div class="trust-label">Quality Inspected</div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- ═══════════════════════════════════════ -->
 <!-- SHOP BY CATEGORY                       -->
 <!-- ═══════════════════════════════════════ -->
@@ -207,36 +194,63 @@ $announcementKey = md5(implode('|', $announcementMessages));
 
         <div class="slider-wrap" id="prodSlider">
             <div class="slider-track prod-slider-track">
-            <?php if ($homeProducts->num_rows === 0): ?>
+            <?php if (empty($homeProductRows)): ?>
                 <div class="surface-panel text-center text-muted py-5 px-4">
                     No products added yet. <a href="catalog.php">Browse catalog</a>
                 </div>
             <?php endif; ?>
 
-            <?php while ($row = $homeProducts->fetch_assoc()): ?>
+            <?php foreach ($homeProductRows as $row): ?>
             <?php
                 $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
                     ? (string) $row['unit_type']
                     : 'meter';
-                $cardImage = (string) ($row['image'] ?? '');
-                if ($cardImage === '') {
-                    $fv = get_first_active_variant($conn, (int) ($row['id'] ?? 0));
-                    if (is_array($fv)) {
+                $activeVariantCount = (int) ($row['active_variant_count'] ?? 0);
+                $hasActiveVariants = $activeVariantCount > 0;
+                $displayStock = $unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
+                $hasSellableVariant = false;
+                $variantRows = $homeVariantRowsByFabric[(int) ($row['id'] ?? 0)] ?? [];
+                $firstVariantImage = '';
+                $firstInStockVariantImage = '';
+
+                if ($hasActiveVariants) {
+                    $displayStock = 0.0;
+                    foreach ($variantRows as $variantRow) {
+                        $variantStock = ($unitType === 'meter')
+                            ? (float) ($variantRow['stock_meters'] ?? 0)
+                            : (float) ($variantRow['stock'] ?? 0);
+                        $displayStock += max(0.0, $variantStock);
+                        $variantImage = '';
                         foreach (['image', 'image2', 'image3', 'image4'] as $ik) {
-                            $cand = trim((string) ($fv[$ik] ?? ''));
-                            if ($cand !== '') { $cardImage = $cand; break; }
+                            $cand = trim((string) ($variantRow[$ik] ?? ''));
+                            if ($cand !== '') {
+                                $variantImage = $cand;
+                                break;
+                            }
+                        }
+                        if ($firstVariantImage === '' && $variantImage !== '') {
+                            $firstVariantImage = $variantImage;
+                        }
+                        if ($variantStock > 0) {
+                            $hasSellableVariant = true;
+                            if ($firstInStockVariantImage === '' && $variantImage !== '') {
+                                $firstInStockVariantImage = $variantImage;
+                            }
                         }
                     }
                 }
+
+                $cardImage = (string) ($row['image'] ?? '');
+                if ($cardImage === '') {
+                    $cardImage = ($firstInStockVariantImage !== '') ? $firstInStockVariantImage : $firstVariantImage;
+                }
                 $cardImageAsset = $cardImage !== '' ? fabric_image_asset_data($cardImage) : null;
-                $displayStock = $unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
-                $cardIsInStock = !empty($row['is_available']) && $displayStock > 0;
+                $cardIsInStock = !empty($row['is_available']) && ($hasActiveVariants ? $hasSellableVariant : ($displayStock > 0));
                 $hasSizeOptions = !empty(parse_size_options((string) ($row['size'] ?? '')));
-                $activeVariantCount = (int) ($row['active_variant_count'] ?? 0);
                 $needsVariantSelection = $activeVariantCount > 1;
             ?>
             <div class="prod-slide">
-                <article class="card h-100">
+                <article class="card h-100 product-click-card" data-href="fabric.php?id=<?php echo (int)$row['id']; ?>">
                     <div class="fabric-thumb-wrap">
                         <?php if ($cardImage !== ''): ?>
                             <picture>
@@ -272,14 +286,13 @@ $announcementKey = md5(implode('|', $announcementMessages));
                             </div>
                         <?php endif; ?>
                         <div class="d-flex gap-1 mt-auto">
-                            <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-outline-dark btn-sm">View</a>
                             <?php if ($cardIsInStock): ?>
                                 <?php if ($unitType === 'meter'): ?>
-                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Meter</a>
+                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                 <?php elseif ($needsVariantSelection): ?>
-                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Options</a>
+                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                 <?php elseif ($hasSizeOptions): ?>
-                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">Select Size</a>
+                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                 <?php else: ?>
                                     <button class="btn btn-primary btn-sm flex-grow-1 add-to-cart-btn"
                                         data-fabric-id="<?php echo (int)$row['id']; ?>"
@@ -295,7 +308,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
                     </div>
                 </article>
             </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
             </div>
         </div>
 
@@ -363,7 +376,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
             </div>
             <div class="col-lg-4 d-flex flex-column flex-sm-row flex-lg-column gap-3">
                 <a href="international-buyers.php" class="btn btn-light btn-lg">Bulk / Export Inquiry</a>
-                <a href="contact.php" class="btn btn-outline-light btn-lg">Contact Our Team</a>
+                <a href="international-buyers.php" class="btn btn-outline-light btn-lg">Contact Our Team</a>
             </div>
         </div>
     </div>

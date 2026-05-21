@@ -181,7 +181,8 @@ function review_rating_recent_reviews(mysqli $conn, int $productId, int $limit =
 
 function review_rating_star_text(int $rating): string
 {
-    return str_repeat('★', max(0, min(5, $rating))) . str_repeat('☆', max(0, 5 - max(0, min(5, $rating))));
+    $rating = max(0, min(5, $rating));
+    return str_repeat('★', $rating) . str_repeat('☆', 5 - $rating);
 }
 
 function review_rating_render_product_block(array $context): void

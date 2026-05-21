@@ -143,6 +143,19 @@ function redirect(string $path): void
 }
 
 /**
+ * Consistent JSON API response helper.
+ */
+function api_json(array $payload, int $status = 200): void
+{
+    if (!headers_sent()) {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+/**
  * Flash messaging stored in session.
  */
 function flash(string $key, ?string $message = null): ?string
@@ -170,7 +183,7 @@ function e(?string $value): string
 }
 
 /**
- * Enforce a baseline password policy for customer/admin credentials.
+ * Enforce a baseline password policy for customer credentials.
  */
 function password_strength_error(string $password): ?string
 {
@@ -222,12 +235,16 @@ function normalize_piece_quantity($value, int $min = 1): int
 
 /**
  * Normalize quantities based on unit type.
+ *
+ * For piece/set units, $minQty is treated as whole-number minimum quantity.
+ * For meter units, $minQty is treated as minimum meter quantity.
  */
-function normalize_quantity_by_unit($value, string $unitType, float $meterMin = 1.0)
+function normalize_quantity_by_unit($value, string $unitType, float $minQty = 1.0)
 {
-    return ($unitType === 'piece' || $unitType === 'set')
-        ? normalize_piece_quantity($value, 1)
-        : normalize_meter_quantity($value, $meterMin);
+    if ($unitType === 'piece' || $unitType === 'set') {
+        return normalize_piece_quantity($value, max(1, (int) round($minQty)));
+    }
+    return normalize_meter_quantity($value, $minQty);
 }
 
 /**
@@ -993,6 +1010,15 @@ function reserve_order_inventory(mysqli $conn, int $orderId): void
     mark_order_inventory_reserved($conn, $orderId);
 }
 
+function ensure_order_inventory_reserved_for_payment_capture(mysqli $conn, int $orderId): void
+{
+    if ($orderId <= 0) {
+        throw new RuntimeException('Invalid order id for payment capture inventory reservation.');
+    }
+
+    reserve_order_inventory($conn, $orderId);
+}
+
 function restore_order_inventory(mysqli $conn, int $orderId): void
 {
     $supportsTracking = orders_supports_inventory_tracking($conn);
@@ -1055,6 +1081,130 @@ function restore_order_inventory(mysqli $conn, int $orderId): void
         $upd = $conn->prepare("UPDATE orders SET inventory_restored_at = NOW() WHERE id = ?");
         $upd->bind_param('i', $orderId);
         $upd->execute();
+    }
+}
+
+function order_cancel_should_restore_inventory(string $paymentMethod, string $paymentStatus): bool
+{
+    $paymentMethod = strtolower(trim($paymentMethod));
+    $paymentStatus = strtolower(trim($paymentStatus));
+
+    if ($paymentMethod === 'cod') {
+        return in_array($paymentStatus, ['pending', 'failed', 'paid'], true);
+    }
+
+    if ($paymentMethod === 'razorpay') {
+        return in_array($paymentStatus, ['pending', 'failed', 'paid'], true);
+    }
+
+    return false;
+}
+
+function customer_cancel_order(mysqli $conn, int $orderId, int $customerId, bool $manageTransaction = true): array
+{
+    if ($orderId <= 0 || $customerId <= 0) {
+        throw new RuntimeException('Invalid order request.');
+    }
+
+    if ($manageTransaction) {
+        $conn->begin_transaction();
+    }
+    try {
+        $orderStmt = $conn->prepare(
+            "SELECT id, order_number, order_status, status, payment_status, payment_method, notes
+             FROM orders
+             WHERE id = ? AND customer_id = ?
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('ii', $orderId, $customerId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+
+        if (!$order) {
+            throw new RuntimeException('Order not found.');
+        }
+
+        $currentOrderStatus = (string) ($order['order_status'] ?? '');
+        if (!in_array($currentOrderStatus, ['pending', 'confirmed'], true)) {
+            throw new RuntimeException('This order can no longer be cancelled.');
+        }
+
+        $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
+        $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
+        $paymentRowId = 0;
+        $paymentAmount = 0.0;
+        $paymentRowStmt = $conn->prepare("SELECT id, amount FROM payments WHERE order_id = ? AND payment_method = ? LIMIT 1");
+        $paymentRowStmt->bind_param('is', $orderId, $paymentMethod);
+        $paymentRowStmt->execute();
+        $paymentRow = $paymentRowStmt->get_result()->fetch_assoc() ?: [];
+        $paymentRowId = (int) ($paymentRow['id'] ?? 0);
+        $paymentAmount = (float) ($paymentRow['amount'] ?? 0);
+
+        if (order_cancel_should_restore_inventory($paymentMethod, $paymentStatus)) {
+            restore_order_inventory($conn, $orderId);
+        }
+
+        $refundNote = '';
+        if ($paymentStatus === 'paid') {
+            $refundNote = "\n[System] Refund process initiated on " . date('d M Y, H:i');
+        }
+
+        $existingNotes = trim((string) ($order['notes'] ?? ''));
+        $newNotes = trim($existingNotes . $refundNote);
+
+        $updateStmt = $conn->prepare(
+            "UPDATE orders
+             SET order_status = 'cancelled',
+                 status = 'cancelled',
+                 notes = ?,
+                 updated_at = NOW()
+             WHERE id = ?"
+        );
+        $updateStmt->bind_param('si', $newNotes, $orderId);
+        $updateStmt->execute();
+        release_coupon_usage_for_order($conn, $orderId);
+
+        log_order_activity(
+            $conn,
+            $orderId,
+            'order_cancelled',
+            'customer',
+            $customerId,
+            'customer',
+            'Payment status at cancel: ' . $paymentStatus
+        );
+        if ($paymentStatus === 'paid' && $paymentRowId > 0 && $paymentAmount > 0) {
+            log_refund_ledger(
+                $conn,
+                $orderId,
+                $paymentRowId,
+                $paymentAmount,
+                'INR',
+                'initiated',
+                $paymentMethod,
+                '',
+                'Customer cancelled paid order; refund initiation pending processing.'
+            );
+            log_order_activity($conn, $orderId, 'refund_initiated', 'system', 0, 'system', 'Refund ledger entry created.');
+        }
+
+        if ($manageTransaction) {
+            $conn->commit();
+        }
+        return [
+            'order_id' => $orderId,
+            'payment_method' => $paymentMethod,
+            'payment_status' => $paymentStatus,
+        ];
+    } catch (Throwable $e) {
+        if ($manageTransaction) {
+            try {
+                $conn->rollback();
+            } catch (Throwable $rollbackException) {
+                // ignore
+            }
+        }
+        throw $e;
     }
 }
 
@@ -1422,8 +1572,9 @@ function save_fabric_image_upload(array $file, string $label = 'Image'): string
     $allowedImageExt = ['jpg', 'jpeg', 'png', 'webp'];
     $allowedImageMime = ['image/jpeg', 'image/png', 'image/webp'];
     $maxImageSize = image_upload_max_bytes();
-    $minImageWidth = max(1, (int) _cfg('IMAGE_MIN_WIDTH', '600'));
-    $minImageHeight = max(1, (int) _cfg('IMAGE_MIN_HEIGHT', '800'));
+    // Minimum image size restriction removed
+    $minImageWidth = 1;
+    $minImageHeight = 1;
 
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         throw new RuntimeException($label . ' upload failed. Please try again.');
@@ -1445,9 +1596,7 @@ function save_fabric_image_upload(array $file, string $label = 'Image'): string
 
     $imgWidth = (int) ($imageInfo[0] ?? 0);
     $imgHeight = (int) ($imageInfo[1] ?? 0);
-    if ($imgWidth < $minImageWidth || $imgHeight < $minImageHeight) {
-        throw new RuntimeException($label . ' must be at least ' . $minImageWidth . 'x' . $minImageHeight . ' px for clear website display.');
-    }
+    // No minimum image size check
 
     $saved = random_filename((string) ($file['name'] ?? 'image.jpg'));
     $target = __DIR__ . '/../images/fabrics/' . $saved;
@@ -1596,10 +1745,6 @@ function require_admin(): void
     if (empty($_SESSION['admin_id'])) {
         flash('error', 'Please log in to continue.');
         redirect('login.php');
-    }
-    if (!empty($_SESSION['must_reset_password']) && basename($_SERVER['PHP_SELF']) !== 'password-reset.php') {
-        flash('error', 'Please set a new password before continuing.');
-        redirect('password-reset.php');
     }
 }
 
@@ -2034,6 +2179,8 @@ function razorpay_mark_order_paid(
     string $rzpOrderId = '',
     string $signature = ''
 ): void {
+    ensure_order_inventory_reserved_for_payment_capture($conn, $orderId);
+
     $updateOrder = $conn->prepare(
         "UPDATE orders
          SET payment_id = ?, payment_status = 'paid', order_status = 'confirmed', status = 'confirmed'
@@ -3203,8 +3350,9 @@ function restock_return_items_inventory(mysqli $conn, int $returnId): float
 /**
  * Category-wise variant size policy.
  * Returns: ['mode' => 'preset_with_custom'|'hidden', 'sizes' => string[]]
+ * Source of truth: categories.uses_variant_size (dynamic admin setting).
  */
-function get_variant_size_policy_by_category(string $category): array
+function get_variant_size_policy_by_category(string $category, ?mysqli $conn = null): array
 {
     $normalized = mb_strtolower(trim($category));
     $normalized = preg_replace('/[^a-z0-9]+/u', '-', $normalized ?? '');
@@ -3216,17 +3364,63 @@ function get_variant_size_policy_by_category(string $category): array
         'table-cover' => ['4 Seater', '6 Seater', '8 Seater'],
     ];
 
-    if (in_array($normalized, ['fabric-by-meter', 'fabric-meter', 'meter-fabric', 'fabrics-by-meter'], true)) {
-        return ['mode' => 'hidden', 'sizes' => []];
-    }
-    if ($normalized === 'table-covers' || $normalized === 'tablecover' || $normalized === 'table-covers') {
+    if ($normalized === 'table-covers' || $normalized === 'tablecover') {
         $normalized = 'table-cover';
     }
     if ($normalized === 'bed-sheet' || $normalized === 'bed-sheets') {
         $normalized = 'bedsheet';
     }
-    if (isset($presetMap[$normalized])) {
-        return ['mode' => 'preset_with_custom', 'sizes' => $presetMap[$normalized]];
+    if ($normalized === 'bedsheets') {
+        $normalized = 'bedsheet';
+    }
+    if ($normalized === 'towels') {
+        $normalized = 'towel';
+    }
+
+    // Dynamic per-category override from DB (for future categories).
+    if ($conn instanceof mysqli && $normalized !== '') {
+        static $hasUsesVariantSizeColumn = null;
+        if ($hasUsesVariantSizeColumn === null) {
+            try {
+                $colRes = $conn->query("SHOW COLUMNS FROM categories LIKE 'uses_variant_size'");
+                $hasUsesVariantSizeColumn = $colRes && $colRes->num_rows > 0;
+            } catch (Throwable $e) {
+                $hasUsesVariantSizeColumn = false;
+            }
+        }
+        if ($hasUsesVariantSizeColumn) {
+            try {
+                $stmt = $conn->prepare("SELECT uses_variant_size FROM categories WHERE slug = ? LIMIT 1");
+                $stmt->bind_param('s', $normalized);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                if ($row !== null) {
+                    $usesVariantSize = (int) ($row['uses_variant_size'] ?? 0) === 1;
+                    if ($usesVariantSize) {
+                        return ['mode' => 'preset_with_custom', 'sizes' => $presetMap[$normalized] ?? []];
+                    }
+                    return ['mode' => 'hidden', 'sizes' => []];
+                }
+            } catch (Throwable $e) {
+                // Fall back to static mapping below.
+            }
+        }
+    }
+
+    // Old slug-only fallback removed intentionally; category flag is authoritative.
+    return ['mode' => 'hidden', 'sizes' => []];
+}
+
+/**
+ * Unit-wise variant size policy.
+ * meter => size hidden
+ * piece/set => size enabled (custom or preset-ready mode)
+ */
+function get_variant_size_policy_by_unit_type(string $unitType): array
+{
+    $unit = in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
+    if ($unit === 'meter') {
+        return ['mode' => 'hidden', 'sizes' => []];
     }
     return ['mode' => 'preset_with_custom', 'sizes' => []];
 }

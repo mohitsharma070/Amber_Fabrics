@@ -95,16 +95,6 @@ function variant_auto_sku(mysqli $conn, int $fabricId, string $color, string $si
     return $base . '-DEFAULT';
 }
 
-function get_fabric_size_policy(mysqli $conn, int $fabricId): array
-{
-    $stmt = $conn->prepare("SELECT category FROM fabrics WHERE id = ? LIMIT 1");
-    $stmt->bind_param('i', $fabricId);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $category = (string) ($row['category'] ?? '');
-    return get_variant_size_policy_by_category($category);
-}
-
 function get_fabric_unit_type(mysqli $conn, int $fabricId): string
 {
     $stmt = $conn->prepare("SELECT unit_type FROM fabrics WHERE id = ? LIMIT 1");
@@ -207,14 +197,10 @@ if ($action === 'save') {
     $isActive      = (int) (bool) ($_POST['is_active'] ?? 1);
     $sortOrder     = (int) ($_POST['sort_order'] ?? 0);
 
-    $sizePolicy = get_fabric_size_policy($conn, $fabricId);
     $unitType = get_fabric_unit_type($conn, $fabricId);
+    $sizePolicy = get_variant_size_policy_by_unit_type($unitType);
     $mode = (string) ($sizePolicy['mode'] ?? 'preset_with_custom');
-    $allowedSizes = array_values(array_filter(array_map(static function ($s) {
-        return normalize_variant_size_text((string) $s);
-    }, (array) ($sizePolicy['sizes'] ?? [])), static function ($s) {
-        return $s !== '';
-    }));
+    $allowedSizes = [];
     if ($mode === 'hidden') {
         $size = '';
     } else {

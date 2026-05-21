@@ -26,7 +26,7 @@ if ($productId <= 0) {
     redirect('/catalog.php');
 }
 
-$stmt = $conn->prepare("SELECT id, name, size, color, unit_type, min_order_meters, stock, stock_meters, is_available, status, price, sale_price, price_inr FROM fabrics WHERE id = ? LIMIT 1");
+$stmt = $conn->prepare("SELECT id, name, size, color, unit_type, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price, price_inr FROM fabrics WHERE id = ? LIMIT 1");
 $stmt->bind_param('i', $productId);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
@@ -42,7 +42,7 @@ $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 
     : 'meter';
 $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
-    : 1;
+    : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
 $quantity = normalize_quantity_by_unit($_POST['quantity'] ?? 1, $unitType, (float) $minOrder);
 $selectedMeterLength = null;
 

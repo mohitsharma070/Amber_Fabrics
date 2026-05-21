@@ -833,11 +833,15 @@ function ensure_tables(mysqli $conn): void
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) UNIQUE NOT NULL,
-            password_hash VARCHAR(255) NOT NULL,
-            force_password_reset TINYINT(1) DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    if ($columnExists($conn, 'admins', 'force_password_reset')) {
+        $conn->query("ALTER TABLE admins DROP COLUMN force_password_reset");
+    }
+    if ($columnExists($conn, 'admins', 'password_hash')) {
+        $conn->query("ALTER TABLE admins DROP COLUMN password_hash");
+    }
 
     $conn->query(
         "CREATE TABLE IF NOT EXISTS inquiry_activity_logs (
@@ -1365,21 +1369,19 @@ function ensure_tables(mysqli $conn): void
     $count = (int) $result->fetch_assoc()['total'];
     if ($count === 0) {
         $stmt = $conn->prepare(
-            "INSERT INTO admins (name, email, password_hash, force_password_reset) VALUES (?, ?, ?, 1)"
+            "INSERT INTO admins (name, email) VALUES (?, ?)"
         );
         $bootstrapEmail = (string) ($GLOBALS['_app_config']['ADMIN_EMAIL'] ?? 'admin@example.com');
-        $bootstrapPassword = (string) ($GLOBALS['_app_config']['ADMIN_PASSWORD'] ?? bin2hex(random_bytes(8)));
-        $defaultHash = password_hash($bootstrapPassword, PASSWORD_DEFAULT);
         $name = 'Site Admin';
-        $stmt->bind_param('sss', $name, $bootstrapEmail, $defaultHash);
+        $stmt->bind_param('ss', $name, $bootstrapEmail);
         $stmt->execute();
         $stmt->close();
 
         echo "Database tables ensured.\n";
         echo "Bootstrap admin created.\n";
+        echo "Admin login is email OTP-only; passwords are not used.\n";
         echo "Email: {$bootstrapEmail}\n";
-        echo "Password: {$bootstrapPassword}\n";
-        echo "Rotate this password immediately after first login.\n";
+        echo "Confirm mail settings so OTP delivery works before going live.\n";
         return;
     }
 

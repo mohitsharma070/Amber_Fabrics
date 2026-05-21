@@ -33,7 +33,7 @@ if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_le
     $_SESSION['cart_meter_length'] = [];
 }
 
-$stmt = $conn->prepare("SELECT unit_type, min_order_meters, stock, stock_meters FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
+$stmt = $conn->prepare("SELECT unit_type, min_order_meters, qty_step, stock, stock_meters FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
 $stmt->bind_param('i', $productId);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
@@ -43,7 +43,7 @@ $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 
     : 'meter';
 $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
-    : 1;
+    : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
 $quantity = normalize_quantity_by_unit($quantityInput, $unitType, (float) $minOrder);
 if ($unitType === 'meter') {
     $meterLength = null;

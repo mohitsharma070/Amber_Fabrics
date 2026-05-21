@@ -9,6 +9,13 @@ $allowedMime = ['image/jpeg', 'image/png', 'image/webp'];
 $lockedSellableSlugs = ['fabric-by-meter', 'bedsheets', 'towels', 'table-covers'];
 $lockedAllowedSlugs = $lockedSellableSlugs;
 
+// Dynamic category flag to control whether variant size is used.
+try {
+    $conn->query("ALTER TABLE categories ADD COLUMN uses_variant_size TINYINT(1) NOT NULL DEFAULT 0");
+} catch (Throwable $e) {
+    // Ignore if already exists or ALTER is unavailable in this environment.
+}
+
 $processCategoryImageUpload = static function (array $file, string $slug) use ($maxSize, $allowedExt, $allowedMime): ?string {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return null;
@@ -56,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $slugRaw = trim((string) ($_POST['slug'] ?? ''));
         $parentId = 0;
         $status = trim((string) ($_POST['status'] ?? 'active'));
+        $usesVariantSize = isset($_POST['uses_variant_size']) ? 1 : 0;
         $slug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $slugRaw));
         $slug = trim($slug, '-');
 
@@ -78,9 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($_FILES['image']['name'])) {
                     $imagePath = $processCategoryImageUpload($_FILES['image'], $slug);
                 }
-                $stmt = $conn->prepare("INSERT INTO categories (name, slug, parent_id, image, status) VALUES (?, ?, ?, ?, ?)");
+                $stmt = $conn->prepare("INSERT INTO categories (name, slug, parent_id, image, status, uses_variant_size) VALUES (?, ?, ?, ?, ?, ?)");
                 $parentIdNull = null;
-                $stmt->bind_param('ssiis', $name, $slug, $parentIdNull, $imagePath, $status);
+                $stmt->bind_param('ssissi', $name, $slug, $parentIdNull, $imagePath, $status, $usesVariantSize);
                 $stmt->execute();
                 flash('success', 'Category added successfully.');
             } catch (Throwable $e) {
@@ -97,6 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $slugRaw = trim((string) ($_POST['slug'] ?? ''));
         $parentId = 0;
         $status = trim((string) ($_POST['status'] ?? 'active'));
+        $usesVariantSize = isset($_POST['uses_variant_size']) ? 1 : 0;
         $slug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $slugRaw));
         $slug = trim($slug, '-');
 
@@ -127,11 +136,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $parentIdNull = null;
-            $stmt = $conn->prepare("UPDATE categories SET name = ?, slug = ?, parent_id = ?, image = ?, status = ? WHERE id = ?");
-            $stmt->bind_param('ssiisi', $name, $slug, $parentIdNull, $imagePath, $status, $id);
+            $stmt = $conn->prepare("UPDATE categories SET name = ?, slug = ?, parent_id = ?, image = ?, status = ?, uses_variant_size = ? WHERE id = ?");
+            $stmt->bind_param('ssissii', $name, $slug, $parentIdNull, $imagePath, $status, $usesVariantSize, $id);
             $stmt->execute();
             flash('success', 'Category updated.');
         } catch (Throwable $e) {
+            error_log('[categories] update failed: ' . $e->getMessage());
             flash('error', 'Could not update category. Slug may already exist.');
         }
         redirect('categories.php');
@@ -179,7 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = [];
 $parentCategories = [];
 try {
-    $stmt = $conn->prepare("SELECT id, name, slug, parent_id, image, status, created_at FROM categories ORDER BY parent_id ASC, name ASC");
+    $stmt = $conn->prepare("SELECT id, name, slug, parent_id, image, status, uses_variant_size, created_at FROM categories ORDER BY parent_id ASC, name ASC");
     $stmt->execute();
     $allCats = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     
@@ -243,6 +253,12 @@ include 'partials/header.php';
                 <label class="form-label">Image</label>
                 <input type="file" name="image" class="form-control" accept="image/jpeg,image/png,image/webp">
             </div>
+            <div class="col-md-2 d-flex align-items-center">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="uses_variant_size" id="uses_variant_size_create" value="1">
+                    <label class="form-check-label" for="uses_variant_size_create">Use Variant Size</label>
+                </div>
+            </div>
             <div class="col-md-2 d-flex align-items-end">
                 <button class="btn btn-primary w-100" type="submit">Add</button>
             </div>
@@ -258,13 +274,14 @@ include 'partials/header.php';
             <th>Name</th>
             <th>Slug</th>
             <th>Status</th>
+            <th>Variant Size</th>
             <th>Image</th>
             <th>Actions</th>
         </tr>
         </thead>
         <tbody>
         <?php if (empty($categories)): ?>
-            <tr><td colspan="6" class="text-center text-muted py-4">No categories found.</td></tr>
+            <tr><td colspan="7" class="text-center text-muted py-4">No categories found.</td></tr>
         <?php else: ?>
             <?php foreach ($categories as $cat): ?>
                 <tr>
@@ -281,6 +298,13 @@ include 'partials/header.php';
                             <span class="badge bg-success">Active</span>
                         <?php else: ?>
                             <span class="badge bg-secondary">Inactive</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if ((int) ($cat['uses_variant_size'] ?? 0) === 1): ?>
+                            <span class="badge bg-primary">Enabled</span>
+                        <?php else: ?>
+                            <span class="badge bg-light text-dark border">Hidden</span>
                         <?php endif; ?>
                     </td>
                     <td><?php echo !empty($cat['image']) ? 'Set' : 'Not set'; ?></td>
@@ -306,6 +330,12 @@ include 'partials/header.php';
                                 </div>
                                 <div class="col-md-3">
                                     <input type="file" name="image" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp">
+                                </div>
+                                <div class="col-md-2 d-flex align-items-center">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="uses_variant_size" id="uses_variant_size_<?php echo (int) $cat['id']; ?>" value="1" <?php echo ((int) ($cat['uses_variant_size'] ?? 0) === 1) ? 'checked' : ''; ?>>
+                                        <label class="form-check-label small" for="uses_variant_size_<?php echo (int) $cat['id']; ?>">Use Size</label>
+                                    </div>
                                 </div>
                                 <div class="col-md-2 d-grid">
                                     <button class="btn btn-sm btn-dark" type="submit">Save</button>

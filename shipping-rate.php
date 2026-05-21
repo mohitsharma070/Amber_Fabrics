@@ -4,12 +4,20 @@ require_once __DIR__ . '/includes/customer-auth.php';
 
 require_customer();
 
-header('Content-Type: application/json; charset=utf-8');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    api_json(['ok' => false, 'message' => 'Method not allowed.'], 405);
+}
+if (!verify_csrf()) {
+    api_json(['ok' => false, 'message' => 'Invalid session token.'], 403);
+}
+if (!public_form_rate_limit_allow('shipping_quote', 30, 300)) {
+    api_json(['ok' => false, 'message' => 'Too many shipping quote requests.'], 429);
+}
 
-$pincode = trim((string) ($_GET['pincode'] ?? ''));
-$subtotal = (float) ($_GET['subtotal'] ?? 0);
-$paymentMethod = strtolower(trim((string) ($_GET['payment_method'] ?? 'cod')));
-$selectedCourierId = (int) ($_GET['courier_id'] ?? 0);
+$pincode = trim((string) ($_POST['pincode'] ?? ''));
+$subtotal = (float) ($_POST['subtotal'] ?? 0);
+$paymentMethod = strtolower(trim((string) ($_POST['payment_method'] ?? 'cod')));
+$selectedCourierId = (int) ($_POST['courier_id'] ?? 0);
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) {
     $paymentMethod = 'cod';
 }
@@ -28,7 +36,7 @@ if (!preg_match('/^[1-9][0-9]{5}$/', $pincode)) {
         'manual',
         ''
     );
-    echo json_encode([
+    api_json([
         'ok' => true,
         'source' => 'manual',
         'quote_token' => $token,
@@ -36,7 +44,6 @@ if (!preg_match('/^[1-9][0-9]{5}$/', $pincode)) {
         'cod_fee' => (float) $manual['cod_fee'],
         'shipping_total' => (float) $manual['shipping_total'],
     ]);
-    exit;
 }
 
 $forward = shiprocket_calculate_forward_rate(
@@ -79,7 +86,7 @@ if (!empty($forward['ok'])) {
         (string) ($selected['courier_name'] ?? ''),
         (int) ($selected['courier_id'] ?? 0)
     );
-    echo json_encode([
+    api_json([
         'ok' => true,
         'source' => 'live',
         'quote_token' => $token,
@@ -90,7 +97,6 @@ if (!empty($forward['ok'])) {
         'cod_fee' => $codFee,
         'shipping_total' => $shippingTotal,
     ]);
-    exit;
 }
 
  $token = shipping_quote_store(
@@ -105,7 +111,7 @@ if (!empty($forward['ok'])) {
     ''
 );
 
-echo json_encode([
+api_json([
     'ok' => true,
     'source' => 'manual',
     'quote_token' => $token,

@@ -3,8 +3,6 @@ require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/coupon-functions.php';
 require_once __DIR__ . '/includes/customer-auth.php';
 
-require_customer();
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/checkout.php');
 }
@@ -43,6 +41,10 @@ $selectedCourierName = '';
 $selectedCourierId = 0;
 $shippingRateSource = 'manual';
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+$wantsCreateAccount = ($customerId <= 0 && (int) ($_POST['create_account'] ?? 0) === 1);
+$createAccountPassword = (string) ($_POST['create_account_password'] ?? '');
+$createAccountConfirmPassword = (string) ($_POST['create_account_confirm_password'] ?? '');
+$createdGuestAccount = false;
 release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 if ($customerId > 0 && $shippingAddressId > 0 && customer_addresses_table_ready($conn)) {
@@ -73,6 +75,7 @@ $_SESSION['checkout_old'] = [
     'payment_method' => $paymentMethod,
     'cod_fee_apply' => $codFeeApply,
     'shipping_address_id' => $shippingAddressId,
+    'create_account' => $wantsCreateAccount ? 1 : 0,
 ];
 
 $errors = [];
@@ -98,6 +101,15 @@ if ($country !== '' && strcasecmp($country, 'india') !== 0) {
 }
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) { $errors['payment_method'] = 'Invalid payment method.'; }
 if (strlen($orderNotes) > 500) { $errors['order_notes'] = 'Notes must be 500 characters or fewer.'; }
+if ($wantsCreateAccount) {
+    $passwordError = password_strength_error($createAccountPassword);
+    if ($passwordError !== null) {
+        $errors['create_account_password'] = $passwordError;
+    }
+    if ($createAccountPassword !== $createAccountConfirmPassword) {
+        $errors['create_account_confirm_password'] = 'Passwords do not match.';
+    }
+}
 
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION['cart'])) {
     $errors['_cart'] = 'Your cart is empty.';
@@ -106,6 +118,35 @@ if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION
 if (!empty($errors)) {
     $_SESSION['checkout_errors'] = $errors;
     redirect('/checkout.php');
+}
+
+if ($wantsCreateAccount && $customerId <= 0) {
+    $existingStmt = $conn->prepare("SELECT id FROM customers WHERE email = ? LIMIT 1");
+    $existingStmt->bind_param('s', $email);
+    $existingStmt->execute();
+    $existingCustomer = $existingStmt->get_result()->fetch_assoc();
+    if ($existingCustomer) {
+        $_SESSION['checkout_errors'] = [
+            'email' => 'An account with this email already exists. Please log in or continue without account creation.'
+        ];
+        redirect('/checkout.php');
+    }
+
+    $passwordHash = password_hash($createAccountPassword, PASSWORD_DEFAULT);
+    $verifyTokenRaw = bin2hex(random_bytes(32));
+    $verifyTokenHash = hash('sha256', $verifyTokenRaw);
+    $verifyExpires = (new DateTime('now', new DateTimeZone('UTC')))->modify('+24 hours')->format('Y-m-d H:i:s');
+    $createStmt = $conn->prepare(
+        "INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token, email_verify_expires)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?)"
+    );
+    $createStmt->bind_param('sssssss', $fullName, $email, $passwordHash, $phone, $country, $verifyTokenHash, $verifyExpires);
+    $createStmt->execute();
+    $customerId = (int) $conn->insert_id;
+    if ($customerId > 0) {
+        $createdGuestAccount = true;
+        send_customer_verification_email($email, $fullName, $verifyTokenRaw);
+    }
 }
 
 $cart = $_SESSION['cart'];
@@ -203,8 +244,10 @@ try {
         $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
             ? (string) $product['unit_type']
             : 'meter';
-        $meterMin = $unitType === 'meter' ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0) : 1.0;
-        $qty = normalize_quantity_by_unit($qtyRaw, $unitType, (float) $meterMin);
+        $minQty = $unitType === 'meter'
+            ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
+            : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+        $qty = normalize_quantity_by_unit($qtyRaw, $unitType, (float) $minQty);
         if (($product['status'] ?? '') !== 'active' || empty($product['is_available'])) {
             throw new RuntimeException('Product unavailable: ' . ($product['name'] ?? 'Unknown'));
         }
@@ -763,7 +806,7 @@ try {
         if ($conn->affected_rows <= 0) {
             throw new RuntimeException('Coupon usage limit reached.');
         }
-        if (!mark_coupon_used_once($conn, $couponId, $customerId, $orderId)) {
+        if ($customerId > 0 && !mark_coupon_used_once($conn, $couponId, $customerId, $orderId)) {
             throw new RuntimeException('Unable to mark coupon usage for this order.');
         }
     }
@@ -789,6 +832,9 @@ try {
     unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['cart_meter_length'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
     if ($customerId > 0) {
         cart_clear_db($conn, $customerId);
+    }
+    if ($createdGuestAccount) {
+        flash('success', 'Your account was created. Please verify your email to log in and track orders.');
     }
     send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));

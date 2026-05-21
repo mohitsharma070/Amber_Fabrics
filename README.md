@@ -31,6 +31,8 @@ Database connection is centralized in `config/db.php`:
 
 1. Loads `config/app-config.php`.
 2. Selects `local` mode for localhost/CLI and `production` otherwise.
+   - Override explicitly with `APP_MODE=local` or `APP_MODE=production`.
+   - Use `APP_MODE=production` for production CLI cron jobs.
 3. Keeps active values in the app config map for runtime access.
 4. Creates connection using `new mysqli(...)`.
 5. Sets charset to `utf8mb4`.
@@ -144,7 +146,7 @@ php database/setup.php
 - Frontend: `http://localhost/Amber Fabrics-Textiles/`
 - Admin login: `http://localhost/Amber Fabrics-Textiles/admin/login.php`
 
-If bootstrap admin was created by `setup.php`, credentials are printed in terminal output.
+If bootstrap admin was created by `setup.php`, the admin email is printed in terminal output. Admin login is OTP-only, so confirm mail delivery before going live.
 
 ## 6) Safe run checklist
 
@@ -154,7 +156,7 @@ Before first real use:
 2. Confirm schema import completed without SQL errors.
 3. Confirm `vendor/` exists after `composer install`.
 4. Confirm Apache rewrite/permissions are normal.
-5. Rotate any default/bootstrap admin password immediately.
+5. Confirm the bootstrap admin email can receive OTP before going live.
 6. Confirm `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` are set before testing online payments.
 7. Set a strong `CRON_RUN_TOKEN` and schedule `cron/run-plugins.php` to run every 5-10 minutes.
 
@@ -168,12 +170,16 @@ Before first real use:
 Run it via CLI or secured HTTP:
 
 - CLI:
-  - `php cron/run-plugins.php`
+  - Local/default: `php cron/run-plugins.php`
+  - Production Windows CMD/XAMPP:
+    `set APP_MODE=production&& C:\xampp\php\php.exe cron\run-plugins.php`
+  - Production PowerShell/XAMPP:
+    `$env:APP_MODE='production'; C:\xampp\php\php.exe cron\run-plugins.php`
 - HTTP:
   - `https://your-domain/cron/run-plugins.php?token=<CRON_RUN_TOKEN>`
   - or send header: `X-CRON-TOKEN: <CRON_RUN_TOKEN>`
 
-For IIS, create a Task Scheduler job (every 5-10 minutes) that executes the CLI command, or calls the secured HTTP URL.
+For IIS or Windows Task Scheduler, create a job every 5-10 minutes that runs the production CLI command with `APP_MODE=production`, or calls the secured HTTP URL.
 
 ## COD Guard WhatsApp confirmation
 

@@ -1,26 +1,18 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
 
-header('Content-Type: application/json');
-
 $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 if (!$isAjax) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Invalid request.']);
-    exit;
+    api_json(['success' => false, 'message' => 'Invalid request.'], 400);
 }
 
 $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 if ($method !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed.']);
-    exit;
+    api_json(['success' => false, 'message' => 'Method not allowed.'], 405);
 }
 
 if (!verify_csrf()) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Invalid session token.']);
-    exit;
+    api_json(['success' => false, 'message' => 'Invalid session token.'], 403);
 }
 
 $choiceRaw = strtolower(trim((string) ($_POST['choice'] ?? '')));
@@ -35,19 +27,15 @@ $statusMap = [
 $status = $statusMap[$choiceRaw] ?? '';
 
 if ($status === '') {
-    http_response_code(422);
-    echo json_encode(['success' => false, 'message' => 'Invalid consent choice.']);
-    exit;
+    api_json(['success' => false, 'message' => 'Invalid consent choice.'], 422);
 }
 
 $ok = marketing_consent_set($status);
 if (!$ok) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Unable to save consent.']);
-    exit;
+    api_json(['success' => false, 'message' => 'Unable to save consent.'], 500);
 }
 
-echo json_encode([
+api_json([
     'success' => true,
     'status' => $status,
 ]);

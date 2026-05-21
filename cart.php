@@ -127,6 +127,12 @@ include __DIR__ . '/includes/header.php';
                         <div class="small text-muted mb-3">Coupon can be applied at checkout.</div>
                         <hr>
                         <button type="button" class="btn btn-primary w-100 btn-lg" disabled aria-disabled="true">Proceed to Checkout</button>
+                        <div class="trust-badge-block mt-3" aria-label="Checkout trust badges">
+                            <span class="trust-badge-pill">COD Available</span>
+                            <span class="trust-badge-pill">Secure Payment</span>
+                            <span class="trust-badge-pill">Fast Dispatch</span>
+                            <span class="trust-badge-pill">Easy Returns</span>
+                        </div>
                         <a href="/catalog.php" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
                     </div>
                 </div>
@@ -182,7 +188,7 @@ include __DIR__ . '/includes/header.php';
                                     </div>
                                 </div>
 
-                                <div class="d-flex gap-2 mt-3 align-items-center flex-wrap">
+                                <div class="d-flex gap-2 mt-3 align-items-center flex-wrap cart-line-actions">
                                     <form method="POST" action="/update-cart.php" class="d-flex gap-1 align-items-center cart-qty-form">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
@@ -271,6 +277,12 @@ include __DIR__ . '/includes/header.php';
                         <div class="small text-muted mb-3">Coupon can be applied at checkout.</div>
                         <hr>
                         <a class="btn btn-primary w-100 btn-lg" href="/checkout.php">Proceed to Checkout</a>
+                        <div class="trust-badge-block mt-3" aria-label="Checkout trust badges">
+                            <span class="trust-badge-pill">COD Available</span>
+                            <span class="trust-badge-pill">Secure Payment</span>
+                            <span class="trust-badge-pill">Fast Dispatch</span>
+                            <span class="trust-badge-pill">Easy Returns</span>
+                        </div>
                         <a href="/catalog.php" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
                     </div>
                 </div>

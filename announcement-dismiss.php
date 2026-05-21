@@ -1,46 +1,39 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
 
-header('Content-Type: application/json');
-
 $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 if (!$isAjax) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Invalid request.']);
-    exit;
+    api_json(['success' => false, 'message' => 'Invalid request.'], 400);
 }
 
 $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-$announceKey = trim((string) ($_REQUEST['key'] ?? ''));
+$announceKey = '';
+if ($method === 'GET') {
+    $announceKey = trim((string) ($_GET['key'] ?? ''));
+} elseif ($method === 'POST') {
+    $announceKey = trim((string) ($_POST['key'] ?? ''));
+}
 
 if ($announceKey === '' || !preg_match('/^[a-f0-9]{32}$/', $announceKey)) {
-    http_response_code(422);
-    echo json_encode(['success' => false, 'message' => 'Invalid announcement key.']);
-    exit;
+    api_json(['success' => false, 'message' => 'Invalid announcement key.'], 422);
 }
 
 try {
     if ($method === 'GET') {
         $dismissed = announcement_is_dismissed($conn, $announceKey);
-        echo json_encode(['success' => true, 'dismissed' => $dismissed]);
-        exit;
+        api_json(['success' => true, 'dismissed' => $dismissed]);
     }
 
     if ($method === 'POST') {
         if (!verify_csrf()) {
-            http_response_code(403);
-            echo json_encode(['success' => false, 'message' => 'Invalid session token.']);
-            exit;
+            api_json(['success' => false, 'message' => 'Invalid session token.'], 403);
         }
         $ok = announcement_mark_dismissed($conn, $announceKey);
-        echo json_encode(['success' => $ok]);
-        exit;
+        api_json(['success' => $ok]);
     }
 
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed.']);
+    api_json(['success' => false, 'message' => 'Method not allowed.'], 405);
 } catch (Throwable $e) {
     error_log('[amberfabrics] announcement-dismiss failed: ' . $e->getMessage());
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Server error.']);
+    api_json(['success' => false, 'message' => 'Server error.'], 500);
 }

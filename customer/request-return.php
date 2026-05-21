@@ -221,7 +221,8 @@ try {
             }
         }
     }
-    flash('error', $e->getMessage() !== '' ? $e->getMessage() : 'Unable to submit return request.');
+    error_log('[return-request] submit failed: ' . $e->getMessage());
+    flash('error', 'Unable to submit return request right now. Please check your details and try again.');
 }
 
 redirect('/customer/order-view.php?id=' . $orderId);

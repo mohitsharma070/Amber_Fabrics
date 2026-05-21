@@ -1,17 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<products generated_at="2026-05-15T10:44:41+02:00" count="15">
+<products generated_at="2026-05-21T02:34:04+00:00" count="17">
+  <product>
+    <id>17</id>
+    <title>Dorimon Bedsheet</title>
+    <sku>BEDSHEETS-COTTON</sku>
+    <description></description>
+    <category>bedsheets</category>
+    <link>http://localhost:8000/fabric.php?id=17</link>
+    <image_link></image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">699.00</price>
+    <sale_price currency="INR">699.00</sale_price>
+    <unit_type>piece</unit_type>
+    <stock>0</stock>
+  </product>
+  <product>
+    <id>16</id>
+    <title>Towels</title>
+    <sku>TOWELS-COTTON</sku>
+    <description></description>
+    <category>towels</category>
+    <link>http://localhost:8000/fabric.php?id=16</link>
+    <image_link></image_link>
+    <availability>out of stock</availability>
+    <price currency="INR">499.00</price>
+    <sale_price currency="INR">499.00</sale_price>
+    <unit_type>set</unit_type>
+    <stock>0</stock>
+  </product>
   <product>
     <id>15</id>
     <title>Satin Fabric</title>
     <sku></sku>
     <description>Shiny satin fabric used for dresses and evening wear</description>
-    <category>fabric-by-meter</category>
+    <category>bedsheets</category>
     <link>http://localhost:8000/fabric.php?id=15</link>
     <image_link>http://localhost:8000/images/fabrics/satin1.jpg</image_link>
-    <availability>out of stock</availability>
-    <price currency="INR">0.00</price>
-    <unit_type>meter</unit_type>
-    <stock>0</stock>
+    <availability>in stock</availability>
+    <price currency="INR">1.00</price>
+    <sale_price currency="INR">1.00</sale_price>
+    <unit_type>piece</unit_type>
+    <stock>10</stock>
   </product>
   <product>
     <id>14</id>
@@ -178,23 +207,23 @@
     <link>http://localhost:8000/fabric.php?id=2</link>
     <image_link>http://localhost:8000/images/fabrics/linen1.jpg</image_link>
     <availability>in stock</availability>
-    <price currency="INR">500.00</price>
-    <sale_price currency="INR">500.00</sale_price>
+    <price currency="INR">1.00</price>
+    <sale_price currency="INR">1.00</sale_price>
     <unit_type>meter</unit_type>
-    <stock>10</stock>
+    <stock>4</stock>
   </product>
   <product>
     <id>1</id>
     <title>Cotton Printed Fabric</title>
-    <sku>BEDSHEETS-COTTON-YELLOW-120</sku>
+    <sku></sku>
     <description>Premium printed cotton fabric suitable for dresses and shirts</description>
     <category>bedsheets</category>
     <link>http://localhost:8000/fabric.php?id=1</link>
     <image_link>http://localhost:8000/images/fabrics/cotton1.jpg</image_link>
     <availability>in stock</availability>
-    <price currency="INR">699.00</price>
-    <sale_price currency="INR">699.00</sale_price>
+    <price currency="INR">1.00</price>
+    <sale_price currency="INR">1.00</sale_price>
     <unit_type>piece</unit_type>
-    <stock>16</stock>
+    <stock>27</stock>
   </product>
 </products>
