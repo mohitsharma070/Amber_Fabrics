@@ -5,6 +5,9 @@
     var unitSelect = document.querySelector('select[name="unit_type"]');
     var minOrderInput = document.querySelector('input[name="min_order_meters"]');
     var qtyStepInput = document.querySelector('input[name="qty_step"]');
+    var meterOptionsInput = document.querySelector('input[name="meter_options"]');
+    var lowStockUnitsInput = document.querySelector('input[name="low_stock_threshold_units"]');
+    var lowStockMetersInput = document.querySelector('input[name="low_stock_threshold_meters"]');
     var categoryInput = document.querySelector('select[name="category"]');
     var materialInput = document.querySelector('input[name="material"]');
     var gsmInput = document.querySelector('input[name="gsm"]');
@@ -115,11 +118,30 @@
         if (meterOptionsRow) {
             meterOptionsRow.style.display = isMeter ? '' : 'none';
         }
+        if (meterOptionsInput) {
+            meterOptionsInput.disabled = !isMeter;
+            meterOptionsInput.required = isMeter;
+            if (!isMeter) {
+                meterOptionsInput.value = '';
+            }
+        }
         if (minOrderInput) {
             minOrderInput.step = isWhole ? '1' : '0.01';
         }
         if (qtyStepInput) {
             qtyStepInput.placeholder = isMeter ? 'e.g. 0.5' : '1';
+        }
+        if (lowStockUnitsInput) {
+            lowStockUnitsInput.disabled = isMeter;
+            if (isMeter) {
+                lowStockUnitsInput.value = '';
+            }
+        }
+        if (lowStockMetersInput) {
+            lowStockMetersInput.disabled = !isMeter;
+            if (!isMeter) {
+                lowStockMetersInput.value = '';
+            }
         }
     }
 

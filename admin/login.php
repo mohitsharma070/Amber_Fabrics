@@ -9,6 +9,8 @@ const ADMIN_OTP_TTL_SECONDS = 300;
 const ADMIN_OTP_RESEND_SECONDS = 60;
 const ADMIN_OTP_REQUEST_WINDOW_SECONDS = 900;
 const ADMIN_OTP_REQUEST_MAX_ATTEMPTS = 5;
+const ADMIN_OTP_VERIFY_WINDOW_SECONDS = 900;
+const ADMIN_OTP_VERIFY_MAX_ATTEMPTS = 8;
 
 $errors = [];
 $oldEmail = '';
@@ -16,21 +18,6 @@ $oldEmail = '';
 function admin_attempt_key(string $email, string $ip): string
 {
     return hash('sha256', strtolower(trim($email)) . '|' . trim($ip));
-}
-
-function admin_utc_mysql_to_timestamp(?string $value): ?int
-{
-    $value = trim((string) $value);
-    if ($value === '') {
-        return null;
-    }
-
-    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
-    if (!$dt) {
-        return null;
-    }
-
-    return $dt->getTimestamp();
 }
 
 function admin_rate_limit_status(mysqli $conn, string $attemptKey): array
@@ -77,6 +64,11 @@ function admin_record_attempt(mysqli $conn, string $attemptKey, bool $success): 
     $stmt->execute();
 }
 
+function admin_verify_attempt_key(int $adminId, string $ip): string
+{
+    return hash('sha256', 'admin_otp_verify|' . $adminId . '|' . trim($ip));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
         flash('error', 'Invalid session token. Please try again.');
@@ -95,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($rateStatus['blocked']) {
             $errors['_login'] = 'Too many attempts. Please wait 15 minutes and try again.';
         } else {
-            $stmt = $conn->prepare("SELECT id, name, email FROM admins WHERE email = ? LIMIT 1");
+            $stmt = $conn->prepare("SELECT id, name, email, role, is_active FROM admins WHERE email = ? LIMIT 1");
             $stmt->bind_param('s', $email);
             $stmt->execute();
             $admin = $stmt->get_result()->fetch_assoc();
@@ -104,6 +96,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 admin_record_attempt($conn, $attemptKey, false);
                 $errors['_login'] = 'Unable to send OTP for this email.';
             } else {
+                if (isset($admin['is_active']) && (int) ($admin['is_active'] ?? 1) !== 1) {
+                    admin_record_attempt($conn, $attemptKey, false);
+                    $errors['_login'] = 'Admin account is disabled.';
+                    log_admin_activity($conn, (int) ($admin['id'] ?? 0), 'admin_login_blocked_inactive', 'admin', (int) ($admin['id'] ?? 0), 'Inactive admin login attempt.', 'denied');
+                    goto render_login;
+                }
                 $otp = (string) random_int(100000, 999999);
                 $otpHash = hash('sha256', $otp);
 
@@ -143,6 +141,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['admin_pending_otp_admin_id'] = $adminId;
                     $_SESSION['admin_pending_otp_email'] = (string) $admin['email'];
                     $_SESSION['admin_pending_otp_name'] = (string) $admin['name'];
+                    $_SESSION['admin_pending_otp_role'] = strtolower(trim((string) ($admin['role'] ?? 'viewer')));
+                    $_SESSION['admin_pending_otp_verify_key'] = admin_verify_attempt_key($adminId, $ip);
                     flash('success', 'OTP sent to your email.');
                     redirect('verify-otp.php');
                 }
@@ -150,6 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+render_login:
 ?>
 <!DOCTYPE html>
 <html lang="en">

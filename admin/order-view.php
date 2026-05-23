@@ -208,7 +208,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Shipment details cannot be edited for cancelled/refunded orders.');
             }
 
-            $shipStmt = $conn->prepare("SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE");
+            $shipSelectForUpdate = shipments_support_shiprocket_refs($conn)
+                ? "SELECT id, shipped_at, delivered_at, shiprocket_order_id, shiprocket_shipment_id, awb_code FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE"
+                : "SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE";
+            $shipStmt = $conn->prepare($shipSelectForUpdate);
             $shipStmt->bind_param('i', $id);
             $shipStmt->execute();
             $existingShipment = $shipStmt->get_result()->fetch_assoc();
@@ -219,12 +222,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($existingShipment) {
                 $shipmentId = (int) $existingShipment['id'];
-                $updateShip = $conn->prepare(
-                    "UPDATE shipments
-                     SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
-                     WHERE id = ?"
-                );
-                $updateShip->bind_param('sssdssi', $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
+                if (shipments_support_shiprocket_refs($conn)) {
+                    $shiprocketOrderId = trim((string) ($existingShipment['shiprocket_order_id'] ?? ''));
+                    $shiprocketShipmentId = trim((string) ($existingShipment['shiprocket_shipment_id'] ?? ''));
+                    $awbCode = trim((string) ($existingShipment['awb_code'] ?? ''));
+                    $updateShip = $conn->prepare(
+                        "UPDATE shipments
+                         SET shiprocket_order_id = ?,
+                             shiprocket_shipment_id = ?,
+                             awb_code = ?,
+                             courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
+                         WHERE id = ?"
+                    );
+                    $updateShip->bind_param('ssssssdssi', $shiprocketOrderId, $shiprocketShipmentId, $awbCode, $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
+                } else {
+                    $updateShip = $conn->prepare(
+                        "UPDATE shipments
+                         SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
+                         WHERE id = ?"
+                    );
+                    $updateShip->bind_param('sssdssi', $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
+                }
                 $updateShip->execute();
                 $shipmentChanged = true;
             } else {
@@ -316,12 +334,16 @@ $itemStmt->bind_param('i', $id);
 $itemStmt->execute();
 $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$shipmentStmt = $conn->prepare(
-    "SELECT id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
-     FROM shipments
-     WHERE order_id = ?
-     LIMIT 1"
-);
+$shipmentSelect = shipments_support_shiprocket_refs($conn)
+    ? "SELECT id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at, shiprocket_order_id, shiprocket_shipment_id, awb_code
+       FROM shipments
+       WHERE order_id = ?
+       LIMIT 1"
+    : "SELECT id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
+       FROM shipments
+       WHERE order_id = ?
+       LIMIT 1";
+$shipmentStmt = $conn->prepare($shipmentSelect);
 $shipmentStmt->bind_param('i', $id);
 $shipmentStmt->execute();
 $shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [
@@ -331,6 +353,9 @@ $shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [
     'shipping_cost' => '0.00',
     'shipped_at' => null,
     'delivered_at' => null,
+    'shiprocket_order_id' => '',
+    'shiprocket_shipment_id' => '',
+    'awb_code' => '',
 ];
 $activityStmt = $conn->prepare(
     "SELECT action, actor_type, actor_name, details, created_at
@@ -481,6 +506,20 @@ include 'partials/header.php';
                         <label class="form-label">Tracking ID</label>
                         <input type="text" class="form-control" name="tracking_id" value="<?php echo e((string) ($shipment['tracking_id'] ?? '')); ?>">
                     </div>
+                    <?php if (shipments_support_shiprocket_refs($conn)): ?>
+                    <div class="mb-3">
+                        <label class="form-label">Shiprocket Shipment ID</label>
+                        <input type="text" class="form-control" value="<?php echo e((string) ($shipment['shiprocket_shipment_id'] ?? '')); ?>" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Shiprocket Order ID</label>
+                        <input type="text" class="form-control" value="<?php echo e((string) ($shipment['shiprocket_order_id'] ?? '')); ?>" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">AWB Code</label>
+                        <input type="text" class="form-control" value="<?php echo e((string) ($shipment['awb_code'] ?? '')); ?>" readonly>
+                    </div>
+                    <?php endif; ?>
                     <div class="mb-3">
                         <label class="form-label">Tracking URL</label>
                         <input type="url" class="form-control" name="tracking_url" value="<?php echo e((string) ($shipment['tracking_url'] ?? '')); ?>" placeholder="https://...">

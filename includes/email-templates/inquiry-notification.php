@@ -18,4 +18,4 @@ $lines = [
     'Message:',
     ((string) ($data['message'] ?? '')),
 ];
-return ['subject' => $subject, 'body' => implode("\\r\\n", $lines)];
+return ['subject' => $subject, 'body' => implode("\r\n", $lines)];

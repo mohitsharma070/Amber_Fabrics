@@ -13,4 +13,4 @@ $lines = [
     'Regards,',
     'Amber Fabrics',
 ];
-return ['subject' => $subject, 'body' => implode("\\r\\n", $lines)];
+return ['subject' => $subject, 'body' => implode("\r\n", $lines)];

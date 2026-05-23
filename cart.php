@@ -99,6 +99,13 @@ include __DIR__ . '/includes/header.php';
                                     <div>
                                         <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
                                         <div class="small text-muted">Rs <?php echo number_format($w['unit_price'], 2); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
+                                        <div class="small text-muted">
+                                            <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
+                                                Qty: <?php echo e((string) $w['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $w['meter_length'])); ?>m = <?php echo e($w['quantity_text']); ?>m
+                                            <?php else: ?>
+                                                Qty: <?php echo e($w['quantity_text']); ?> <?php echo e($w['quantity_unit_label']); ?>
+                                            <?php endif; ?>
+                                        </div>
                                     </div>
                                     <div class="d-flex gap-2">
                                         <form method="POST" action="/move-to-cart.php" class="d-inline">
@@ -196,8 +203,8 @@ include __DIR__ . '/includes/header.php';
                                             <input type="hidden" name="meter_length" value="<?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>">
                                         <?php endif; ?>
                                         <button type="button" class="btn btn-sm btn-outline-secondary qty-dec" aria-label="Decrease quantity">-</button>
-                                        <input type="number" name="<?php echo ($item['unit_type'] === 'meter' && !empty($item['meter_length'])) ? 'bundle_quantity' : 'quantity'; ?>" class="form-control form-control-sm cart-qty-input"
-                                               value="<?php echo e(($item['unit_type'] === 'meter' && !empty($item['bundle_quantity'])) ? (string) $item['bundle_quantity'] : $item['quantity_text']); ?>" min="1"
+                                        <input type="number" name="<?php echo ($item['unit_type'] === 'meter') ? 'bundle_quantity' : 'quantity'; ?>" class="form-control form-control-sm cart-qty-input"
+                                               value="<?php echo e(($item['unit_type'] === 'meter') ? (string) max(1, (int) ($item['bundle_quantity'] ?? 1)) : $item['quantity_text']); ?>" min="1"
                                                step="<?php echo ($item['unit_type'] === 'piece' || $item['unit_type'] === 'set' || $item['unit_type'] === 'meter') ? '1' : '0.01'; ?>"
                                                <?php echo ($item['unit_type'] === 'meter' && !empty($item['max_bundle_qty'])) ? 'max="' . (int) $item['max_bundle_qty'] . '"' : ($item['stock'] > 0 ? 'max="' . $item['stock'] . '"' : ''); ?>>
                                         <button type="button" class="btn btn-sm btn-outline-secondary qty-inc" aria-label="Increase quantity">+</button>
@@ -230,6 +237,13 @@ include __DIR__ . '/includes/header.php';
                                     <div>
                                         <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
                                         <div class="small text-muted">Rs <?php echo number_format($w['unit_price'], 2); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
+                                        <div class="small text-muted">
+                                            <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
+                                                Qty: <?php echo e((string) $w['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $w['meter_length'])); ?>m = <?php echo e($w['quantity_text']); ?>m
+                                            <?php else: ?>
+                                                Qty: <?php echo e($w['quantity_text']); ?> <?php echo e($w['quantity_unit_label']); ?>
+                                            <?php endif; ?>
+                                        </div>
                                     </div>
                                     <div class="d-flex gap-2">
                                         <form method="POST" action="/move-to-cart.php" class="d-inline">

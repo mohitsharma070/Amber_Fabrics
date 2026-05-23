@@ -21,7 +21,7 @@ if (!headers_sent()) {
     header('X-Frame-Options: DENY');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
-    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+    if (app_request_is_https()) {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
     }
     $cspDirectives = apply_filters('security.csp_directives', [
@@ -37,10 +37,13 @@ if (!headers_sent()) {
         'base-uri' => ["'self'"],
         'form-action' => ["'self'"],
     ], ['nonce' => $cspNonce]);
+    if ($isProduction && app_request_is_https()) {
+        $cspDirectives['upgrade-insecure-requests'] = [];
+    }
     $cspParts = [];
     foreach ($cspDirectives as $directive => $values) {
         $values = is_array($values) ? array_values(array_unique(array_filter(array_map('strval', $values)))) : [(string) $values];
-        $cspParts[] = $directive . ' ' . implode(' ', $values);
+        $cspParts[] = trim($directive . ' ' . implode(' ', $values));
     }
     header('Content-Security-Policy: ' . implode('; ', $cspParts));
 }
@@ -53,6 +56,40 @@ do_action('app.init', [
 if (isset($conn) && $conn instanceof mysqli) {
     session_ensure_cart_wishlist_arrays();
     wishlist_bootstrap_session($conn);
+}
+
+// Register a shutdown handler that emails the admin on fatal PHP errors in production.
+if ($isProduction) {
+    register_shutdown_function(function () {
+        $error = error_get_last();
+        if (!is_array($error)) {
+            return;
+        }
+        $fatalTypes = [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE, E_USER_ERROR];
+        if (!in_array((int) ($error['type'] ?? 0), $fatalTypes, true)) {
+            return;
+        }
+        $message = sprintf(
+            '[amber] Fatal error: %s in %s on line %d',
+            $error['message'] ?? 'Unknown',
+            $error['file'] ?? 'unknown',
+            (int) ($error['line'] ?? 0)
+        );
+        error_log($message);
+        $adminEmail = function_exists('_cfg') ? _cfg('ADMIN_NOTIFICATION_EMAIL') : '';
+        if ($adminEmail !== '' && function_exists('send_email')) {
+            try {
+                send_email(
+                    $adminEmail,
+                    'Fatal Error — Amber Fabrics',
+                    $message . "\n\nURL: " . ($_SERVER['REQUEST_URI'] ?? 'cli')
+                        . "\nServer: " . ($_SERVER['SERVER_NAME'] ?? gethostname())
+                );
+            } catch (Throwable $e) {
+                error_log('[amber] Could not send fatal error notification: ' . $e->getMessage());
+            }
+        }
+    });
 }
 
 /**

@@ -84,9 +84,21 @@ $cancelLabel = isset($cancelLabel) ? (string) $cancelLabel : ($isEdit ? 'Back' :
         <label class="form-label">Quantity Step <small class="text-muted">(optional)</small></label>
         <input type="number" step="0.0001" min="0" name="qty_step" class="form-control" value="<?php echo e($old['qty_step']); ?>" placeholder="e.g. 0.5">
     </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label">Low Stock Threshold (Units)</label>
+        <input type="number" step="1" min="0" name="low_stock_threshold_units" class="<?php echo form_class($errors, 'low_stock_threshold_units'); ?>" value="<?php echo e((string) ($old['low_stock_threshold_units'] ?? '')); ?>" placeholder="e.g. 5">
+        <?php echo form_error($errors, 'low_stock_threshold_units'); ?>
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label">Low Stock Threshold (Meters)</label>
+        <input type="number" step="0.01" min="0" name="low_stock_threshold_meters" class="<?php echo form_class($errors, 'low_stock_threshold_meters'); ?>" value="<?php echo e((string) ($old['low_stock_threshold_meters'] ?? '')); ?>" placeholder="e.g. 10">
+        <?php echo form_error($errors, 'low_stock_threshold_meters'); ?>
+    </div>
     <div class="col-6 col-md-4" id="meter_options_row">
         <label class="form-label">Meter Options <small class="text-muted">(comma separated)</small></label>
-        <input type="text" name="meter_options" class="form-control" placeholder="e.g. 1, 1.5, 2, 2.5" value="<?php echo e($old['meter_options']); ?>">
+        <input type="text" name="meter_options" class="<?php echo form_class($errors, 'meter_options'); ?>" placeholder="e.g. 1, 2, 2.5" value="<?php echo e($old['meter_options']); ?>">
+        <small class="text-muted">Required for meter products. Use allowed cut lengths only.</small>
+        <?php echo form_error($errors, 'meter_options'); ?>
     </div>
     <div class="col-sm-6">
         <label class="form-label">Material / Fabric</label>

@@ -1,10 +1,31 @@
 ﻿<?php
 require_once __DIR__ . '/email-templates/index.php';
 
+function app_request_is_https(): bool
+{
+    if (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') {
+        return true;
+    }
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') {
+        return true;
+    }
+    if (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') {
+        return true;
+    }
+
+    $appEnv = strtolower(trim((string) ($GLOBALS['_app_config']['APP_ENV'] ?? '')));
+    $appUrl = strtolower(trim((string) ($GLOBALS['_app_config']['APP_URL'] ?? '')));
+    $forceHttps = strtolower(trim((string) ($GLOBALS['_app_config']['APP_FORCE_HTTPS'] ?? '')));
+
+    return $forceHttps === '1' ||
+        $forceHttps === 'true' ||
+        ($appEnv === 'production' && strpos($appUrl, 'https://') === 0);
+}
+
 // Harden session cookie settings before starting the session.
 if (session_status() === PHP_SESSION_NONE) {
     if (PHP_SAPI !== 'cli' && !headers_sent()) {
-        $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+        $secure = app_request_is_https();
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');
         ini_set('session.use_trans_sid', '0');
@@ -84,7 +105,7 @@ function marketing_consent_clear_cookie(string $cookieName): void
         return;
     }
 
-    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    $secure = app_request_is_https();
     setcookie($cookieName, '', [
         'expires' => time() - 3600,
         'path' => '/',
@@ -115,7 +136,7 @@ function marketing_consent_set(string $status, int $days = 180): bool
         return false;
     }
 
-    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    $secure = app_request_is_https();
     setcookie(marketing_consent_cookie_name(), $status, [
         'expires' => time() + (max(1, $days) * 86400),
         'path' => '/',
@@ -248,6 +269,24 @@ function normalize_quantity_by_unit($value, string $unitType, float $minQty = 1.
 }
 
 /**
+ * Validate that a meter quantity respects a configured step.
+ * Example: min=1.00, step=0.25 allows 1.00, 1.25, 1.50, ...
+ */
+function meter_qty_respects_step(float $qty, float $minQty, float $step): bool
+{
+    $step = round($step, 4);
+    if ($step <= 0) {
+        return true;
+    }
+    if ($qty < $minQty) {
+        return false;
+    }
+    $delta = $qty - $minQty;
+    $ratio = $delta / $step;
+    return abs($ratio - round($ratio)) < 0.0001;
+}
+
+/**
  * Format quantities based on unit type.
  */
 function format_quantity_by_unit($value, string $unitType): string
@@ -266,6 +305,81 @@ function normalize_units_per_set($value): int
 function format_pack_label(int $unitsPerSet): string
 {
     return 'Pack of ' . max(1, (int) $unitsPerSet);
+}
+
+function ecommerce_event_logs_table_ready(mysqli $conn): bool
+{
+    static $checked = false;
+    static $ready = false;
+    if ($checked) {
+        return $ready;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'ecommerce_event_logs'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $ready = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+/**
+ * Persist high-value commerce events for analytics/observability.
+ */
+function log_ecommerce_event(
+    mysqli $conn,
+    string $eventType,
+    ?int $customerId = null,
+    ?int $orderId = null,
+    ?int $productId = null,
+    ?string $unitType = null,
+    ?float $quantity = null,
+    ?float $amount = null,
+    ?array $payload = null
+): void {
+    $eventType = trim($eventType);
+    if ($eventType === '' || !ecommerce_event_logs_table_ready($conn)) {
+        return;
+    }
+
+    $safeUnit = in_array((string) $unitType, ['meter', 'piece', 'set'], true) ? (string) $unitType : null;
+    $payloadJson = null;
+    if ($payload !== null) {
+        $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        if (is_string($encoded) && $encoded !== '') {
+            $payloadJson = $encoded;
+        }
+    }
+
+    try {
+        $stmt = $conn->prepare(
+            "INSERT INTO ecommerce_event_logs
+             (event_type, customer_id, order_id, product_id, unit_type, quantity, amount, payload_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param(
+            'siiisdds',
+            $eventType,
+            $customerId,
+            $orderId,
+            $productId,
+            $safeUnit,
+            $quantity,
+            $amount,
+            $payloadJson
+        );
+        $stmt->execute();
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] ecommerce event log failed: ' . $e->getMessage());
+    }
 }
 
 /**
@@ -302,7 +416,7 @@ function cart_hydrate_items(mysqli $conn, array $source, array $sizeMap = [], ar
 
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
-    $sql = "SELECT id, name, image, unit_type, price, sale_price, price_inr, stock, stock_meters, is_available, dispatch_time
+    $sql = "SELECT id, name, image, unit_type, meter_options, min_order_meters, qty_step, wastage_percent, price, sale_price, price_inr, stock, stock_meters, is_available, dispatch_time
             FROM fabrics
             WHERE status = 'active' AND id IN ($placeholders)";
     $stmt = $conn->prepare($sql);
@@ -338,12 +452,36 @@ function cart_hydrate_items(mysqli $conn, array $source, array $sizeMap = [], ar
         $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
             ? (string) $row['unit_type']
             : 'meter';
-        $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType);
+        $minQty = $unitType === 'meter'
+            ? normalize_meter_quantity($row['min_order_meters'] ?? 1, 1.0)
+            : 1.0;
+        $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType, (float) $minQty);
+        if ($unitType === 'meter') {
+            $qtyStep = is_numeric($row['qty_step'] ?? null) ? (float) $row['qty_step'] : 0.0;
+            if (!meter_qty_respects_step((float) $qty, (float) $minQty, (float) $qtyStep)) {
+                $removedKeys[] = (string) $cartKey;
+                continue;
+            }
+        }
         $meterLength = null;
         $bundleQty = null;
-        if ($unitType === 'meter' && isset($meterMap[$cartKey]) && is_numeric($meterMap[$cartKey]) && (float) $meterMap[$cartKey] > 0) {
-            $meterLength = (float) $meterMap[$cartKey];
-            $bundleQty = max(1, (int) round($qty / $meterLength));
+        if ($unitType === 'meter') {
+            if (!isset($meterMap[$cartKey]) || !is_numeric($meterMap[$cartKey]) || (float) $meterMap[$cartKey] <= 0) {
+                $removedKeys[] = (string) $cartKey;
+                continue;
+            }
+            $meterLength = round((float) $meterMap[$cartKey], 2);
+            $allowedMeterOptions = parse_meter_options((string) ($row['meter_options'] ?? ''), (float) $minQty);
+            if (!meter_length_is_allowed($meterLength, $allowedMeterOptions)) {
+                $removedKeys[] = (string) $cartKey;
+                continue;
+            }
+            $bundleRatio = $meterLength > 0 ? ($qty / $meterLength) : 0;
+            if ($bundleRatio <= 0 || abs($bundleRatio - round($bundleRatio)) > 0.0001) {
+                $removedKeys[] = (string) $cartKey;
+                continue;
+            }
+            $bundleQty = max(1, (int) round($bundleRatio));
         }
 
         $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
@@ -491,6 +629,56 @@ function parse_size_options(?string $sizeRaw): array
 }
 
 /**
+ * Parse admin-configured meter options (e.g. "1, 2, 2.5") into normalized floats.
+ */
+function parse_meter_options(?string $meterRaw, float $min = 0.01): array
+{
+    $meterRaw = (string) $meterRaw;
+    if ($meterRaw === '') {
+        return [];
+    }
+    $parts = preg_split('/[,\|]+/', $meterRaw);
+    if (!is_array($parts)) {
+        return [];
+    }
+    $options = [];
+    foreach ($parts as $part) {
+        $clean = trim((string) $part);
+        if ($clean === '' || !is_numeric($clean)) {
+            continue;
+        }
+        $value = round((float) $clean, 2);
+        if ($value < $min) {
+            continue;
+        }
+        $options[(string) $value] = $value;
+    }
+    $final = array_values($options);
+    sort($final);
+    return $final;
+}
+
+/**
+ * Check whether a posted meter length is valid for the product.
+ * If no configured options exist, any positive meter length is allowed.
+ */
+function meter_length_is_allowed(float $meterLength, array $allowedOptions): bool
+{
+    if ($meterLength <= 0) {
+        return false;
+    }
+    if (empty($allowedOptions)) {
+        return true;
+    }
+    foreach ($allowedOptions as $option) {
+        if (abs((float) $option - $meterLength) < 0.001) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Shared India shipping + COD fee calculation.
  */
 function checkout_shipping_breakdown(float $subtotal, string $country, string $paymentMethod, bool $codFeeApply = true): array
@@ -499,7 +687,7 @@ function checkout_shipping_breakdown(float $subtotal, string $country, string $p
     $baseShipping = 0.0;
     $codFee = 0.0;
     if ($isIndia) {
-        $baseShipping = ($subtotal >= 999.0) ? 0.0 : 70.0;
+        $baseShipping = ($subtotal >= 999.0) ? 0.0 : 0.0;
         $codFee = (strtolower($paymentMethod) === 'cod' && $codFeeApply) ? 50.0 : 0.0;
     }
     return [
@@ -885,7 +1073,7 @@ function get_variants_by_ids(mysqli $conn, array $variantIds): array
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
     $stmt = $conn->prepare(
-        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active
+        "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, wastage_percent_override, stock, stock_meters, is_active
          FROM fabric_variants
          WHERE id IN ($placeholders)"
     );
@@ -1604,6 +1792,24 @@ function save_fabric_image_upload(array $file, string $label = 'Image'): string
         throw new RuntimeException($label . ' upload failed.');
     }
 
+    // Re-encode through GD to strip any embedded payloads (polyglot/steganography defense).
+    $gdMime = strtolower((string) ($imageInfo['mime'] ?? $mime));
+    if (!in_array($gdMime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+        $gdMime = $mime;
+    }
+    $gdResource = image_pipeline_create_resource($target, $gdMime);
+    if ($gdResource === false) {
+        @unlink($target);
+        throw new RuntimeException($label . ' could not be processed. Please upload a valid image file.');
+    }
+    $gdQuality = image_pipeline_webp_quality();
+    if (!image_pipeline_save_resource($gdResource, $target, $gdMime, $gdQuality)) {
+        imagedestroy($gdResource);
+        @unlink($target);
+        throw new RuntimeException($label . ' could not be saved. Please try again.');
+    }
+    imagedestroy($gdResource);
+
     image_pipeline_generate_derivatives($target);
     return $saved;
 }
@@ -1740,12 +1946,196 @@ function image_pipeline_low_resolution_fabric_images(int $limit = 20): array
 /**
  * Require admin session.
  */
+function admin_role_rank(string $role): int
+{
+    $map = [
+        'viewer' => 10,
+        'catalog_manager' => 20,
+        'operations_manager' => 30,
+        'super_admin' => 100,
+    ];
+    $role = strtolower(trim($role));
+    return $map[$role] ?? 0;
+}
+
+function admin_activity_logs_table_ready(mysqli $conn): bool
+{
+    static $checked = false;
+    static $ready = false;
+    if ($checked) {
+        return $ready;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'admin_activity_logs'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $ready = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+function log_admin_activity(
+    mysqli $conn,
+    int $adminId,
+    string $action,
+    string $targetType = '',
+    int $targetId = 0,
+    string $details = '',
+    string $status = 'ok'
+): void {
+    if ($adminId <= 0 || $action === '' || !admin_activity_logs_table_ready($conn)) {
+        return;
+    }
+    try {
+        $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
+        $ua = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+        $route = trim((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+        $targetType = trim($targetType);
+        $details = trim($details);
+        $status = in_array($status, ['ok', 'failed', 'denied'], true) ? $status : 'ok';
+        $stmt = $conn->prepare(
+            "INSERT INTO admin_activity_logs
+            (admin_id, action, target_type, target_id, route, request_ip, user_agent, status, details, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+        );
+        $stmt->bind_param('ississsss', $adminId, $action, $targetType, $targetId, $route, $ip, $ua, $status, $details);
+        $stmt->execute();
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] admin activity log failed: ' . $e->getMessage());
+    }
+}
+
+function admin_route_min_role(string $scriptName): string
+{
+    $script = strtolower(trim($scriptName));
+    $base = basename($script);
+    $superOnly = [
+        'settings.php',
+        'admins.php',
+        'shipping-rates.php',
+    ];
+    $opsAndAbove = [
+        'orders.php',
+        'order-view.php',
+        'returns.php',
+        'customers.php',
+        'customer-view.php',
+        'expenses.php',
+        'inquiries.php',
+        'inquiry-view.php',
+        'export-inquiries.php',
+    ];
+    if (in_array($base, $superOnly, true)) {
+        return 'super_admin';
+    }
+    if (in_array($base, $opsAndAbove, true)) {
+        return 'operations_manager';
+    }
+    return 'viewer';
+}
+
+function admin_session_valid(mysqli $conn, int $adminId, string $sessionRole): bool
+{
+    if ($adminId <= 0) {
+        return false;
+    }
+    $timeoutIdleSec = max(300, (int) _cfg('ADMIN_SESSION_IDLE_TIMEOUT_SEC', '1800'));
+    $timeoutAbsoluteSec = max(900, (int) _cfg('ADMIN_SESSION_ABSOLUTE_TIMEOUT_SEC', '28800'));
+    $now = time();
+
+    $startedAt = (int) ($_SESSION['admin_session_started_at'] ?? 0);
+    $lastSeen = (int) ($_SESSION['admin_last_seen_at'] ?? 0);
+    if ($startedAt <= 0 || $lastSeen <= 0) {
+        return false;
+    }
+    if (($now - $lastSeen) > $timeoutIdleSec || ($now - $startedAt) > $timeoutAbsoluteSec) {
+        return false;
+    }
+
+    $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
+    $ua = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+    $fp = hash('sha256', $ip . '|' . $ua);
+    $storedFp = trim((string) ($_SESSION['admin_session_fingerprint'] ?? ''));
+    if ($storedFp === '' || !hash_equals($storedFp, $fp)) {
+        return false;
+    }
+
+    try {
+        $stmt = $conn->prepare("SELECT role, is_active FROM admins WHERE id = ? LIMIT 1");
+        $stmt->bind_param('i', $adminId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row) {
+            return false;
+        }
+        if (isset($row['is_active']) && (int) $row['is_active'] !== 1) {
+            return false;
+        }
+        $dbRole = strtolower(trim((string) ($row['role'] ?? 'viewer')));
+        if ($dbRole === '') {
+            $dbRole = 'viewer';
+        }
+        if ($sessionRole !== '' && $dbRole !== strtolower($sessionRole)) {
+            $_SESSION['admin_role'] = $dbRole;
+        }
+    } catch (Throwable $e) {
+        return false;
+    }
+
+    $_SESSION['admin_last_seen_at'] = $now;
+    return true;
+}
+
 function require_admin(): void
 {
-    if (empty($_SESSION['admin_id'])) {
+    $adminId = (int) ($_SESSION['admin_id'] ?? 0);
+    $role = strtolower(trim((string) ($_SESSION['admin_role'] ?? 'viewer')));
+    if ($adminId <= 0) {
         flash('error', 'Please log in to continue.');
         redirect('login.php');
     }
+    $conn = (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
+    if (!$conn || !admin_session_valid($conn, $adminId, $role)) {
+        if ($conn instanceof mysqli) {
+            log_admin_activity($conn, $adminId, 'admin_session_invalidated', 'session', 0, 'Session failed security validation.', 'denied');
+        }
+        $_SESSION = [];
+        session_regenerate_id(true);
+        flash('error', 'Your admin session expired. Please log in again.');
+        redirect('login.php');
+    }
+
+    $requiredRole = admin_route_min_role((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+    if (admin_role_rank($role) < admin_role_rank($requiredRole)) {
+        if ($conn instanceof mysqli) {
+            log_admin_activity($conn, $adminId, 'admin_access_denied', 'route', 0, 'Required role: ' . $requiredRole . ', current role: ' . $role, 'denied');
+        }
+        http_response_code(403);
+        exit('Forbidden');
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && $conn instanceof mysqli) {
+        log_admin_activity($conn, $adminId, 'admin_post_action', 'route', 0, 'POST to ' . basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')), 'ok');
+    }
+}
+
+function admin_utc_mysql_to_timestamp(?string $value): ?int
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return null;
+    }
+
+    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+    return $dt ? $dt->getTimestamp() : null;
 }
 
 /**
@@ -2293,45 +2683,11 @@ function razorpay_validate_remote_capture(string $paymentId, string $rzpOrderId,
         return ['ok' => false, 'error' => 'invalid_validation_inputs'];
     }
 
-    $keyId = _cfg('RAZORPAY_KEY_ID', '');
-    $keySecret = _cfg('RAZORPAY_KEY_SECRET', '');
-    if ($keyId === '' || $keySecret === '') {
-        return ['ok' => false, 'error' => 'razorpay_credentials_missing'];
+    $resp = razorpay_http_json('GET', '/v1/payments/' . rawurlencode($paymentId), null);
+    if (empty($resp['ok'])) {
+        return ['ok' => false, 'error' => (string) ($resp['error'] ?? 'gateway_call_failed')];
     }
-    if (!function_exists('curl_init')) {
-        return ['ok' => false, 'error' => 'curl_missing'];
-    }
-
-    $url = 'https://api.razorpay.com/v1/payments/' . rawurlencode($paymentId);
-    $ch = curl_init($url);
-    if ($ch === false) {
-        return ['ok' => false, 'error' => 'curl_init_failed'];
-    }
-
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
-        CURLOPT_USERPWD => $keyId . ':' . $keySecret,
-        CURLOPT_HTTPHEADER => ['Accept: application/json'],
-    ]);
-    $raw = curl_exec($ch);
-    $errno = curl_errno($ch);
-    $err = curl_error($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
-
-    if ($errno !== 0) {
-        return ['ok' => false, 'error' => 'curl_error:' . ($err !== '' ? $err : (string) $errno)];
-    }
-    if ($status < 200 || $status >= 300) {
-        return ['ok' => false, 'error' => 'gateway_http_' . $status];
-    }
-
-    $payload = json_decode((string) $raw, true);
-    if (!is_array($payload)) {
-        return ['ok' => false, 'error' => 'invalid_gateway_json'];
-    }
+    $payload = (array) ($resp['body'] ?? []);
 
     $remoteOrderId = trim((string) ($payload['order_id'] ?? ''));
     $remoteCurrency = strtoupper(trim((string) ($payload['currency'] ?? '')));
@@ -2353,6 +2709,99 @@ function razorpay_validate_remote_capture(string $paymentId, string $rzpOrderId,
     }
 
     return ['ok' => true];
+}
+
+function razorpay_http_json(string $method, string $path, ?array $payload = null): array
+{
+    $keyId = _cfg('RAZORPAY_KEY_ID', '');
+    $keySecret = _cfg('RAZORPAY_KEY_SECRET', '');
+    if ($keyId === '' || $keySecret === '') {
+        return ['ok' => false, 'error' => 'razorpay_credentials_missing', 'status' => 0, 'duration_ms' => 0];
+    }
+    if (!function_exists('curl_init')) {
+        return ['ok' => false, 'error' => 'curl_missing', 'status' => 0, 'duration_ms' => 0];
+    }
+
+    $timeoutSec = max(5, (int) _cfg('RAZORPAY_HTTP_TIMEOUT_SEC', '15'));
+    $connectTimeoutSec = max(2, (int) _cfg('RAZORPAY_HTTP_CONNECT_TIMEOUT_SEC', '5'));
+    $url = 'https://api.razorpay.com' . $path;
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['ok' => false, 'error' => 'curl_init_failed', 'status' => 0, 'duration_ms' => 0];
+    }
+
+    $headers = ['Accept: application/json'];
+    $json = null;
+    if ($payload !== null) {
+        $json = json_encode($payload);
+        if ($json === false) {
+            curl_close($ch);
+            return ['ok' => false, 'error' => 'payload_encode_failed', 'status' => 0, 'duration_ms' => 0];
+        }
+        $headers[] = 'Content-Type: application/json';
+    }
+
+    $started = microtime(true);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => $timeoutSec,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeoutSec,
+        CURLOPT_CUSTOMREQUEST => strtoupper($method),
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+        CURLOPT_USERPWD => $keyId . ':' . $keySecret,
+        CURLOPT_HTTPHEADER => $headers,
+    ]);
+    if ($json !== null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
+    }
+
+    $raw = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $err = curl_error($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    $durationMs = (int) round((microtime(true) - $started) * 1000);
+
+    if ($errno !== 0) {
+        $suffix = $err !== '' ? $err : (string) $errno;
+        return ['ok' => false, 'error' => 'curl_error:' . $suffix, 'status' => $status, 'duration_ms' => $durationMs];
+    }
+    if ($status < 200 || $status >= 300) {
+        return ['ok' => false, 'error' => 'gateway_http_' . $status, 'status' => $status, 'duration_ms' => $durationMs];
+    }
+
+    $decoded = json_decode((string) $raw, true);
+    if (!is_array($decoded)) {
+        return ['ok' => false, 'error' => 'invalid_gateway_json', 'status' => $status, 'duration_ms' => $durationMs];
+    }
+
+    return ['ok' => true, 'status' => $status, 'duration_ms' => $durationMs, 'body' => $decoded];
+}
+
+function razorpay_create_order_remote(int $orderId, string $orderNumber, int $amountPaise): array
+{
+    if ($orderId <= 0 || $orderNumber === '' || $amountPaise <= 0) {
+        return ['ok' => false, 'error' => 'invalid_create_inputs'];
+    }
+    $resp = razorpay_http_json('POST', '/v1/orders', [
+        'amount' => $amountPaise,
+        'currency' => 'INR',
+        'receipt' => $orderNumber,
+        'payment_capture' => 1,
+        'notes' => [
+            'local_order_id' => (string) $orderId,
+            'order_number' => $orderNumber,
+        ],
+    ]);
+    if (empty($resp['ok'])) {
+        return $resp;
+    }
+    $body = (array) ($resp['body'] ?? []);
+    $rzpOrderId = trim((string) ($body['id'] ?? ''));
+    if ($rzpOrderId === '') {
+        return ['ok' => false, 'error' => 'gateway_order_id_missing', 'status' => (int) ($resp['status'] ?? 0), 'duration_ms' => (int) ($resp['duration_ms'] ?? 0)];
+    }
+    return ['ok' => true, 'id' => $rzpOrderId, 'status' => (int) ($resp['status'] ?? 0), 'duration_ms' => (int) ($resp['duration_ms'] ?? 0)];
 }
 
 function extract_razorpay_refund_id_from_notes(string $notes): string
@@ -2442,29 +2891,9 @@ function refund_ledger_event_exists(
     }
 }
 
-/**
- * Idempotency guard for payment webhooks.
- * Returns true when event was already processed.
- */
-function payment_webhook_is_duplicate(mysqli $conn, string $provider, string $eventId, string $signature): bool
+function payment_webhook_payload_hash(string $payload): string
 {
-    if ($provider === '' || $eventId === '') {
-        return false;
-    }
-    try {
-        $stmt = $conn->prepare(
-            "SELECT id
-             FROM payment_webhook_events
-             WHERE provider = ? AND event_id = ?
-             LIMIT 1"
-        );
-        $stmt->bind_param('ss', $provider, $eventId);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        return !empty($row);
-    } catch (Throwable $e) {
-        throw $e;
-    }
+    return hash('sha256', $payload);
 }
 
 function cancel_stale_pending_razorpay_order(mysqli $conn, int $orderId, int $ttlMinutes = 30): bool
@@ -2589,17 +3018,156 @@ function checkout_shipping_for_order(float $subtotal, string $country, string $p
     ];
 }
 
-function payment_webhook_mark_processed(mysqli $conn, string $provider, string $eventId, string $signature): void
+function payment_webhook_mark_processed(
+    mysqli $conn,
+    string $provider,
+    string $eventId,
+    string $signature,
+    ?string $payloadHash = null,
+    ?string $rawPayload = null
+): void
 {
     if ($provider === '' || $eventId === '') {
         return;
     }
+    $hash = trim((string) $payloadHash);
+    $payload = $rawPayload;
+    $processedAt = date('Y-m-d H:i:s');
     $stmt = $conn->prepare(
-        "INSERT INTO payment_webhook_events (provider, event_id, signature, received_at)
-         VALUES (?, ?, ?, NOW())
-         ON DUPLICATE KEY UPDATE signature = VALUES(signature)"
+        "INSERT INTO payment_webhook_events (
+            provider, event_id, signature, payload_hash, raw_payload, status, attempts, processed_at, created_at, updated_at
+        )
+         VALUES (?, ?, ?, ?, ?, 'processed', 1, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+            signature = VALUES(signature),
+            payload_hash = CASE WHEN VALUES(payload_hash) <> '' THEN VALUES(payload_hash) ELSE payload_hash END,
+            raw_payload = CASE WHEN VALUES(raw_payload) IS NOT NULL AND VALUES(raw_payload) <> '' THEN VALUES(raw_payload) ELSE raw_payload END,
+            status = 'processed',
+            processed_at = VALUES(processed_at),
+            updated_at = NOW()"
     );
-    $stmt->bind_param('sss', $provider, $eventId, $signature);
+    $stmt->bind_param('ssssss', $provider, $eventId, $signature, $hash, $payload, $processedAt);
+    $stmt->execute();
+}
+
+/**
+ * Atomically moves webhook event into a lifecycle state.
+ *
+ * Return shape:
+ * - state: one of claimed|already_processed|in_progress
+ * - attempts: current attempt count
+ * - status: current persisted status
+ */
+function payment_webhook_begin_processing(
+    mysqli $conn,
+    string $provider,
+    string $eventId,
+    string $signature,
+    string $payload,
+    int $processingTtlSeconds = 120
+): array
+{
+    if ($provider === '' || $eventId === '') {
+        return ['state' => 'in_progress', 'status' => '', 'attempts' => 0];
+    }
+    $payloadHash = payment_webhook_payload_hash($payload);
+    $processingTtlSeconds = max(30, $processingTtlSeconds);
+
+    $conn->begin_transaction();
+    try {
+        $insert = $conn->prepare(
+            "INSERT INTO payment_webhook_events (
+                provider, event_id, signature, payload_hash, raw_payload, status, attempts, last_error, processed_at, created_at, updated_at
+            )
+             VALUES (?, ?, ?, ?, ?, 'received', 0, NULL, NULL, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE
+                signature = VALUES(signature),
+                payload_hash = VALUES(payload_hash),
+                raw_payload = VALUES(raw_payload),
+                updated_at = NOW()"
+        );
+        $insert->bind_param('sssss', $provider, $eventId, $signature, $payloadHash, $payload);
+        $insert->execute();
+
+        $select = $conn->prepare(
+            "SELECT id, status, attempts, UNIX_TIMESTAMP(updated_at) AS updated_ts
+             FROM payment_webhook_events
+             WHERE provider = ? AND event_id = ?
+             LIMIT 1
+             FOR UPDATE"
+        );
+        $select->bind_param('ss', $provider, $eventId);
+        $select->execute();
+        $row = $select->get_result()->fetch_assoc();
+        if (!$row) {
+            throw new RuntimeException('Webhook lifecycle row missing for provider=' . $provider . ' event=' . $eventId);
+        }
+
+        $status = strtolower(trim((string) ($row['status'] ?? 'received')));
+        $attempts = (int) ($row['attempts'] ?? 0);
+        $updatedTs = (int) ($row['updated_ts'] ?? 0);
+        $nowTs = time();
+        $isStaleProcessing = $status === 'processing' && $updatedTs > 0 && ($nowTs - $updatedTs) > $processingTtlSeconds;
+
+        if ($status === 'processed') {
+            $conn->commit();
+            return ['state' => 'already_processed', 'status' => 'processed', 'attempts' => $attempts];
+        }
+        if ($status === 'processing' && !$isStaleProcessing) {
+            $conn->commit();
+            return ['state' => 'in_progress', 'status' => 'processing', 'attempts' => $attempts];
+        }
+
+        $nextAttempts = $attempts + 1;
+        $update = $conn->prepare(
+            "UPDATE payment_webhook_events
+             SET status = 'processing',
+                 attempts = ?,
+                 last_error = NULL,
+                 processed_at = NULL,
+                 updated_at = NOW()
+             WHERE id = ?"
+        );
+        $id = (int) $row['id'];
+        $update->bind_param('ii', $nextAttempts, $id);
+        $update->execute();
+
+        $conn->commit();
+        return ['state' => 'claimed', 'status' => 'processing', 'attempts' => $nextAttempts];
+    } catch (Throwable $e) {
+        try {
+            $conn->rollback();
+        } catch (Throwable $rollbackException) {
+            // ignore rollback errors
+        }
+        throw $e;
+    }
+}
+
+function payment_webhook_mark_failed(
+    mysqli $conn,
+    string $provider,
+    string $eventId,
+    string $errorMessage,
+    string $signature = ''
+): void
+{
+    if ($provider === '' || $eventId === '') {
+        return;
+    }
+    $errorMessage = trim($errorMessage);
+    if ($errorMessage === '') {
+        $errorMessage = 'Webhook processing failed.';
+    }
+    $stmt = $conn->prepare(
+        "UPDATE payment_webhook_events
+         SET status = 'failed',
+             last_error = ?,
+             updated_at = NOW(),
+             signature = CASE WHEN ? <> '' THEN ? ELSE signature END
+         WHERE provider = ? AND event_id = ?"
+    );
+    $stmt->bind_param('sssss', $errorMessage, $signature, $signature, $provider, $eventId);
     $stmt->execute();
 }
 
@@ -3880,6 +4448,26 @@ function cart_clear_db(mysqli $conn, int $customerId): void
     }
 }
 
+function checkout_session_clear_after_order(mysqli $conn, int $customerId = 0): void
+{
+    unset(
+        $_SESSION['pending_order_id'],
+        $_SESSION['pending_order_number'],
+        $_SESSION['pending_coupon_id'],
+        $_SESSION['pending_online_method'],
+        $_SESSION['cart'],
+        $_SESSION['cart_size'],
+        $_SESSION['cart_meter_length'],
+        $_SESSION['checkout_old'],
+        $_SESSION['checkout_errors'],
+        $_SESSION['applied_coupon_code']
+    );
+
+    if ($customerId > 0) {
+        cart_clear_db($conn, $customerId);
+    }
+}
+
 /**
  * For cancelled + paid Razorpay orders, create a real gateway refund first.
  * Mark local order/payment as refunded only when gateway reports processed.
@@ -4279,36 +4867,45 @@ function send_order_confirmation_email(mysqli $conn, int $orderId): bool
     $items = $iStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
     $sym = $order['currency'] === 'USD' ? '$' : 'Rs ';
+    $subtotalAmount = (float) ($order['subtotal'] ?? 0);
+    $shippingAmount = (float) (($order['shipping_amount'] ?? null) !== null ? $order['shipping_amount'] : ($order['shipping_cost'] ?? 0));
+    $discountAmount = (float) (($order['discount_amount'] ?? null) !== null ? $order['discount_amount'] : ($order['coupon_discount'] ?? 0));
+    $totalAmount = (float) (($order['total_amount'] ?? null) !== null ? $order['total_amount'] : ($order['total'] ?? 0));
     $isPaid = strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
     $paymentMethodLabel = strtoupper((string) ($order['payment_method'] ?? ''));
     $lines = [
         'Dear ' . $order['cname'] . ',',
         '',
-        'Thank you for your order! Your order has been received and is being processed.',
+        'Thank you for your order. Your order has been received and is being processed.',
         $isPaid ? 'Payment Status: Paid' : ('Payment Status: Pending (' . $paymentMethodLabel . ')'),
         '',
-        'Order Number : ' . $order['order_number'],
-        'Date         : ' . date('d M Y', strtotime($order['created_at'])),
-        'Currency     : ' . $order['currency'],
+        'Order Number: ' . $order['order_number'],
+        'Date: ' . date('d M Y', strtotime($order['created_at'])),
+        'Currency: ' . $order['currency'],
         '',
-        '--- Items ---',
+        'Items',
+        '-----',
     ];
     foreach ($items as $it) {
         $unitType = in_array((string) ($it['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $it['unit_type'] : 'meter';
         $qty = (($it['quantity'] ?? 0) > 0) ? $it['quantity'] : ($it['quantity_meters'] ?? 1);
         $unitPrice = (($it['price'] ?? 0) > 0) ? $it['price'] : ($it['price_per_meter'] ?? 0);
         $lineTotal = (($it['total'] ?? 0) > 0) ? $it['total'] : ($it['line_total'] ?? 0);
-        $lines[] = $it['fabric_name_snapshot'] . ' - ' . format_quantity_by_unit($qty, $unitType)
+        $lines[] = '- ' . $it['fabric_name_snapshot'] . ' - ' . format_quantity_by_unit($qty, $unitType)
             . quantity_unit_suffix($unitType) . ' x '
             . $sym . number_format((float) $unitPrice, 2)
             . (($unitType === 'piece' || $unitType === 'set') ? ' each = ' : '/m = ')
             . $sym . number_format((float) $lineTotal, 2);
     }
     $lines[] = '';
-    $lines[] = 'Subtotal : ' . $sym . number_format((float)$order['subtotal'], 2);
-    $lines[] = 'Shipping : ' . $sym . number_format((float)$order['shipping_cost'], 2);
-    $lines[] = 'Total    : ' . $sym . number_format((float)$order['total'], 2) . ' ' . $order['currency'];
-    $lines[] = '';
+    $lines[] = 'Summary';
+    $lines[] = '-------';
+    $lines[] = 'Subtotal: ' . $sym . number_format($subtotalAmount, 2);
+    if ($discountAmount > 0) {
+        $lines[] = 'Discount: -' . $sym . number_format($discountAmount, 2);
+    }
+    $lines[] = 'Shipping: ' . $sym . number_format($shippingAmount, 2);
+    $lines[] = 'Total: ' . $sym . number_format($totalAmount, 2) . ' ' . $order['currency'];
     $lines[] = '';
     $lines[] = 'We will notify you once your order is shipped.';
     $lines[] = '';
@@ -4414,7 +5011,7 @@ function send_customer_password_reset_email(string $email, string $token): bool
     $appUrl   = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
         // Fallback: build from server vars but never trust HTTP_HOST for security-sensitive URLs.
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $protocol = app_request_is_https() ? 'https' : 'http';
         $appUrl   = $protocol . '://' . ($_SERVER['SERVER_NAME'] ?? 'localhost');
     }
     $resetUrl = $appUrl . '/customer/reset-password.php?token=' . urlencode($token);
@@ -4441,7 +5038,7 @@ function send_customer_verification_email(string $email, string $name, string $t
 {
     $appUrl  = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $protocol = app_request_is_https() ? 'https' : 'http';
         $appUrl   = $protocol . '://' . ($_SERVER['SERVER_NAME'] ?? 'localhost');
     }
     $verifyUrl = $appUrl . '/customer/verify-email.php?token=' . urlencode($token);
@@ -4546,9 +5143,421 @@ function shiprocket_enabled(): bool
     return _cfg('SHIPROCKET_ENABLED', '0') === '1';
 }
 
+function shipments_support_shiprocket_refs(mysqli $conn): bool
+{
+    static $checked = false;
+    static $supported = false;
+    if ($checked) {
+        return $supported;
+    }
+    $checked = true;
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'shipments'
+               AND COLUMN_NAME IN ('shiprocket_order_id', 'shiprocket_shipment_id', 'awb_code')"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $supported = ((int) ($row['total'] ?? 0)) === 3;
+    } catch (Throwable $e) {
+        $supported = false;
+    }
+    return $supported;
+}
+
 function shiprocket_fallback_mode(string $reason): array
 {
     return ['ok' => false, 'manual_fallback' => true, 'reason' => $reason];
+}
+
+function shiprocket_tracking_url_for_awb(string $awbCode): string
+{
+    $awbCode = trim($awbCode);
+    if ($awbCode === '') {
+        return '';
+    }
+    $base = rtrim((string) _cfg('SHIPROCKET_TRACKING_URL_BASE', 'https://shiprocket.co/tracking/'), '/');
+    return $base . '/' . rawurlencode($awbCode);
+}
+
+function shiprocket_normalize_status(string $status): string
+{
+    return strtolower(str_replace(['-', '  '], [' ', ' '], trim($status)));
+}
+
+function shiprocket_map_order_status(string $shipmentStatus): string
+{
+    $normalized = shiprocket_normalize_status($shipmentStatus);
+    if (in_array($normalized, ['delivered', 'partial_delivered'], true)) {
+        return 'delivered';
+    }
+    if (in_array($normalized, ['shipped', 'in transit', 'out for delivery', 'out for pickup', 'picked up', 'pickup booked', 'reached at destination hub'], true)) {
+        return 'shipped';
+    }
+    if (in_array($normalized, ['rto initiated', 'rto delivered', 'rto acknowledged', 'rto ndr', 'rto ofd', 'rto in intransit'], true)) {
+        return 'returned';
+    }
+    if (in_array($normalized, ['cancelled', 'cancelled_before_dispatched', 'canceled'], true)) {
+        return 'cancelled';
+    }
+    return '';
+}
+
+function shiprocket_extract_tracking_snapshot(array $body): array
+{
+    $trackingData = (array) ($body['tracking_data'] ?? $body['data'] ?? []);
+    $shipmentTrack = $trackingData['shipment_track'] ?? $trackingData['shipment_track_activities'] ?? [];
+    $latest = [];
+    if (is_array($shipmentTrack) && !empty($shipmentTrack)) {
+        $first = $shipmentTrack[0] ?? [];
+        $latest = is_array($first) ? $first : [];
+    }
+    $status = trim((string) (
+        $trackingData['shipment_status'] ??
+        $trackingData['current_status'] ??
+        $latest['current_status'] ??
+        $latest['status'] ??
+        $body['current_status'] ??
+        $body['status'] ??
+        ''
+    ));
+    $courierName = trim((string) (
+        $trackingData['courier_name'] ??
+        $body['courier_name'] ??
+        ''
+    ));
+    $awbCode = trim((string) (
+        $trackingData['awb_code'] ??
+        $body['awb_code'] ??
+        $body['awb'] ??
+        ''
+    ));
+    $trackingUrl = trim((string) (
+        $trackingData['tracking_url'] ??
+        $body['tracking_url'] ??
+        ''
+    ));
+    return [
+        'status' => shiprocket_normalize_status($status),
+        'courier_name' => $courierName,
+        'awb_code' => $awbCode,
+        'tracking_url' => $trackingUrl,
+        'raw' => $trackingData,
+    ];
+}
+
+function shiprocket_store_shipment_snapshot(
+    mysqli $conn,
+    int $orderId,
+    array $existing,
+    string $shiprocketOrderId,
+    string $shiprocketShipmentId,
+    string $awbCode,
+    string $courierName,
+    string $trackingUrl,
+    float $shippingCost,
+    bool $markShippedAt = false
+): void {
+    $shiprocketOrderId = trim($shiprocketOrderId);
+    $shiprocketShipmentId = trim($shiprocketShipmentId);
+    $awbCode = trim($awbCode);
+    $courierName = trim($courierName);
+    $trackingUrl = trim($trackingUrl);
+    $trackingId = $awbCode !== '' ? $awbCode : trim((string) ($existing['tracking_id'] ?? ''));
+    $current = date('Y-m-d H:i:s');
+    $supportsRefs = shipments_support_shiprocket_refs($conn);
+
+    if (!empty($existing['id'])) {
+        $shipmentId = (int) ($existing['id'] ?? 0);
+        if ($supportsRefs) {
+            $upd = $conn->prepare(
+                "UPDATE shipments
+                 SET shiprocket_order_id = CASE WHEN ? <> '' THEN ? ELSE shiprocket_order_id END,
+                     shiprocket_shipment_id = CASE WHEN ? <> '' THEN ? ELSE shiprocket_shipment_id END,
+                     awb_code = CASE WHEN ? <> '' THEN ? ELSE awb_code END,
+                     courier_name = CASE WHEN ? <> '' THEN ? ELSE courier_name END,
+                     tracking_id = CASE WHEN ? <> '' THEN ? ELSE tracking_id END,
+                     tracking_url = CASE WHEN ? <> '' THEN ? ELSE tracking_url END,
+                     shipping_cost = CASE WHEN ? > 0 THEN ? ELSE shipping_cost END,
+                     shipped_at = CASE WHEN ? = 1 THEN COALESCE(shipped_at, ?) ELSE shipped_at END
+                 WHERE id = ?"
+            );
+            $markShipped = $markShippedAt ? 1 : 0;
+            $upd->bind_param(
+                'ssssssssssssddisi',
+                $shiprocketOrderId,
+                $shiprocketOrderId,
+                $shiprocketShipmentId,
+                $shiprocketShipmentId,
+                $awbCode,
+                $awbCode,
+                $courierName,
+                $courierName,
+                $trackingId,
+                $trackingId,
+                $trackingUrl,
+                $trackingUrl,
+                $shippingCost,
+                $shippingCost,
+                $markShipped,
+                $current,
+                $shipmentId
+            );
+            $upd->execute();
+        } else {
+            $upd = $conn->prepare(
+                "UPDATE shipments
+                 SET courier_name = CASE WHEN ? <> '' THEN ? ELSE courier_name END,
+                     tracking_id = CASE WHEN ? <> '' THEN ? ELSE tracking_id END,
+                     tracking_url = CASE WHEN ? <> '' THEN ? ELSE tracking_url END,
+                     shipping_cost = CASE WHEN ? > 0 THEN ? ELSE shipping_cost END,
+                     shipped_at = CASE WHEN ? = 1 THEN COALESCE(shipped_at, ?) ELSE shipped_at END
+                 WHERE id = ?"
+            );
+            $markShipped = $markShippedAt ? 1 : 0;
+            $upd->bind_param(
+                'ssssssddisi',
+                $courierName,
+                $courierName,
+                $trackingId,
+                $trackingId,
+                $trackingUrl,
+                $trackingUrl,
+                $shippingCost,
+                $shippingCost,
+                $markShipped,
+                $current,
+                $shipmentId
+            );
+            $upd->execute();
+        }
+        return;
+    }
+
+    if ($supportsRefs) {
+        $ins = $conn->prepare(
+            "INSERT INTO shipments (
+                order_id, shiprocket_order_id, shiprocket_shipment_id, awb_code,
+                courier_name, tracking_id, tracking_url, shipping_cost, shipped_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $shippedAt = $markShippedAt ? $current : null;
+        $ins->bind_param(
+            'issssssds',
+            $orderId,
+            $shiprocketOrderId,
+            $shiprocketShipmentId,
+            $awbCode,
+            $courierName,
+            $trackingId,
+            $trackingUrl,
+            $shippingCost,
+            $shippedAt
+        );
+        $ins->execute();
+    } else {
+        $ins = $conn->prepare(
+            "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        $shippedAt = $markShippedAt ? $current : null;
+        $ins->bind_param('isssds', $orderId, $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt);
+        $ins->execute();
+    }
+}
+
+function log_shiprocket_tracking_event(
+    mysqli $conn,
+    int $orderId = 0,
+    int $shipmentId = 0,
+    string $source = 'webhook',
+    string $externalEventId = '',
+    string $shiprocketOrderId = '',
+    string $shiprocketShipmentId = '',
+    string $awbCode = '',
+    string $status = '',
+    string $courierName = '',
+    string $trackingUrl = '',
+    ?string $payloadJson = null
+): void {
+    try {
+        $stmt = $conn->prepare(
+            "INSERT INTO shiprocket_tracking_events (
+                order_id, shipment_id, source, external_event_id,
+                shiprocket_order_id, shiprocket_shipment_id, awb_code, status,
+                courier_name, tracking_url, payload_json
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        if ($payloadJson === null) {
+            $payloadJson = '';
+        }
+        $stmt->bind_param(
+            'iisssssssss',
+            $orderId,
+            $shipmentId,
+            $source,
+            $externalEventId,
+            $shiprocketOrderId,
+            $shiprocketShipmentId,
+            $awbCode,
+            $status,
+            $courierName,
+            $trackingUrl,
+            $payloadJson
+        );
+        $stmt->execute();
+    } catch (Throwable $e) {
+        error_log('[amberfabrics] shiprocket tracking event log failed: ' . $e->getMessage());
+    }
+}
+
+function shiprocket_fetch_tracking_by_awb(string $awbCode): array
+{
+    $awbCode = trim($awbCode);
+    if ($awbCode === '') {
+        return shiprocket_fallback_mode('AWB missing for tracking sync');
+    }
+    if (!shiprocket_enabled()) {
+        return shiprocket_fallback_mode('Shiprocket disabled');
+    }
+    $tokenResp = shiprocket_get_token();
+    if (empty($tokenResp['ok'])) {
+        return $tokenResp;
+    }
+    $baseUrl = rtrim(_cfg('SHIPROCKET_BASE_URL', 'https://apiv2.shiprocket.in'), '/');
+    $resp = shiprocket_http_json(
+        'GET',
+        $baseUrl . '/v1/external/courier/track/awb/' . rawurlencode($awbCode),
+        ['Authorization: Bearer ' . $tokenResp['token']]
+    );
+    if (empty($resp['ok'])) {
+        return shiprocket_fallback_mode('Tracking API unavailable');
+    }
+    $snapshot = shiprocket_extract_tracking_snapshot((array) ($resp['body'] ?? []));
+    if ($snapshot['status'] === '') {
+        return shiprocket_fallback_mode('Tracking status missing');
+    }
+    return ['ok' => true, 'manual_fallback' => false] + $snapshot;
+}
+
+function shiprocket_reconcile_active_shipments(mysqli $conn, int $limit = 25): array
+{
+    if (!shiprocket_enabled()) {
+        return shiprocket_fallback_mode('Shiprocket disabled');
+    }
+    $limit = max(1, min(100, $limit));
+    try {
+        $select = shipments_support_shiprocket_refs($conn)
+            ? "SELECT s.id, s.order_id, s.courier_name, s.tracking_id, s.tracking_url, s.shipped_at, s.delivered_at, s.shiprocket_order_id, s.shiprocket_shipment_id, s.awb_code, o.order_status
+               FROM shipments s
+               INNER JOIN orders o ON o.id = s.order_id
+               WHERE COALESCE(NULLIF(s.awb_code, ''), NULLIF(s.tracking_id, '')) IS NOT NULL
+                 AND o.order_status NOT IN ('delivered', 'cancelled', 'returned', 'refunded')
+               ORDER BY s.id ASC
+               LIMIT ?"
+            : "SELECT s.id, s.order_id, s.courier_name, s.tracking_id, s.tracking_url, s.shipped_at, s.delivered_at, o.order_status
+               FROM shipments s
+               INNER JOIN orders o ON o.id = s.order_id
+               WHERE NULLIF(s.tracking_id, '') IS NOT NULL
+                 AND o.order_status NOT IN ('delivered', 'cancelled', 'returned', 'refunded')
+               ORDER BY s.id ASC
+               LIMIT ?";
+        $stmt = $conn->prepare($select);
+        $stmt->bind_param('i', $limit);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $synced = 0;
+        foreach ($rows as $row) {
+            $awbCode = trim((string) ($row['awb_code'] ?? $row['tracking_id'] ?? ''));
+            if ($awbCode === '') {
+                continue;
+            }
+            $tracking = shiprocket_fetch_tracking_by_awb($awbCode);
+            if (empty($tracking['ok'])) {
+                continue;
+            }
+
+            $conn->begin_transaction();
+            $shipSelect = shipments_support_shiprocket_refs($conn)
+                ? "SELECT id, order_id, shiprocket_order_id, shiprocket_shipment_id, awb_code, tracking_id, tracking_url, delivered_at FROM shipments WHERE id = ? LIMIT 1 FOR UPDATE"
+                : "SELECT id, order_id, tracking_id, tracking_url, delivered_at FROM shipments WHERE id = ? LIMIT 1 FOR UPDATE";
+            $shipStmt = $conn->prepare($shipSelect);
+            $shipmentId = (int) ($row['id'] ?? 0);
+            $shipStmt->bind_param('i', $shipmentId);
+            $shipStmt->execute();
+            $lockedShipment = $shipStmt->get_result()->fetch_assoc() ?: [];
+            $orderId = (int) ($lockedShipment['order_id'] ?? 0);
+            $shipmentId = (int) ($lockedShipment['id'] ?? 0);
+            if ($orderId <= 0) {
+                $conn->rollback();
+                continue;
+            }
+            $orderStmt = $conn->prepare("SELECT order_status FROM orders WHERE id = ? LIMIT 1 FOR UPDATE");
+            $orderStmt->bind_param('i', $orderId);
+            $orderStmt->execute();
+            $order = $orderStmt->get_result()->fetch_assoc() ?: [];
+            $currentOrderStatus = strtolower(trim((string) ($order['order_status'] ?? 'pending')));
+
+            shiprocket_store_shipment_snapshot(
+                $conn,
+                $orderId,
+                $lockedShipment,
+                trim((string) ($lockedShipment['shiprocket_order_id'] ?? '')),
+                trim((string) ($lockedShipment['shiprocket_shipment_id'] ?? '')),
+                trim((string) ($tracking['awb_code'] ?? $awbCode)),
+                trim((string) ($tracking['courier_name'] ?? '')),
+                trim((string) ($tracking['tracking_url'] ?? '')),
+                0.0,
+                in_array((string) ($tracking['status'] ?? ''), ['shipped', 'in transit', 'out for delivery', 'out for pickup', 'picked up', 'pickup booked', 'reached at destination hub', 'delivered', 'partial_delivered'], true)
+            );
+
+            $nextOrderStatus = shiprocket_map_order_status((string) ($tracking['status'] ?? ''));
+            if ($nextOrderStatus !== '') {
+                $isRegression = ($currentOrderStatus === 'delivered' && $nextOrderStatus !== 'delivered');
+                if (!$isRegression && $currentOrderStatus !== $nextOrderStatus) {
+                    $legacy = $nextOrderStatus;
+                    $upd = $conn->prepare("UPDATE orders SET order_status = ?, status = ?, updated_at = NOW() WHERE id = ?");
+                    $upd->bind_param('ssi', $nextOrderStatus, $legacy, $orderId);
+                    $upd->execute();
+                    log_order_activity($conn, $orderId, 'courier_poll_sync', 'system', 0, 'shiprocket', 'Status: ' . (string) ($tracking['status'] ?? ''));
+                }
+            }
+            if ((string) ($tracking['status'] ?? '') === 'delivered') {
+                $deliveredAt = date('Y-m-d H:i:s');
+                $updShip = $conn->prepare("UPDATE shipments SET delivered_at = COALESCE(delivered_at, ?) WHERE id = ?");
+                $updShip->bind_param('si', $deliveredAt, $shipmentId);
+                $updShip->execute();
+            }
+            log_shiprocket_tracking_event(
+                $conn,
+                $orderId,
+                $shipmentId,
+                'poll',
+                '',
+                trim((string) ($lockedShipment['shiprocket_order_id'] ?? '')),
+                trim((string) ($lockedShipment['shiprocket_shipment_id'] ?? '')),
+                trim((string) ($tracking['awb_code'] ?? $awbCode)),
+                trim((string) ($tracking['status'] ?? '')),
+                trim((string) ($tracking['courier_name'] ?? '')),
+                trim((string) ($tracking['tracking_url'] ?? '')),
+                json_encode($tracking['raw'] ?? [], JSON_UNESCAPED_UNICODE)
+            );
+            $conn->commit();
+            $synced++;
+        }
+        return ['ok' => true, 'manual_fallback' => false, 'synced' => $synced];
+    } catch (Throwable $e) {
+        try {
+            $conn->rollback();
+        } catch (Throwable $rollbackException) {
+            // ignore rollback errors
+        }
+        error_log('[shiprocket] reconcile failed: ' . $e->getMessage());
+        return shiprocket_fallback_mode('Tracking reconciliation failed');
+    }
 }
 
 function shiprocket_http_json(string $method, string $url, array $headers = [], ?array $payload = null): array
@@ -4560,10 +5569,13 @@ function shiprocket_http_json(string $method, string $url, array $headers = [], 
     if ($ch === false) {
         return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'Unable to initialize cURL'];
     }
+    $timeoutSec = max(5, (int) _cfg('SHIPROCKET_HTTP_TIMEOUT_SEC', '15'));
+    $connectTimeoutSec = max(2, (int) _cfg('SHIPROCKET_HTTP_CONNECT_TIMEOUT_SEC', '5'));
     $finalHeaders = array_merge(['Accept: application/json'], $headers);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 20,
+        CURLOPT_TIMEOUT => $timeoutSec,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeoutSec,
         CURLOPT_CUSTOMREQUEST => strtoupper($method),
         CURLOPT_HTTPHEADER => $finalHeaders,
     ]);
@@ -4739,7 +5751,8 @@ function shiprocket_auto_create_awb_for_order(mysqli $conn, int $orderId): array
     }
     try {
         $orderStmt = $conn->prepare(
-            "SELECT id, order_number, customer_name, customer_phone, customer_email, address, city, state, pincode, total_amount, payment_method
+            "SELECT id, order_number, customer_name, customer_phone, customer_email, address, city, state, pincode,
+                    subtotal, discount_amount, total_amount, payment_method
              FROM orders WHERE id = ? LIMIT 1"
         );
         $orderStmt->bind_param('i', $orderId);
@@ -4749,7 +5762,35 @@ function shiprocket_auto_create_awb_for_order(mysqli $conn, int $orderId): array
             return shiprocket_fallback_mode('Order not found');
         }
 
-        $existingStmt = $conn->prepare("SELECT id, tracking_id FROM shipments WHERE order_id = ? LIMIT 1");
+        $itemsStmt = $conn->prepare(
+            "SELECT
+                product_name,
+                fabric_name_snapshot,
+                fabric_sku_snapshot,
+                unit_type,
+                quantity,
+                quantity_meters,
+                price,
+                price_per_meter,
+                total,
+                line_total,
+                bundle_quantity,
+                meter_length
+             FROM order_items
+             WHERE order_id = ?
+             ORDER BY id ASC"
+        );
+        $itemsStmt->bind_param('i', $orderId);
+        $itemsStmt->execute();
+        $orderItems = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        if (empty($orderItems)) {
+            return shiprocket_fallback_mode('Order items missing');
+        }
+
+        $shipmentSelect = shipments_support_shiprocket_refs($conn)
+            ? "SELECT id, shiprocket_order_id, shiprocket_shipment_id, awb_code, tracking_id FROM shipments WHERE order_id = ? LIMIT 1"
+            : "SELECT id, tracking_id FROM shipments WHERE order_id = ? LIMIT 1";
+        $existingStmt = $conn->prepare($shipmentSelect);
         $existingStmt->bind_param('i', $orderId);
         $existingStmt->execute();
         $existing = $existingStmt->get_result()->fetch_assoc() ?: [];
@@ -4763,6 +5804,54 @@ function shiprocket_auto_create_awb_for_order(mysqli $conn, int $orderId): array
         }
         $baseUrl = rtrim(_cfg('SHIPROCKET_BASE_URL', 'https://apiv2.shiprocket.in'), '/');
         $pickup = trim(_cfg('SHIPROCKET_PICKUP_LOCATION', 'Primary'));
+
+        // Shiprocket expects per-item "units" and per-unit "selling_price".
+        $shiprocketItems = [];
+        $idx = 1;
+        foreach ($orderItems as $it) {
+            $unitType = in_array((string) ($it['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+                ? (string) $it['unit_type']
+                : 'meter';
+            $name = trim((string) ($it['fabric_name_snapshot'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) ($it['product_name'] ?? ''));
+            }
+            if ($name === '') {
+                $name = 'Item';
+            }
+            $sku = trim((string) ($it['fabric_sku_snapshot'] ?? ''));
+            if ($sku === '') {
+                $sku = (string) ($order['order_number'] ?? 'ORDER') . '-' . $idx;
+            }
+
+            $lineTotal = (float) (($it['line_total'] ?? 0) > 0 ? $it['line_total'] : ($it['total'] ?? 0));
+            $units = 1;
+            if ($unitType === 'meter') {
+                $bundleQty = (int) ($it['bundle_quantity'] ?? 0);
+                $units = $bundleQty > 0 ? $bundleQty : 1;
+            } else {
+                $qty = (float) ($it['quantity'] ?? 1);
+                $units = max(1, (int) round($qty));
+            }
+
+            $sellingPrice = $units > 0 ? round($lineTotal / $units, 2) : round($lineTotal, 2);
+            if ($sellingPrice < 0) {
+                $sellingPrice = 0.0;
+            }
+
+            $shiprocketItems[] = [
+                'name' => $name,
+                'sku' => $sku,
+                'units' => $units,
+                'selling_price' => $sellingPrice,
+            ];
+            $idx++;
+        }
+
+        $subtotal = (float) ($order['subtotal'] ?? 0);
+        $discount = (float) ($order['discount_amount'] ?? 0);
+        $subTotalForShiprocket = round(max(0.0, $subtotal - $discount), 2);
+
         $payload = [
             'order_id' => (string) $order['order_number'],
             'order_date' => date('Y-m-d H:i'),
@@ -4777,9 +5866,10 @@ function shiprocket_auto_create_awb_for_order(mysqli $conn, int $orderId): array
             'billing_email' => (string) $order['customer_email'],
             'billing_phone' => (string) $order['customer_phone'],
             'shipping_is_billing' => true,
-            'order_items' => [['name' => 'Amber Fabrics Order', 'sku' => (string) $order['order_number'], 'units' => 1, 'selling_price' => (float) $order['total_amount']]],
+            'order_items' => $shiprocketItems,
             'payment_method' => strtolower((string) ($order['payment_method'] ?? '')) === 'cod' ? 'COD' : 'Prepaid',
-            'sub_total' => (float) $order['total_amount'],
+            // Merchandise subtotal after discount. Shipping is not included.
+            'sub_total' => $subTotalForShiprocket,
             'length' => (float) _cfg('SHIPROCKET_DEFAULT_LENGTH_CM', '20'),
             'breadth' => (float) _cfg('SHIPROCKET_DEFAULT_BREADTH_CM', '20'),
             'height' => (float) _cfg('SHIPROCKET_DEFAULT_HEIGHT_CM', '2'),
@@ -4794,33 +5884,52 @@ function shiprocket_auto_create_awb_for_order(mysqli $conn, int $orderId): array
             return shiprocket_fallback_mode('Shipment creation API failed');
         }
 
-        $trackingId = trim((string) ($resp['body']['shipment_id'] ?? ''));
-        $awbCode = trim((string) ($resp['body']['awb_code'] ?? $trackingId));
-        if ($awbCode === '') {
-            return shiprocket_fallback_mode('AWB missing from Shiprocket response');
+        $body = (array) ($resp['body'] ?? []);
+        $shiprocketOrderId = trim((string) ($body['order_id'] ?? $body['data']['order_id'] ?? ''));
+        $shiprocketShipmentId = trim((string) ($body['shipment_id'] ?? $body['data']['shipment_id'] ?? ''));
+        $awbCode = trim((string) ($body['awb_code'] ?? $body['data']['awb_code'] ?? ''));
+        $courierName = trim((string) ($body['courier_name'] ?? $body['data']['courier_name'] ?? 'Shiprocket'));
+        $trackingUrl = trim((string) ($body['tracking_url'] ?? $body['data']['tracking_url'] ?? ''));
+        if ($trackingUrl === '' && $awbCode !== '') {
+            $trackingUrl = shiprocket_tracking_url_for_awb($awbCode);
         }
-        $courierName = trim((string) ($resp['body']['courier_name'] ?? 'Shiprocket'));
-        $trackingUrl = trim((string) (_cfg('SHIPROCKET_TRACKING_URL_BASE', 'https://shiprocket.co/tracking/') . $awbCode));
-        $shippingCost = (float) ($resp['body']['freight_charges'] ?? 0);
+        $shippingCost = (float) ($body['freight_charges'] ?? $body['data']['freight_charges'] ?? 0);
 
-        $current = date('Y-m-d H:i:s');
-        if (!empty($existing['id'])) {
-            $sid = (int) $existing['id'];
-            $upd = $conn->prepare(
-                "UPDATE shipments SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = COALESCE(shipped_at, ?) WHERE id = ?"
-            );
-            $upd->bind_param('sssdsi', $courierName, $awbCode, $trackingUrl, $shippingCost, $current, $sid);
-            $upd->execute();
-        } else {
-            $ins = $conn->prepare(
-                "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at) VALUES (?, ?, ?, ?, ?, ?)"
-            );
-            $ins->bind_param('isssds', $orderId, $courierName, $awbCode, $trackingUrl, $shippingCost, $current);
-            $ins->execute();
+        if ($shiprocketOrderId === '' && $shiprocketShipmentId === '' && $awbCode === '') {
+            return shiprocket_fallback_mode('Shiprocket response did not include shipment references');
         }
 
-        log_order_activity($conn, $orderId, 'awb_created', 'system', 0, 'shiprocket', 'AWB created automatically: ' . $awbCode);
-        return ['ok' => true, 'manual_fallback' => false, 'awb' => $awbCode];
+        shiprocket_store_shipment_snapshot(
+            $conn,
+            $orderId,
+            $existing,
+            $shiprocketOrderId,
+            $shiprocketShipmentId,
+            $awbCode,
+            $courierName,
+            $trackingUrl,
+            $shippingCost,
+            $awbCode !== ''
+        );
+
+        $details = [];
+        if ($shiprocketOrderId !== '') {
+            $details[] = 'SR order: ' . $shiprocketOrderId;
+        }
+        if ($shiprocketShipmentId !== '') {
+            $details[] = 'Shipment: ' . $shiprocketShipmentId;
+        }
+        if ($awbCode !== '') {
+            $details[] = 'AWB: ' . $awbCode;
+        }
+        log_order_activity($conn, $orderId, $awbCode !== '' ? 'awb_created' : 'shipment_created', 'system', 0, 'shiprocket', implode(' | ', $details));
+        return [
+            'ok' => true,
+            'manual_fallback' => false,
+            'awb' => $awbCode,
+            'shiprocket_order_id' => $shiprocketOrderId,
+            'shiprocket_shipment_id' => $shiprocketShipmentId,
+        ];
     } catch (Throwable $e) {
         error_log('[shiprocket] auto awb failed: ' . $e->getMessage());
         return shiprocket_fallback_mode('Auto AWB failed, continue manual shipment mode');

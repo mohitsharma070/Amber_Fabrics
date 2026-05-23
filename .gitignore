@@ -2,6 +2,8 @@
 .env.local
 secure-config.php
 composer.phar
+tmp/
+tmp/*
 tmp_sessions/
 tmp_sessions/*
 config/app-config.php

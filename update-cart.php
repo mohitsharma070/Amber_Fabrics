@@ -33,7 +33,7 @@ if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_le
     $_SESSION['cart_meter_length'] = [];
 }
 
-$stmt = $conn->prepare("SELECT unit_type, min_order_meters, qty_step, stock, stock_meters FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
+$stmt = $conn->prepare("SELECT unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
 $stmt->bind_param('i', $productId);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
@@ -44,20 +44,37 @@ $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 
 $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+$allowedMeterOptions = ($unitType === 'meter')
+    ? parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
+    : [];
 $quantity = normalize_quantity_by_unit($quantityInput, $unitType, (float) $minOrder);
+if (($unitType === 'piece' || $unitType === 'set') && is_numeric($quantityInput)) {
+    $rawWholeQty = (float) $quantityInput;
+    if (abs($rawWholeQty - round($rawWholeQty)) > 0.0001) {
+        flash('error', 'Quantity must be a whole number for this product.');
+        redirect('/cart.php');
+    }
+}
 if ($unitType === 'meter') {
     $meterLength = null;
     if ($meterLengthInput !== null && is_numeric($meterLengthInput) && (float) $meterLengthInput > 0) {
-        $meterLength = (float) $meterLengthInput;
+        $meterLength = round((float) $meterLengthInput, 2);
     } elseif (isset($_SESSION['cart_meter_length'][$cartKey]) && is_numeric($_SESSION['cart_meter_length'][$cartKey])) {
-        $meterLength = (float) $_SESSION['cart_meter_length'][$cartKey];
+        $meterLength = round((float) $_SESSION['cart_meter_length'][$cartKey], 2);
     }
 
-    if ($meterLength !== null && $bundleQtyInput !== null && is_numeric($bundleQtyInput)) {
-        $bundleQty = max(1, (int) round((float) $bundleQtyInput));
-        $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
-        $_SESSION['cart_meter_length'][$cartKey] = round($meterLength, 2);
+    if ($meterLength === null || !meter_length_is_allowed($meterLength, $allowedMeterOptions)) {
+        flash('error', 'Selected meter option is unavailable.');
+        redirect('/cart.php');
     }
+
+    if ($bundleQtyInput === null || !is_numeric($bundleQtyInput) || (float) $bundleQtyInput <= 0) {
+        flash('error', 'Please select a valid quantity.');
+        redirect('/cart.php');
+    }
+    $bundleQty = max(1, (int) round((float) $bundleQtyInput));
+    $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
+    $_SESSION['cart_meter_length'][$cartKey] = round($meterLength, 2);
 }
 
 if ($quantity < 1) {

@@ -125,7 +125,7 @@ function meta_capi_event_source_url(): string
     if (PHP_SAPI === 'cli') {
         return '';
     }
-    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    $https = app_request_is_https();
     $scheme = $https ? 'https' : 'http';
     $host = (string) ($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? ''));
     $uri = (string) ($_SERVER['REQUEST_URI'] ?? '');

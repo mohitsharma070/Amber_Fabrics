@@ -48,14 +48,30 @@ $eventId = trim((string) ($_SERVER['HTTP_X_RAZORPAY_EVENT_ID'] ?? ''));
 if ($eventId === '') {
     $eventId = hash('sha256', $payload);
 }
+
+$payloadHash = payment_webhook_payload_hash($payload);
+// Webhook lifecycle:
+// 1) claim -> status=processing (atomic row lock)
+// 2) run business transaction once
+// 3) mark processed only after commit
+// 4) on business failure -> mark failed so later retries are accepted
 try {
-    if (payment_webhook_is_duplicate($conn, 'razorpay', $eventId, $signature)) {
+    $lifecycle = payment_webhook_begin_processing($conn, 'razorpay', $eventId, $signature, $payload);
+    if (($lifecycle['state'] ?? '') === 'already_processed') {
+        error_log('[razorpay-webhook] replay processed event_id=' . $eventId . ' payload_hash=' . $payloadHash);
         http_response_code(200);
-        echo 'Duplicate ignored';
+        echo 'Already processed';
         exit;
     }
+    if (($lifecycle['state'] ?? '') === 'in_progress') {
+        error_log('[razorpay-webhook] duplicate in-progress event_id=' . $eventId . ' payload_hash=' . $payloadHash);
+        http_response_code(200);
+        echo 'Already processing';
+        exit;
+    }
+    error_log('[razorpay-webhook] claimed event_id=' . $eventId . ' attempt=' . (int) ($lifecycle['attempts'] ?? 0) . ' payload_hash=' . $payloadHash);
 } catch (Throwable $e) {
-    error_log('[razorpay-webhook] dedupe failed: ' . $e->getMessage());
+    error_log('[razorpay-webhook] lifecycle claim failed: ' . $e->getMessage());
     http_response_code(500);
     echo 'Error';
     exit;
@@ -63,6 +79,8 @@ try {
 
 $eventType = (string) ($event['event'] ?? '');
 if (!in_array($eventType, ['payment.captured', 'order.paid', 'payment.failed'], true)) {
+    payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
+    error_log('[razorpay-webhook] ignored unsupported event type=' . $eventType . ' event_id=' . $eventId);
     http_response_code(200);
     echo 'Ignored';
     exit;
@@ -123,6 +141,7 @@ if ($eventType === 'payment.failed') {
                 $payload,
                 false
             );
+            payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
             $conn->commit();
             http_response_code(200);
             echo 'Ignored';
@@ -187,8 +206,9 @@ if ($eventType === 'payment.failed') {
             log_order_activity($conn, $orderId, 'payment_failed', 'webhook', 0, 'razorpay', $note);
         }
 
-        payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature);
+        payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
         $conn->commit();
+        error_log('[razorpay-webhook] processed failure event_id=' . $eventId . ' order_id=' . $orderId . ' payment_id=' . $paymentId);
         http_response_code(200);
         echo 'OK';
     } catch (Throwable $e) {
@@ -196,6 +216,11 @@ if ($eventType === 'payment.failed') {
             $conn->rollback();
         } catch (Throwable $rollbackException) {
             // ignore rollback errors
+        }
+        try {
+            payment_webhook_mark_failed($conn, 'razorpay', $eventId, $e->getMessage(), $signature);
+        } catch (Throwable $markFailedException) {
+            error_log('[razorpay-webhook] failed to persist webhook failure state: ' . $markFailedException->getMessage());
         }
         error_log('[razorpay-webhook] payment.failed handler failed: ' . $e->getMessage());
         http_response_code(500);
@@ -205,7 +230,9 @@ if ($eventType === 'payment.failed') {
 }
 
 try {
+    $businessCommitted = false;
     $conn->begin_transaction();
+    //throw new RuntimeException('manual test failure after claim');
 
     $paymentStmt = $conn->prepare(
         "SELECT id, order_id, payment_status
@@ -257,8 +284,9 @@ try {
     }
 
     if (($order['payment_status'] ?? '') === 'paid') {
-        payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature);
+        payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
         $conn->commit();
+        error_log('[razorpay-webhook] replay business-idempotent paid event_id=' . $eventId . ' order_id=' . $orderId);
         http_response_code(200);
         echo 'Already processed';
         exit;
@@ -343,9 +371,11 @@ try {
         'razorpay',
         'Event: ' . $eventType . ' | Payment: ' . $paymentId
     );
-    payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature);
+    payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
 
     $conn->commit();
+    $businessCommitted = true;
+    error_log('[razorpay-webhook] processed capture event_id=' . $eventId . ' order_id=' . $orderId . ' payment_id=' . $paymentId);
 
     $awbResult = shiprocket_auto_create_awb_for_order($conn, $orderId);
     if (empty($awbResult['ok'])) {
@@ -377,6 +407,19 @@ try {
         $conn->rollback();
     } catch (Throwable $rollbackException) {
         // ignore rollback errors
+    }
+    if (empty($businessCommitted)) {
+        try {
+            payment_webhook_mark_failed($conn, 'razorpay', $eventId, $e->getMessage(), $signature);
+        } catch (Throwable $markFailedException) {
+            error_log('[razorpay-webhook] failed to persist webhook failure state: ' . $markFailedException->getMessage());
+        }
+    } else {
+        // Core transaction is already committed. Keep webhook as processed and do not retry capture.
+        error_log('[razorpay-webhook] post-commit side effect failed for event_id=' . $eventId . ': ' . $e->getMessage());
+        http_response_code(200);
+        echo 'OK';
+        exit;
     }
     error_log('[razorpay-webhook] failed: ' . $e->getMessage());
     http_response_code(500);

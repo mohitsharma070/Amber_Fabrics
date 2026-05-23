@@ -1,9 +1,65 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
-require_once __DIR__ . '/../vendor/autoload.php';
 
 require_customer();
+
+$cancelInvalidRazorpayOrder = static function (mysqli $conn, int $orderId, string $reason): void {
+    if ($orderId <= 0) {
+        return;
+    }
+    try {
+        $conn->begin_transaction();
+        $orderStmt = $conn->prepare(
+            "SELECT payment_status
+             FROM orders
+             WHERE id = ? AND payment_method = 'razorpay'
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order) {
+            $conn->rollback();
+            return;
+        }
+        if (strtolower((string) ($order['payment_status'] ?? '')) === 'paid') {
+            $conn->rollback();
+            return;
+        }
+
+        $orderUpdate = $conn->prepare(
+            "UPDATE orders
+             SET payment_status = 'failed',
+                 order_status = 'cancelled',
+                 status = 'cancelled',
+                 notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+                 updated_at = NOW()
+             WHERE id = ?"
+        );
+        $orderUpdate->bind_param('ssi', $reason, $reason, $orderId);
+        $orderUpdate->execute();
+
+        $paymentUpdate = $conn->prepare(
+            "UPDATE payments
+             SET payment_status = 'failed'
+             WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status = 'pending'"
+        );
+        $paymentUpdate->bind_param('i', $orderId);
+        $paymentUpdate->execute();
+
+        restore_order_inventory($conn, $orderId);
+        log_order_activity($conn, $orderId, 'payment_invalid_amount', 'system', 0, 'system', $reason);
+        $conn->commit();
+    } catch (Throwable $cleanupException) {
+        try {
+            $conn->rollback();
+        } catch (Throwable $rollbackException) {
+            // ignore rollback errors during cleanup
+        }
+        error_log('[razorpay] invalid amount cleanup failed: ' . $cleanupException->getMessage());
+    }
+};
 
 if (empty($_SESSION['pending_order_id'])) {
     flash('error', 'No pending Razorpay order found.');
@@ -49,16 +105,46 @@ if ($keyId === '' || $keySecret === '') {
 $orderAmount = (float) $order['total_amount'];
 if ($orderAmount <= 0 || $orderAmount > 999999.99) {
     error_log('[razorpay] invalid order amount ' . $orderAmount . ' for order_id=' . $orderId);
+    $cancelInvalidRazorpayOrder($conn, $orderId, 'Razorpay order cancelled because total amount was invalid for gateway checkout.');
     flash('error', 'Invalid order amount. Please contact support.');
     redirect('/checkout.php');
 }
 $amountPaise = (int) round($orderAmount * 100);
 if ($amountPaise <= 0) {
+    $cancelInvalidRazorpayOrder($conn, $orderId, 'Razorpay order cancelled because payable amount rounded to zero paise.');
     flash('error', 'Invalid order amount. Please contact support.');
     redirect('/checkout.php');
 }
 
 try {
+    $paymentRowStmt = $conn->prepare(
+        "SELECT id, razorpay_order_id
+         FROM payments
+         WHERE order_id = ? AND payment_method = 'razorpay'
+         LIMIT 1"
+    );
+    $paymentRowStmt->bind_param('i', $orderId);
+    $paymentRowStmt->execute();
+    $payRow = $paymentRowStmt->get_result()->fetch_assoc();
+    if (!$payRow) {
+        throw new RuntimeException('Payment row not found for this order.');
+    }
+    $paymentRowId = (int) ($payRow['id'] ?? 0);
+    $existingRzpOrderId = trim((string) ($payRow['razorpay_order_id'] ?? ''));
+    $remoteRzpOrderId = '';
+
+    if ($existingRzpOrderId === '') {
+        $createResp = razorpay_create_order_remote($orderId, (string) $order['order_number'], $amountPaise);
+        if (empty($createResp['ok'])) {
+            $providerError = (string) ($createResp['error'] ?? 'gateway_create_failed');
+            $durationMs = (int) ($createResp['duration_ms'] ?? 0);
+            error_log('[razorpay-create] provider create failed order_id=' . $orderId . ' error=' . $providerError . ' duration_ms=' . $durationMs);
+            throw new RuntimeException('Razorpay create failed: ' . $providerError);
+        }
+        $remoteRzpOrderId = trim((string) ($createResp['id'] ?? ''));
+        error_log('[razorpay-create] provider create success order_id=' . $orderId . ' rzp_order_id=' . $remoteRzpOrderId . ' duration_ms=' . (int) ($createResp['duration_ms'] ?? 0));
+    }
+
     $conn->begin_transaction();
     $payLockStmt = $conn->prepare(
         "SELECT id, razorpay_order_id
@@ -68,46 +154,19 @@ try {
     );
     $payLockStmt->bind_param('i', $orderId);
     $payLockStmt->execute();
-    $payRow = $payLockStmt->get_result()->fetch_assoc();
-    if (!$payRow) {
-        throw new RuntimeException('Payment row not found for this order.');
+    $lockedPayRow = $payLockStmt->get_result()->fetch_assoc();
+    if (!$lockedPayRow) {
+        throw new RuntimeException('Payment row not found during payment create finalize.');
     }
 
-    $existingRzpOrderId = trim((string) ($payRow['razorpay_order_id'] ?? ''));
-    $paymentRowId = (int) ($payRow['id'] ?? 0);
-    if ($existingRzpOrderId !== '') {
-        $rzpOrderId = $existingRzpOrderId;
-        payment_attempt_touch(
-            $conn,
-            'razorpay',
-            $rzpOrderId,
-            $orderId,
-            $paymentRowId,
-            'checkout_opened',
-            'create',
-            '',
-            '',
-            '',
-            '',
-            '',
-            '',
-            json_encode(['order_number' => (string) $order['order_number'], 'amount_paise' => $amountPaise], JSON_UNESCAPED_UNICODE),
-            true
-        );
+    $lockedRzpOrderId = trim((string) ($lockedPayRow['razorpay_order_id'] ?? ''));
+    if ($lockedRzpOrderId !== '') {
+        $rzpOrderId = $lockedRzpOrderId;
     } else {
-        $api = new Razorpay\Api\Api($keyId, $keySecret);
-        $rzpOrder = $api->order->create([
-            'amount' => $amountPaise,
-            'currency' => 'INR',
-            'receipt' => $order['order_number'],
-            'payment_capture' => 1,
-            'notes' => [
-                'local_order_id' => (string) $orderId,
-                'order_number' => (string) $order['order_number'],
-            ],
-        ]);
-        $rzpOrderId = (string) $rzpOrder['id'];
-
+        if ($remoteRzpOrderId === '') {
+            throw new RuntimeException('Razorpay order id missing after provider create.');
+        }
+        $rzpOrderId = $remoteRzpOrderId;
         $payStmt = $conn->prepare(
             "UPDATE payments
              SET razorpay_order_id = ?, transaction_id = ?
@@ -115,25 +174,26 @@ try {
         );
         $payStmt->bind_param('ssi', $rzpOrderId, $rzpOrderId, $orderId);
         $payStmt->execute();
-        payment_attempt_touch(
-            $conn,
-            'razorpay',
-            $rzpOrderId,
-            $orderId,
-            $paymentRowId,
-            'created',
-            'create',
-            '',
-            '',
-            '',
-            '',
-            '',
-            '',
-            json_encode(['order_number' => (string) $order['order_number'], 'amount_paise' => $amountPaise], JSON_UNESCAPED_UNICODE),
-            false
-        );
         log_order_activity($conn, $orderId, 'payment_session_created', 'system', 0, 'system', 'Razorpay order id: ' . $rzpOrderId);
     }
+
+    payment_attempt_touch(
+        $conn,
+        'razorpay',
+        $rzpOrderId,
+        $orderId,
+        $paymentRowId,
+        $existingRzpOrderId !== '' ? 'checkout_opened' : 'created',
+        'create',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        json_encode(['order_number' => (string) $order['order_number'], 'amount_paise' => $amountPaise], JSON_UNESCAPED_UNICODE),
+        $existingRzpOrderId !== ''
+    );
     $conn->commit();
 } catch (Throwable $e) {
     try {

@@ -633,6 +633,22 @@ smoke_case('Single-size quick-add detection', function (mysqli $conn): void {
     must($hasSizeOptions === true, 'single size should force select-size route, not quick-add');
 }, $results, $conn);
 
+smoke_case('Meter options validation contract', function (mysqli $conn): void {
+    $options = parse_meter_options('1, 2, 2.5, 2.50, bad, 0', 1.0);
+    must(count($options) === 3, 'meter options parser did not normalize unique valid values');
+    must(abs((float) $options[0] - 1.0) < 0.0001, 'meter option 1.0 missing');
+    must(abs((float) $options[1] - 2.0) < 0.0001, 'meter option 2.0 missing');
+    must(abs((float) $options[2] - 2.5) < 0.0001, 'meter option 2.5 missing');
+    must(meter_length_is_allowed(2.5, $options) === true, '2.5m should be allowed');
+    must(meter_length_is_allowed(2.7, $options) === false, '2.7m should be rejected');
+}, $results, $conn);
+
+smoke_case('Quantity normalization by unit type', function (mysqli $conn): void {
+    must(normalize_quantity_by_unit(2.7, 'piece') === 3, 'piece quantity must normalize to whole number');
+    must(normalize_quantity_by_unit(1.4, 'set') === 1, 'set quantity must normalize to whole number');
+    must(abs((float) normalize_quantity_by_unit(2.55, 'meter') - 2.55) < 0.0001, 'meter quantity should preserve decimal');
+}, $results, $conn);
+
 smoke_case('Persistent wishlist DB roundtrip', function (mysqli $conn) use ($stamp): void {
     must(wishlist_table_ready($conn), 'wishlist_items table is missing');
     $email = strtolower($stamp) . '_wish@example.com';
@@ -727,6 +743,77 @@ smoke_case('Cart DB persists integer quantity for piece/set', function (mysqli $
     $loaded = cart_load_from_db_bundle($conn, $customerId);
     $qty = (float) ($loaded['cart'][$fabricId . '::'] ?? 0);
     must(abs($qty - 3.0) < 0.0001, 'piece quantity should round to integer');
+}, $results, $conn);
+
+smoke_case('Cart hydrate rejects meter item without meter_length', function (mysqli $conn) use ($stamp): void {
+    $sku = $stamp . 'NOMLEN';
+    $fabric = $conn->prepare(
+        "INSERT INTO fabrics (name, sku, category, unit_type, meter_options, price, stock, stock_meters, min_order_meters, status, is_available)
+         VALUES ('Smoke Meter Missing Length', ?, 'fabric-by-meter', 'meter', '1,2,2.5', 100, 0, 50, 1, 'active', 1)"
+    );
+    $fabric->bind_param('s', $sku);
+    $fabric->execute();
+    $fabricId = (int) $conn->insert_id;
+
+    $cartKey = $fabricId . '::0';
+    $hydrated = cart_hydrate_items($conn, [$cartKey => 2.0], [], []);
+    must(count($hydrated['items']) === 0, 'meter item without meter_length should be removed');
+    must(in_array($cartKey, $hydrated['removed_keys'], true), 'removed_keys should include missing meter_length item');
+}, $results, $conn);
+
+smoke_case('Cart hydrate rejects disallowed meter option', function (mysqli $conn) use ($stamp): void {
+    $sku = $stamp . 'BADMTR';
+    $fabric = $conn->prepare(
+        "INSERT INTO fabrics (name, sku, category, unit_type, meter_options, price, stock, stock_meters, min_order_meters, status, is_available)
+         VALUES ('Smoke Meter Disallowed Option', ?, 'fabric-by-meter', 'meter', '1,2,2.5', 100, 0, 50, 1, 'active', 1)"
+    );
+    $fabric->bind_param('s', $sku);
+    $fabric->execute();
+    $fabricId = (int) $conn->insert_id;
+
+    $cartKey = $fabricId . '::0';
+    $hydrated = cart_hydrate_items($conn, [$cartKey => 2.7], [], [$cartKey => 2.7]);
+    must(count($hydrated['items']) === 0, 'disallowed meter option should be removed');
+    must(in_array($cartKey, $hydrated['removed_keys'], true), 'removed_keys should include disallowed meter option');
+}, $results, $conn);
+
+smoke_case('Cart hydrate accepts valid meter bundle metadata', function (mysqli $conn) use ($stamp): void {
+    $sku = $stamp . 'GOODMTR';
+    $fabric = $conn->prepare(
+        "INSERT INTO fabrics (name, sku, category, unit_type, meter_options, price, stock, stock_meters, min_order_meters, status, is_available)
+         VALUES ('Smoke Meter Valid Option', ?, 'fabric-by-meter', 'meter', '1,2,2.5', 100, 0, 50, 1, 'active', 1)"
+    );
+    $fabric->bind_param('s', $sku);
+    $fabric->execute();
+    $fabricId = (int) $conn->insert_id;
+
+    $cartKey = $fabricId . '::0';
+    $hydrated = cart_hydrate_items($conn, [$cartKey => 5.0], [], [$cartKey => 2.5]);
+    must(count($hydrated['items']) === 1, 'valid meter bundle metadata should hydrate');
+    $item = $hydrated['items'][0];
+    must((int) ($item['bundle_quantity'] ?? 0) === 2, 'bundle_quantity should resolve from quantity/meter_length');
+    must(abs((float) ($item['meter_length'] ?? 0) - 2.5) < 0.0001, 'meter_length should be retained');
+}, $results, $conn);
+
+smoke_case('Ecommerce event log insert', function (mysqli $conn): void {
+    if (!ecommerce_event_logs_table_ready($conn)) {
+        return;
+    }
+    log_ecommerce_event(
+        $conn,
+        'smoke_event',
+        null,
+        null,
+        null,
+        'meter',
+        2.5,
+        499.0,
+        ['source' => 'smoke']
+    );
+    $chk = $conn->prepare("SELECT COUNT(*) AS c FROM ecommerce_event_logs WHERE event_type = 'smoke_event'");
+    $chk->execute();
+    $count = (int) (($chk->get_result()->fetch_assoc()['c'] ?? 0));
+    must($count >= 1, 'ecommerce event log row was not inserted');
 }, $results, $conn);
 
 $fail = 0;

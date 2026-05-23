@@ -3,6 +3,8 @@
 // and fill with your real production values.
 return [
     'APP_ENV' => 'production',
+    'APP_URL' => 'https://example.com',
+    'APP_FORCE_HTTPS' => '1',
     'DB_HOST' => 'sqlXXX.epizy.com',
     'DB_PORT' => '3306',
     'DB_USER' => 'epiz_xxxxx',
@@ -16,4 +18,5 @@ return [
     'SMTP_PASSWORD' => 'your-smtp-password',
     'MAIL_FROM' => 'noreply@example.com',
     'ADMIN_NOTIFICATION_EMAIL' => 'owner@example.com',
+    'CRON_RUN_TOKEN' => 'long-random-cron-token',
 ];

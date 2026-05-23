@@ -196,7 +196,7 @@ try {
 
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
-    $sql = "SELECT id, name, sku, unit_type, min_order_meters, stock, stock_meters, is_available, status, price, sale_price, price_inr, cost_price, size, color
+    $sql = "SELECT id, name, sku, unit_type, meter_options, min_order_meters, qty_step, wastage_percent, stock, stock_meters, is_available, status, price, sale_price, price_inr, cost_price, size, color
             FROM fabrics
             WHERE id IN ($placeholders)
             FOR UPDATE";
@@ -248,6 +248,15 @@ try {
             ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
             : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
         $qty = normalize_quantity_by_unit($qtyRaw, $unitType, (float) $minQty);
+        if ($unitType === 'meter') {
+            $qtyStep = is_numeric($product['qty_step'] ?? null) ? (float) $product['qty_step'] : 0.0;
+            if (!meter_qty_respects_step((float) $qty, (float) $minQty, (float) $qtyStep)) {
+                throw new RuntimeException('Invalid meter quantity step for ' . ($product['name'] ?? 'product'));
+            }
+        }
+        if (($unitType === 'piece' || $unitType === 'set') && abs($qty - round($qty)) > 0.0001) {
+            throw new RuntimeException('Invalid quantity for ' . ($product['name'] ?? 'product') . '. Whole units only.');
+        }
         if (($product['status'] ?? '') !== 'active' || empty($product['is_available'])) {
             throw new RuntimeException('Product unavailable: ' . ($product['name'] ?? 'Unknown'));
         }
@@ -294,7 +303,20 @@ try {
         $bundleQtyVal      = null;
         if ($unitType === 'meter' && isset($cartMeterMap[$cartKey]) && is_numeric($cartMeterMap[$cartKey]) && (float) $cartMeterMap[$cartKey] > 0) {
             $bundleMeterLength = round((float) $cartMeterMap[$cartKey], 2);
-            $bundleQtyVal      = max(1, (int) round($qty / $bundleMeterLength));
+            $allowedMeterOptions = parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minQty);
+            if (!meter_length_is_allowed($bundleMeterLength, $allowedMeterOptions)) {
+                throw new RuntimeException('Selected meter option is unavailable for ' . ($product['name'] ?? 'product'));
+            }
+            $bundleRatio = $bundleMeterLength > 0 ? ($qty / $bundleMeterLength) : 0;
+            if ($bundleRatio <= 0 || abs($bundleRatio - round($bundleRatio)) > 0.0001) {
+                throw new RuntimeException('Invalid meter bundle quantity for ' . ($product['name'] ?? 'product'));
+            }
+            $bundleQtyVal = max(1, (int) round($bundleRatio));
+        } elseif ($unitType === 'meter') {
+            throw new RuntimeException('Missing meter length for ' . ($product['name'] ?? 'product'));
+        } else {
+            $bundleMeterLength = null;
+            $bundleQtyVal = null;
         }
 
         $orderItems[] = [
@@ -427,6 +449,7 @@ try {
     $taxableAmountOrder = max(0.0, $subtotal - $discountAmount);
     // Tax-inclusive pricing: GST is already in product prices. Total = taxable + shipping only.
     $totalAmount        = round($taxableAmountOrder + $shippingAmount, 2);
+    $isZeroAmountOrder  = $totalAmount <= 0.0;
 
     $orderNumber = 'VT' . date('YmdHis') . strtoupper(substr(bin2hex(random_bytes(3)), 0, 4));
 
@@ -722,6 +745,28 @@ try {
     );
     $insertPayment->bind_param('isd', $orderId, $paymentMethod, $totalAmount);
     $insertPayment->execute();
+    if ($isZeroAmountOrder) {
+        $autoPaidNote = 'Zero-amount order auto-confirmed. No payment collection required.';
+        $markOrderPaid = $conn->prepare(
+            "UPDATE orders
+             SET payment_status = 'paid',
+                 order_status = 'confirmed',
+                 status = 'confirmed',
+                 notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+                 updated_at = NOW()
+             WHERE id = ?"
+        );
+        $markOrderPaid->bind_param('ssi', $autoPaidNote, $autoPaidNote, $orderId);
+        $markOrderPaid->execute();
+
+        $markPaymentPaid = $conn->prepare(
+            "UPDATE payments
+             SET payment_status = 'paid'
+             WHERE order_id = ? AND payment_method = ?"
+        );
+        $markPaymentPaid->bind_param('is', $orderId, $paymentMethod);
+        $markPaymentPaid->execute();
+    }
     if ($selectedCourierName !== '') {
         $insShipment = $conn->prepare(
             "INSERT INTO shipments (order_id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at)
@@ -768,7 +813,9 @@ try {
             'Courier: ' . $selectedCourierName . ($selectedCourierId > 0 ? (' (#' . $selectedCourierId . ')') : '')
         );
     }
-    if ($paymentMethod === 'cod') {
+    if ($isZeroAmountOrder) {
+        log_order_activity($conn, $orderId, 'payment_zero_amount_auto_confirmed', 'system', 0, 'system', 'Order auto-confirmed because total payable amount is zero.');
+    } elseif ($paymentMethod === 'cod') {
         log_order_activity($conn, $orderId, 'payment_pending_cod', 'system', 0, 'system', 'COD order created.');
     } else {
         log_order_activity($conn, $orderId, 'payment_pending_online', 'system', 0, 'system', 'Awaiting Razorpay payment.');
@@ -782,8 +829,8 @@ try {
         'customer_name' => $fullName,
         'customer_phone' => $phone,
         'payment_method' => $paymentMethod,
-        'payment_status' => 'pending',
-        'order_status' => 'pending',
+        'payment_status' => $isZeroAmountOrder ? 'paid' : 'pending',
+        'order_status' => $isZeroAmountOrder ? 'confirmed' : 'pending',
         'subtotal' => $subtotal,
         'shipping_amount' => $shippingAmount,
         'discount_amount' => $discountAmount,
@@ -795,7 +842,7 @@ try {
     // on delivery is outside our system's control, but the order is real and the discount
     // is locked in — this is the earliest safe point for COD).
     // For Razorpay: coupon increment happens in razorpay-verify.php after payment confirmation.
-    if ($couponId > 0 && $paymentMethod === 'cod') {
+    if ($couponId > 0 && ($paymentMethod === 'cod' || $isZeroAmountOrder)) {
         $couponUsedStmt = $conn->prepare(
             "UPDATE coupons
              SET used_count = used_count + 1
@@ -813,6 +860,43 @@ try {
 
     $conn->commit();
     do_action('order.after_commit', $orderHookContext);
+    foreach ($orderItems as $item) {
+        log_ecommerce_event(
+            $conn,
+            'order_item_placed',
+            $customerId > 0 ? $customerId : null,
+            $orderId,
+            (int) ($item['product_id'] ?? 0),
+            (string) ($item['unit_type'] ?? 'meter'),
+            isset($item['quantity']) ? (float) $item['quantity'] : null,
+            isset($item['total']) ? (float) $item['total'] : null,
+            [
+                'order_number' => $orderNumber,
+                'variant_id' => (int) ($item['variant_id'] ?? 0),
+                'meter_length' => $item['meter_length'] ?? null,
+                'bundle_quantity' => $item['bundle_quantity'] ?? null,
+                'payment_method' => $paymentMethod,
+            ]
+        );
+    }
+    log_ecommerce_event(
+        $conn,
+        'order_placed',
+        $customerId > 0 ? $customerId : null,
+        $orderId,
+        null,
+        null,
+        null,
+        (float) $totalAmount,
+        [
+            'order_number' => $orderNumber,
+            'payment_method' => $paymentMethod,
+            'subtotal' => (float) $subtotal,
+            'shipping_amount' => (float) $shippingAmount,
+            'discount_amount' => (float) $discountAmount,
+            'item_count' => count($orderItems),
+        ]
+    );
 
     $_SESSION['last_order'] = [
         'id' => $orderId,
@@ -822,17 +906,25 @@ try {
     ];
 
     if ($paymentMethod === 'razorpay') {
-        $_SESSION['pending_order_id'] = $orderId;
-        $_SESSION['pending_order_number'] = $orderNumber;
-        $_SESSION['pending_coupon_id'] = $couponId;
-        $_SESSION['pending_online_method'] = $onlineMethod;
-        redirect('/payment/razorpay-create.php');
+        if ($isZeroAmountOrder) {
+            do_action('order.after_payment_success', [
+                'conn' => $conn,
+                'order_id' => $orderId,
+                'order_number' => $orderNumber,
+                'customer_id' => $customerId,
+                'payment_method' => $paymentMethod,
+                'payment_status' => 'paid',
+            ]);
+        } else {
+            $_SESSION['pending_order_id'] = $orderId;
+            $_SESSION['pending_order_number'] = $orderNumber;
+            $_SESSION['pending_coupon_id'] = $couponId;
+            $_SESSION['pending_online_method'] = $onlineMethod;
+            redirect('/payment/razorpay-create.php');
+        }
     }
 
-    unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['cart_meter_length'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
-    if ($customerId > 0) {
-        cart_clear_db($conn, $customerId);
-    }
+    checkout_session_clear_after_order($conn, $customerId);
     if ($createdGuestAccount) {
         flash('success', 'Your account was created. Please verify your email to log in and track orders.');
     }

@@ -26,7 +26,7 @@ if ($productId <= 0) {
     redirect('/catalog.php');
 }
 
-$stmt = $conn->prepare("SELECT id, name, size, color, unit_type, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price, price_inr FROM fabrics WHERE id = ? LIMIT 1");
+$stmt = $conn->prepare("SELECT id, name, size, color, unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price, price_inr FROM fabrics WHERE id = ? LIMIT 1");
 $stmt->bind_param('i', $productId);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
@@ -43,33 +43,55 @@ $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 
 $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+$allowedMeterOptions = ($unitType === 'meter')
+    ? parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
+    : [];
 $quantity = normalize_quantity_by_unit($_POST['quantity'] ?? 1, $unitType, (float) $minOrder);
 $selectedMeterLength = null;
+
+if (($unitType === 'piece' || $unitType === 'set') && isset($_POST['quantity']) && is_numeric($_POST['quantity'])) {
+    $rawWholeQty = (float) $_POST['quantity'];
+    if (abs($rawWholeQty - round($rawWholeQty)) > 0.0001) {
+        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Quantity must be a whole number for this product.']); exit; }
+        flash('error', 'Quantity must be a whole number for this product.');
+        redirect('/fabric.php?id=' . $productId);
+    }
+}
 
 // Meter products can be posted as: selected meter length + bundle quantity (pieces).
 if ($unitType === 'meter') {
     $meterLengthRaw = $_POST['meter_length'] ?? null;
     $bundleQtyRaw = $_POST['bundle_quantity'] ?? null;
-    if ($meterLengthRaw !== null && is_numeric($meterLengthRaw) && $bundleQtyRaw !== null && is_numeric($bundleQtyRaw)) {
-        $meterLength = max(0.01, (float) $meterLengthRaw);
-        $bundleQty = max(1, (int) round((float) $bundleQtyRaw));
-        $selectedMeterLength = $meterLength;
-        $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
-    } elseif ($meterLengthRaw !== null && is_numeric($meterLengthRaw) && isset($_POST['quantity']) && is_numeric($_POST['quantity'])) {
-        $meterLength = max(0.01, (float) $meterLengthRaw);
-        $qtyRaw = (float) $_POST['quantity'];
-        if (abs($qtyRaw - round($qtyRaw)) < 0.0001) {
-            $bundleQty = max(1, (int) round($qtyRaw));
-            $selectedMeterLength = $meterLength;
-            $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
-        } else {
-            $selectedMeterLength = $meterLength;
-            $quantity = normalize_meter_quantity($qtyRaw, (float) $minOrder);
-        }
+    if ($meterLengthRaw === null || !is_numeric($meterLengthRaw) || (float) $meterLengthRaw <= 0) {
+        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Please select a valid meter length.']); exit; }
+        flash('error', 'Please select a valid meter length.');
+        redirect('/fabric.php?id=' . $productId);
     }
+    $meterLength = round((float) $meterLengthRaw, 2);
+    if (!meter_length_is_allowed($meterLength, $allowedMeterOptions)) {
+        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Selected meter option is unavailable.']); exit; }
+        flash('error', 'Selected meter option is unavailable.');
+        redirect('/fabric.php?id=' . $productId);
+    }
+    if ($bundleQtyRaw === null || !is_numeric($bundleQtyRaw) || (float) $bundleQtyRaw <= 0) {
+        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Please select a valid quantity.']); exit; }
+        flash('error', 'Please select a valid quantity.');
+        redirect('/fabric.php?id=' . $productId);
+    }
+    $bundleQty = max(1, (int) round((float) $bundleQtyRaw));
+    $selectedMeterLength = $meterLength;
+    $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
 }
 
 $sizeOptions = parse_size_options((string) ($product['size'] ?? ''));
+$productVariants = get_fabric_variants($conn, $productId);
+$hasActiveVariants = false;
+foreach ($productVariants as $variantRow) {
+    if ((int) ($variantRow['is_active'] ?? 0) === 1) {
+        $hasActiveVariants = true;
+        break;
+    }
+}
 
 // ── Variant lookup ──────────────────────────────────────────────────────────
 // Try explicit variant first (from product page), then color+size, then first active variant.
@@ -86,7 +108,30 @@ if (!$variant && ($selectedColor !== '' || $selectedSize !== '')) {
 if (!$variant) {
     $variant = get_first_active_in_stock_variant($conn, $productId, $unitType);
 }
-if (!$variant && ($selectedColor !== '' || $selectedSize !== '')) {
+if (!$variant && !$hasActiveVariants) {
+    if ($selectedSize !== '' && !empty($sizeOptions) && !in_array($selectedSize, $sizeOptions, true)) {
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Selected size is unavailable.']);
+            exit;
+        }
+        flash('error', 'Selected size is unavailable.');
+        redirect('/fabric.php?id=' . $productId);
+    }
+    if ($selectedColor !== '') {
+        $productColor = trim((string) ($product['color'] ?? ''));
+        if ($productColor !== '' && strcasecmp($selectedColor, $productColor) !== 0) {
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Selected colour is unavailable.']);
+                exit;
+            }
+            flash('error', 'Selected colour is unavailable.');
+            redirect('/fabric.php?id=' . $productId);
+        }
+    }
+}
+if (!$variant && $hasActiveVariants && ($selectedColor !== '' || $selectedSize !== '')) {
     if ($isAjax) {
         header('Content-Type: application/json');
         echo json_encode(['success' => false, 'message' => 'Selected colour/size combination is unavailable.']);
@@ -179,6 +224,23 @@ do_action('cart.after_add', [
     'unit_type' => $unitType,
     'is_ajax' => $isAjax,
 ]);
+
+log_ecommerce_event(
+    $conn,
+    'cart_add',
+    !empty($_SESSION['customer_id']) ? (int) $_SESSION['customer_id'] : null,
+    null,
+    $productId,
+    $unitType,
+    $addedQty,
+    round((float) $unitPrice * (float) $addedQty, 2),
+    [
+        'variant_id' => $variantId,
+        'meter_length' => $selectedMeterLength,
+        'cart_key' => $cartKey,
+        'capped' => $cappedByStock ? 1 : 0,
+    ]
+);
 
 if ($isAjax) {
     $cartCount = count($_SESSION['cart']);

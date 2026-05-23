@@ -35,14 +35,15 @@ function inventory_alert_fetch_candidates(mysqli $conn, array $settings): array
     $piece = (float) $settings['piece_threshold'];
     $meter = (float) $settings['meter_threshold'];
     $stmt = $conn->prepare(
-        "SELECT id, name, sku, unit_type, stock, stock_meters, status, is_available
+        "SELECT id, name, sku, unit_type, stock, stock_meters, status, is_available,
+                low_stock_threshold_units, low_stock_threshold_meters
          FROM fabrics
          WHERE status = 'active'
            AND is_available = 1
            AND (
-                (unit_type IN ('piece','set') AND stock <= ?)
+                (unit_type IN ('piece','set') AND stock <= COALESCE(low_stock_threshold_units, ?))
                 OR
-                (unit_type = 'meter' AND stock_meters <= ?)
+                (unit_type = 'meter' AND stock_meters <= COALESCE(low_stock_threshold_meters, ?))
            )
          ORDER BY id ASC"
     );
@@ -161,4 +162,3 @@ function inventory_alert_run(array $context): void
         inventory_alert_log_sent($conn, $pid, (string) ($item['unit_type'] ?? 'piece'), (float) ($item['stock'] ?? 0));
     }
 }
-

@@ -40,12 +40,16 @@ $itemStmt->bind_param('i', $orderId);
 $itemStmt->execute();
 $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$shipmentStmt = $conn->prepare(
-    "SELECT courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
-     FROM shipments
-     WHERE order_id = ?
-     LIMIT 1"
-);
+$shipmentSelect = shipments_support_shiprocket_refs($conn)
+    ? "SELECT courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at, shiprocket_order_id, shiprocket_shipment_id, awb_code
+       FROM shipments
+       WHERE order_id = ?
+       LIMIT 1"
+    : "SELECT courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
+       FROM shipments
+       WHERE order_id = ?
+       LIMIT 1";
+$shipmentStmt = $conn->prepare($shipmentSelect);
 $shipmentStmt->bind_param('i', $orderId);
 $shipmentStmt->execute();
 $shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [];
@@ -231,6 +235,12 @@ include __DIR__ . '/../includes/header.php';
                     <div class="text-muted small">
                         <div>Courier: <strong><?php echo !empty($shipment['courier_name']) ? e((string) $shipment['courier_name']) : '-'; ?></strong></div>
                         <div>Tracking ID: <strong><?php echo !empty($shipment['tracking_id']) ? e((string) $shipment['tracking_id']) : '-'; ?></strong></div>
+                        <?php if (!empty($shipment['awb_code'])): ?>
+                            <div>AWB Code: <strong><?php echo e((string) $shipment['awb_code']); ?></strong></div>
+                        <?php endif; ?>
+                        <?php if (!empty($shipment['shiprocket_shipment_id'])): ?>
+                            <div>Shiprocket Shipment ID: <strong><?php echo e((string) $shipment['shiprocket_shipment_id']); ?></strong></div>
+                        <?php endif; ?>
                         <div>Shipped At: <strong><?php echo !empty($shipment['shipped_at']) ? e((string) $shipment['shipped_at']) : '-'; ?></strong></div>
                         <div>Delivered At: <strong><?php echo !empty($shipment['delivered_at']) ? e((string) $shipment['delivered_at']) : '-'; ?></strong></div>
                     </div>

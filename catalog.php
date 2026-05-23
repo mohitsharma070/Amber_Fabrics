@@ -5,14 +5,51 @@ $metaDescription = 'Shop premium Bedsheets, Towels, and Table Covers from Amber 
 $metaKeywords = 'shop home textiles, bedsheets, towels, table covers, Amber Fabrics';
 include 'includes/header.php';
 
+function catalog_fulltext_available(mysqli $conn): bool
+{
+    static $checked = false;
+    static $ready = false;
+    if ($checked) {
+        return $ready;
+    }
+    $checked = true;
+    try {
+        $sql = "SELECT COUNT(*) AS total
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'fabrics'
+                  AND INDEX_NAME = 'ft_fabrics_catalog_search'
+                  AND INDEX_TYPE = 'FULLTEXT'";
+        $row = $conn->query($sql)->fetch_assoc();
+        $ready = ((int) ($row['total'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+function catalog_build_boolean_search(string $search): string
+{
+    $tokens = preg_split('/\s+/', strtolower(trim($search))) ?: [];
+    $parts = [];
+    foreach ($tokens as $token) {
+        $token = preg_replace('/[^a-z0-9\-]/', '', $token);
+        if ($token === '' || strlen($token) < 3) {
+            continue;
+        }
+        $parts[] = '+' . $token . '*';
+    }
+    return implode(' ', $parts);
+}
+
 $perPageOptions = [10, 20, 30];
 $sortMap = [
-    'newest' => 'f.created_at DESC',
-    'oldest' => 'f.created_at ASC',
-    'name_asc' => 'f.name ASC',
-    'name_desc' => 'f.name DESC',
-    'price_asc' => 'effective_price ASC',
-    'price_desc' => 'effective_price DESC',
+    'newest' => 'f.created_at DESC, f.id DESC, COALESCE(v.id, 0) DESC',
+    'oldest' => 'f.created_at ASC, f.id ASC, COALESCE(v.id, 0) ASC',
+    'name_asc' => 'f.name ASC, f.id ASC, COALESCE(v.id, 0) ASC',
+    'name_desc' => 'f.name DESC, f.id DESC, COALESCE(v.id, 0) DESC',
+    'price_asc' => 'effective_price ASC, f.id ASC, COALESCE(v.id, 0) ASC',
+    'price_desc' => 'effective_price DESC, f.id DESC, COALESCE(v.id, 0) DESC',
 ];
 $sellableCategorySlugs = ['fabric-by-meter', 'bedsheets', 'towels', 'table-covers'];
 $sellablePlaceholders = implode(',', array_fill(0, count($sellableCategorySlugs), '?'));
@@ -45,6 +82,8 @@ $state = [
     'sort' => list_sanitize_sort(trim((string) ($_GET['sort'] ?? 'newest')), $sortMap),
     'per_page' => list_sanitize_per_page((int) ($_GET['per_page'] ?? $perPageOptions[0]), $perPageOptions),
     'page' => list_sanitize_page((int) ($_GET['page'] ?? 1)),
+    'cursor' => trim((string) ($_GET['cursor'] ?? '')),
+    'debug_explain' => (string) ($_GET['debug_explain'] ?? '') === '1' ? '1' : '',
 ];
 $search = $state['q'];
 $category = $state['category'];
@@ -64,6 +103,8 @@ $materialFilter = $state['material'];
 $colorFilter = $state['color'];
 $sizeFilter = $state['size'];
 $dispatchFilter = $state['dispatch'];
+$cursor = $state['cursor'];
+$debugExplain = $state['debug_explain'] === '1';
 if ($maxPrice > 0 && $maxPrice < $minPrice) {
     $maxPrice = $minPrice;
     $state['max_price'] = $maxPrice;
@@ -86,18 +127,33 @@ $effectivePriceExpr = "LEAST(
     99999999
 )";
 
+// Keep joins sargable and index-friendly; avoid variant subquery materialization.
+$fromSql = "FROM fabrics f
+            LEFT JOIN fabric_variants v
+              ON v.fabric_id = f.id
+             AND v.is_active = 1";
+
 $where = ["f.status = 'active'", "f.category IN ($sellablePlaceholders)"];
 $types = '';
 $params = $sellableCategorySlugs;
 $types .= str_repeat('s', count($sellableCategorySlugs));
 
 if ($search !== '') {
-    $where[] = "(f.name LIKE ? OR f.sku LIKE ? OR f.material LIKE ?)";
-    $like = "%{$search}%";
-    $types .= 'sss';
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = $like;
+    $fulltextQuery = catalog_build_boolean_search($search);
+    if ($fulltextQuery !== '' && catalog_fulltext_available($conn)) {
+        $where[] = "(MATCH(f.name, f.sku, f.material, f.category, f.dispatch_time, f.color, f.size) AGAINST (? IN BOOLEAN MODE)
+                 OR MATCH(v.color, v.size, v.sku, v.pack_label) AGAINST (? IN BOOLEAN MODE))";
+        $types .= 'ss';
+        $params[] = $fulltextQuery;
+        $params[] = $fulltextQuery;
+    } else {
+        $where[] = "(f.name LIKE ? OR f.sku LIKE ? OR f.material LIKE ?)";
+        $like = "%{$search}%";
+        $types .= 'sss';
+        $params[] = $like;
+        $params[] = $like;
+        $params[] = $like;
+    }
 }
 if ($category !== '') {
     $where[] = "f.category = ?";
@@ -139,28 +195,73 @@ if ($dispatchFilter !== '') {
 }
 
 $whereSql = 'WHERE ' . implode(' AND ', $where);
+$keysetMode = false;
+$nextCursor = '';
+if ($cursor !== '' && in_array($sort, ['newest', 'oldest'], true)) {
+    $decoded = json_decode(base64_decode(strtr($cursor, '-_', '+/')), true);
+    $cursorCreatedAt = trim((string) ($decoded['created_at'] ?? ''));
+    $cursorFabricId = (int) ($decoded['fabric_id'] ?? 0);
+    $cursorVariantId = (int) ($decoded['variant_id'] ?? 0);
+    if ($cursorCreatedAt !== '' && $cursorFabricId > 0) {
+        if ($sort === 'newest') {
+            $whereSql .= " AND (
+                f.created_at < ? OR
+                (f.created_at = ? AND f.id < ?) OR
+                (f.created_at = ? AND f.id = ? AND COALESCE(v.id, 0) < ?)
+            )";
+        } else {
+            $whereSql .= " AND (
+                f.created_at > ? OR
+                (f.created_at = ? AND f.id > ?) OR
+                (f.created_at = ? AND f.id = ? AND COALESCE(v.id, 0) > ?)
+            )";
+        }
+        $types .= 'ssisii';
+        $params[] = $cursorCreatedAt;
+        $params[] = $cursorCreatedAt;
+        $params[] = $cursorFabricId;
+        $params[] = $cursorCreatedAt;
+        $params[] = $cursorFabricId;
+        $params[] = $cursorVariantId;
+        $keysetMode = true;
+        $page = 1;
+        $state['page'] = 1;
+        $offset = 0;
+    }
+}
 
 $countSql = "SELECT COUNT(*) AS total
-             FROM fabrics f
-             LEFT JOIN (
-                SELECT
-                    id,
-                    fabric_id,
-                    color,
-                    size,
-                    price_override,
-                    stock,
-                    stock_meters
-                FROM fabric_variants
-                WHERE is_active = 1
-             ) v ON v.fabric_id = f.id
+             {$fromSql}
              {$whereSql}";
-$countStmt = $conn->prepare($countSql);
-if (!empty($params)) {
-    $countStmt->bind_param($types, ...$params);
+
+// Avoid repeating expensive count on every page hit for the same filters.
+$countCacheKey = 'catalog_count_' . hash('sha256', json_encode([
+    'q' => $search,
+    'category' => $category,
+    'min_price' => $minPrice,
+    'max_price' => $maxPrice,
+    'in_stock' => $inStock,
+    'material' => $materialFilter,
+    'color' => $colorFilter,
+    'size' => $sizeFilter,
+    'dispatch' => $dispatchFilter,
+], JSON_UNESCAPED_UNICODE));
+$countCached = $_SESSION[$countCacheKey] ?? null;
+$countCachedAt = (int) ($_SESSION[$countCacheKey . '_ts'] ?? 0);
+$countCacheTtlSec = 60;
+
+if (is_int($countCached) && $countCached >= 0 && (time() - $countCachedAt) <= $countCacheTtlSec) {
+    $total = $countCached;
+} else {
+    $countStmt = $conn->prepare($countSql);
+    if (!empty($params)) {
+        $countStmt->bind_param($types, ...$params);
+    }
+    $countStmt->execute();
+    $total = (int) $countStmt->get_result()->fetch_assoc()['total'];
+    $_SESSION[$countCacheKey] = $total;
+    $_SESSION[$countCacheKey . '_ts'] = time();
 }
-$countStmt->execute();
-$total = (int) $countStmt->get_result()->fetch_assoc()['total'];
 $pages = max(1, (int) ceil($total / $perPage));
 
 if ($page > $pages) {
@@ -172,6 +273,7 @@ if ($page > $pages) {
 $listSql = "SELECT
                 f.id, f.name, f.category, f.image, f.material, f.size, f.unit_type,
                 f.price, f.sale_price, f.price_inr, f.stock, f.stock_meters, f.is_available, f.dispatch_time,
+                f.created_at,
                 COALESCE(v.id, 0) AS variant_id,
                 COALESCE(v.color, '') AS variant_color,
                 COALESCE(v.size, '') AS variant_size,
@@ -185,38 +287,56 @@ $listSql = "SELECT
                 COALESCE(v.pack_label, '') AS variant_pack_label,
                 COALESCE(v.units_per_set, 0) AS variant_units_per_set,
                 {$effectivePriceExpr} AS effective_price
-            FROM fabrics f
-            LEFT JOIN (
-                SELECT
-                    id,
-                    fabric_id,
-                    color,
-                    size,
-                    price_override,
-                    stock,
-                    stock_meters,
-                    image,
-                    image2,
-                    image3,
-                    image4,
-                    pack_label,
-                    units_per_set
-                FROM fabric_variants
-                WHERE is_active = 1
-            ) v ON v.fabric_id = f.id
+            {$fromSql}
             {$whereSql}
-            ORDER BY {$orderBy} LIMIT ? OFFSET ?";
+            ORDER BY {$orderBy} LIMIT ?" . ($keysetMode ? '' : ' OFFSET ?');
 $stmt = $conn->prepare($listSql);
 
 if (!empty($params)) {
-    $typesWithLimit = $types . 'ii';
-    $paramsWithLimit = array_merge($params, [$perPage, $offset]);
+    $typesWithLimit = $types . ($keysetMode ? 'i' : 'ii');
+    $paramsWithLimit = array_merge($params, $keysetMode ? [$perPage] : [$perPage, $offset]);
     $stmt->bind_param($typesWithLimit, ...$paramsWithLimit);
 } else {
-    $stmt->bind_param('ii', $perPage, $offset);
+    if ($keysetMode) {
+        $stmt->bind_param('i', $perPage);
+    } else {
+        $stmt->bind_param('ii', $perPage, $offset);
+    }
 }
 $stmt->execute();
 $result = $stmt->get_result();
+$rows = $result->fetch_all(MYSQLI_ASSOC);
+if (in_array($sort, ['newest', 'oldest'], true) && count($rows) === $perPage) {
+    $last = $rows[count($rows) - 1];
+    $nextCursor = rtrim(strtr(base64_encode(json_encode([
+        'created_at' => (string) ($last['created_at'] ?? ''),
+        'fabric_id' => (int) ($last['id'] ?? 0),
+        'variant_id' => (int) ($last['variant_id'] ?? 0),
+    ], JSON_UNESCAPED_UNICODE)), '+/', '-_'), '=');
+}
+
+$explainRows = [];
+if ($debugExplain) {
+    try {
+        $explainSql = "EXPLAIN " . $listSql;
+        $expStmt = $conn->prepare($explainSql);
+        if (!empty($params)) {
+            $expTypes = $types . ($keysetMode ? 'i' : 'ii');
+            $expParams = array_merge($params, $keysetMode ? [$perPage] : [$perPage, $offset]);
+            $expStmt->bind_param($expTypes, ...$expParams);
+        } else {
+            if ($keysetMode) {
+                $expStmt->bind_param('i', $perPage);
+            } else {
+                $expStmt->bind_param('ii', $perPage, $offset);
+            }
+        }
+        $expStmt->execute();
+        $explainRows = $expStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    } catch (Throwable $explainError) {
+        $explainRows = [['error' => $explainError->getMessage()]];
+    }
+}
 
 $activeFilters = [];
 if ($search !== '') {
@@ -296,7 +416,7 @@ function catalog_query(array $params): string {
     <div class="container">
         <div class="surface-panel catalog-utility-row mb-3">
             <div class="catalog-utility-main">
-                <p class="catalog-results-count mb-0" aria-live="polite">Showing <?php echo $result->num_rows; ?> of <?php echo $total; ?> products</p>
+                <p class="catalog-results-count mb-0" aria-live="polite">Showing <?php echo count($rows); ?> of <?php echo $total; ?> products</p>
                 <?php if (!empty($activeFilters)): ?>
                     <div class="catalog-active-filters" aria-label="Active filters">
                         <?php foreach ($activeFilters as $chip): ?>
@@ -414,11 +534,11 @@ function catalog_query(array $params): string {
                 </div>
 
                 <div class="catalog-products-grid">
-                    <?php if ($result->num_rows === 0): ?>
+                    <?php if (count($rows) === 0): ?>
                         <div class="surface-panel text-center text-muted">No products found for your current filters.</div>
                     <?php endif; ?>
 
-                    <?php while ($row = $result->fetch_assoc()): ?>
+                    <?php foreach ($rows as $row): ?>
                     <?php
                         $regularPrice = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
                         $salePrice    = (float) ($row['sale_price'] ?? 0);
@@ -564,14 +684,32 @@ function catalog_query(array $params): string {
                             </div>
                         </article>
                     </div>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 </div>
             </div>
         </div>
     </div>
 </section>
 
+<?php if ($debugExplain): ?>
+<section class="section-block pt-0">
+    <div class="container">
+        <div class="surface-panel">
+            <h5 class="mb-2">EXPLAIN (Catalog)</h5>
+            <pre class="small mb-0"><?php echo e(json_encode($explainRows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
+        </div>
+    </div>
+</section>
+<?php endif; ?>
+
 <?php echo render_pagination($page, $pages, $state, 'page', $total, $perPage); ?>
+<?php if ($nextCursor !== '' && ($page >= 3 || $keysetMode)): ?>
+<section class="section-block pt-0">
+    <div class="container text-end">
+        <a class="btn btn-outline-primary" href="<?php echo e(catalog_query(array_merge($state, ['cursor' => $nextCursor, 'page' => 1]))); ?>">Next Page (Fast)</a>
+    </div>
+</section>
+<?php endif; ?>
 
 <section class="section-block pt-0">
     <div class="container">

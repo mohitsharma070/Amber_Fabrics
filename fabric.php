@@ -22,6 +22,12 @@ if (!$product) {
 
 $regularPrice = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
 $salePrice = (float) ($product['sale_price'] ?? 0);
+$effectiveBasePrice = 0.0;
+if ($salePrice > 0 && ($regularPrice <= 0 || $salePrice < $regularPrice)) {
+    $effectiveBasePrice = $salePrice;
+} elseif ($regularPrice > 0) {
+    $effectiveBasePrice = $regularPrice;
+}
 $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
     ? (string) $product['unit_type']
     : 'meter';
@@ -265,9 +271,15 @@ $quantityOptions = array_values(array_unique($quantityOptions));
 sort($quantityOptions);
 
 $metaTitle = e($product['name']) . ' | Amber Fabrics';
-$metaDescription = !empty($product['description'])
-    ? e(mb_strimwidth((string) $product['description'], 0, 155, '...'))
-    : 'Product details from Amber Fabrics.';
+$metaDescriptionRaw = (string) ($product['description'] ?? '');
+if ($metaDescriptionRaw !== '') {
+    $metaDescriptionTrimmed = function_exists('mb_strimwidth')
+        ? mb_strimwidth($metaDescriptionRaw, 0, 155, '...')
+        : (strlen($metaDescriptionRaw) > 155 ? substr($metaDescriptionRaw, 0, 155) . '...' : $metaDescriptionRaw);
+    $metaDescription = e($metaDescriptionTrimmed);
+} else {
+    $metaDescription = 'Product details from Amber Fabrics.';
+}
 $metaImage = !empty($product['image']) ? 'images/fabrics/' . e($product['image']) : '';
 include 'includes/header.php';
 do_action('product.view', [
@@ -598,6 +610,14 @@ do_action('product.view', [
                                 Add to Cart
                             </button>
                         </div>
+                        <?php if ($unitType === 'meter'): ?>
+                        <div class="small text-muted mt-2" id="meter_purchase_summary">
+                            1 x <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m = <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m
+                            <?php if ($effectiveBasePrice > 0): ?>
+                                | Total: Rs <?php echo number_format((float) $effectiveBasePrice * (float) $defaultMeterLength, 2); ?>
+                            <?php endif; ?>
+                        </div>
+                        <?php endif; ?>
                     </form>
                     <?php if ($inStock): ?>
                         <form method="POST" action="/add-to-cart.php" class="d-grid mt-2" id="buy_now_form">
@@ -636,6 +656,8 @@ do_action('product.view', [
                             var meterTotalInput = document.getElementById('meter_total_quantity');
                             var buyNowMeterLength = document.getElementById('buy_now_meter_length');
                             var buyNowBundleQty = document.getElementById('buy_now_bundle_quantity');
+                            var meterPurchaseSummary = document.getElementById('meter_purchase_summary');
+                            var basePricePerUnit = <?php echo json_encode((float) $effectiveBasePrice); ?>;
                             if (!qtyInput || !buyNowQty) return;
 
                             function syncQty() {
@@ -658,6 +680,13 @@ do_action('product.view', [
                                     }
                                     if (buyNowMeterLength) {
                                         buyNowMeterLength.value = meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+                                    }
+                                    if (meterPurchaseSummary) {
+                                        var line = String(qty) + ' x ' + meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') + 'm = ' + normalized + 'm';
+                                        if (Number.isFinite(basePricePerUnit) && basePricePerUnit > 0) {
+                                            line += ' | Total: Rs ' + (basePricePerUnit * totalMeters).toFixed(2);
+                                        }
+                                        meterPurchaseSummary.textContent = line;
                                     }
                                 } else {
                                     buyNowQty.value = isPieceUnit ? String(Math.round(qty)) : qty.toFixed(2);

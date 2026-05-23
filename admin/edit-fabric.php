@@ -134,6 +134,8 @@ $old = [
     'is_available' => !empty($fabric['is_available']) ? 1 : 0,
     'min_order_meters' => format_meter_quantity((float) ($fabric['min_order_meters'] ?? 1)),
     'qty_step' => ((float) ($fabric['qty_step'] ?? 0) > 0) ? rtrim(rtrim((string) ($fabric['qty_step'] ?? ''), '0'), '.') : '',
+    'low_stock_threshold_units' => ($fabric['low_stock_threshold_units'] ?? null) !== null ? (string) $fabric['low_stock_threshold_units'] : '',
+    'low_stock_threshold_meters' => ($fabric['low_stock_threshold_meters'] ?? null) !== null ? format_meter_quantity((float) $fabric['low_stock_threshold_meters']) : '',
 ];
 
 $errors = [];
@@ -176,6 +178,18 @@ if (isset($_POST['submit'])) {
     }
     $qtyStepRaw    = trim($_POST['qty_step'] ?? '');
     $qtyStep       = ($qtyStepRaw !== '' && is_numeric($qtyStepRaw) && (float) $qtyStepRaw > 0) ? round((float) $qtyStepRaw, 4) : 0.0;
+    $lowStockUnitsRaw = trim((string) ($_POST['low_stock_threshold_units'] ?? ''));
+    $lowStockMetersRaw = trim((string) ($_POST['low_stock_threshold_meters'] ?? ''));
+    $lowStockUnits = ($lowStockUnitsRaw !== '' && is_numeric($lowStockUnitsRaw) && (float) $lowStockUnitsRaw >= 0)
+        ? (int) round((float) $lowStockUnitsRaw)
+        : null;
+    $lowStockMeters = ($lowStockMetersRaw !== '' && is_numeric($lowStockMetersRaw) && (float) $lowStockMetersRaw >= 0)
+        ? round((float) $lowStockMetersRaw, 2)
+        : null;
+    $parsedMeterOptions = parse_meter_options($meterOptions, (float) $minOrder);
+    $normalizedMeterOptions = implode(', ', array_map(static function ($val): string {
+        return format_meter_quantity((float) $val);
+    }, $parsedMeterOptions));
 
     $old = [
         'name' => $name,
@@ -187,7 +201,7 @@ if (isset($_POST['submit'])) {
         'stock' => $stock,
         'sku' => $sku,
         'size' => $size,
-        'meter_options' => $meterOptions,
+        'meter_options' => $normalizedMeterOptions,
         'print_style' => $printStyle,
         'color' => $color,
         'material' => $material,
@@ -203,6 +217,8 @@ if (isset($_POST['submit'])) {
         'is_available' => $isAvailInput,
         'min_order_meters' => format_meter_quantity($minOrder),
         'qty_step' => $qtyStepRaw,
+        'low_stock_threshold_units' => $lowStockUnitsRaw,
+        'low_stock_threshold_meters' => $lowStockMetersRaw,
     ];
 
     if ($name === '') {
@@ -230,6 +246,27 @@ if (isset($_POST['submit'])) {
         $errors['min_order_meters'] = 'Min. order qty must be greater than 0.';
     } elseif (($unitType === 'piece' || $unitType === 'set') && floor($minOrder) != $minOrder) {
         $errors['min_order_meters'] = 'Piece/Set products require whole-number min. order qty.';
+    }
+    if ($lowStockUnitsRaw !== '' && ($lowStockUnits === null || $lowStockUnits < 0)) {
+        $errors['low_stock_threshold_units'] = 'Low stock threshold (units) must be 0 or more.';
+    }
+    if ($lowStockMetersRaw !== '' && ($lowStockMeters === null || $lowStockMeters < 0)) {
+        $errors['low_stock_threshold_meters'] = 'Low stock threshold (meters) must be 0 or more.';
+    }
+    if ($unitType === 'meter') {
+        if (empty($parsedMeterOptions)) {
+            $errors['meter_options'] = 'Provide at least one valid meter option (e.g. 1, 2, 2.5).';
+        } elseif (!in_array(round((float) $minOrder, 2), array_map(static function ($val) {
+            return round((float) $val, 2);
+        }, $parsedMeterOptions), true)) {
+            $errors['meter_options'] = 'Meter options must include the minimum order qty.';
+        }
+    } else {
+        $normalizedMeterOptions = '';
+        $lowStockMeters = null;
+    }
+    if ($unitType === 'meter') {
+        $lowStockUnits = null;
     }
 
     $imageName = (string) ($fabric['image'] ?? '');
@@ -323,16 +360,16 @@ if (isset($_POST['submit'])) {
                 size = ?, color = ?, description = ?, wash_care = ?, image = ?,
                 image2 = ?, image3 = ?, image4 = ?, video = ?,
                 price = ?, sale_price = ?, cost_price = ?, price_inr = ?, price_usd = ?,
-                stock = ?, stock_meters = ?, min_order_meters = ?, qty_step = ?,
+                stock = ?, stock_meters = ?, low_stock_threshold_units = ?, low_stock_threshold_meters = ?, min_order_meters = ?, qty_step = ?,
                 is_featured = ?, status = ?, is_available = ?
              WHERE id = ?"
         );
         $upd->bind_param(
-            'sssssssssssssssssssssdddddddddisii',
-            $name, $sku, $category, $unitType, $meterOptions, $printStyle, $material, $gsm, $width, $moq, $lead, $dispatchTime,
+            'sssssssssssssssssssssdddddddidddisii',
+            $name, $sku, $category, $unitType, $normalizedMeterOptions, $printStyle, $material, $gsm, $width, $moq, $lead, $dispatchTime,
             $size, $color, $description, $washCare, $imageName, $image2Name, $image3Name, $image4Name, $videoName,
             $priceVal, $salePriceVal, $costPriceVal, $priceInrVal, $priceUsdVal,
-            $stockVal, $stockMeters, $minOrderVal, $qtyStep,
+            $stockVal, $stockMeters, $lowStockUnits, $lowStockMeters, $minOrderVal, $qtyStep,
             $isFeatured, $status, $isAvailable,
             $id
         );

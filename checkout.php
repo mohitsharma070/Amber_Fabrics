@@ -478,7 +478,7 @@ include __DIR__ . '/includes/header.php';
                     </div>
 
                     <?php if ($isIndia): ?>
-                        <button type="submit" class="btn btn-primary btn-lg w-100">Step 4: Place Order</button>
+                        <button type="submit" class="btn btn-primary btn-lg w-100">Place Order</button>
                         <div class="trust-badge-block mt-3 mb-2" aria-label="Checkout trust badges">
                             <span class="trust-badge-pill">COD Available</span>
                             <span class="trust-badge-pill">Secure Payment</span>
@@ -493,7 +493,6 @@ include __DIR__ . '/includes/header.php';
 
             <div class="col-lg-5">
                 <div class="surface-panel p-4 checkout-summary-sticky">
-                    <div class="small text-muted mb-3">Step 3 of 4: Review</div>
                     <h5 class="mb-3">Order Summary</h5>
                     <?php foreach ($items as $item): ?>
                         <div class="d-flex justify-content-between mb-2 small">

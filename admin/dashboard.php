@@ -39,16 +39,55 @@ $activeOrderClause = "NOT (
     AND created_at < (NOW() - INTERVAL 30 MINUTE)
 )";
 
-$totalProducts = (int) ($conn->query("SELECT COUNT(*) FROM fabrics")->fetch_row()[0] ?? 0);
-$totalSalesAllTime = (float) ($conn->query("SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE payment_status = 'paid'")->fetch_row()[0] ?? 0);
-$todaySales = (float) ($conn->query("SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE payment_status = 'paid' AND DATE(created_at) = CURDATE()")->fetch_row()[0] ?? 0);
-$totalOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOrderClause}")->fetch_row()[0] ?? 0);
-$pendingOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOrderClause} AND order_status = 'pending'")->fetch_row()[0] ?? 0);
-$deliveredOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOrderClause} AND order_status = 'delivered'")->fetch_row()[0] ?? 0);
-$cancelledOrders = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE {$activeOrderClause} AND order_status = 'cancelled'")->fetch_row()[0] ?? 0);
-$staleOnlinePending = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE payment_method IN ('razorpay','upi') AND payment_status = 'pending' AND order_status IN ('pending','confirmed') AND created_at < (NOW() - INTERVAL 30 MINUTE)")->fetch_row()[0] ?? 0);
-$refundPendingCount = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE payment_status = 'paid' AND order_status = 'cancelled'")->fetch_row()[0] ?? 0);
-$codPendingConfirm = (int) ($conn->query("SELECT COUNT(*) FROM cod_confirmations WHERE status = 'pending'")->fetch_row()[0] ?? 0);
+// --- Consolidated stats: 3 queries instead of 12 individual ones ---
+
+// 1. All order-level counters in a single pass over the orders table.
+$_orderStats = $conn->query(
+    "SELECT
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total_amount ELSE 0 END), 0)                                          AS total_sales_all_time,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' AND DATE(created_at) = CURDATE() THEN total_amount ELSE 0 END), 0)          AS today_sales,
+        COUNT(CASE WHEN {$activeOrderClause} THEN 1 END)                                                                           AS total_orders,
+        COUNT(CASE WHEN {$activeOrderClause} AND order_status = 'pending' THEN 1 END)                                             AS pending_orders,
+        COUNT(CASE WHEN {$activeOrderClause} AND order_status = 'delivered' THEN 1 END)                                           AS delivered_orders,
+        COUNT(CASE WHEN {$activeOrderClause} AND order_status = 'cancelled' THEN 1 END)                                           AS cancelled_orders,
+        COUNT(CASE WHEN payment_method IN ('razorpay','upi') AND payment_status = 'pending'
+                        AND order_status IN ('pending','confirmed')
+                        AND created_at < (NOW() - INTERVAL 30 MINUTE) THEN 1 END)                                                 AS stale_online_pending,
+        COUNT(CASE WHEN payment_status = 'paid' AND order_status = 'cancelled' THEN 1 END)                                        AS refund_pending
+     FROM orders"
+)->fetch_assoc() ?: [];
+$totalSalesAllTime  = (float) ($_orderStats['total_sales_all_time'] ?? 0);
+$todaySales         = (float) ($_orderStats['today_sales'] ?? 0);
+$totalOrders        = (int)   ($_orderStats['total_orders'] ?? 0);
+$pendingOrders      = (int)   ($_orderStats['pending_orders'] ?? 0);
+$deliveredOrders    = (int)   ($_orderStats['delivered_orders'] ?? 0);
+$cancelledOrders    = (int)   ($_orderStats['cancelled_orders'] ?? 0);
+$staleOnlinePending = (int)   ($_orderStats['stale_online_pending'] ?? 0);
+$refundPendingCount = (int)   ($_orderStats['refund_pending'] ?? 0);
+
+// 2. Fabric totals (products + low-stock) in one query.
+$_fabricStats = $conn->query(
+    "SELECT
+        COUNT(*) AS total_products,
+        COUNT(CASE WHEN status = 'active'
+                        AND (CASE WHEN unit_type = 'meter' THEN COALESCE(stock_meters, 0) ELSE COALESCE(stock, 0) END) <= 3
+                   THEN 1 END) AS low_stock
+     FROM fabrics"
+)->fetch_assoc() ?: [];
+$totalProducts    = (int) ($_fabricStats['total_products'] ?? 0);
+$lowStockProducts = (int) ($_fabricStats['low_stock'] ?? 0);
+
+// 3. Secondary counts (COD confirmations + export inquiries) via correlated sub-selects.
+$_secondaryStats = $conn->query(
+    "SELECT
+        (SELECT COUNT(*) FROM cod_confirmations WHERE status = 'pending') AS cod_pending,
+        (SELECT COUNT(*) FROM inquiries WHERE inquiry_type = 'export')    AS export_inquiries"
+)->fetch_assoc() ?: [];
+$codPendingConfirm = (int) ($_secondaryStats['cod_pending'] ?? 0);
+$exportInquiries   = (int) ($_secondaryStats['export_inquiries'] ?? 0);
+unset($_orderStats, $_fabricStats, $_secondaryStats);
+// --- End consolidated stats ---
+
 $cronLastRunAt = '';
 try {
     $cronStmt = $conn->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'cron_last_run_at' LIMIT 1");
@@ -64,8 +103,6 @@ if ($cronLastRunAt !== '') {
         $cronLagMinutes = max(0, (int) floor((time() - $cronTs) / 60));
     }
 }
-$lowStockProducts = (int) ($conn->query("SELECT COUNT(*) FROM fabrics WHERE status = 'active' AND (CASE WHEN unit_type = 'meter' THEN COALESCE(stock_meters, 0) ELSE COALESCE(stock, 0) END) <= 3")->fetch_row()[0] ?? 0);
-$exportInquiries = (int) ($conn->query("SELECT COUNT(*) FROM inquiries WHERE inquiry_type = 'export'")->fetch_row()[0] ?? 0);
 
 $salesStmt = $conn->prepare("SELECT COALESCE(SUM(total_amount), 0) AS total_sales FROM orders WHERE payment_status = 'paid' AND {$orderRangeClause}");
 $salesStmt->bind_param('ss', $rangeStartAt, $rangeEndExclusive);

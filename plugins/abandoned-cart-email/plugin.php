@@ -198,7 +198,7 @@ function abandoned_cart_send_one_email(string $email, string $name, int $itemsCo
 {
     $appUrl = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $protocol = app_request_is_https() ? 'https' : 'http';
         $host = (string) ($_SERVER['SERVER_NAME'] ?? 'localhost');
         $appUrl = $protocol . '://' . $host;
     }

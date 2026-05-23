@@ -43,13 +43,11 @@ if (!hash_equals($expected, $signature)) {
 }
 
 try {
-    $conn->begin_transaction();
-
     $orderStmt = $conn->prepare(
         "SELECT id, payment_status, order_status, order_notes, total_amount
          FROM orders
          WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
-         FOR UPDATE"
+         LIMIT 1"
     );
     $orderStmt->bind_param('ii', $orderId, $customerId);
     $orderStmt->execute();
@@ -66,9 +64,7 @@ try {
 
     // Cross-check: the razorpay_order_id submitted by the client must match
     // the one we created server-side and stored in our payments table.
-    $payRowStmt = $conn->prepare(
-        "SELECT id, razorpay_order_id FROM payments WHERE order_id = ? AND payment_method = 'razorpay' LIMIT 1"
-    );
+    $payRowStmt = $conn->prepare("SELECT id, razorpay_order_id FROM payments WHERE order_id = ? AND payment_method = 'razorpay' LIMIT 1");
     $payRowStmt->bind_param('i', $orderId);
     $payRowStmt->execute();
     $payRow = $payRowStmt->get_result()->fetch_assoc();
@@ -92,14 +88,78 @@ try {
             '',
             false
         );
-        throw new RuntimeException('Razorpay order ID mismatch — possible tampering attempt.');
+        throw new RuntimeException('Razorpay order ID mismatch - possible tampering attempt.');
     }
 
-    $remoteValidation = razorpay_validate_remote_capture(
-        $paymentId,
-        $rzpOrderId,
-        (float) ($order['total_amount'] ?? 0)
+    if (($order['payment_status'] ?? '') === 'paid') {
+        checkout_session_clear_after_order($conn, $customerId);
+        redirect('/order-success.php?order=' . urlencode($orderNumber));
+    }
+
+    $remoteValidation = ['ok' => false, 'error' => 'validation_not_attempted'];
+    for ($attempt = 1; $attempt <= 3; $attempt++) {
+        $remoteValidation = razorpay_validate_remote_capture(
+            $paymentId,
+            $rzpOrderId,
+            (float) ($order['total_amount'] ?? 0)
+        );
+        if (!empty($remoteValidation['ok'])) {
+            break;
+        }
+
+        $validationError = (string) ($remoteValidation['error'] ?? '');
+        $isTransientValidationError =
+            $validationError === 'gateway_not_captured' ||
+            strpos($validationError, 'curl_error:') === 0 ||
+            preg_match('/^gateway_http_5\d{2}$/', $validationError) === 1;
+        if (!$isTransientValidationError || $attempt === 3) {
+            break;
+        }
+
+        usleep(750000);
+    }
+    if (!empty($remoteValidation['ok'])) {
+        error_log('[razorpay-verify] provider validation success order_id=' . $orderId . ' payment_id=' . $paymentId);
+    } else {
+        error_log('[razorpay-verify] provider validation failed order_id=' . $orderId . ' payment_id=' . $paymentId . ' error=' . (string) ($remoteValidation['error'] ?? 'unknown'));
+    }
+
+    $conn->begin_transaction();
+    $orderLockStmt = $conn->prepare(
+        "SELECT id, payment_status, order_status, order_notes
+         FROM orders
+         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
+         LIMIT 1 FOR UPDATE"
     );
+    $orderLockStmt->bind_param('ii', $orderId, $customerId);
+    $orderLockStmt->execute();
+    $lockedOrder = $orderLockStmt->get_result()->fetch_assoc();
+    if (!$lockedOrder) {
+        throw new RuntimeException('Order not found during verification finalize.');
+    }
+
+    $payLockStmt = $conn->prepare(
+        "SELECT id, razorpay_order_id
+         FROM payments
+         WHERE order_id = ? AND payment_method = 'razorpay'
+         LIMIT 1 FOR UPDATE"
+    );
+    $payLockStmt->bind_param('i', $orderId);
+    $payLockStmt->execute();
+    $lockedPayment = $payLockStmt->get_result()->fetch_assoc();
+    $paymentRowId = (int) ($lockedPayment['id'] ?? $paymentRowId);
+    if (!$lockedPayment || trim((string) ($lockedPayment['razorpay_order_id'] ?? '')) !== $rzpOrderId) {
+        throw new RuntimeException('Razorpay order ID mismatch during finalize.');
+    }
+    if (($lockedOrder['payment_status'] ?? '') === 'paid') {
+        $conn->commit();
+        checkout_session_clear_after_order($conn, $customerId);
+        redirect('/order-success.php?order=' . urlencode($orderNumber));
+    }
+    if (!in_array((string) ($lockedOrder['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
+        throw new RuntimeException('Order is not eligible for payment finalize (status: ' . ($lockedOrder['order_status'] ?? 'unknown') . ').');
+    }
+
     if (empty($remoteValidation['ok'])) {
         payment_attempt_touch(
             $conn,
@@ -107,7 +167,7 @@ try {
             $rzpOrderId,
             $orderId,
             $paymentRowId,
-            'verify_rejected',
+            'verify_deferred',
             'verify',
             $paymentId,
             $signature,
@@ -118,23 +178,25 @@ try {
             '',
             false
         );
-        throw new RuntimeException('Razorpay gateway validation failed.');
-    }
+        log_order_activity(
+            $conn,
+            $orderId,
+            'payment_validation_deferred',
+            'system',
+            0,
+            'razorpay',
+            'Gateway re-validation failed during verify callback; order was not marked paid. Reason: ' . (string) ($remoteValidation['error'] ?? 'unknown')
+        );
 
-    if (($order['payment_status'] ?? '') === 'paid') {
         $conn->commit();
-        unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
-        unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['cart_meter_length'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
-        if ($customerId > 0) {
-            cart_clear_db($conn, $customerId);
-        }
-        redirect('/order-success.php?order=' . urlencode($orderNumber));
+        flash('warning', 'Payment is being verified by the gateway. If money was debited, your order will update automatically after webhook confirmation.');
+        redirect('/customer/orders.php');
     }
 
     razorpay_mark_order_paid(
         $conn,
         $orderId,
-        (string) ($order['payment_status'] ?? ''),
+        (string) ($lockedOrder['payment_status'] ?? ''),
         $paymentId,
         $rzpOrderId,
         $signature
@@ -172,7 +234,7 @@ try {
         $orderId,
         $customerId,
         (int) ($_SESSION['pending_coupon_id'] ?? 0),
-        (string) ($order['order_notes'] ?? '')
+        (string) ($lockedOrder['order_notes'] ?? '')
     );
 
     $conn->commit();
@@ -190,11 +252,7 @@ try {
         );
     }
 
-    unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
-    unset($_SESSION['cart'], $_SESSION['cart_size'], $_SESSION['cart_meter_length'], $_SESSION['checkout_old'], $_SESSION['checkout_errors'], $_SESSION['applied_coupon_code']);
-    if ($customerId > 0) {
-        cart_clear_db($conn, $customerId);
-    }
+    checkout_session_clear_after_order($conn, $customerId);
 
     do_action('order.after_payment_success', [
         'conn' => $conn,

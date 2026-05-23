@@ -68,7 +68,7 @@ function product_feed_product_url(int $productId): string
 {
     $appUrl = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $protocol = app_request_is_https() ? 'https' : 'http';
         $host = (string) ($_SERVER['SERVER_NAME'] ?? 'localhost');
         $appUrl = $protocol . '://' . $host;
     }
@@ -83,7 +83,7 @@ function product_feed_image_url(string $image): string
     }
     $appUrl = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $protocol = app_request_is_https() ? 'https' : 'http';
         $host = (string) ($_SERVER['SERVER_NAME'] ?? 'localhost');
         $appUrl = $protocol . '://' . $host;
     }

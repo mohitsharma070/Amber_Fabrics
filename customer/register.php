@@ -15,6 +15,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('/customer/register.php');
     }
 
+    if (!public_form_rate_limit_allow('customer_register', 10, 600)) {
+        flash('error', 'Too many attempts. Please wait a few minutes and try again.');
+        redirect('/customer/register.php');
+    }
+
     $name     = trim($_POST['name']     ?? '');
     $email    = trim($_POST['email']    ?? '');
     $phone    = trim($_POST['phone']    ?? '');
@@ -36,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $chk->bind_param('s', $email);
         $chk->execute();
         if ($chk->get_result()->num_rows > 0) {
-            $errors['email'] = 'An account with this email already exists.';
+            $errors['email'] = 'Unable to create account. Please try a different email or log in.';
         }
     }
 

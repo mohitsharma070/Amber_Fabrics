@@ -53,7 +53,7 @@ function utm_attribution_current_url(): string
     if (PHP_SAPI === 'cli') {
         return '';
     }
-    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    $https = app_request_is_https();
     $scheme = $https ? 'https' : 'http';
     $host = (string) ($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? ''));
     $uri = (string) ($_SERVER['REQUEST_URI'] ?? '');
@@ -113,7 +113,7 @@ function utm_attribution_capture_request(array $context): void
         $_SESSION['utm_attribution'] = $data;
 
         $cookieDays = max(1, (int) plugin_setting('utm-attribution', 'cookie_days', 30));
-        $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+        $secure = app_request_is_https();
         $cookiePayload = base64_encode(json_encode($data));
         setcookie(utm_attribution_cookie_name(), $cookiePayload, [
             'expires' => time() + ($cookieDays * 86400),
