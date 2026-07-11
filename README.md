@@ -237,3 +237,26 @@ When the customer replies `YES <order number>`, the order moves to `confirmed` a
 - **`Unknown database fabric_export`**: import `database/schema.sql` or create DB manually.
 - **`Class not found` (Razorpay/PHPMailer)**: run `composer install`.
 - **Blank page / 500**: check XAMPP Apache/PHP error logs.
+
+## 8) Agentic Readiness
+
+This repository now includes lightweight agent-facing documentation and contracts to improve safe automation without changing business logic.
+
+- Architecture overview: `docs/repo-architecture.md`
+- Agentic readiness status: `docs/agentic-ready.md`
+- Agent instructions for contributors: `AGENTS.md`
+- Claude-oriented guidance: `CLAUDE.md`
+- OpenAPI baseline: `openapi.yaml`
+- Endpoint behavior contract test: `tests/endpoint_contract_test.php`
+
+Run the endpoint contract test:
+
+```bash
+php tests/endpoint_contract_test.php
+```
+
+Validate OpenAPI syntax:
+
+```bash
+npx @apidevtools/swagger-cli validate openapi.yaml
+```

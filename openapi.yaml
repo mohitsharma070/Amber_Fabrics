@@ -1,0 +1,750 @@
+openapi: 3.0.3
+info:
+  title: Amber Fabrics Web Endpoints
+  version: 0.1.0
+  description: |
+    Baseline OpenAPI contract for file-based PHP endpoints in this repository.
+    This specification focuses on currently observable request/response shapes
+    and guards without changing business behavior.
+servers:
+  - url: /
+security:
+  - sessionCookieAuth: []
+tags:
+  - name: Pages
+  - name: Cart
+  - name: Coupon
+  - name: Checkout
+  - name: Payment
+  - name: Customer
+  - name: Webhook
+  - name: Utility
+paths:
+  /catalog.php:
+    get:
+      tags: [Pages]
+      summary: Catalog page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /fabric.php:
+    get:
+      tags: [Pages]
+      summary: Fabric details page
+      parameters:
+        - in: query
+          name: id
+          schema:
+            type: integer
+            minimum: 1
+          required: true
+          description: Fabric ID
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /cart.php:
+    get:
+      tags: [Pages]
+      summary: Cart page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /checkout.php:
+    get:
+      tags: [Pages]
+      summary: Checkout page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redirect to login/cart depending on session state
+
+  /add-to-cart.php:
+    post:
+      tags: [Cart]
+      summary: Add product variant to cart
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AddToCartRequest'
+      responses:
+        '200':
+          description: JSON success for AJAX requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '302':
+          description: Redirect for non-AJAX browser flow
+        '403':
+          description: Invalid CSRF token
+
+  /update-cart.php:
+    post:
+      tags: [Cart]
+      summary: Update cart quantities
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect to cart page after update
+
+  /remove-cart.php:
+    post:
+      tags: [Cart]
+      summary: Remove cart item
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                cart_key:
+                  type: string
+      responses:
+        '302':
+          description: Redirect to cart
+
+  /move-to-wishlist.php:
+    post:
+      tags: [Cart]
+      summary: Move cart item to wishlist
+      responses:
+        '302':
+          description: Redirect to cart/wishlist
+
+  /move-to-cart.php:
+    post:
+      tags: [Cart]
+      summary: Move wishlist item to cart
+      responses:
+        '302':
+          description: Redirect to cart/wishlist
+
+  /remove-wishlist.php:
+    post:
+      tags: [Cart]
+      summary: Remove wishlist item
+      responses:
+        '302':
+          description: Redirect to wishlist
+
+  /apply-coupon.php:
+    post:
+      tags: [Coupon]
+      summary: Apply coupon to current cart/checkout session
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ApplyCouponRequest'
+      responses:
+        '302':
+          description: Redirect to cart/checkout with flash status
+        '403':
+          description: Invalid CSRF token
+
+  /remove-coupon.php:
+    post:
+      tags: [Coupon]
+      summary: Remove active coupon from session
+      responses:
+        '302':
+          description: Redirect to cart/checkout
+
+  /shipping-rate.php:
+    post:
+      tags: [Checkout]
+      summary: Calculate shipping quote
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ShippingRateRequest'
+      responses:
+        '200':
+          description: Shipping quote response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShippingRateResponse'
+        '403':
+          description: Invalid CSRF token
+        '405':
+          description: Method not allowed
+        '429':
+          description: Rate limited
+
+  /place-order.php:
+    post:
+      tags: [Checkout]
+      summary: Create order from checkout session
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PlaceOrderRequest'
+      responses:
+        '302':
+          description: Redirect to order success, payment, or back to checkout
+        '403':
+          description: Invalid CSRF token
+
+  /payment/razorpay-create.php:
+    get:
+      tags: [Payment]
+      summary: Razorpay checkout launch page
+      responses:
+        '200':
+          description: HTML page with checkout integration
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redirect to checkout when state is invalid
+
+  /payment/razorpay-verify.php:
+    post:
+      tags: [Payment]
+      summary: Verify Razorpay success callback
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RazorpayVerifyRequest'
+      responses:
+        '302':
+          description: Redirect to success/orders/checkout with flash status
+
+  /payment/razorpay-failure.php:
+    post:
+      tags: [Payment]
+      summary: Process Razorpay failure callback
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RazorpayFailureRequest'
+      responses:
+        '302':
+          description: Redirect to orders/checkout with failure flash
+
+  /payment/razorpay-webhook.php:
+    post:
+      tags: [Webhook, Payment]
+      summary: Razorpay server-to-server webhook
+      security:
+        - razorpaySignatureHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook accepted/ignored/already processed
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          description: Invalid signature/payload
+        '500':
+          description: Server error
+
+  /cod-guard-webhook.php:
+    get:
+      tags: [Webhook]
+      summary: COD Guard webhook verification handshake
+      security:
+        - webhookVerifyTokenQuery: []
+      parameters:
+        - in: query
+          name: hub.mode
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: hub.verify_token
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: hub.challenge
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification challenge response
+          content:
+            text/plain:
+              schema:
+                type: string
+        '403':
+          description: Forbidden
+    post:
+      tags: [Webhook]
+      summary: COD Guard message webhook callback
+      security:
+        - genericWebhookSignatureHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                additionalProperties: true
+        '400':
+          description: Invalid payload
+        '403':
+          description: Invalid signature
+        '405':
+          description: Method not allowed
+        '500':
+          description: Processing error
+
+  /shipping-courier-webhook.php:
+    post:
+      tags: [Webhook]
+      summary: Shipping courier status webhook callback
+      security:
+        - genericWebhookSignatureHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook processed or duplicate ack
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                additionalProperties: true
+        '400':
+          description: Invalid payload
+        '403':
+          description: Invalid signature
+        '405':
+          description: Method not allowed
+        '500':
+          description: Processing error
+        '503':
+          description: Lifecycle storage unavailable
+
+  /announcement-dismiss.php:
+    get:
+      tags: [Utility]
+      summary: Check announcement dismissal state
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{32}$'
+      responses:
+        '200':
+          description: Dismissal state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  dismissed:
+                    type: boolean
+        '422':
+          description: Invalid key
+    post:
+      tags: [Utility]
+      summary: Mark announcement as dismissed
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                key:
+                  type: string
+                  pattern: '^[a-f0-9]{32}$'
+      responses:
+        '200':
+          description: JSON operation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '403':
+          description: Invalid session token
+        '422':
+          description: Invalid key
+
+  /cookie-consent.php:
+    post:
+      tags: [Utility]
+      summary: Store marketing cookie consent
+      security:
+        - sessionCookieAuth: []
+          csrfTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                choice:
+                  type: string
+                  enum: [accept, allow, granted, reject, deny, denied]
+      responses:
+        '200':
+          description: Consent stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+                    enum: [granted, denied]
+        '403':
+          description: Invalid session token
+        '422':
+          description: Invalid consent choice
+
+  /contact.php:
+    post:
+      tags: [Utility]
+      summary: Submit contact form
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: HTML contact page with flash status
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /export-inquiry.php:
+    post:
+      tags: [Utility]
+      summary: Submit export inquiry
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect after submit
+
+  /review-rating-submit.php:
+    post:
+      tags: [Utility]
+      summary: Submit review/rating
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect with flash status
+
+components:
+  securitySchemes:
+    sessionCookieAuth:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+      description: Session cookie used for browser-authenticated flows.
+    csrfTokenHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: |
+        Logical representation of CSRF token requirement.
+        In current implementation, token is often submitted as form field and validated server-side.
+    razorpaySignatureHeader:
+      type: apiKey
+      in: header
+      name: X-Razorpay-Signature
+      description: Razorpay webhook HMAC signature header.
+    genericWebhookSignatureHeader:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+      description: Generic signature header placeholder for plugin-managed webhook signatures.
+    webhookVerifyTokenQuery:
+      type: apiKey
+      in: query
+      name: hub.verify_token
+      description: Webhook verification token query parameter.
+
+  schemas:
+    ApiSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      additionalProperties: true
+
+    AddToCartRequest:
+      type: object
+      properties:
+        product_id:
+          type: integer
+          minimum: 1
+        fabric_id:
+          type: integer
+          minimum: 1
+        variant_id:
+          type: integer
+          minimum: 0
+        quantity:
+          type: number
+          minimum: 0
+        meter_length:
+          type: number
+          minimum: 0
+        bundle_quantity:
+          type: integer
+          minimum: 1
+        selected_size:
+          type: string
+        selected_color:
+          type: string
+        redirect_to:
+          type: string
+      additionalProperties: true
+
+    ApplyCouponRequest:
+      type: object
+      required: [coupon_code]
+      properties:
+        coupon_code:
+          type: string
+        redirect_to:
+          type: string
+          enum: [cart, checkout]
+        shipping_address_id:
+          type: integer
+          minimum: 0
+      additionalProperties: true
+
+    ShippingRateRequest:
+      type: object
+      required: [subtotal]
+      properties:
+        pincode:
+          type: string
+        subtotal:
+          type: number
+          minimum: 0
+        payment_method:
+          type: string
+          enum: [cod, razorpay]
+      additionalProperties: true
+
+    ShippingRateResponse:
+      type: object
+      required: [ok, shipping_total]
+      properties:
+        ok:
+          type: boolean
+        source:
+          type: string
+        quote_token:
+          type: string
+        courier_name:
+          type: string
+        courier_id:
+          type: integer
+        base_shipping:
+          type: number
+        cod_fee:
+          type: number
+        shipping_total:
+          type: number
+      additionalProperties: true
+
+    PlaceOrderRequest:
+      type: object
+      required:
+        - full_name
+        - phone
+        - email
+        - address
+        - city
+        - state
+        - pincode
+        - country
+        - payment_method
+      properties:
+        order_nonce:
+          type: string
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        pincode:
+          type: string
+        country:
+          type: string
+        order_notes:
+          type: string
+        payment_method:
+          type: string
+          enum: [cod, razorpay]
+        online_method:
+          type: string
+        shipping_address_id:
+          type: integer
+          minimum: 0
+        shipping_quote_token:
+          type: string
+        create_account:
+          type: integer
+          enum: [0, 1]
+        create_account_password:
+          type: string
+        create_account_confirm_password:
+          type: string
+      additionalProperties: true
+
+    RazorpayVerifyRequest:
+      type: object
+      required:
+        - razorpay_payment_id
+        - razorpay_order_id
+        - razorpay_signature
+      properties:
+        razorpay_payment_id:
+          type: string
+        razorpay_order_id:
+          type: string
+        razorpay_signature:
+          type: string
+      additionalProperties: true
+
+    RazorpayFailureRequest:
+      type: object
+      properties:
+        event_type:
+          type: string
+          enum: [failed, cancelled]
+        razorpay_payment_id:
+          type: string
+        razorpay_order_id:
+          type: string
+        error_code:
+          type: string
+        error_description:
+          type: string
+      additionalProperties: true

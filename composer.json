@@ -3,6 +3,9 @@
   "description": "PHP storefront, admin, payments, shipping, and customer workflows.",
   "type": "project",
   "license": "proprietary",
+  "scripts": {
+    "test": "php tests/endpoint_contract_test.php"
+  },
   "require": {
     "php": "^8.2",
     "ext-curl": "*",
