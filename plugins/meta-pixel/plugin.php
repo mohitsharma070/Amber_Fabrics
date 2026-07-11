@@ -41,14 +41,6 @@ function meta_pixel_money($value): float
     return round(max(0, (float) $value), 2);
 }
 
-function meta_pixel_track_script(string $eventName, array $payload = [], ?string $eventId = null): string
-{
-    $eventId = $eventId ?: meta_pixel_event_id($eventName, (string) microtime(true));
-    $jsonPayload = json_encode($payload, JSON_UNESCAPED_SLASHES);
-    $jsonOptions = json_encode(['eventID' => $eventId], JSON_UNESCAPED_SLASHES);
-    return "if (typeof fbq === 'function') { fbq('track', " . json_encode($eventName) . ", {$jsonPayload}, {$jsonOptions}); }";
-}
-
 function meta_pixel_render_base(array $context): void
 {
     if (!meta_pixel_enabled()) {

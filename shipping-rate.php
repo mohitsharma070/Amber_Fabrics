@@ -13,9 +13,16 @@ if (!public_form_rate_limit_allow('shipping_quote', 30, 300)) {
 
 $pincode = trim((string) ($_POST['pincode'] ?? ''));
 $subtotal = (float) ($_POST['subtotal'] ?? 0);
+$country = strtolower(trim((string) ($_POST['country'] ?? 'india')));
 $paymentMethod = strtolower(trim((string) ($_POST['payment_method'] ?? 'cod')));
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) {
     $paymentMethod = 'cod';
+}
+if ($country !== 'india') {
+    api_json(['ok' => false, 'message' => 'Shipping quotes are currently available only for India.'], 422);
+}
+if (!preg_match('/^[1-9][0-9]{5}$/', $pincode) || $subtotal < 0) {
+    api_json(['ok' => false, 'message' => 'Invalid shipping quote details.'], 422);
 }
 
 $manual = CartService::checkout_shipping_breakdown($subtotal, 'India', $paymentMethod, $paymentMethod === 'cod');
@@ -64,4 +71,10 @@ api_json([
     'base_shipping' => $baseShipping,
     'cod_fee' => $codFee,
     'shipping_total' => $shippingTotal,
+    'quote_for' => [
+        'pincode' => $pincode,
+        'payment_method' => $paymentMethod,
+        'subtotal' => round($subtotal, 2),
+        'country' => 'india',
+    ],
 ]);

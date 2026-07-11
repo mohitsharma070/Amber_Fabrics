@@ -34,6 +34,9 @@ $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
 $onlineMethod = InventoryService::sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
+if ($paymentMethod === 'razorpay' && $onlineMethod === '') {
+    $onlineMethod = 'upi';
+}
 $shippingAddressId = (int) ($_POST['shipping_address_id'] ?? 0);
 $shippingQuoteToken = trim((string) ($_POST['shipping_quote_token'] ?? ''));
 $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
@@ -41,10 +44,12 @@ $selectedCourierName = '';
 $selectedCourierId = 0;
 $shippingRateSource = 'manual';
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+$guestCheckoutStarted = $customerId <= 0;
 $wantsCreateAccount = ($customerId <= 0 && (int) ($_POST['create_account'] ?? 0) === 1);
 $createAccountPassword = (string) ($_POST['create_account_password'] ?? '');
 $createAccountConfirmPassword = (string) ($_POST['create_account_confirm_password'] ?? '');
 $createdGuestAccount = false;
+$newAccountRequest = null;
 PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 if ($customerId > 0 && $shippingAddressId > 0 && customer_addresses_table_ready($conn)) {
@@ -73,26 +78,33 @@ $_SESSION['checkout_old'] = [
     'country' => $country,
     'order_notes' => $orderNotes,
     'payment_method' => $paymentMethod,
+    'online_method' => $onlineMethod,
     'cod_fee_apply' => $codFeeApply,
     'shipping_address_id' => $shippingAddressId,
     'create_account' => $wantsCreateAccount ? 1 : 0,
 ];
+$_SESSION['checkout_draft'] = $_SESSION['checkout_old'];
 
 $errors = [];
+$validationRules = checkout_validation_constraints();
 if ($fullName === '') { $errors['full_name'] = 'Full name is required.'; }
+elseif (strlen($fullName) > 120) { $errors['full_name'] = 'Full name must be 120 characters or fewer.'; }
 if ($phone === '') {
     $errors['phone'] = 'Phone is required.';
-} elseif (!preg_match('/^[0-9+\-\s()]{7,20}$/', $phone)) {
+} elseif (!preg_match('/' . $validationRules['phone_pattern'] . '/', $phone)) {
     $errors['phone'] = 'Enter a valid phone number.';
 }
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { $errors['email'] = 'Valid email is required.'; }
+elseif (strlen($email) > 190) { $errors['email'] = 'Email must be 190 characters or fewer.'; }
 if ($address === '') { $errors['address'] = 'Address is required.'; }
 elseif (strlen($address) > 500) { $errors['address'] = 'Address must be 500 characters or fewer.'; }
 if ($city === '') { $errors['city'] = 'City is required.'; }
+elseif (strlen($city) > 120) { $errors['city'] = 'City must be 120 characters or fewer.'; }
 if ($state === '') { $errors['state'] = 'State is required.'; }
+elseif (strlen($state) > 120) { $errors['state'] = 'State must be 120 characters or fewer.'; }
 if ($pincode === '') {
     $errors['pincode'] = 'Pincode is required.';
-} elseif (strcasecmp($country, 'india') === 0 && !preg_match('/^[1-9][0-9]{5}$/', $pincode)) {
+} elseif (strcasecmp($country, 'india') === 0 && !preg_match('/' . $validationRules['pincode_pattern'] . '/', $pincode)) {
     $errors['pincode'] = 'Enter a valid 6-digit Indian pincode.';
 }
 if ($country === '') { $errors['country'] = 'Country is required.'; }
@@ -132,21 +144,13 @@ if ($wantsCreateAccount && $customerId <= 0) {
         redirect('/checkout.php');
     }
 
-    $passwordHash = password_hash($createAccountPassword, PASSWORD_DEFAULT);
-    $verifyTokenRaw = bin2hex(random_bytes(32));
-    $verifyTokenHash = hash('sha256', $verifyTokenRaw);
-    $verifyExpires = (new DateTime('now', new DateTimeZone('UTC')))->modify('+24 hours')->format('Y-m-d H:i:s');
-    $createStmt = $conn->prepare(
-        "INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token, email_verify_expires)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?)"
-    );
-    $createStmt->bind_param('sssssss', $fullName, $email, $passwordHash, $phone, $country, $verifyTokenHash, $verifyExpires);
-    $createStmt->execute();
-    $customerId = (int) $conn->insert_id;
-    if ($customerId > 0) {
-        $createdGuestAccount = true;
-        EmailService::send_customer_verification_email($email, $fullName, $verifyTokenRaw);
-    }
+    // Validate and generate the secret before locking rows; insertion happens with the order.
+    $newAccountRequest = [
+        'password_hash' => password_hash($createAccountPassword, PASSWORD_DEFAULT),
+        'token_raw' => bin2hex(random_bytes(32)),
+        'expires' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('+24 hours')->format('Y-m-d H:i:s'),
+    ];
+    $newAccountRequest['token_hash'] = hash('sha256', $newAccountRequest['token_raw']);
 }
 
 $cart = $_SESSION['cart'];
@@ -193,6 +197,22 @@ if (empty($ids)) {
 
 try {
     $conn->begin_transaction();
+
+    if ($newAccountRequest !== null) {
+        try {
+            $createStmt = $conn->prepare("INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token, email_verify_expires) VALUES (?, ?, ?, ?, ?, 0, ?, ?)");
+            $createStmt->bind_param('sssssss', $fullName, $email, $newAccountRequest['password_hash'], $phone, $country, $newAccountRequest['token_hash'], $newAccountRequest['expires']);
+            $createStmt->execute();
+        } catch (mysqli_sql_exception $e) {
+            if ((int) $e->getCode() === 1062) {
+                throw new RuntimeException('An account with this email already exists. Please log in or continue without account creation.');
+            }
+            throw $e;
+        }
+        $customerId = (int) $conn->insert_id;
+        if ($customerId <= 0) throw new RuntimeException('Unable to create customer account.');
+        $createdGuestAccount = true;
+    }
 
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
@@ -838,6 +858,13 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
     ];
     do_action('order.after_create', $orderHookContext);
 
+    // Razorpay capacity is claimed before its payable gateway order is created. This transaction
+    // holds the coupon row lock, so concurrent pending sessions cannot oversubscribe a limit.
+    if ($couponId > 0 && $paymentMethod === 'razorpay' && !$isZeroAmountOrder) {
+        reserve_coupon_for_order($conn, $couponId, $customerId, $orderId);
+        log_order_activity($conn, $orderId, 'coupon_reserved', 'system', 0, 'system', 'Coupon capacity reserved for Razorpay payment session.');
+    }
+
     // For COD: increment coupon usage only after the order is committed (payment confirmed
     // on delivery is outside our system's control, but the order is real and the discount
     // is locked in — this is the earliest safe point for COD).
@@ -857,9 +884,24 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
             throw new RuntimeException('Unable to mark coupon usage for this order.');
         }
     }
+    if ($paymentMethod === 'cod' || $isZeroAmountOrder) {
+        PaymentService::outbox_enqueue($conn, $orderId, 'meta.purchase');
+    }
 
+    // Even an account created during checkout is not authenticated yet; retain guest access
+    // until verification/login rather than silently changing the checkout contract.
+    if ($guestCheckoutStarted) {
+        issue_guest_order_capability($conn, $orderId);
+    }
     $conn->commit();
     do_action('order.after_commit', $orderHookContext);
+    if ($createdGuestAccount && $newAccountRequest !== null) {
+        $verificationSent = EmailService::send_customer_verification_email($email, $fullName, (string) $newAccountRequest['token_raw']);
+        if (!$verificationSent) {
+            // The committed account and order remain valid; activity is a durable admin retry cue.
+            log_order_activity($conn, $orderId, 'account_verification_email_failed', 'system', 0, 'system', 'Account verification email failed after commit; customer can request a resend.');
+        }
+    }
     foreach ($orderItems as $item) {
         log_ecommerce_event(
             $conn,
@@ -938,6 +980,11 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
     }
 
     error_log('[app] place-order failed: ' . $e->getMessage());
-    $_SESSION['checkout_errors'] = ['Unable to place order right now. Please try again.'];
+    $message = $e->getMessage();
+    if ($message === 'An account with this email already exists. Please log in or continue without account creation.') {
+        $_SESSION['checkout_errors'] = ['email' => $message];
+    } else {
+        $_SESSION['checkout_errors'] = ['_checkout' => 'Unable to place order right now. Please try again.'];
+    }
     redirect('/checkout.php');
 }

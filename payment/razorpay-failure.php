@@ -2,8 +2,6 @@
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
 
-require_customer();
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/checkout.php');
 }
@@ -23,6 +21,8 @@ $paymentId = trim((string) ($_POST['razorpay_payment_id'] ?? ''));
 $rzpOrderId = trim((string) ($_POST['razorpay_order_id'] ?? ''));
 $errorCode = trim((string) ($_POST['error_code'] ?? ''));
 $errorDescription = trim((string) ($_POST['error_description'] ?? ''));
+require_order_access($conn, $orderId);
+$orderNumber = (string) ($_SESSION['pending_order_number'] ?? '');
 
 if (!in_array($eventType, ['failed', 'cancelled'], true)) {
     $eventType = 'failed';
@@ -34,10 +34,10 @@ try {
     $orderStmt = $conn->prepare(
         "SELECT id, order_number, payment_status
          FROM orders
-         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
+         WHERE id = ? AND payment_method = 'razorpay'
          FOR UPDATE"
     );
-    $orderStmt->bind_param('ii', $orderId, $customerId);
+    $orderStmt->bind_param('i', $orderId);
     $orderStmt->execute();
     $order = $orderStmt->get_result()->fetch_assoc();
 
@@ -86,12 +86,12 @@ try {
                 $attemptRef,
                 $orderId,
                 $paymentRowId,
-                $eventType === 'cancelled' ? 'cancelled' : 'failed',
-                'failure_callback',
+                'client_reported_' . $eventType,
+                'browser_intent',
                 $paymentId,
                 '',
                 $errorCode,
-                $errorDescription !== '' ? $errorDescription : ('Razorpay payment ' . $eventType),
+                $errorDescription !== '' ? $errorDescription : ('Browser reported Razorpay payment ' . $eventType),
                 '',
                 '',
                 json_encode([
@@ -103,7 +103,7 @@ try {
             );
         }
 
-        $parts = ['Razorpay payment ' . $eventType];
+        $parts = ['Browser reported Razorpay payment ' . $eventType . '; awaiting gateway confirmation'];
         if ($errorCode !== '') {
             $parts[] = 'code: ' . $errorCode;
         }
@@ -111,24 +111,17 @@ try {
             $parts[] = 'reason: ' . $errorDescription;
         }
         $note = implode(' | ', $parts);
-        PaymentService::razorpay_mark_order_failed(
-            $conn,
-            $orderId,
-            (string) ($order['payment_status'] ?? ''),
-            $note,
-            $paymentId,
-            $rzpOrderId
-        );
-        InventoryService::restore_order_inventory($conn, $orderId);
-        log_order_activity($conn, $orderId, 'payment_failed', 'customer', $customerId, 'customer', $note);
+        // Browser events are intent only. Keep payment and inventory reserved until a signed
+        // webhook or gateway API reconciliation authoritatively reports the result.
+        log_order_activity($conn, $orderId, 'payment_client_intent', $customerId > 0 ? 'customer' : 'guest', $customerId, $customerId > 0 ? 'customer' : 'guest', $note);
     }
 
     $conn->commit();
 
     if ($eventType === 'cancelled') {
-        flash('error', 'Payment was cancelled. You can retry payment from your orders.');
+        flash('warning', 'Payment was dismissed. We are waiting for Razorpay confirmation before changing your order.');
     } else {
-        $msg = 'Payment failed. You can retry payment from your orders.';
+        $msg = 'Payment result was reported by the browser. We are waiting for Razorpay confirmation.';
         if ($errorDescription !== '') {
             $msg .= ' Reason: ' . $errorDescription;
         } elseif ($errorCode !== '') {
@@ -136,7 +129,7 @@ try {
         }
         flash('error', $msg);
     }
-    redirect('/customer/orders.php');
+    redirect(order_access_landing_url($orderNumber));
 } catch (Throwable $e) {
     try {
         $conn->rollback();
@@ -146,5 +139,5 @@ try {
 
     error_log('[razorpay] failure callback failed: ' . $e->getMessage());
     flash('error', 'Unable to process payment status. Please check your order in My Orders.');
-    redirect('/customer/orders.php');
+    redirect(order_access_landing_url($orderNumber));
 }

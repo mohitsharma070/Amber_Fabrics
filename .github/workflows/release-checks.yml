@@ -1,0 +1,48 @@
+name: Release checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php-quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, fileinfo, json, mbstring, mysqli, openssl, zip
+          coverage: none
+
+      - name: Validate Composer metadata
+        run: composer validate --strict --no-check-publish
+
+      - name: Install production dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Audit dependencies
+        run: composer audit --locked --no-interaction
+
+      - name: Scan source for embedded credentials
+        run: php scripts/release-security.php
+
+      - name: Lint application PHP
+        run: find . -path ./vendor -prune -o -path ./dist -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Build and verify release artifact
+        run: |
+          php scripts/build-release.php
+          artifact="$(find dist -maxdepth 1 -type f -name 'release-*.zip' -print -quit)"
+          test -n "$artifact"
+          php scripts/verify-release.php "$artifact"

@@ -9,4 +9,7 @@ tmp_sessions/*
 config/app-config.php
 vendor/
 dist/
+artifacts/
 node_modules/
+tests/browser/.checkout-*.log
+tests/browser/.checkout-*.exit

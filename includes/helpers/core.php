@@ -230,18 +230,33 @@ function money($amount, string $currency = 'INR', bool $withCode = false): strin
 /**
  * Enforce a baseline password policy for customer credentials.
  */
+function checkout_validation_constraints(): array
+{
+    return [
+        'phone_pattern' => '^[0-9+\\-\\s()]{7,20}$',
+        'pincode_pattern' => '^[1-9][0-9]{5}$',
+        'address_max_length' => 500,
+        'notes_max_length' => 500,
+        'password_min_length' => 10,
+        'password_uppercase_pattern' => '[A-Z]',
+        'password_lowercase_pattern' => '[a-z]',
+        'password_number_pattern' => '\\d',
+    ];
+}
+
 function password_strength_error(string $password): ?string
 {
-    if (strlen($password) < 10) {
-        return 'Password must be at least 10 characters.';
+    $rules = checkout_validation_constraints();
+    if (strlen($password) < $rules['password_min_length']) {
+        return 'Password must be at least ' . $rules['password_min_length'] . ' characters.';
     }
-    if (!preg_match('/[A-Z]/', $password)) {
+    if (!preg_match('/' . $rules['password_uppercase_pattern'] . '/', $password)) {
         return 'Password must include at least one uppercase letter.';
     }
-    if (!preg_match('/[a-z]/', $password)) {
+    if (!preg_match('/' . $rules['password_lowercase_pattern'] . '/', $password)) {
         return 'Password must include at least one lowercase letter.';
     }
-    if (!preg_match('/\d/', $password)) {
+    if (!preg_match('/' . $rules['password_number_pattern'] . '/', $password)) {
         return 'Password must include at least one number.';
     }
     return null;

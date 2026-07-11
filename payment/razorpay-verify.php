@@ -3,8 +3,6 @@ require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
 require_once __DIR__ . '/../includes/coupon-functions.php';
 
-require_customer();
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/checkout.php');
 }
@@ -23,6 +21,7 @@ $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 $paymentId = trim((string) ($_POST['razorpay_payment_id'] ?? ''));
 $rzpOrderId = trim((string) ($_POST['razorpay_order_id'] ?? ''));
 $signature = trim((string) ($_POST['razorpay_signature'] ?? ''));
+require_order_access($conn, $orderId);
 
 if ($paymentId === '' || $rzpOrderId === '' || $signature === '') {
     flash('error', 'Payment verification failed.');
@@ -46,10 +45,10 @@ try {
     $orderStmt = $conn->prepare(
         "SELECT id, payment_status, order_status, order_notes, total_amount
          FROM orders
-         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
+         WHERE id = ? AND payment_method = 'razorpay'
          LIMIT 1"
     );
-    $orderStmt->bind_param('ii', $orderId, $customerId);
+    $orderStmt->bind_param('i', $orderId);
     $orderStmt->execute();
     $order = $orderStmt->get_result()->fetch_assoc();
 
@@ -128,10 +127,10 @@ try {
     $orderLockStmt = $conn->prepare(
         "SELECT id, payment_status, order_status, order_notes
          FROM orders
-         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
+         WHERE id = ? AND payment_method = 'razorpay'
          LIMIT 1 FOR UPDATE"
     );
-    $orderLockStmt->bind_param('ii', $orderId, $customerId);
+    $orderLockStmt->bind_param('i', $orderId);
     $orderLockStmt->execute();
     $lockedOrder = $orderLockStmt->get_result()->fetch_assoc();
     if (!$lockedOrder) {
@@ -190,7 +189,7 @@ try {
 
         $conn->commit();
         flash('warning', 'Payment is being verified by the gateway. If money was debited, your order will update automatically after webhook confirmation.');
-        redirect('/customer/orders.php');
+        redirect(order_access_landing_url($orderNumber));
     }
 
     PaymentService::razorpay_mark_order_paid(
@@ -229,15 +228,13 @@ try {
         'Razorpay payment id: ' . $paymentId
     );
 
-    PaymentService::consume_coupon_after_razorpay_capture(
-        $conn,
-        $orderId,
-        $customerId,
-        (int) ($_SESSION['pending_coupon_id'] ?? 0),
-        (string) ($lockedOrder['order_notes'] ?? '')
-    );
-
     $conn->commit();
+
+    // Capture is authoritative. Coupon reconciliation is intentionally outside that transaction:
+    // an accounting fault is visible to admins but can never revert a captured payment to unpaid.
+    PaymentService::reconcile_coupon_after_razorpay_capture(
+        $conn, $orderId, $customerId, (int) ($_SESSION['pending_coupon_id'] ?? 0), (string) ($lockedOrder['order_notes'] ?? '')
+    );
 
     CartService::checkout_session_clear_after_order($conn, $customerId);
 

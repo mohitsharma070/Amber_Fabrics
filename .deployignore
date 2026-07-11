@@ -1,4 +1,7 @@
 .git/
+.gitignore
+.gitattributes
+.deployignore
 .github/
 .env
 .env.*
@@ -12,6 +15,7 @@ database/setup.php
 database/schema.sql
 tests/
 logs/
+artifacts/
 storage/logs/
 phpunit.xml
 phpunit.xml.dist

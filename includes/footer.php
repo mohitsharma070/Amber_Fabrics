@@ -160,8 +160,7 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['checkout.php', 'login.php
 <div
     id="cookieConsentBanner"
     data-consent-status="<?php echo e($marketingConsentStatus); ?>"
-    class="position-fixed bottom-0 start-0 end-0 p-3 <?php echo $marketingConsentStatus === 'unknown' ? '' : 'd-none'; ?>"
-    style="z-index:1085;"
+    class="cookie-consent-banner position-fixed bottom-0 start-0 end-0 p-3 <?php echo $marketingConsentStatus === 'unknown' ? '' : 'd-none'; ?>"
 >
     <div class="container">
         <div class="card border-0 shadow">

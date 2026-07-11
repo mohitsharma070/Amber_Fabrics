@@ -2,24 +2,28 @@
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/customer-auth.php';
 
-require_customer();
-
 $orderNumber = trim($_GET['order'] ?? '');
-$customerId = (int) ($_SESSION['customer_id'] ?? 0);
 
 if ($orderNumber === '') {
     redirect('/index.php');
 }
 
-$stmt = $conn->prepare(
-    "SELECT id, order_number, customer_name, customer_email, total_amount, payment_method, payment_status, order_status, created_at
-     FROM orders
-     WHERE order_number = ? AND customer_id = ?
-     LIMIT 1"
-);
-$stmt->bind_param('si', $orderNumber, $customerId);
-$stmt->execute();
-$order = $stmt->get_result()->fetch_assoc();
+if (is_customer_logged_in()) {
+    $stmt = $conn->prepare("SELECT id, order_number, customer_name, customer_email, total_amount, payment_method, payment_status, order_status, created_at FROM orders WHERE order_number = ? AND customer_id = ? LIMIT 1");
+    $customerId = (int) $_SESSION['customer_id']; $stmt->bind_param('si', $orderNumber, $customerId); $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+} else {
+    $capabilities = (array) ($_SESSION['guest_order_capabilities'] ?? []);
+    $order = null;
+    foreach (array_keys($capabilities) as $candidateId) {
+        $candidateId = (int) $candidateId;
+        if ($candidateId <= 0 || !guest_order_access_allowed($conn, $candidateId)) continue;
+        $stmt = $conn->prepare("SELECT id, order_number, customer_name, customer_email, total_amount, payment_method, payment_status, order_status, created_at FROM orders WHERE id = ? AND order_number = ? LIMIT 1");
+        $stmt->bind_param('is', $candidateId, $orderNumber); $stmt->execute();
+        $order = $stmt->get_result()->fetch_assoc();
+        if ($order) break;
+    }
+}
 
 if (!$order) {
     flash('error', 'Order not found.');
@@ -103,7 +107,15 @@ include __DIR__ . '/includes/header.php';
                     <?php endif; ?>
 
                     <div class="d-flex gap-2 justify-content-center">
+                        <?php if (is_customer_logged_in()): ?>
                         <a href="/customer/order-view.php?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
+                        <?php elseif ($paymentMethod === 'razorpay' && in_array($paymentStatus, ['pending', 'failed'], true)): ?>
+                        <form method="post" action="/retry-payment.php" class="d-inline">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="order_id" value="<?php echo (int) $orderId; ?>">
+                            <button class="btn btn-outline-primary" type="submit">Retry Payment</button>
+                        </form>
+                        <?php endif; ?>
                         <a href="/catalog.php" class="btn btn-primary">Continue Shopping</a>
                         <a href="/contact.php" class="btn btn-outline-secondary">Need Help?</a>
                     </div>
@@ -114,3 +126,9 @@ include __DIR__ . '/includes/header.php';
 </section>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>
+<?php
+// Successful guest checkout is one-time session access. Failed/pending Razorpay remains available for retry.
+if (!is_customer_logged_in() && ($paymentMethod === 'cod' || $paymentStatus === 'paid')) {
+    clear_guest_order_capability($conn, $orderId);
+}
+?>

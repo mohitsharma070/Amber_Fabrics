@@ -66,7 +66,7 @@ This caused broken HTML structure on all admin pages.
 **Code Changes:**
 ```php
 // Before:
-$mail->Password = 'ykue tjcq vhzd zxpx'; // Gmail App Password
+$mail->Password = 'replace-with-smtp-app-password'; // Redacted example; never commit a real credential
 
 // After:
 $mail->Password = getenv('SMTP_PASSWORD') ?: ''; // Gmail App Password - set SMTP_PASSWORD environment variable

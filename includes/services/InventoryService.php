@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../coupon-functions.php';
 
 final class InventoryService
 {
@@ -655,6 +656,7 @@ final class InventoryService
             $updateStmt->bind_param('si', $newNotes, $orderId);
             $updateStmt->execute();
             release_coupon_usage_for_order($conn, $orderId);
+            release_coupon_reservation_for_order($conn, $orderId, 'order_cancelled');
 
             log_order_activity(
                 $conn,

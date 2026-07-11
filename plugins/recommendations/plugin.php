@@ -838,11 +838,6 @@ function recommendations_render_section(mysqli $conn, array $rows, string $title
     <?php
 }
 
-function recommendations_render_product_grid(mysqli $conn, array $rows, string $title): void
-{
-    recommendations_render_section($conn, $rows, $title);
-}
-
 function recommendations_render_product_card(mysqli $conn, array $row, string $sectionKey = ''): string
 {
     $productCard = product_card_build_context($conn, $row);

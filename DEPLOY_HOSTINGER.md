@@ -26,7 +26,8 @@ Do not store live secrets in committed files.
 Do not store secrets in `.htaccess`.
 
 Use environment variables in hosting settings, or place a `secure-config.php`
-outside web root and set `APP_CONFIG_FILE` to that absolute path.
+outside `public_html`. The app automatically checks the parent of the web root;
+`APP_CONFIG_FILE` is only needed when you choose another absolute path.
 
 Required production keys are listed in `PRODUCTION_RUNBOOK.md`.
 
@@ -44,10 +45,12 @@ APP_MODE=production php database/migrate.php
 
 ```bash
 cd ~/public_html
-composer install --no-dev --optimize-autoloader --classmap-authoritative
+composer2 install --no-dev --optimize-autoloader --classmap-authoritative
 ```
 
-Do not deploy `composer.phar` into `public_html`.
+Hostinger uses `composer2` for PHP 8+. If your plan does not provide SSH/Composer,
+build the release with production `vendor/` dependencies locally and upload the
+verified artifact instead. Do not deploy `composer.phar` into `public_html`.
 
 ## 6. Verify Runtime
 

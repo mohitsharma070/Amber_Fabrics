@@ -299,8 +299,3 @@ try {
         4
     );
 }
-
-function db_connected(): bool
-{
-    return isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli;
-}

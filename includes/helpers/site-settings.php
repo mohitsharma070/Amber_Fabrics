@@ -1,21 +1,6 @@
 <?php
 require_once __DIR__ . '/../services/SiteSettingsService.php';
 
-function site_settings_defaults(): array
-{
-    return SiteSettingsService::defaults();
-}
-
-function ensure_site_settings_table(mysqli $conn): bool
-{
-    return SiteSettingsService::ensureTable($conn);
-}
-
-function load_site_settings_from_db(mysqli $conn): array
-{
-    return SiteSettingsService::loadFromDb($conn);
-}
-
 function save_site_settings_to_db(mysqli $conn, array $settings): void
 {
     SiteSettingsService::saveToDb($conn, $settings);
@@ -36,11 +21,6 @@ function category_taxonomy_mode(): string
 function locked_storefront_category_slugs(): array
 {
     return ['fabric-by-meter', 'bedsheets', 'towels', 'table-covers'];
-}
-
-function is_storefront_category_slug(string $slug): bool
-{
-    return in_array(trim(strtolower($slug)), locked_storefront_category_slugs(), true);
 }
 
 /**
