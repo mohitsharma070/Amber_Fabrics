@@ -89,6 +89,90 @@ function release_coupon_usage_for_order(mysqli $conn, int $orderId): bool
     return true;
 }
 
+/** Reservations count against coupons.used_count, so capacity cannot be oversold while a gateway session is pending. */
+function reserve_coupon_for_order(mysqli $conn, int $couponId, int $customerId, int $orderId): bool
+{
+    if ($couponId <= 0 || $customerId <= 0 || $orderId <= 0) {
+        throw new RuntimeException('Invalid coupon reservation.');
+    }
+    $existing = $conn->prepare("SELECT coupon_id, customer_id, state FROM coupon_reservations WHERE order_id = ? FOR UPDATE");
+    $existing->bind_param('i', $orderId);
+    $existing->execute();
+    $reservation = $existing->get_result()->fetch_assoc();
+    if ($reservation && in_array((string) $reservation['state'], ['reserved', 'consumed'], true)) {
+        if ((int) $reservation['coupon_id'] !== $couponId || (int) $reservation['customer_id'] !== $customerId) {
+            throw new RuntimeException('Order has a different coupon reservation.');
+        }
+        return true;
+    }
+
+    $couponStmt = $conn->prepare("SELECT id FROM coupons WHERE id = ? FOR UPDATE");
+    $couponStmt->bind_param('i', $couponId);
+    $couponStmt->execute();
+    if (!$couponStmt->get_result()->fetch_assoc()) {
+        throw new RuntimeException('Coupon no longer exists.');
+    }
+    if (has_customer_used_coupon($conn, $couponId, $customerId)) {
+        throw new RuntimeException('You have already used this coupon.');
+    }
+    $customerReservation = $conn->prepare("SELECT order_id FROM coupon_reservations WHERE coupon_id = ? AND customer_id = ? AND state IN ('reserved', 'consumed') AND order_id <> ? LIMIT 1 FOR UPDATE");
+    $customerReservation->bind_param('iii', $couponId, $customerId, $orderId);
+    $customerReservation->execute();
+    if ($customerReservation->get_result()->fetch_assoc()) {
+        throw new RuntimeException('You already have an active reservation for this coupon.');
+    }
+    $claim = $conn->prepare("UPDATE coupons SET used_count = used_count + 1 WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)");
+    $claim->bind_param('i', $couponId);
+    $claim->execute();
+    if ($conn->affected_rows !== 1) {
+        throw new RuntimeException('Coupon usage limit reached.');
+    }
+    if ($reservation) {
+        $restore = $conn->prepare("UPDATE coupon_reservations SET coupon_id = ?, customer_id = ?, state = 'reserved', reserved_at = NOW(), consumed_at = NULL, released_at = NULL, release_reason = NULL WHERE order_id = ?");
+        $restore->bind_param('iii', $couponId, $customerId, $orderId);
+        $restore->execute();
+    } else {
+        $insert = $conn->prepare("INSERT INTO coupon_reservations (coupon_id, customer_id, order_id, state) VALUES (?, ?, ?, 'reserved')");
+        $insert->bind_param('iii', $couponId, $customerId, $orderId);
+        $insert->execute();
+    }
+    return true;
+}
+
+function consume_coupon_reservation_for_order(mysqli $conn, int $orderId): bool
+{
+    $stmt = $conn->prepare("SELECT coupon_id, customer_id, state FROM coupon_reservations WHERE order_id = ? FOR UPDATE");
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    if (!$row) {
+        throw new RuntimeException('Coupon reservation is missing.');
+    }
+    if ($row['state'] === 'consumed') return true;
+    if ($row['state'] !== 'reserved') throw new RuntimeException('Coupon reservation was released.');
+    $usage = $conn->prepare("INSERT INTO coupon_usages (coupon_id, customer_id, order_id) VALUES (?, ?, ?)");
+    $couponId = (int) $row['coupon_id']; $customerId = (int) $row['customer_id'];
+    $usage->bind_param('iii', $couponId, $customerId, $orderId);
+    if (!$usage->execute()) throw new RuntimeException('Unable to record coupon usage.');
+    $consume = $conn->prepare("UPDATE coupon_reservations SET state = 'consumed', consumed_at = NOW() WHERE order_id = ? AND state = 'reserved'");
+    $consume->bind_param('i', $orderId); $consume->execute();
+    return true;
+}
+
+function release_coupon_reservation_for_order(mysqli $conn, int $orderId, string $reason = ''): bool
+{
+    $stmt = $conn->prepare("SELECT coupon_id, state FROM coupon_reservations WHERE order_id = ? FOR UPDATE");
+    $stmt->bind_param('i', $orderId); $stmt->execute(); $row = $stmt->get_result()->fetch_assoc();
+    if (!$row || $row['state'] !== 'reserved') return false;
+    $couponId = (int) $row['coupon_id'];
+    $release = $conn->prepare("UPDATE coupon_reservations SET state = 'released', released_at = NOW(), release_reason = ? WHERE order_id = ? AND state = 'reserved'");
+    $release->bind_param('si', $reason, $orderId); $release->execute();
+    if ($release->affected_rows !== 1) return false;
+    $decrement = $conn->prepare("UPDATE coupons SET used_count = GREATEST(used_count - 1, 0) WHERE id = ?");
+    $decrement->bind_param('i', $couponId); $decrement->execute();
+    return true;
+}
+
 function validate_coupon_for_amount(array $coupon, float $amount, string $today): array
 {
     if (($coupon['status'] ?? '') !== 'active') {

@@ -203,6 +203,7 @@ if ($eventType === 'payment.failed') {
                 $rzpOrderId
             );
             InventoryService::restore_order_inventory($conn, $orderId);
+            release_coupon_reservation_for_order($conn, $orderId, 'gateway_payment_failed');
             log_order_activity($conn, $orderId, 'payment_failed', 'webhook', 0, 'razorpay', $note);
         }
 
@@ -351,13 +352,6 @@ try {
         false
     );
 
-    PaymentService::consume_coupon_after_razorpay_capture(
-        $conn,
-        $orderId,
-        (int) ($order['customer_id'] ?? 0),
-        0,
-        (string) ($order['order_notes'] ?? '')
-    );
     $orderCustomerId = (int) ($order['customer_id'] ?? 0);
     if ($orderCustomerId > 0) {
         CartService::cart_clear_db($conn, $orderCustomerId);
@@ -375,6 +369,9 @@ try {
 
     $conn->commit();
     $businessCommitted = true;
+    PaymentService::reconcile_coupon_after_razorpay_capture(
+        $conn, $orderId, (int) ($order['customer_id'] ?? 0), 0, (string) ($order['order_notes'] ?? '')
+    );
     error_log('[razorpay-webhook] processed capture event_id=' . $eventId . ' order_id=' . $orderId . ' payment_id=' . $paymentId);
 
     do_action('order.after_payment_success', [

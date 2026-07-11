@@ -302,17 +302,17 @@ include __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         <div class="row g-3">
                             <div class="col-sm-6">
-                                <label class="form-label">Full Name *</label>
+                                <label class="form-label" for="checkout_full_name">Full Name *</label>
                                 <input type="text" id="checkout_full_name" name="full_name" class="<?php echo form_class($errors, 'full_name'); ?>" required value="<?php echo e($old['full_name']); ?>">
                                 <?php echo form_error($errors, 'full_name'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Phone *</label>
+                                <label class="form-label" for="checkout_phone">Phone *</label>
                                 <input type="text" id="checkout_phone" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" required value="<?php echo e($old['phone']); ?>">
                                 <?php echo form_error($errors, 'phone'); ?>
                             </div>
                             <div class="col-12">
-                                <label class="form-label">Email *</label>
+                                <label class="form-label" for="checkout_email">Email *</label>
                                 <input type="email" id="checkout_email" name="email" class="<?php echo form_class($errors, 'email'); ?>" required value="<?php echo e($old['email']); ?>">
                                 <?php echo form_error($errors, 'email'); ?>
                             </div>
@@ -327,12 +327,12 @@ include __DIR__ . '/includes/header.php';
                                     <div id="create_account_fields" style="<?php echo !empty($old['create_account']) ? '' : 'display:none;'; ?>">
                                         <div class="row g-3">
                                             <div class="col-sm-6">
-                                                <label class="form-label">Password</label>
+                                                <label class="form-label" for="create_account_password">Password</label>
                                                 <input type="password" id="create_account_password" name="create_account_password" class="<?php echo form_class($errors, 'create_account_password'); ?>" autocomplete="new-password">
                                                 <?php echo form_error($errors, 'create_account_password'); ?>
                                             </div>
                                             <div class="col-sm-6">
-                                                <label class="form-label">Confirm Password</label>
+                                                <label class="form-label" for="create_account_confirm_password">Confirm Password</label>
                                                 <input type="password" id="create_account_confirm_password" name="create_account_confirm_password" class="<?php echo form_class($errors, 'create_account_confirm_password'); ?>" autocomplete="new-password">
                                                 <?php echo form_error($errors, 'create_account_confirm_password'); ?>
                                             </div>
@@ -342,35 +342,35 @@ include __DIR__ . '/includes/header.php';
                                 </div>
                             <?php endif; ?>
                             <div class="col-12">
-                                <label class="form-label">Address *</label>
+                                <label class="form-label" for="checkout_address">Address *</label>
                                 <textarea id="checkout_address" name="address" class="<?php echo form_class($errors, 'address'); ?>" rows="2" maxlength="500" required><?php echo e($old['address']); ?></textarea>
                                 <?php echo form_error($errors, 'address'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">City *</label>
+                                <label class="form-label" for="checkout_city">City *</label>
                                 <input type="text" id="checkout_city" name="city" class="<?php echo form_class($errors, 'city'); ?>" required value="<?php echo e($old['city']); ?>">
                                 <?php echo form_error($errors, 'city'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">State *</label>
+                                <label class="form-label" for="checkout_state">State *</label>
                                 <input type="text" id="checkout_state" name="state" class="<?php echo form_class($errors, 'state'); ?>" required value="<?php echo e($old['state']); ?>">
                                 <?php echo form_error($errors, 'state'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Pincode *</label>
+                                <label class="form-label" for="checkout_pincode">Pincode *</label>
                                 <input type="text" id="checkout_pincode" name="pincode" class="<?php echo form_class($errors, 'pincode'); ?>" required value="<?php echo e($old['pincode']); ?>">
                                 <?php echo form_error($errors, 'pincode'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Country *</label>
+                                <label class="form-label" for="checkout_country">Country *</label>
                                 <select id="checkout_country" name="country" class="<?php echo form_class($errors, 'country'); ?>" required>
                                     <option value="India" selected>India</option>
                                 </select>
                                 <?php echo form_error($errors, 'country'); ?>
                             </div>
                             <div class="col-12">
-                                <label class="form-label">Order Notes</label>
-                                <textarea name="order_notes" class="form-control" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
+                                <label class="form-label" for="checkout_order_notes">Order Notes</label>
+                                <textarea id="checkout_order_notes" name="order_notes" class="form-control" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
                         </div>
                         </div>

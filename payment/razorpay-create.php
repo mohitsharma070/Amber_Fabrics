@@ -2,8 +2,6 @@
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
 
-require_customer();
-
 $cancelInvalidRazorpayOrder = static function (mysqli $conn, int $orderId, string $reason): void {
     if ($orderId <= 0) {
         return;
@@ -68,16 +66,17 @@ if (empty($_SESSION['pending_order_id'])) {
 
 $orderId = (int) $_SESSION['pending_order_id'];
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+require_order_access($conn, $orderId);
 PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 $preferredOnlineMethod = InventoryService::sanitize_online_payment_method((string) ($_SESSION['pending_online_method'] ?? ''));
 
 $stmt = $conn->prepare(
     "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status, order_status, created_at
      FROM orders
-     WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending','failed')
+     WHERE id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending','failed')
      LIMIT 1"
 );
-$stmt->bind_param('ii', $orderId, $customerId);
+$stmt->bind_param('i', $orderId);
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
 

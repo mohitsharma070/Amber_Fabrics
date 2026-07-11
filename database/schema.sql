@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS categories (
     parent_id  INT          DEFAULT NULL,
     image      VARCHAR(255) DEFAULT NULL,
     status     ENUM('active','inactive') DEFAULT 'active',
+    uses_variant_size TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE CASCADE
@@ -439,6 +440,8 @@ CREATE TABLE IF NOT EXISTS orders (
     coupon_id       INT           DEFAULT NULL,
     coupon_code     VARCHAR(50)   DEFAULT NULL,
     coupon_discount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    guest_capability_hash CHAR(64) DEFAULT NULL,
+    guest_capability_expires_at DATETIME DEFAULT NULL,
     shipping_quote_token VARCHAR(64) DEFAULT NULL,
     shipping_source VARCHAR(40)   DEFAULT NULL,
     courier_id      INT           DEFAULT NULL,
@@ -469,6 +472,7 @@ CREATE TABLE IF NOT EXISTS orders (
     INDEX idx_orders_customer_email (customer_email),
     INDEX idx_orders_coupon_id      (coupon_id),
     INDEX idx_orders_coupon_code    (coupon_code),
+    INDEX idx_orders_guest_capability_expiry (guest_capability_expires_at),
     INDEX idx_orders_shipping_quote_token (shipping_quote_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -936,6 +940,39 @@ CREATE TABLE IF NOT EXISTS coupon_usages (
     CONSTRAINT fk_coupon_usages_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
     CONSTRAINT fk_coupon_usages_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     CONSTRAINT fk_coupon_usages_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS coupon_reservations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    coupon_id INT NOT NULL, customer_id INT NOT NULL, order_id INT NOT NULL,
+    state ENUM('reserved','consumed','released') NOT NULL DEFAULT 'reserved',
+    reserved_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, consumed_at TIMESTAMP NULL DEFAULT NULL,
+    released_at TIMESTAMP NULL DEFAULT NULL, release_reason VARCHAR(120) DEFAULT NULL,
+    UNIQUE KEY uq_coupon_reservations_order (order_id),
+    INDEX idx_coupon_reservations_coupon_state (coupon_id, state),
+    CONSTRAINT fk_coupon_reservations_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
+    CONSTRAINT fk_coupon_reservations_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_coupon_reservations_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payment_reconciliation_failures (
+    id INT AUTO_INCREMENT PRIMARY KEY, order_id INT NOT NULL, payment_id INT DEFAULT NULL,
+    failure_type VARCHAR(80) NOT NULL, details TEXT NOT NULL, resolved_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_payment_reconciliation_failure (order_id, failure_type),
+    INDEX idx_payment_reconciliation_open (resolved_at, created_at),
+    CONSTRAINT fk_payment_reconciliation_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    CONSTRAINT fk_payment_reconciliation_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS event_outbox (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id INT NOT NULL, event_type VARCHAR(80) NOT NULL,
+    idempotency_key VARCHAR(191) NOT NULL, status ENUM('pending','processing','sent','failed') NOT NULL DEFAULT 'pending',
+    attempts INT NOT NULL DEFAULT 0, next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_error TEXT DEFAULT NULL, sent_at DATETIME DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_event_outbox_idempotency (idempotency_key), INDEX idx_event_outbox_ready (status, next_attempt_at),
+    CONSTRAINT fk_event_outbox_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS return_items (

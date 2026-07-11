@@ -4,8 +4,7 @@ add_action('app.init', 'meta_capi_capture_browser_ids', 10);
 add_action('product.view', 'meta_capi_handle_view_content', 10);
 add_action('checkout.view', 'meta_capi_handle_initiate_checkout', 10);
 add_action('cart.after_add', 'meta_capi_handle_add_to_cart', 20);
-add_action('order.after_create', 'meta_capi_handle_cod_purchase', 30);
-add_action('order.after_payment_success', 'meta_capi_handle_paid_purchase', 10);
+add_action('outbox.process', 'meta_capi_process_outbox_event', 10);
 
 function meta_capi_enabled(): bool
 {
@@ -135,17 +134,17 @@ function meta_capi_event_source_url(): string
     return $scheme . '://' . $host . $uri;
 }
 
-function meta_capi_post_event(string $eventName, array $customData, array $userData, string $eventId, string $eventSourceUrl = ''): void
+function meta_capi_post_event(string $eventName, array $customData, array $userData, string $eventId, string $eventSourceUrl = ''): bool
 {
     if (!meta_capi_enabled()) {
-        return;
+        return true;
     }
     if ($eventId === '') {
-        return;
+        return true;
     }
     if (empty($userData)) {
         // Meta requires user_data for CAPI events.
-        return;
+        return true;
     }
 
     $payload = [
@@ -180,7 +179,25 @@ function meta_capi_post_event(string $eventName, array $customData, array $userD
             }
         }
         error_log('[meta-capi] event failed (' . $eventName . '): ' . $reason);
+        return false;
     }
+    return true;
+}
+
+function meta_capi_process_outbox_event(array $context): void
+{
+    $event = (array) ($context['event'] ?? []);
+    if (($event['event_type'] ?? '') !== 'meta.purchase') return;
+    $conn = $context['conn'] ?? null;
+    if (!$conn instanceof mysqli) throw new RuntimeException('Missing database connection for Meta outbox event.');
+    $orderId = (int) ($event['order_id'] ?? 0);
+    $purchase = meta_capi_purchase_payload($conn, $orderId);
+    if (!$purchase) throw new RuntimeException('Order payload unavailable for Meta outbox event.');
+    $identityStmt = $conn->prepare("SELECT customer_email, customer_phone, customer_id FROM orders WHERE id = ? LIMIT 1");
+    $identityStmt->bind_param('i', $orderId); $identityStmt->execute();
+    $identity = $identityStmt->get_result()->fetch_assoc() ?: [];
+    $ok = meta_capi_post_event('Purchase', (array) ($purchase['custom_data'] ?? []), meta_capi_user_data(['email' => $identity['customer_email'] ?? '', 'phone' => $identity['customer_phone'] ?? '', 'customer_id' => (int) ($identity['customer_id'] ?? 0)]), (string) ($event['idempotency_key'] ?? ''), '');
+    if (!$ok) throw new RuntimeException('Meta CAPI delivery failed.');
 }
 
 function meta_capi_event_id(string $eventName, string $seed): string

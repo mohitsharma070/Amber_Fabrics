@@ -1,4 +1,7 @@
 .git/
+.gitignore
+.gitattributes
+.deployignore
 .github/
 .env
 .env.*

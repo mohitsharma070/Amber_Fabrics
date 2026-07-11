@@ -9,13 +9,6 @@ $allowedMime = ['image/jpeg', 'image/png', 'image/webp'];
 $lockedAllowedSlugs = locked_storefront_category_slugs();
 $lockedSlugListText = implode(', ', $lockedAllowedSlugs);
 
-// Dynamic category flag to control whether variant size is used.
-try {
-    $conn->query("ALTER TABLE categories ADD COLUMN uses_variant_size TINYINT(1) NOT NULL DEFAULT 0");
-} catch (Throwable $e) {
-    // Ignore if already exists or ALTER is unavailable in this environment.
-}
-
 $processCategoryImageUpload = static function (array $file, string $slug) use ($maxSize, $allowedExt, $allowedMime): ?string {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return null;

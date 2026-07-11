@@ -213,6 +213,7 @@ function ensure_tables(mysqli $conn): void
             parent_id INT DEFAULT NULL,
             image VARCHAR(255) DEFAULT NULL,
             status ENUM('active','inactive') DEFAULT 'active',
+            uses_variant_size TINYINT(1) NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -221,6 +222,9 @@ function ensure_tables(mysqli $conn): void
     // Add parent_id column if it doesn't exist (migration for existing dbs)
     if (!$columnExists($conn, 'categories', 'parent_id')) {
         $conn->query("ALTER TABLE categories ADD COLUMN parent_id INT DEFAULT NULL AFTER slug");
+    }
+    if (!$columnExists($conn, 'categories', 'uses_variant_size')) {
+        $conn->query("ALTER TABLE categories ADD COLUMN uses_variant_size TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
     }
 
     // Check if foreign key already exists

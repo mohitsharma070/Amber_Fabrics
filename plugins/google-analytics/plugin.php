@@ -6,7 +6,7 @@ add_action('page.footer', 'google_analytics_render_page_events', 20);
 add_action('product.view', 'google_analytics_handle_product_view', 20);
 add_action('checkout.view', 'google_analytics_handle_checkout_view', 20);
 add_action('cart.after_add', 'google_analytics_handle_add_to_cart', 30);
-add_action('order.after_create', 'google_analytics_handle_order_create_purchase', 40);
+add_action('order.after_commit', 'google_analytics_handle_order_create_purchase', 40);
 add_action('order.after_payment_success', 'google_analytics_handle_paid_purchase', 20);
 
 // UTM, gclid, and attribution persistence belong to the utm-attribution plugin.

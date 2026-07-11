@@ -4,6 +4,8 @@ if (PHP_SAPI !== 'cli') {
     exit("Forbidden\n");
 }
 
+require_once __DIR__ . '/release-security.php';
+
 $root = dirname(__DIR__);
 $distDir = $root . DIRECTORY_SEPARATOR . 'dist';
 $releaseId = date('Ymd-His');
@@ -160,6 +162,16 @@ function assert_release_migration_files(string $stagingDir): void
         }
     }
 }
+
+$sourceSecurityViolations = release_security_scan($root);
+if ($sourceSecurityViolations !== []) {
+    foreach ($sourceSecurityViolations as $violation) {
+        fwrite(STDERR, '[FAIL] Potential embedded credential: ' . $violation . PHP_EOL);
+    }
+    fwrite(STDERR, "[FAIL] Source credential scan failed. Secret values were not printed." . PHP_EOL);
+    exit(1);
+}
+fwrite(STDOUT, "[PASS] Source credential scan passed." . PHP_EOL);
 
 try {
     assert_htaccess_has_no_secrets($root);
