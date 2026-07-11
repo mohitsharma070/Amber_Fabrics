@@ -14,6 +14,12 @@ function email_template_build(string $key, array $data = []): array
         'customer_password_reset' => 'customer-password-reset.php',
         'customer_email_verification' => 'customer-email-verification.php',
         'abandoned_cart_reminder' => 'abandoned-cart-reminder.php',
+        'back_in_stock_alert' => 'back-in-stock-alert.php',
+        'newsletter_confirm' => 'newsletter-confirm.php',
+        'newsletter_welcome' => 'newsletter-welcome.php',
+        'support_ticket_created' => 'support-ticket-created.php',
+        'support_ticket_reply_customer' => 'support-ticket-reply-customer.php',
+        'support_ticket_reply_admin' => 'support-ticket-reply-admin.php',
     ];
 
     $file = $map[$key] ?? '';

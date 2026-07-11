@@ -4,15 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title><?php echo e(isset($metaTitle) ? $metaTitle : 'Amber Fabrics'); ?></title>
+<?php
+$siteSettingsForHead = SiteSettingsService::get();
+$siteNameForHead = site_name();
+$siteDescriptionForHead = SiteContext::description();
+$siteUrlForHead = app_url();
+?>
+<title><?php echo e(isset($metaTitle) ? $metaTitle : $siteNameForHead); ?></title>
 
-<meta name="description" content="<?php echo e(isset($metaDescription) ? $metaDescription : 'Modern home textiles for everyday living. Amber Fabrics serves Indian customers and bulk buyers.'); ?>">
-<meta name="keywords" content="<?php echo e(isset($metaKeywords) ? $metaKeywords : 'home textiles, bedsheets, towels, table covers, Amber Fabrics, ecommerce'); ?>">
-<meta name="author" content="Amber Fabrics">
-<meta property="og:title" content="<?php echo e(isset($metaTitle) ? $metaTitle : 'Amber Fabrics'); ?>">
-<meta property="og:description" content="<?php echo e(isset($metaDescription) ? $metaDescription : 'Modern home textiles for everyday living. Amber Fabrics serves Indian customers and bulk buyers.'); ?>">
+<meta name="description" content="<?php echo e(isset($metaDescription) ? $metaDescription : $siteDescriptionForHead); ?>">
+<meta name="keywords" content="<?php echo e(isset($metaKeywords) ? $metaKeywords : ('home textiles, ecommerce, ' . $siteNameForHead)); ?>">
+<meta name="author" content="<?php echo e($siteNameForHead); ?>">
+<meta property="og:title" content="<?php echo e(isset($metaTitle) ? $metaTitle : $siteNameForHead); ?>">
+<meta property="og:description" content="<?php echo e(isset($metaDescription) ? $metaDescription : $siteDescriptionForHead); ?>">
 <meta property="og:type" content="website">
-<meta property="og:url" content="<?php echo e(isset($metaUrl) ? $metaUrl : 'https://amberfabrics.com'); ?>">
+<meta property="og:url" content="<?php echo e(isset($metaUrl) ? $metaUrl : $siteUrlForHead); ?>">
 <meta property="og:image" content="<?php echo e(isset($metaImage) ? $metaImage : 'images/fabrics/default.jpg'); ?>">
 
 <!-- Favicons: Light/Dark theme support -->
@@ -29,11 +35,11 @@
 
 <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
 
-<script src="/js/script.js?v=20260507h" defer></script>
+<script src="/js/script.js?v=20260627a" defer></script>
 
 <?php do_action('page.head', [
     'page' => basename($_SERVER['PHP_SELF'] ?? ''),
-    'title' => isset($metaTitle) ? (string) $metaTitle : 'Amber Fabrics',
+    'title' => isset($metaTitle) ? (string) $metaTitle : $siteNameForHead,
 ]); ?>
 
 </head>
@@ -42,23 +48,11 @@
 
 <?php 
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
-$siteSettings = get_site_settings();
+$siteSettings = SiteSettingsService::get();
 $siteName = $siteSettings['site_name'];
 $siteLogo = (string) ($siteSettings['branding_logo'] ?? '');
 $siteLogo = $siteLogo !== '' ? '/' . ltrim($siteLogo, '/') : '/images/logo-brand-light.svg';
-$headerCategories = [];
-try {
-    $headerCatStmt = $conn->prepare(
-        "SELECT name, slug
-         FROM categories
-         WHERE status = 'active' AND slug IN ('fabric-by-meter', 'bedsheets', 'towels', 'table-covers')
-         ORDER BY FIELD(slug, 'fabric-by-meter', 'bedsheets', 'towels', 'table-covers')"
-    );
-    $headerCatStmt->execute();
-    $headerCategories = $headerCatStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-} catch (Throwable $e) {
-    $headerCategories = [];
-}
+$headerCategories = storefront_categories_fetch($conn);
 $cartCount = 0;
 if (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) {
     $cartCount = count($_SESSION['cart']);
@@ -69,9 +63,6 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
     <div class="container">
         <div class="site-header-main">
             <div class="site-header-left">
-                <button class="nav-drawer-btn d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileNavDrawer" aria-controls="mobileNavDrawer" aria-label="Open menu">
-                    <span></span><span></span><span></span>
-                </button>
                 <a class="navbar-brand brand-mark text-white d-flex align-items-center m-0" href="/index.php">
                     <img src="<?php echo e($siteLogo); ?>" alt="<?php echo e($siteName); ?>" class="site-logo">
                 </a>
@@ -96,7 +87,7 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
                         <?php endif; ?>
                     </ul>
                 </div>
-                <a class="header-icon-link position-relative <?php echo $currentPage === 'cart.php' ? 'active' : ''; ?>" href="/cart.php" title="Cart" aria-label="Cart">
+                <a class="header-icon-link position-relative d-none d-lg-inline-flex <?php echo $currentPage === 'cart.php' ? 'active' : ''; ?>" href="/cart.php" title="Cart" aria-label="Cart">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM3.102 4l1.313 7h8.17l1.313-7H3.102zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
                     <?php if ($cartCount > 0): ?><span class="cart-badge"><?php echo $cartCount; ?></span><?php endif; ?>
                 </a>

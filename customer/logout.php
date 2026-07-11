@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 
 // Save cart to DB before destroying session
 if (!empty($_SESSION['customer_id']) && !empty($_SESSION['cart'])) {
-    cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart']);
+    CartService::cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart']);
 }
 if (!empty($_SESSION['customer_id']) && !empty($_SESSION['wishlist'])) {
     wishlist_save_to_db(

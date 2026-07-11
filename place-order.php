@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/coupon-functions.php';
 require_once __DIR__ . '/includes/customer-auth.php';
@@ -33,7 +33,7 @@ $pincode = trim($_POST['pincode'] ?? '');
 $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
-$onlineMethod = sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
+$onlineMethod = InventoryService::sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
 $shippingAddressId = (int) ($_POST['shipping_address_id'] ?? 0);
 $shippingQuoteToken = trim((string) ($_POST['shipping_quote_token'] ?? ''));
 $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
@@ -45,7 +45,7 @@ $wantsCreateAccount = ($customerId <= 0 && (int) ($_POST['create_account'] ?? 0)
 $createAccountPassword = (string) ($_POST['create_account_password'] ?? '');
 $createAccountConfirmPassword = (string) ($_POST['create_account_confirm_password'] ?? '');
 $createdGuestAccount = false;
-release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
+PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 if ($customerId > 0 && $shippingAddressId > 0 && customer_addresses_table_ready($conn)) {
     $savedAddress = customer_address_get($conn, $customerId, $shippingAddressId);
@@ -145,7 +145,7 @@ if ($wantsCreateAccount && $customerId <= 0) {
     $customerId = (int) $conn->insert_id;
     if ($customerId > 0) {
         $createdGuestAccount = true;
-        send_customer_verification_email($email, $fullName, $verifyTokenRaw);
+        EmailService::send_customer_verification_email($email, $fullName, $verifyTokenRaw);
     }
 }
 
@@ -154,19 +154,19 @@ $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size']))
 $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
 
 // Re-hydrate cart from canonical shared logic so checkout and order placement stay consistent.
-$hydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$hydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
 if (!empty($hydrated['removed_keys'])) {
     foreach ($hydrated['removed_keys'] as $cartKey) {
         unset($_SESSION['cart'][$cartKey], $_SESSION['cart_size'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
     }
     if ($customerId > 0) {
-        cart_save_to_db($conn, $customerId, $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
+        CartService::cart_save_to_db($conn, $customerId, $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
     }
     flash('error', 'Some unavailable items were removed from your cart. Please review and place your order again.');
     redirect('/checkout.php');
 }
 $cart = $_SESSION['cart'] ?? [];
-$cartSubtotal = cart_items_subtotal($hydrated['items']);
+$cartSubtotal = CartService::cart_items_subtotal($hydrated['items']);
 if (empty($cart) || $cartSubtotal <= 0) {
     flash('error', 'Your cart is empty.');
     redirect('/cart.php');
@@ -175,7 +175,7 @@ if (empty($cart) || $cartSubtotal <= 0) {
 $ids        = [];
 $variantIds = [];
 foreach (array_keys($cart) as $key) {
-    [$pid, $variantId] = cart_parse_key((string) $key);
+    [$pid, $variantId] = CartService::cart_parse_key((string) $key);
     if ($pid > 0) {
         $ids[] = $pid;
     }
@@ -211,8 +211,8 @@ try {
     }
 
     // Batch-load variants for stock / price / color / size
-    $variantMap = !empty($variantIds) ? get_variants_by_ids($conn, $variantIds) : [];
-    $siteSettings = get_site_settings();
+    $variantMap = !empty($variantIds) ? InventoryService::get_variants_by_ids($conn, $variantIds) : [];
+    $siteSettings = SiteSettingsService::get();
     $gstRateSnapshot = max(0.0, (float) ($siteSettings['gst_rate'] ?? 18));
     $hsnCodeSnapshot = trim((string) ($siteSettings['hsn_code'] ?? '5208'));
     $companyState = strtolower(trim((string) ($siteSettings['company_state'] ?? '')));
@@ -230,7 +230,7 @@ try {
     $subtotal = 0.00;
 
     foreach ($cart as $cartKey => $qtyRaw) {
-        [$productId, $variantId] = cart_parse_key((string) $cartKey);
+        [$productId, $variantId] = CartService::cart_parse_key((string) $cartKey);
 
         if (!isset($productMap[$productId])) {
             throw new RuntimeException('One of the products is no longer available.');
@@ -264,7 +264,7 @@ try {
         // Color + size: prefer variant data; fall back to fabric fields / legacy session size.
         if ($variant) {
             $selectedColor = (string) ($variant['color'] ?? '');
-            $selectedSize  = variant_size_display($variant, $unitType);
+            $selectedSize  = CartService::variant_size_display($variant, $unitType);
         } else {
             $selectedColor = (string) ($product['color'] ?? '');
             $selectedSize  = trim((string) ($cartSizes[$cartKey] ?? ''));
@@ -303,8 +303,8 @@ try {
         $bundleQtyVal      = null;
         if ($unitType === 'meter' && isset($cartMeterMap[$cartKey]) && is_numeric($cartMeterMap[$cartKey]) && (float) $cartMeterMap[$cartKey] > 0) {
             $bundleMeterLength = round((float) $cartMeterMap[$cartKey], 2);
-            $allowedMeterOptions = parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minQty);
-            if (!meter_length_is_allowed($bundleMeterLength, $allowedMeterOptions)) {
+            $allowedMeterOptions = CartService::parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minQty);
+            if (!CartService::meter_length_is_allowed($bundleMeterLength, $allowedMeterOptions)) {
                 throw new RuntimeException('Selected meter option is unavailable for ' . ($product['name'] ?? 'product'));
             }
             $bundleRatio = $bundleMeterLength > 0 ? ($qty / $bundleMeterLength) : 0;
@@ -338,13 +338,13 @@ try {
         ];
     }
 
-    $shipping = checkout_shipping_for_order((float) $subtotal, $country, $pincode, $paymentMethod);
+    $shipping = PaymentService::checkout_shipping_for_order((float) $subtotal, $country, $pincode, $paymentMethod);
     $baseShippingAmount = (float) $shipping['base_shipping'];
     $codFeeAmount = (float) $shipping['cod_fee'];
     $shippingAmount = (float) $shipping['shipping_total'];
 
     if (strcasecmp($country, 'india') === 0) {
-        $quote = shipping_quote_get($shippingQuoteToken);
+        $quote = InventoryService::shipping_quote_get($shippingQuoteToken);
         if (!$quote) {
             throw new RuntimeException('Shipping quote expired. Please review checkout and place order again.');
         }
@@ -458,7 +458,7 @@ try {
         $couponNote = "Coupon Applied: " . normalize_coupon_code($couponCode);
         $orderNotesWithCoupon = trim($orderNotesWithCoupon . "\n" . $couponNote);
     }
-    $shippingNote = "Shipping: Rs " . number_format($baseShippingAmount, 2) . " | COD Fee: Rs " . number_format($codFeeAmount, 2);
+$shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . money($codFeeAmount);
     if ($selectedCourierName !== '') {
         $shippingNote .= " | Courier: " . $selectedCourierName;
     }
@@ -478,7 +478,7 @@ try {
         $shippingAddressJson = null;
     }
 
-    if (orders_structured_financial_columns_ready($conn)) {
+    if (PaymentService::orders_structured_financial_columns_ready($conn)) {
         $insertOrder = $conn->prepare(
             "INSERT INTO orders (
                 order_number, customer_name, customer_phone, customer_email,
@@ -737,7 +737,7 @@ try {
         }
         $insertOrderItem->execute();
     }
-    reserve_order_inventory($conn, $orderId);
+    InventoryService::reserve_order_inventory($conn, $orderId);
 
     $insertPayment = $conn->prepare(
         "INSERT INTO payments (order_id, payment_method, payment_status, transaction_id, amount)
@@ -924,11 +924,11 @@ try {
         }
     }
 
-    checkout_session_clear_after_order($conn, $customerId);
+    CartService::checkout_session_clear_after_order($conn, $customerId);
     if ($createdGuestAccount) {
         flash('success', 'Your account was created. Please verify your email to log in and track orders.');
     }
-    send_order_confirmation_email($conn, $orderId);
+    EmailService::send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {
     try {
@@ -937,7 +937,7 @@ try {
         // ignore rollback failure
     }
 
-    error_log('[amberfabrics] place-order failed: ' . $e->getMessage());
+    error_log('[app] place-order failed: ' . $e->getMessage());
     $_SESSION['checkout_errors'] = ['Unable to place order right now. Please try again.'];
     redirect('/checkout.php');
 }

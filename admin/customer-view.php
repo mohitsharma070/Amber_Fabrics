@@ -137,7 +137,7 @@ include 'partials/header.php';
 
 <div class="row g-3 mb-4">
     <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Orders</div><div class="h4 mb-0"><?php echo (int) ($summary['orders_count'] ?? 0); ?></div></div></div>
-    <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Lifetime Value</div><div class="h4 mb-0">Rs <?php echo number_format((float) ($summary['lifetime_value'] ?? 0), 2); ?></div></div></div>
+    <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Lifetime Value</div><div class="h4 mb-0"><?php echo e(money((float) ($summary['lifetime_value'] ?? 0))); ?></div></div></div>
     <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Wishlist Items</div><div class="h4 mb-0"><?php echo $wishlistCount; ?></div></div></div>
     <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Cart Items</div><div class="h4 mb-0"><?php echo $cartCount; ?></div></div></div>
 </div>
@@ -149,7 +149,7 @@ include 'partials/header.php';
             <?php if (empty($orders)): ?><div class="text-muted">No orders.</div><?php else: ?>
                 <div class="table-responsive"><table class="table table-sm"><thead><tr><th>#</th><th>Status</th><th>Payment</th><th>Total</th><th>Date</th></tr></thead><tbody>
                 <?php foreach ($orders as $o): ?>
-                    <tr><td><a href="order-view.php?id=<?php echo (int) ($o['id'] ?? 0); ?>"><?php echo e((string) ($o['order_number'] ?? '')); ?></a></td><td><?php echo e((string) ($o['order_status'] ?? '')); ?></td><td><?php echo e((string) ($o['payment_status'] ?? '')); ?></td><td>Rs <?php echo number_format((float) ($o['total_amount'] ?? 0), 2); ?></td><td><?php echo e((string) ($o['created_at'] ?? '')); ?></td></tr>
+                    <tr><td><a href="order-view.php?id=<?php echo (int) ($o['id'] ?? 0); ?>"><?php echo e((string) ($o['order_number'] ?? '')); ?></a></td><td><?php echo e((string) ($o['order_status'] ?? '')); ?></td><td><?php echo e((string) ($o['payment_status'] ?? '')); ?></td><td><?php echo e(money((float) ($o['total_amount'] ?? 0))); ?></td><td><?php echo e((string) ($o['created_at'] ?? '')); ?></td></tr>
                 <?php endforeach; ?></tbody></table></div>
             <?php endif; ?>
         </div>
@@ -159,7 +159,7 @@ include 'partials/header.php';
             <?php if (empty($returns)): ?><div class="text-muted">No returns.</div><?php else: ?>
                 <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Return #</th><th>Status</th><th>Reason</th><th>Refund</th><th>Requested</th></tr></thead><tbody>
                 <?php foreach ($returns as $r): ?>
-                    <tr><td><?php echo e((string) ($r['return_number'] ?? '')); ?></td><td><?php echo e((string) ($r['status'] ?? '')); ?></td><td><?php echo e((string) ($r['reason'] ?? '')); ?></td><td>Rs <?php echo number_format((float) ($r['refund_amount'] ?? 0), 2); ?></td><td><?php echo e((string) ($r['requested_at'] ?? '')); ?></td></tr>
+                    <tr><td><?php echo e((string) ($r['return_number'] ?? '')); ?></td><td><?php echo e((string) ($r['status'] ?? '')); ?></td><td><?php echo e((string) ($r['reason'] ?? '')); ?></td><td><?php echo e(money((float) ($r['refund_amount'] ?? 0))); ?></td><td><?php echo e((string) ($r['requested_at'] ?? '')); ?></td></tr>
                 <?php endforeach; ?></tbody></table></div>
             <?php endif; ?>
         </div>

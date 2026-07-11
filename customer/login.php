@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Merge any guest session cart with the customer's saved DB cart.
             // Quantity normalization must respect each product's unit type.
-            $dbCartBundle = cart_load_from_db_bundle($conn, (int) $customer['id']);
+            $dbCartBundle = CartService::cart_load_from_db_bundle($conn, (int) $customer['id']);
             $dbCart = is_array($dbCartBundle['cart'] ?? null) ? $dbCartBundle['cart'] : [];
             $dbMeterMap = is_array($dbCartBundle['meter_map'] ?? null) ? $dbCartBundle['meter_map'] : [];
             $sessionCart = isset($_SESSION['cart']) && is_array($_SESSION['cart']) ? $_SESSION['cart'] : [];
@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 : [];
             $mergedIds = array_values(array_filter(array_unique(array_map(
                 static function ($key) {
-                    [$pid] = cart_parse_key((string) $key);
+                    [$pid] = CartService::cart_parse_key((string) $key);
                     return $pid;
                 },
                 array_merge(array_keys($dbCart), array_keys($sessionCart))
@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             foreach ($sessionCart as $cartKey => $qty) {
-                [$productId] = cart_parse_key((string) $cartKey);
+                [$productId] = CartService::cart_parse_key((string) $cartKey);
                 if ($productId <= 0) {
                     continue;
                 }
@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mergedIds = [];
                 $mergedVariantIds = [];
                 foreach (array_keys($dbCart) as $key) {
-                    [$pid, $variantId] = cart_parse_key((string) $key);
+                    [$pid, $variantId] = CartService::cart_parse_key((string) $key);
                     if ($pid > 0) {
                         $mergedIds[] = $pid;
                     }
@@ -134,9 +134,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ];
                     }
 
-                    $variantMap = !empty($mergedVariantIds) ? get_variants_by_ids($conn, $mergedVariantIds) : [];
+                    $variantMap = !empty($mergedVariantIds) ? InventoryService::get_variants_by_ids($conn, $mergedVariantIds) : [];
                     foreach ($dbCart as $key => $qVal) {
-                        [$kPid, $variantId] = cart_parse_key((string) $key);
+                        [$kPid, $variantId] = CartService::cart_parse_key((string) $key);
                         if ($kPid <= 0 || !isset($productStockMap[$kPid])) {
                             unset($dbCart[$key], $dbMeterMap[$key]);
                             continue;
@@ -171,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['cart'] = $dbCart;
             $_SESSION['cart_meter_length'] = $dbMeterMap;
             if (!empty($dbCart)) {
-                cart_save_to_db($conn, (int) $customer['id'], $dbCart, $dbMeterMap);
+                CartService::cart_save_to_db($conn, (int) $customer['id'], $dbCart, $dbMeterMap);
             }
 
             // Merge guest wishlist with persisted wishlist and keep it in DB.
@@ -187,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? $_SESSION['wishlist_meter_length']
                 : [];
             foreach ($sessionWishlist as $wishlistKey => $wishlistQty) {
-                [$wishlistPid] = cart_parse_key((string) $wishlistKey);
+                [$wishlistPid] = CartService::cart_parse_key((string) $wishlistKey);
                 if ($wishlistPid <= 0) {
                     continue;
                 }
@@ -217,7 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$metaTitle = 'Login | Amber Fabrics';
+$metaTitle = SiteContext::title('Login');
 include __DIR__ . '/../includes/header.php';
 ?>
 

@@ -108,9 +108,9 @@ try {
 ?>
 
 <?php
-$metaTitle = 'Inquiry Details | Amber Fabrics';
-$metaDescription = 'Admin page to view details of a customer inquiry for Amber Fabrics.';
-$metaKeywords = 'admin, inquiry details, Amber Fabrics';
+$metaTitle = SiteContext::title('Inquiry Details');
+$metaDescription = 'Admin page to view details of a customer inquiry for ' . SiteContext::name() . '.';
+$metaKeywords = 'admin, inquiry details, ' . SiteContext::name();
 include 'partials/header.php'; ?>
 
 <div class="d-flex justify-content-between align-items-center mb-3">

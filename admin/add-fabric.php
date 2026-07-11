@@ -4,14 +4,20 @@ require_admin();
 
 $errors = [];
 $categories = [];
+$categorySlugMap = [];
 
 try {
-    $catStmt = $conn->prepare("SELECT name, slug FROM categories WHERE status = 'active' ORDER BY name ASC");
-    $catStmt->execute();
-    $categories = $catStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $categories = storefront_categories_fetch($conn);
+    foreach ($categories as $catRow) {
+        $slugKey = trim((string) ($catRow['slug'] ?? ''));
+        if ($slugKey !== '') {
+            $categorySlugMap[$slugKey] = true;
+        }
+    }
 } catch (Throwable $e) {
     // Keep form usable even if categories table is unavailable.
     $categories = [];
+    $categorySlugMap = [];
 }
 
 $old = [
@@ -89,7 +95,7 @@ if(isset($_POST['submit'])){
     $lowStockMeters = ($lowStockMetersRaw !== '' && is_numeric($lowStockMetersRaw) && (float) $lowStockMetersRaw >= 0)
         ? round((float) $lowStockMetersRaw, 2)
         : null;
-    $parsedMeterOptions = parse_meter_options($meterOptions, (float) $minOrder);
+    $parsedMeterOptions = CartService::parse_meter_options($meterOptions, (float) $minOrder);
     $normalizedMeterOptions = implode(', ', array_map(static function ($val): string {
         return format_meter_quantity((float) $val);
     }, $parsedMeterOptions));
@@ -129,6 +135,8 @@ if(isset($_POST['submit'])){
     }
     if ($category === '') {
         $errors['category'] = 'Category is required.';
+    } elseif (!isset($categorySlugMap[$category])) {
+        $errors['category'] = 'Select a valid storefront category.';
     }
     if (!in_array($unitType, ['meter', 'piece', 'set'], true)) {
         $errors['unit_type'] = 'Select a valid unit type.';
@@ -275,9 +283,9 @@ if(isset($_POST['submit'])){
 ?>
 
 <?php
-$metaTitle = 'Add Product | Amber Fabrics';
-$metaDescription = 'Admin page to add new product details to Amber Fabrics shop.';
-$metaKeywords = 'admin, add product, catalog, Amber Fabrics';
+$metaTitle = SiteContext::title('Add Product');
+$metaDescription = 'Admin page to add new product details to ' . SiteContext::name() . ' shop.';
+$metaKeywords = 'admin, add product, catalog, ' . SiteContext::name();
 include 'partials/header.php'; ?>
 
 <h1 class="mb-4">Add Product</h1>

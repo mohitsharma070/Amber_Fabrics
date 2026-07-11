@@ -8,7 +8,8 @@ tmp/
 tmp_sessions/
 composer.phar
 docs/
-database/
+database/setup.php
+database/schema.sql
 tests/
 logs/
 storage/logs/

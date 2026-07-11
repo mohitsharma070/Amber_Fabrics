@@ -28,6 +28,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($returnUrl);
     }
 
+    $pluginHandled = apply_filters('admin.return_action.handled', false, [
+        'conn' => $conn,
+        'action' => trim((string) ($_POST['action'] ?? '')),
+        'return_id' => (int) ($_POST['return_id'] ?? 0),
+        'post' => $_POST,
+    ]);
+    if ($pluginHandled) {
+        redirect($returnUrl);
+    }
+
     $returnId = (int) ($_POST['return_id'] ?? 0);
     $newStatus = trim((string) ($_POST['status'] ?? ''));
     $adminNote = trim((string) ($_POST['admin_note'] ?? ''));
@@ -120,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($newStatus === 'refund_completed') {
                 if ($currentStatus !== 'refund_completed') {
-                    restock_return_items_inventory($conn, $returnId);
+                    InventoryService::restock_return_items_inventory($conn, $returnId);
                 }
 
                 $payStmt = $conn->prepare(
@@ -338,8 +348,8 @@ include 'partials/header.php';
                         <?php endif; ?>
                     </td>
                     <td>
-                        Rs <?php echo number_format((float) $r['refund_amount'], 2); ?>
-                        <div class="small text-muted">Return total: Rs <?php echo number_format((float) ($r['return_total'] ?? 0), 2); ?></div>
+                        <?php echo e(money((float) $r['refund_amount'])); ?>
+                        <div class="small text-muted">Return total: <?php echo e(money((float) ($r['return_total'] ?? 0))); ?></div>
                         <?php if (!empty($returnItems)): ?>
                             <div class="return-breakdown-mobile">
                                 <div class="small fw-semibold mb-1">Return Item Breakdown</div>
@@ -352,10 +362,10 @@ include 'partials/header.php';
                                     <div class="return-breakdown-mobile-item">
                                         <div class="small fw-semibold"><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></div>
                                         <div class="small text-muted">
-                                            Returned: <?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?> |
-                                            Line: Rs <?php echo number_format((float) ($ri['line_total'] ?? 0), 2); ?> |
-                                            Restocked: <?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?> |
-                                            Refund: Rs <?php echo number_format((float) ($ri['refund_amount'] ?? 0), 2); ?>
+                                            Returned: <?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?> |
+                                            Line: <?php echo e(money((float) ($ri['line_total'] ?? 0))); ?> |
+                                            Restocked: <?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?> |
+                                            Refund: <?php echo e(money((float) ($ri['refund_amount'] ?? 0))); ?>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
@@ -381,6 +391,13 @@ include 'partials/header.php';
                             <input type="text" name="admin_note" class="form-control form-control-sm" value="<?php echo e((string) ($r['admin_note'] ?? '')); ?>" placeholder="Admin note">
                             <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2-circle me-1"></i>Update</button>
                         </form>
+                        <?php do_action('admin.return_row.actions', [
+                            'conn' => $conn,
+                            'return' => $r,
+                            'filter_status' => $statusFilter,
+                            'filter_per_page' => $perPage,
+                            'filter_page' => $page,
+                        ]); ?>
                     </td>
                 </tr>
                 <tr class="table-light return-breakdown-row">
@@ -410,10 +427,10 @@ include 'partials/header.php';
                                             ?>
                                             <tr>
                                                 <td><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></td>
-                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?></td>
-                                                <td class="text-end">Rs <?php echo number_format((float) ($ri['line_total'] ?? 0), 2); ?></td>
-                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(quantity_unit_suffix($riUnit)); ?></td>
-                                                <td class="text-end">Rs <?php echo number_format((float) ($ri['refund_amount'] ?? 0), 2); ?></td>
+                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?></td>
+                                                <td class="text-end"><?php echo e(money((float) ($ri['line_total'] ?? 0))); ?></td>
+                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?></td>
+                                                <td class="text-end"><?php echo e(money((float) ($ri['refund_amount'] ?? 0))); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>

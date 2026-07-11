@@ -166,7 +166,7 @@ if ($action === 'list') {
     }
     cleanup_legacy_default_variants($conn, $fabricId);
     sync_fabric_availability_from_variants($conn, $fabricId);
-    $variants = get_fabric_variants($conn, $fabricId);
+    $variants = InventoryService::get_fabric_variants($conn, $fabricId);
     json_ok(['variants' => $variants]);
 }
 
@@ -276,7 +276,11 @@ if ($action === 'save') {
             json_error('Variant video must be MP4, WEBM or OGG.');
         }
         $saved = random_filename((string) ($file['name'] ?? 'variant.mp4'));
-        $target = __DIR__ . '/../images/fabrics/' . $saved;
+        try {
+            $target = fabric_upload_path($saved);
+        } catch (Throwable $e) {
+            json_error($e->getMessage());
+        }
         if (!move_uploaded_file((string) ($file['tmp_name'] ?? ''), $target)) {
             json_error('Could not save variant video.');
         }
@@ -331,7 +335,7 @@ if ($action === 'save') {
 
     cleanup_legacy_default_variants($conn, $fabricId);
     sync_fabric_availability_from_variants($conn, $fabricId);
-    $variant = get_variant_by_id($conn, $variantId);
+    $variant = InventoryService::get_variant_by_id($conn, $variantId);
     json_ok(['variant' => $variant]);
 }
 

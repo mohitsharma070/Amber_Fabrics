@@ -38,7 +38,7 @@ if ($token === '' || strlen($token) < 32) {
     }
 }
 
-$metaTitle = 'Verify Email | Amber Fabrics';
+$metaTitle = SiteContext::title('Verify Email');
 include __DIR__ . '/../includes/header.php';
 ?>
 

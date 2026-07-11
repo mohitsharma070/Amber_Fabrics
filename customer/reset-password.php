@@ -49,7 +49,7 @@ if (!$invalid && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$metaTitle = 'Reset Password | Amber Fabrics';
+$metaTitle = SiteContext::title('Reset Password');
 include __DIR__ . '/../includes/header.php';
 ?>
 

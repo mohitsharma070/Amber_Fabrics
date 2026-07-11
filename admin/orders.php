@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'mark_refunded') {
         $orderId = (int) ($_POST['order_id'] ?? 0);
         if ($orderId > 0) {
-            $result = admin_mark_order_refunded($conn, $orderId);
+            $result = PaymentService::admin_mark_order_refunded($conn, $orderId);
             if (!empty($result['ok'])) {
                 flash('success', (string) ($result['message'] ?? 'Order marked as refunded.'));
             } else {
@@ -170,7 +170,10 @@ if (!empty($orders)) {
             $orderQtyDisplayMap[$oid][] = $qtyText . ' ' . $unitLabel;
         }
 
-        $shipSql = "SELECT order_id, tracking_id FROM shipments WHERE order_id IN ($placeholders)";
+        $shipSql = "SELECT order_id,
+                           COALESCE(NULLIF(tracking_id, ''), NULLIF(awb_code, ''), '') AS tracking_id
+                    FROM shipments
+                    WHERE order_id IN ($placeholders)";
         $shipStmt = $conn->prepare($shipSql);
         $shipStmt->bind_param($types, ...$orderIds);
         $shipStmt->execute();
@@ -298,14 +301,14 @@ include 'partials/header.php';
                             -
                         <?php endif; ?>
                     </td>
-                    <td data-label="Total">Rs <?php echo number_format((float) ($order['total_amount'] ?? 0), 2); ?></td>
+                    <td data-label="Total"><?php echo e(money((float) ($order['total_amount'] ?? 0))); ?></td>
                     <td data-label="Payment"><?php echo strtoupper(e((string) $order['payment_method'])); ?></td>
                     <td data-label="Payment Status">
-                        <?php $pb = payment_status_meta((string) ($order['payment_status'] ?? 'pending')); ?>
+                        <?php $pb = InventoryService::payment_status_meta((string) ($order['payment_status'] ?? 'pending')); ?>
                         <span class="badge bg-<?php echo e($pb['class']); ?>"><?php echo e($pb['label']); ?></span>
                     </td>
                     <td data-label="Order Status">
-                        <?php $sb = order_status_meta((string) ($order['order_status'] ?? 'pending')); ?>
+                        <?php $sb = InventoryService::order_status_meta((string) ($order['order_status'] ?? 'pending')); ?>
                         <span class="badge bg-<?php echo e($sb['class']); ?>"><?php echo e($sb['label']); ?></span>
                     </td>
                     <td data-label="Tracking"><?php echo $trackingId !== '' ? e($trackingId) : '-'; ?></td>

@@ -2,12 +2,12 @@ DirectoryIndex index.php
 Options -Indexes
 
 # Block direct access to environment and internal config files
-<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock|phar)|phpunit\.xml|\.git|\.gitignore|\.gitattributes|\.htaccess|\.htaccess\.bak|README(\.md)?|CHANGELOG\.md|GO_LIVE_CHECKLIST\.md|SECURITY\.md|query)$">
+<FilesMatch "^(\.env|\.env\..*|secure-config\.php|app-config\.php|composer\.(json|lock|phar)|phpunit\.xml|\.git|\.gitignore|\.gitattributes|\.htaccess|\.htaccess\.bak|README(\.md)?|CHANGELOG\.md|GO_LIVE_CHECKLIST\.md|SECURITY\.md|query)$">
 	Require all denied
 </FilesMatch>
 
 # Block direct access to selected private folders
-RedirectMatch 403 ^/(\.git|config|database|scripts|tmp|tmp_sessions|plugins|vendor)(/|$)
+RedirectMatch 403 ^/(\.git|config|database|scripts|tmp|tmp_sessions|plugins|vendor|includes)(/|$)
 RedirectMatch 403 ^/(tmp-debug-.*\.php|cron/(?!run-plugins\.php$).*)$
 RedirectMatch 403 ^/(images|css|js|feeds)/.*\.(php[0-9]?|phtml|phar|cgi|pl|asp|aspx|jsp)$
 
@@ -18,6 +18,9 @@ RedirectMatch 403 ^/(images|css|js|feeds)/.*\.(php[0-9]?|phtml|phar|cgi|pl|asp|a
 </IfModule>
 
 RewriteEngine On
+
+RewriteRule ^sitemap\.xml$ sitemap.php [L]
+RewriteRule ^feeds/products\.(xml|json)$ index.php?url=feeds/products.$1 [L,QSA]
 
 # Force HTTPS (skips localhost and 127.0.0.1 for local development)
 RewriteCond %{HTTPS} off

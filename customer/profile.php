@@ -240,7 +240,7 @@ $custStmt->execute();
 $cust = $custStmt->get_result()->fetch_assoc();
 $addressList = customer_addresses_list($conn, $customerId);
 
-$metaTitle = 'My Profile | Amber Fabrics';
+$metaTitle = SiteContext::title('My Profile');
 include __DIR__ . '/../includes/header.php';
 ?>
 

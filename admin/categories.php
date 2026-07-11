@@ -6,8 +6,8 @@ $errors = [];
 $maxSize = 2 * 1024 * 1024; // 2MB
 $allowedExt = ['jpg', 'jpeg', 'png', 'webp'];
 $allowedMime = ['image/jpeg', 'image/png', 'image/webp'];
-$lockedSellableSlugs = ['fabric-by-meter', 'bedsheets', 'towels', 'table-covers'];
-$lockedAllowedSlugs = $lockedSellableSlugs;
+$lockedAllowedSlugs = locked_storefront_category_slugs();
+$lockedSlugListText = implode(', ', $lockedAllowedSlugs);
 
 // Dynamic category flag to control whether variant size is used.
 try {
@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Category slug is required.';
         }
         if (!in_array($slug, $lockedAllowedSlugs, true)) {
-            $errors[] = 'Only these slugs are allowed: fabric-by-meter, bedsheets, towels, table-covers.';
+            $errors[] = 'Only these slugs are allowed: ' . $lockedSlugListText . '.';
         }
         if (!in_array($status, ['active', 'inactive'], true)) {
             $status = 'active';
@@ -204,7 +204,7 @@ try {
     $parentCategories = [];
 }
 
-$metaTitle = 'Manage Categories | Amber Fabrics';
+$metaTitle = SiteContext::title('Manage Categories');
 $metaDescription = 'Create, edit and delete product categories.';
 $metaKeywords = 'admin, categories, manage';
 include 'partials/header.php';
@@ -212,12 +212,14 @@ include 'partials/header.php';
 <div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1 class="mb-1">Categories</h1>
-        <p class="text-muted mb-0">Locked taxonomy: top-level only -> Fabric by Meter, Bedsheets, Towels, Table Covers.</p>
+        <p class="text-muted mb-0">Locked taxonomy: top-level only for storefront business rules.</p>
     </div>
 </div>
 <div class="alert alert-info">
     This catalog uses a fixed top-level category structure for storefront consistency. Allowed slugs:
-    <code>fabric-by-meter</code>, <code>bedsheets</code>, <code>towels</code>, <code>table-covers</code>.
+    <?php foreach ($lockedAllowedSlugs as $index => $allowedSlug): ?>
+        <?php if ($index > 0): ?>, <?php endif; ?><code><?php echo e($allowedSlug); ?></code>
+    <?php endforeach; ?>.
 </div>
 
 <div class="card mb-4">

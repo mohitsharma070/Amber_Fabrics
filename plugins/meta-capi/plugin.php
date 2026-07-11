@@ -167,7 +167,7 @@ function meta_capi_post_event(string $eventName, array $customData, array $userD
     }
 
     $endpoint = 'https://graph.facebook.com/v21.0/' . rawurlencode(meta_capi_pixel_id()) . '/events?access_token=' . rawurlencode(meta_capi_access_token());
-    $resp = shiprocket_http_json('POST', $endpoint, ['Content-Type: application/json'], $payload);
+    $resp = app_http_json('POST', $endpoint, ['Content-Type: application/json'], $payload);
     if (empty($resp['ok'])) {
         $reason = (string) ($resp['error'] ?? $resp['reason'] ?? 'unknown error');
         $body = $resp['body'] ?? [];

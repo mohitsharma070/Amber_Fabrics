@@ -1,4 +1,4 @@
-# Amber Fabrics Go-Live Checklist
+# Go-Live Checklist
 
 Use this document as the release gate. Do not go live until every required item is checked.
 

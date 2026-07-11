@@ -69,7 +69,7 @@ function cleanup_placeholder_variants_for_product(mysqli $conn, int $fabricId): 
 }
 
 cleanup_placeholder_variants_for_product($conn, $id);
-$variants = get_fabric_variants($conn, $id);
+$variants = InventoryService::get_fabric_variants($conn, $id);
 
 function is_placeholder_variant_row(array $variantRow): bool
 {
@@ -99,12 +99,18 @@ function variant_has_sellable_stock(array $variantRow, string $unitType): bool
 }
 
 $categories = [];
+$categorySlugMap = [];
 try {
-    $catStmt = $conn->prepare("SELECT name, slug FROM categories WHERE status = 'active' ORDER BY name ASC");
-    $catStmt->execute();
-    $categories = $catStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $categories = storefront_categories_fetch($conn);
+    foreach ($categories as $catRow) {
+        $slugKey = trim((string) ($catRow['slug'] ?? ''));
+        if ($slugKey !== '') {
+            $categorySlugMap[$slugKey] = true;
+        }
+    }
 } catch (Throwable $e) {
     $categories = [];
+    $categorySlugMap = [];
 }
 
 // Backward-safe defaults for older records.
@@ -186,7 +192,7 @@ if (isset($_POST['submit'])) {
     $lowStockMeters = ($lowStockMetersRaw !== '' && is_numeric($lowStockMetersRaw) && (float) $lowStockMetersRaw >= 0)
         ? round((float) $lowStockMetersRaw, 2)
         : null;
-    $parsedMeterOptions = parse_meter_options($meterOptions, (float) $minOrder);
+    $parsedMeterOptions = CartService::parse_meter_options($meterOptions, (float) $minOrder);
     $normalizedMeterOptions = implode(', ', array_map(static function ($val): string {
         return format_meter_quantity((float) $val);
     }, $parsedMeterOptions));
@@ -226,6 +232,8 @@ if (isset($_POST['submit'])) {
     }
     if ($category === '') {
         $errors['category'] = 'Category is required.';
+    } elseif (!isset($categorySlugMap[$category])) {
+        $errors['category'] = 'Select a valid storefront category.';
     }
     if (!in_array($unitType, ['meter', 'piece', 'set'], true)) {
         $errors['unit_type'] = 'Select a valid unit type.';
@@ -341,7 +349,7 @@ if (isset($_POST['submit'])) {
             : (float) max(1, (int) round($minOrder));
         $isAvailable   = ($status === 'active' && $isAvailInput === 1) ? 1 : 0;
         if ($hasRealVariants) {
-            $latestVariants = get_fabric_variants($conn, $id);
+            $latestVariants = InventoryService::get_fabric_variants($conn, $id);
             $hasSellableVariant = false;
             foreach ($latestVariants as $vrow) {
                 if (variant_has_sellable_stock($vrow, $unitType)) {
@@ -382,9 +390,9 @@ if (isset($_POST['submit'])) {
 ?>
 
 <?php
-$metaTitle = 'Edit Product | Amber Fabrics';
-$metaDescription = 'Admin page to edit product details in Amber Fabrics shop.';
-$metaKeywords = 'admin, edit product, catalog, Amber Fabrics';
+$metaTitle = SiteContext::title('Edit Product');
+$metaDescription = 'Admin page to edit product details in ' . SiteContext::name() . ' shop.';
+$metaKeywords = 'admin, edit product, catalog, ' . SiteContext::name();
 include 'partials/header.php'; ?>
 
 <h1 class="mb-4">Edit Product</h1>

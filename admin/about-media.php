@@ -149,7 +149,7 @@ try {
     $items = [];
 }
 
-$metaTitle = 'About Media | Amber Fabrics';
+$metaTitle = SiteContext::title('About Media');
 $metaDescription = 'Manage About page images and videos.';
 $metaKeywords = 'admin, about media, images, videos';
 include 'partials/header.php';

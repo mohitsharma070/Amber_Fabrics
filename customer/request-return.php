@@ -144,17 +144,7 @@ try {
     $insertReturn->bind_param('siissss', $returnNumber, $orderId, $customerId, $reason, $customerNote, $img1, $img2);
     $insertReturn->execute();
     $returnId = (int) $conn->insert_id;
-    $reverseRate = shiprocket_calculate_reverse_rate(
-        trim((string) ($order['pincode'] ?? '')),
-        trim(_cfg('SHIPROCKET_PICKUP_PINCODE', ''))
-    );
-    $reverseNote = '';
-    if (!empty($reverseRate['ok'])) {
-        $reverseNote = 'Live reverse option: ' . (string) ($reverseRate['courier_name'] ?? 'Courier')
-            . ' | Est. cost: Rs ' . number_format((float) ($reverseRate['rate'] ?? 0), 2);
-    } else {
-        $reverseNote = 'Manual reverse fallback required: ' . (string) ($reverseRate['reason'] ?? 'Reverse API unavailable');
-    }
+    $reverseNote = 'Manual reverse pickup required. Assign courier from admin based on location and package details.';
     $noteStmt = $conn->prepare("UPDATE returns SET admin_note = ? WHERE id = ?");
     $noteStmt->bind_param('si', $reverseNote, $returnId);
     $noteStmt->execute();

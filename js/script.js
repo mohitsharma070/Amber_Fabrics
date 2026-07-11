@@ -105,6 +105,21 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             });
         });
+
+        var bottomMenuBtn = document.querySelector("[data-mobile-bottom-menu]");
+        if (bottomMenuBtn) {
+            bottomMenuBtn.addEventListener("click", function () {
+                var instance = bootstrap.Offcanvas.getOrCreateInstance(drawer);
+                instance.show();
+            });
+        }
+    }());
+
+    // Avoid overlap with product sticky CTA on product detail pages
+    (function () {
+        if (document.getElementById("product-mobile-cta")) {
+            document.body.classList.add("has-product-mobile-cta");
+        }
     }());
 
     // Categories nav active state when on home #catSlider
@@ -684,6 +699,12 @@ document.addEventListener("DOMContentLoaded", function () {
                         data.meta_pixel_event.name,
                         data.meta_pixel_event.payload || {},
                         data.meta_pixel_event.event_id || ''
+                    );
+                }
+                if (data.google_analytics_event && window.amberGoogleAnalyticsTrack) {
+                    window.amberGoogleAnalyticsTrack(
+                        data.google_analytics_event.name,
+                        data.google_analytics_event.payload || {}
                     );
                 }
                 showToast(data.message || 'Added to cart!', 'success');

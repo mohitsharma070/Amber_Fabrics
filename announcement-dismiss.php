@@ -34,6 +34,6 @@ try {
 
     api_json(['success' => false, 'message' => 'Method not allowed.'], 405);
 } catch (Throwable $e) {
-    error_log('[amberfabrics] announcement-dismiss failed: ' . $e->getMessage());
+    error_log('[app] announcement-dismiss failed: ' . $e->getMessage());
     api_json(['success' => false, 'message' => 'Server error.'], 500);
 }

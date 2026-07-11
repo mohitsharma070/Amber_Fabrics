@@ -54,7 +54,7 @@ function app_config_load_file(string $path, string $mode): array
 function app_config_apply_env_overrides(array $config): array
 {
     $keys = [
-        'APP_ENV', 'APP_URL', 'APP_FORCE_HTTPS',
+        'APP_ENV', 'APP_DEBUG', 'APP_URL', 'APP_FORCE_HTTPS',
         'DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
         'ADMIN_NOTIFICATION_EMAIL', 'CRON_RUN_TOKEN',
         'ADMIN_LOGIN_PASSPHRASE', 'ADMIN_SESSION_IDLE_TIMEOUT_SEC', 'ADMIN_SESSION_ABSOLUTE_TIMEOUT_SEC',
@@ -69,6 +69,9 @@ function app_config_apply_env_overrides(array $config): array
         'COD_GUARD_WEBHOOK_TOKEN',
         'UTM_COOKIE_DAYS', 'META_PIXEL_ID', 'META_CAPI_PIXEL_ID',
         'META_CAPI_ACCESS_TOKEN', 'META_CAPI_TEST_EVENT_CODE',
+        'GOOGLE_ANALYTICS_ENABLED', 'GOOGLE_ANALYTICS_MEASUREMENT_ID',
+        'GOOGLE_ANALYTICS_DEBUG_MODE', 'GOOGLE_ANALYTICS_ENHANCED_ECOMMERCE_ENABLED',
+        'GOOGLE_ANALYTICS_CONSENT_REQUIRED',
         'ABANDONED_CART_EMAIL_ENABLED', 'ABANDONED_CART_EMAIL_DELAY_MINUTES',
         'ABANDONED_CART_EMAIL_MAX_EMAILS',
         'PRODUCT_FEED_ENABLED', 'PRODUCT_FEED_BASE_PATH',
@@ -80,15 +83,14 @@ function app_config_apply_env_overrides(array $config): array
         'INVENTORY_ALERT_METER_THRESHOLD', 'INVENTORY_ALERT_COOLDOWN_HOURS',
         'SHIPPING_RTO_RISK_ENABLED', 'SHIPPING_RTO_RISK_HIGH_THRESHOLD',
         'SHIPPING_RTO_RISK_MEDIUM_THRESHOLD',
+        'SHIPPING_COURIER_ENABLED', 'SHIPPING_COURIER_PROVIDER',
+        'SHIPPING_COURIER_TEST_MODE', 'SHIPPING_COURIER_AUTO_CREATE',
+        'SHIPPING_COURIER_TRACKING_SYNC', 'SHIPPING_COURIER_WEBHOOK_SECRET',
+        'SHIPPING_COURIER_API_BASE_URL', 'SHIPPING_COURIER_API_KEY',
+        'SHIPPING_COURIER_API_SECRET',
         'REVIEW_RATING_ENABLED', 'REVIEW_RATING_AUTO_APPROVE',
         'REVIEW_RATING_MIN_LENGTH', 'REVIEW_RATING_MAX_LENGTH',
         'ORDER_TIMELINE_ENABLED', 'ORDER_TIMELINE_SHOW_INTERNAL_TO_ADMIN',
-        'SHIPROCKET_ENABLED', 'SHIPROCKET_BASE_URL', 'SHIPROCKET_EMAIL',
-        'SHIPROCKET_PASSWORD', 'SHIPROCKET_WEBHOOK_SECRET',
-        'SHIPROCKET_PICKUP_LOCATION', 'SHIPROCKET_PICKUP_PINCODE',
-        'SHIPROCKET_DEFAULT_WEIGHT_KG', 'SHIPROCKET_DEFAULT_REVERSE_WEIGHT_KG',
-        'SHIPROCKET_DEFAULT_LENGTH_CM', 'SHIPROCKET_DEFAULT_BREADTH_CM',
-        'SHIPROCKET_DEFAULT_HEIGHT_CM', 'SHIPROCKET_TRACKING_URL_BASE',
     ];
 
     foreach ($keys as $key) {
@@ -141,13 +143,47 @@ function app_config_validate_production(array $config): void
         $required[] = 'SMTP_PASSWORD';
     }
 
-    if ((int) ($config['SHIPROCKET_ENABLED'] ?? 0) === 1) {
-        $required[] = 'SHIPROCKET_EMAIL';
-        $required[] = 'SHIPROCKET_PASSWORD';
-        $required[] = 'SHIPROCKET_WEBHOOK_SECRET';
+    $metaPixelId = trim((string) ($config['META_PIXEL_ID'] ?? ''));
+    if ($metaPixelId !== '') {
+        $required[] = 'META_PIXEL_ID';
+    }
+
+    $metaCapiToken = trim((string) ($config['META_CAPI_ACCESS_TOKEN'] ?? ''));
+    $metaCapiPixelId = trim((string) ($config['META_CAPI_PIXEL_ID'] ?? ''));
+    if ($metaCapiToken !== '' || $metaCapiPixelId !== '') {
+        $required[] = 'META_CAPI_ACCESS_TOKEN';
+        if ($metaCapiPixelId !== '') {
+            $required[] = 'META_CAPI_PIXEL_ID';
+        } else {
+            $required[] = 'META_PIXEL_ID';
+        }
+    }
+
+    $codGuardWhatsappKeys = [
+        'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID',
+        'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
+        'COD_GUARD_WHATSAPP_APP_SECRET',
+        'COD_GUARD_WEBHOOK_TOKEN',
+        'COD_GUARD_WEBHOOK_VERIFY_TOKEN',
+    ];
+    $codGuardConfigured = false;
+    foreach ($codGuardWhatsappKeys as $key) {
+        if (trim((string) ($config[$key] ?? '')) !== '') {
+            $codGuardConfigured = true;
+            break;
+        }
+    }
+    if ($codGuardConfigured) {
+        $required[] = 'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID';
+        $required[] = 'COD_GUARD_WHATSAPP_ACCESS_TOKEN';
+        $required[] = 'COD_GUARD_WEBHOOK_VERIFY_TOKEN';
+        if (trim((string) ($config['COD_GUARD_WHATSAPP_APP_SECRET'] ?? '')) === '') {
+            $required[] = 'COD_GUARD_WEBHOOK_TOKEN';
+        }
     }
 
     $unsafe = [];
+    $required = array_values(array_unique($required));
     foreach ($required as $key) {
         $value = trim((string) ($config[$key] ?? ''));
         if ($value === '' || app_config_is_placeholder($value)) {
@@ -155,10 +191,14 @@ function app_config_validate_production(array $config): void
         }
     }
 
+    $placeholderWarnings = [];
     foreach ($config as $key => $value) {
-        if (is_scalar($value) && app_config_is_placeholder((string) $value)) {
-            $unsafe[] = (string) $key;
+        if (is_scalar($value) && app_config_is_placeholder((string) $value) && !in_array((string) $key, $required, true)) {
+            $placeholderWarnings[] = (string) $key;
         }
+    }
+    if (!empty($placeholderWarnings)) {
+        error_log('[amber] WARNING: optional production placeholder keys are present but not active: ' . implode(', ', array_values(array_unique($placeholderWarnings))));
     }
 
     $unsafe = array_values(array_unique($unsafe));

@@ -241,12 +241,12 @@ function cod_guard_order_for_message(mysqli $conn, int $orderId): ?array
 
 function cod_guard_build_confirmation_message(array $row): string
 {
-    $amount = number_format((float) ($row['total_amount'] ?? 0), 2);
+    $amount = money((float) ($row['total_amount'] ?? 0));
     $orderNumber = (string) ($row['order_number'] ?? '');
     $lines = [
-        'Amber Fabrics COD confirmation',
+        SiteContext::name() . ' COD confirmation',
         'Order: ' . $orderNumber,
-        'Amount: Rs ' . $amount,
+        'Amount: ' . $amount,
         'Reply YES ' . $orderNumber . ' to confirm this order.',
         'Reply NO ' . $orderNumber . ' to cancel it.',
     ];
@@ -277,7 +277,7 @@ function cod_guard_whatsapp_payload(array $settings, string $to, string $message
                         'parameters' => [
                             ['type' => 'text', 'text' => (string) ($row['customer_name'] ?? 'Customer')],
                             ['type' => 'text', 'text' => (string) ($row['order_number'] ?? '')],
-                            ['type' => 'text', 'text' => 'Rs ' . number_format((float) ($row['total_amount'] ?? 0), 2)],
+                            ['type' => 'text', 'text' => money((float) ($row['total_amount'] ?? 0))],
                         ],
                     ],
                 ],
@@ -527,7 +527,7 @@ function cod_guard_customer_acknowledgement_text(mysqli $conn, int $orderId, str
         return 'Thank you. Your COD order' . $orderLabel . ' is confirmed. We will prepare it for dispatch.';
     }
 
-    return 'Your COD order' . $orderLabel . ' has been cancelled as requested. You can place a new order anytime from Amber Fabrics.';
+    return 'Your COD order' . $orderLabel . ' has been cancelled as requested. You can place a new order anytime from ' . SiteContext::name() . '.';
 }
 
 function cod_guard_unmatched_acknowledgement_text(): string
@@ -690,7 +690,7 @@ function cod_guard_cancel_order(mysqli $conn, int $orderId, string $reason, stri
         return;
     }
 
-    restore_order_inventory($conn, $orderId);
+    InventoryService::restore_order_inventory($conn, $orderId);
     cod_guard_release_coupon($conn, $orderId);
 
     $cod = $conn->prepare(

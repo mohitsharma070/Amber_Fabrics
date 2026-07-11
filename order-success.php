@@ -36,7 +36,7 @@ $orderId = (int) $order['id'];
 $shipmentStmt->bind_param('i', $orderId);
 $shipmentStmt->execute();
 $shipment = $shipmentStmt->get_result()->fetch_assoc();
-$trackingUrl = safe_external_url($shipment['tracking_url'] ?? '');
+$trackingUrl = InventoryService::safe_external_url($shipment['tracking_url'] ?? '');
 $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
 $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
 $paymentLabel = ucfirst(str_replace('_', ' ', $paymentMethod));
@@ -46,8 +46,8 @@ if ($paymentMethod === 'cod' && function_exists('cod_guard_get_confirmation')) {
 }
 
 $metaTitle = ($paymentMethod === 'cod' && is_array($codConfirmation) && strtolower((string) ($codConfirmation['status'] ?? '')) === 'pending')
-    ? 'Order Placed | Amber Fabrics'
-    : 'Order Confirmed | Amber Fabrics';
+    ? SiteContext::title('Order Placed')
+    : SiteContext::title('Order Confirmed');
 include __DIR__ . '/includes/header.php';
 ?>
 
@@ -55,7 +55,7 @@ include __DIR__ . '/includes/header.php';
     <div class="container text-center">
         <div class="mb-3" style="font-size:3rem;">&#10003;</div>
         <h1>Order Placed Successfully</h1>
-        <p class="mb-0">Thank you for shopping with Amber Fabrics.</p>
+        <p class="mb-0">Thank you for shopping with <?php echo e(SiteContext::name()); ?>.</p>
     </div>
 </section>
 
@@ -70,7 +70,7 @@ include __DIR__ . '/includes/header.php';
                     <div class="text-start small mb-3">
                         <div class="d-flex justify-content-between"><span>Name</span><strong><?php echo e($order['customer_name']); ?></strong></div>
                         <div class="d-flex justify-content-between"><span>Email</span><strong><?php echo e($order['customer_email']); ?></strong></div>
-                        <div class="d-flex justify-content-between"><span>Total</span><strong>Rs <?php echo number_format((float) $order['total_amount'], 2); ?></strong></div>
+                        <div class="d-flex justify-content-between"><span>Total</span><strong><?php echo e(money((float) $order['total_amount'])); ?></strong></div>
                         <div class="d-flex justify-content-between"><span>Payment</span><strong><?php echo e($paymentLabel); ?> (<?php echo e(ucfirst($paymentStatus)); ?>)</strong></div>
                         <div class="d-flex justify-content-between"><span>Order Status</span><strong><?php echo e(ucfirst((string) $order['order_status'])); ?></strong></div>
                     </div>
@@ -103,6 +103,7 @@ include __DIR__ . '/includes/header.php';
                     <?php endif; ?>
 
                     <div class="d-flex gap-2 justify-content-center">
+                        <a href="/customer/order-view.php?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
                         <a href="/catalog.php" class="btn btn-primary">Continue Shopping</a>
                         <a href="/contact.php" class="btn btn-outline-secondary">Need Help?</a>
                     </div>

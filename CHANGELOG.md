@@ -1,8 +1,8 @@
-# Amber Fabrics - Code Fixes and Improvements
+# Code Fixes and Improvements
 
 ## Summary of Changes
 
-This document outlines all the fixes and improvements made to the Amber Fabrics fabric export website codebase.
+This document outlines all the fixes and improvements made to the ecommerce website codebase.
 
 ---
 

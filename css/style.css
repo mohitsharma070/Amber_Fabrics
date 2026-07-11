@@ -1141,6 +1141,16 @@ img {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.recommendations-block {
+    width: min(100%, 1140px);
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.recommendations-block .catalog-products-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .catalog-utility-row {
     padding: 0.85rem 0.9rem;
     border-radius: var(--radius-md);
@@ -1262,6 +1272,10 @@ img {
 @media (min-width: 1200px) {
     .catalog-products-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .recommendations-block .catalog-products-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
@@ -3313,6 +3327,71 @@ img {
     }
 }
 
+
+/* Mobile app-style bottom nav */
+.mobile-bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1055;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: stretch;
+    min-height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding: 0.35rem 0.2rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #d9e0ea;
+    background: #ffffff;
+    box-shadow: 0 -8px 20px rgba(15, 33, 55, 0.12);
+}
+
+.mobile-bottom-nav__item {
+    border: 0;
+    background: transparent;
+    color: #394b61;
+    text-decoration: none;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.18rem;
+    min-height: 56px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.mobile-bottom-nav__item.is-active {
+    color: #0f766e;
+}
+
+.mobile-bottom-nav__item .cart-badge {
+    top: 2px;
+    right: 18%;
+}
+
+.mobile-bottom-nav__menu-btn {
+    font: inherit;
+    cursor: pointer;
+}
+
+@media (max-width: 767.98px) {
+    body {
+        padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .go-top-btn {
+        bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    }
+
+    body.has-product-mobile-cta .mobile-bottom-nav {
+        display: none;
+    }
+
+    body.has-product-mobile-cta {
+        padding-bottom: 0;
+    }
+}
 
 /* Cart refresh */
 .cart-line-item .cart-item-img {

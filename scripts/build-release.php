@@ -121,11 +121,42 @@ function assert_htaccess_has_no_secrets(string $rootDir): void
         '/^\s*SetEnv\s+RAZORPAY_WEBHOOK_SECRET\b/im',
         '/^\s*SetEnv\s+SMTP_PASSWORD\b/im',
         '/^\s*SetEnv\s+META_CAPI_ACCESS_TOKEN\b/im',
-        '/^\s*SetEnv\s+SHIPROCKET_PASSWORD\b/im',
     ];
     foreach ($dangerPatterns as $pattern) {
         if (preg_match($pattern, $contents) === 1) {
             throw new RuntimeException('.htaccess contains secret-bearing SetEnv directives. Move secrets to environment variables or secure-config.php outside web root.');
+        }
+    }
+}
+
+function staged_path(string $stagingDir, string $relativePath): string
+{
+    return $stagingDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+}
+
+function assert_release_migration_files(string $stagingDir): void
+{
+    $requiredFiles = [
+        'database/migrate.php',
+    ];
+    foreach ($requiredFiles as $relativePath) {
+        if (!is_file(staged_path($stagingDir, $relativePath))) {
+            throw new RuntimeException("Release artifact is missing required file: {$relativePath}");
+        }
+    }
+
+    $migrationFiles = glob(staged_path($stagingDir, 'database/migrations') . DIRECTORY_SEPARATOR . '*.sql') ?: [];
+    if (count($migrationFiles) === 0) {
+        throw new RuntimeException('Release artifact must include at least one database/migrations/*.sql file.');
+    }
+
+    $forbiddenFiles = [
+        'database/setup.php',
+        'database/schema.sql',
+    ];
+    foreach ($forbiddenFiles as $relativePath) {
+        if (file_exists(staged_path($stagingDir, $relativePath))) {
+            throw new RuntimeException("Release artifact contains setup-only database file: {$relativePath}");
         }
     }
 }
@@ -187,6 +218,14 @@ foreach ($it as $item) {
         exit(1);
     }
     $copied++;
+}
+
+try {
+    assert_release_migration_files($stagingDir);
+} catch (Throwable $e) {
+    fwrite(STDERR, '[FAIL] ' . $e->getMessage() . PHP_EOL);
+    rrmdir($stagingDir);
+    exit(1);
 }
 
 $artifactType = 'directory';

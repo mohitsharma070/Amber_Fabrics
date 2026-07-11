@@ -12,7 +12,7 @@ if (!verify_csrf()) {
 $cartKey = trim((string) ($_POST['cart_key'] ?? ''));
 $productId = 0;
 if ($cartKey !== '') {
-    [$productId] = cart_parse_key($cartKey);
+    [$productId] = CartService::cart_parse_key($cartKey);
 }
 $productId = $productId > 0 ? $productId : (int) ($_POST['product_id'] ?? 0);
 $cartKey = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::0') : '');
@@ -55,7 +55,7 @@ if (isset($_SESSION['wishlist'][$cartKey])) {
 
     if (!empty($_SESSION['customer_id'])) {
         $cid = (int) $_SESSION['customer_id'];
-        cart_save_to_db($conn, $cid, $_SESSION['cart']);
+        CartService::cart_save_to_db($conn, $cid, $_SESSION['cart']);
         wishlist_save_to_db(
             $conn,
             $cid,

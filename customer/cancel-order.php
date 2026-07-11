@@ -22,7 +22,7 @@ if ($orderId <= 0 || $customerId <= 0) {
 }
 
 try {
-    $result = customer_cancel_order($conn, $orderId, $customerId);
+    $result = InventoryService::customer_cancel_order($conn, $orderId, $customerId);
     $paymentStatus = (string) ($result['payment_status'] ?? 'pending');
 
     if ($paymentStatus === 'paid') {

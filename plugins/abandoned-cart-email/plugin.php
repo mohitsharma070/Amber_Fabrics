@@ -93,7 +93,7 @@ function abandoned_cart_snapshot(mysqli $conn, array $cart): array
         $lineTotal = round($unitPrice * $qty, 2);
         $subtotal = round($subtotal + $lineTotal, 2);
         $itemsCount++;
-        $line = (string) $row['name'] . ' - ' . format_quantity_by_unit($qty, $unitType) . quantity_unit_suffix($unitType);
+        $line = (string) $row['name'] . ' - ' . format_quantity_by_unit($qty, $unitType) . InventoryService::quantity_unit_suffix($unitType);
         if ($size !== '') {
             $line .= ' | Size: ' . $size;
         }
@@ -215,7 +215,7 @@ function abandoned_cart_send_one_email(string $email, string $name, int $itemsCo
     }
 
     try {
-        $mail = _mailer_base();
+        $mail = EmailService::_mailer_base();
         $mail->addAddress($email, $name !== '' ? $name : 'Customer');
         $mail->Subject = $template['subject'];
         $mail->Body = $template['body'];

@@ -6,12 +6,20 @@ require_once __DIR__ . '/plugin-loader.php';
 plugin_load_all();
 
 $appEnv = strtolower(_cfg('APP_ENV', 'local'));
-$isProduction = in_array($appEnv, ['production', 'prod'], true);
+$appMode = strtolower((string) ($GLOBALS['_app_mode'] ?? 'local'));
+$isProduction = $appMode === 'production';
 
-// Show errors locally, hide them on production-like runtimes.
-ini_set('display_errors', $isProduction ? '0' : '1');
-ini_set('display_startup_errors', $isProduction ? '0' : '1');
-error_reporting($isProduction ? E_ALL & ~E_DEPRECATED & ~E_STRICT : E_ALL);
+$debugRaw = strtolower(trim((string) _cfg('APP_DEBUG', $isProduction ? '0' : '1')));
+$debugEnabled = in_array($debugRaw, ['1', 'true', 'yes', 'on'], true);
+if ($isProduction) {
+    // Production never exposes runtime errors to clients.
+    $debugEnabled = false;
+}
+
+ini_set('display_errors', $debugEnabled ? '1' : '0');
+ini_set('display_startup_errors', $debugEnabled ? '1' : '0');
+ini_set('log_errors', '1');
+error_reporting($debugEnabled ? E_ALL : (E_ALL & ~E_DEPRECATED & ~E_STRICT));
 
 $cspNonce = base64_encode(random_bytes(16));
 $GLOBALS['cspNonce'] = $cspNonce;
@@ -50,11 +58,13 @@ if (!headers_sent()) {
 
 do_action('app.init', [
     'app_env' => $appEnv,
+    'app_mode' => $appMode,
     'is_production' => $isProduction,
+    'debug_enabled' => $debugEnabled,
 ]);
 
 if (isset($conn) && $conn instanceof mysqli) {
-    session_ensure_cart_wishlist_arrays();
+    CartService::session_ensure_cart_wishlist_arrays();
     wishlist_bootstrap_session($conn);
 }
 
@@ -81,7 +91,7 @@ if ($isProduction) {
             try {
                 send_email(
                     $adminEmail,
-                    'Fatal Error — Amber Fabrics',
+                    'Fatal Error - ' . SiteContext::name(),
                     $message . "\n\nURL: " . ($_SERVER['REQUEST_URI'] ?? 'cli')
                         . "\nServer: " . ($_SERVER['SERVER_NAME'] ?? gethostname())
                 );

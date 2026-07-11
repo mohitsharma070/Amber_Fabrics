@@ -27,8 +27,8 @@ $wishlistSizes = $_SESSION['wishlist_size'];
 $cartMeterMap = $_SESSION['cart_meter_length'];
 $wishlistMeterMap = $_SESSION['wishlist_meter_length'];
 
-$cartHydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
-$wishlistHydrated = cart_hydrate_items($conn, $wishlist, $wishlistSizes, $wishlistMeterMap);
+$cartHydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$wishlistHydrated = CartService::cart_hydrate_items($conn, $wishlist, $wishlistSizes, $wishlistMeterMap);
 
 $sessionAdjusted = false;
 if (!empty($cartHydrated['removed_keys'])) {
@@ -53,14 +53,14 @@ if ($sessionAdjusted) {
 
     $customerId = (int) ($_SESSION['customer_id'] ?? 0);
     if ($customerId > 0) {
-        cart_save_to_db($conn, $customerId, $cart, $cartMeterMap);
+        CartService::cart_save_to_db($conn, $customerId, $cart, $cartMeterMap);
         wishlist_save_to_db($conn, $customerId, $wishlist, $wishlistMeterMap, $wishlistSizes);
     }
 }
 
 $items = $cartHydrated['items'];
 $wishlistItems = $wishlistHydrated['items'];
-$subtotal = cart_items_subtotal($items);
+$subtotal = CartService::cart_items_subtotal($items);
 
 $freeShippingThreshold = 999.00;
 $shippingRemaining = max(0, $freeShippingThreshold - $subtotal);
@@ -68,7 +68,7 @@ $shippingProgress = $freeShippingThreshold > 0 ? min(100, (int) round(($subtotal
 $estimatedShipping = $subtotal < $freeShippingThreshold ? 70.00 : 0.00;
 $total = max(0, $subtotal + $estimatedShipping);
 
-$metaTitle = 'Your Cart | Amber Fabrics';
+$metaTitle = SiteContext::title('Your Cart');
 include __DIR__ . '/includes/header.php';
 ?>
 
@@ -98,7 +98,7 @@ include __DIR__ . '/includes/header.php';
                                 <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                                     <div>
                                         <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
-                                        <div class="small text-muted">Rs <?php echo number_format($w['unit_price'], 2); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
+                                        <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
                                         <div class="small text-muted">
                                             <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
                                                 Qty: <?php echo e((string) $w['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $w['meter_length'])); ?>m = <?php echo e($w['quantity_text']); ?>m
@@ -128,9 +128,9 @@ include __DIR__ . '/includes/header.php';
                 <div class="col-lg-4">
                     <div class="surface-panel p-4 cart-summary-card">
                         <h5 class="mb-3">Cart Summary</h5>
-                        <div class="d-flex justify-content-between mb-2"><span>Subtotal</span><span class="fw-semibold">Rs 0.00</span></div>
-                        <div class="d-flex justify-content-between mb-2"><span>Shipping <small class="text-muted">(est.)</small></span><span class="fw-semibold">Rs 0.00</span></div>
-                        <div class="d-flex justify-content-between mb-2"><span>Total</span><span class="fw-semibold">Rs 0.00</span></div>
+                        <div class="d-flex justify-content-between mb-2"><span>Subtotal</span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
+                        <div class="d-flex justify-content-between mb-2"><span>Shipping <small class="text-muted">(est.)</small></span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
+                        <div class="d-flex justify-content-between mb-2"><span>Total</span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
                         <div class="small text-muted mb-3">Coupon can be applied at checkout.</div>
                         <hr>
                         <button type="button" class="btn btn-primary w-100 btn-lg" disabled aria-disabled="true">Proceed to Checkout</button>
@@ -178,10 +178,10 @@ include __DIR__ . '/includes/header.php';
                                         </div>
                                         <div class="text-muted small mt-1">
                                             <?php if ($item['sale_price'] > 0 && $item['sale_price'] < $item['regular_price']): ?>
-                                                <span class="fw-semibold text-dark">Rs <?php echo number_format($item['sale_price'], 2); ?></span>
-                                                <span class="ms-1"><del>Rs <?php echo number_format($item['regular_price'], 2); ?></del></span>
+                                                <span class="fw-semibold text-dark"><?php echo e(money($item['sale_price'])); ?></span>
+                                                <span class="ms-1"><del><?php echo e(money($item['regular_price'])); ?></del></span>
                                             <?php else: ?>
-                                                <span class="fw-semibold text-dark">Rs <?php echo number_format($item['unit_price'], 2); ?></span>
+                                                <span class="fw-semibold text-dark"><?php echo e(money($item['unit_price'])); ?></span>
                                             <?php endif; ?>
                                             <span> / <?php echo e($item['quantity_unit_label'] === 'pieces' ? 'piece' : ($item['quantity_unit_label'] === 'sets' ? 'set' : $item['quantity_unit_label'])); ?></span>
                                         </div>
@@ -191,7 +191,7 @@ include __DIR__ . '/includes/header.php';
                                     </div>
                                     <div class="text-end">
                                         <div class="small text-muted">Line Total</div>
-                                        <div class="fw-semibold">Rs <?php echo number_format($item['subtotal'], 2); ?></div>
+                                        <div class="fw-semibold"><?php echo e(money($item['subtotal'])); ?></div>
                                     </div>
                                 </div>
 
@@ -236,7 +236,7 @@ include __DIR__ . '/includes/header.php';
                                 <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                                     <div>
                                         <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
-                                        <div class="small text-muted">Rs <?php echo number_format($w['unit_price'], 2); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
+                                        <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
                                         <div class="small text-muted">
                                             <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
                                                 Qty: <?php echo e((string) $w['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $w['meter_length'])); ?>m = <?php echo e($w['quantity_text']); ?>m
@@ -269,7 +269,7 @@ include __DIR__ . '/includes/header.php';
 
                         <div class="mb-3">
                             <?php if ($shippingRemaining > 0): ?>
-                                <div class="small text-muted mb-1">Add Rs <?php echo number_format($shippingRemaining, 2); ?> more for free shipping.</div>
+                                <div class="small text-muted mb-1">Add <?php echo e(money($shippingRemaining)); ?> more for free shipping.</div>
                             <?php else: ?>
                                 <div class="small text-success mb-1">You unlocked free shipping.</div>
                             <?php endif; ?>
@@ -278,16 +278,16 @@ include __DIR__ . '/includes/header.php';
                             </div>
                         </div>
 
-                        <div class="d-flex justify-content-between mb-2"><span>Subtotal</span><span class="fw-semibold">Rs <?php echo number_format($subtotal, 2); ?></span></div>
+                        <div class="d-flex justify-content-between mb-2"><span>Subtotal</span><span class="fw-semibold"><?php echo e(money($subtotal)); ?></span></div>
                         <div class="d-flex justify-content-between mb-2">
                             <span>Shipping <small class="text-muted">(est.)</small></span>
                             <?php if ($estimatedShipping > 0): ?>
-                                <span class="fw-semibold">Rs <?php echo number_format($estimatedShipping, 2); ?></span>
+                                <span class="fw-semibold"><?php echo e(money($estimatedShipping)); ?></span>
                             <?php else: ?>
                                 <span class="fw-semibold text-success">Free</span>
                             <?php endif; ?>
                         </div>
-                        <div class="d-flex justify-content-between mb-2"><span>Total</span><span class="fw-semibold">Rs <?php echo number_format($total, 2); ?></span></div>
+                        <div class="d-flex justify-content-between mb-2"><span>Total</span><span class="fw-semibold"><?php echo e(money($total)); ?></span></div>
                         <div class="small text-muted mb-3">Coupon can be applied at checkout.</div>
                         <hr>
                         <a class="btn btn-primary w-100 btn-lg" href="/checkout.php">Proceed to Checkout</a>
@@ -350,5 +350,15 @@ include __DIR__ . '/includes/header.php';
     });
 })();
 </script>
+
+<?php do_action('cart.after_items', [
+    'conn' => $conn,
+    'cart_items' => $items,
+    'wishlist_items' => $wishlistItems,
+    'subtotal' => $subtotal,
+    'customer_id' => (int) ($_SESSION['customer_id'] ?? 0),
+    'cart' => $cart,
+    'wishlist' => $wishlist,
+]); ?>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>

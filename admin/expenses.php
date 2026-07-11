@@ -108,7 +108,7 @@ include 'partials/header.php';
 <div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1 class="mb-1">Expenses</h1>
-        <p class="text-muted mb-0">Total Expenses<?php echo $month ? ' (' . e($month) . ')' : ''; ?>: <strong>Rs <?php echo number_format($totalExpenses, 2); ?></strong></p>
+        <p class="text-muted mb-0">Total Expenses<?php echo $month ? ' (' . e($month) . ')' : ''; ?>: <strong><?php echo e(money($totalExpenses)); ?></strong></p>
     </div>
 </div>
 
@@ -183,7 +183,7 @@ include 'partials/header.php';
                         <tr>
                             <td><?php echo e((string) $row['expense_date']); ?></td>
                             <td><?php echo e((string) $row['type']); ?></td>
-                            <td>Rs <?php echo number_format((float) $row['amount'], 2); ?></td>
+                            <td><?php echo e(money((float) $row['amount'])); ?></td>
                             <td><?php echo e((string) $row['note']); ?></td>
                             <td class="text-end admin-row-actions">
                                 <a class="btn btn-sm btn-outline-primary" href="expenses.php?edit=<?php echo (int) $row['id']; ?><?php echo $month ? '&month=' . urlencode($month) : ''; ?>"><i class="bi bi-pencil me-1"></i>Edit</a>

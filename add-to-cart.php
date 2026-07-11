@@ -44,7 +44,7 @@ $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
 $allowedMeterOptions = ($unitType === 'meter')
-    ? parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
+    ? CartService::parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
     : [];
 $quantity = normalize_quantity_by_unit($_POST['quantity'] ?? 1, $unitType, (float) $minOrder);
 $selectedMeterLength = null;
@@ -68,7 +68,7 @@ if ($unitType === 'meter') {
         redirect('/fabric.php?id=' . $productId);
     }
     $meterLength = round((float) $meterLengthRaw, 2);
-    if (!meter_length_is_allowed($meterLength, $allowedMeterOptions)) {
+    if (!CartService::meter_length_is_allowed($meterLength, $allowedMeterOptions)) {
         if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Selected meter option is unavailable.']); exit; }
         flash('error', 'Selected meter option is unavailable.');
         redirect('/fabric.php?id=' . $productId);
@@ -83,8 +83,8 @@ if ($unitType === 'meter') {
     $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
 }
 
-$sizeOptions = parse_size_options((string) ($product['size'] ?? ''));
-$productVariants = get_fabric_variants($conn, $productId);
+$sizeOptions = CartService::parse_size_options((string) ($product['size'] ?? ''));
+$productVariants = InventoryService::get_fabric_variants($conn, $productId);
 $hasActiveVariants = false;
 foreach ($productVariants as $variantRow) {
     if ((int) ($variantRow['is_active'] ?? 0) === 1) {
@@ -97,16 +97,16 @@ foreach ($productVariants as $variantRow) {
 // Try explicit variant first (from product page), then color+size, then first active variant.
 $variant = null;
 if ($postedVariantId > 0) {
-    $candidate = get_variant_by_id($conn, $postedVariantId);
+    $candidate = InventoryService::get_variant_by_id($conn, $postedVariantId);
     if ($candidate && (int) ($candidate['fabric_id'] ?? 0) === $productId && (int) ($candidate['is_active'] ?? 0) === 1) {
         $variant = $candidate;
     }
 }
 if (!$variant && ($selectedColor !== '' || $selectedSize !== '')) {
-    $variant = find_variant($conn, $productId, $selectedColor, $selectedSize);
+    $variant = InventoryService::find_variant($conn, $productId, $selectedColor, $selectedSize);
 }
 if (!$variant) {
-    $variant = get_first_active_in_stock_variant($conn, $productId, $unitType);
+    $variant = InventoryService::get_first_active_in_stock_variant($conn, $productId, $unitType);
 }
 if (!$variant && !$hasActiveVariants) {
     if ($selectedSize !== '' && !empty($sizeOptions) && !in_array($selectedSize, $sizeOptions, true)) {
@@ -143,7 +143,7 @@ if (!$variant && $hasActiveVariants && ($selectedColor !== '' || $selectedSize !
 $variantId = $variant ? (int) ($variant['id'] ?? 0) : 0;
 if ($variant) {
     $selectedColor = trim((string) ($variant['color'] ?? $selectedColor));
-    $selectedSize = variant_size_display($variant, $unitType);
+    $selectedSize = CartService::variant_size_display($variant, $unitType);
 }
 
 // Use variant stock; fall back to fabric-level stock for legacy items with no variant.
@@ -213,7 +213,7 @@ if ($selectedSize !== '') {
 }
 
 if (!empty($_SESSION['customer_id'])) {
-    cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'], $_SESSION['cart_meter_length'] ?? []);
+    CartService::cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'], $_SESSION['cart_meter_length'] ?? []);
 }
 
 do_action('cart.after_add', [
@@ -222,6 +222,8 @@ do_action('cart.after_add', [
     'product_name' => (string) ($product['name'] ?? ''),
     'quantity' => $addedQty,
     'unit_type' => $unitType,
+    'variant_id' => $variantId,
+    'unit_price' => $unitPrice,
     'is_ajax' => $isAjax,
 ]);
 
@@ -245,7 +247,7 @@ log_ecommerce_event(
 if ($isAjax) {
     $cartCount = count($_SESSION['cart']);
     $msg = $cappedByStock
-        ? 'Added to cart (only ' . format_quantity_by_unit($stock, $unitType) . quantity_unit_suffix($unitType) . ' in stock - quantity adjusted).'
+        ? 'Added to cart (only ' . format_quantity_by_unit($stock, $unitType) . InventoryService::quantity_unit_suffix($unitType) . ' in stock - quantity adjusted).'
         : 'Added to cart: ' . ($product['name'] ?? 'Product');
     header('Content-Type: application/json');
     echo json_encode([
@@ -254,12 +256,13 @@ if ($isAjax) {
         'cart_count' => $cartCount,
         'capped' => $cappedByStock,
         'meta_pixel_event' => $GLOBALS['meta_pixel_last_event'] ?? null,
+        'google_analytics_event' => $GLOBALS['google_analytics_last_event'] ?? null,
     ]);
     exit;
 }
 
 $flashMsg = $cappedByStock
-    ? 'Added to cart. Only ' . format_quantity_by_unit($stock, $unitType) . quantity_unit_suffix($unitType) . ' available - quantity has been adjusted.'
+    ? 'Added to cart. Only ' . format_quantity_by_unit($stock, $unitType) . InventoryService::quantity_unit_suffix($unitType) . ' available - quantity has been adjusted.'
     : 'Added to cart: ' . ($product['name'] ?? 'Product');
 flash('success', $flashMsg);
 $target = ($redirectTo === 'checkout') ? '/checkout.php' : '/cart.php';

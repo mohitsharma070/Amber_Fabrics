@@ -33,6 +33,16 @@ $forbiddenPatterns = [
     'scripts/smoke-regressions.php',
     'scripts/customer-smoke.ps1',
     'scripts/backfill-image-derivatives.php',
+    'database/setup.php',
+    'database/schema.sql',
+];
+
+$requiredEntries = [
+    'database/migrate.php',
+];
+
+$requiredPatterns = [
+    'database/migrations/*.sql',
 ];
 
 function zip_path_matches(string $path, string $pattern): bool
@@ -49,7 +59,18 @@ function zip_path_matches(string $path, string $pattern): bool
     return $path === $pattern || str_starts_with($path, $pattern . '/');
 }
 
+function artifact_contains(array $entries, string $pattern): bool
+{
+    foreach ($entries as $entry) {
+        if (zip_path_matches($entry, $pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 $failures = [];
+$artifactEntries = [];
 if (is_file($artifact)) {
     if (!class_exists('ZipArchive')) {
         fwrite(STDERR, "[FAIL] ZipArchive extension is required to verify zip artifacts.\n");
@@ -62,6 +83,7 @@ if (is_file($artifact)) {
     }
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $name = (string) $zip->getNameIndex($i);
+        $artifactEntries[] = ltrim(str_replace('\\', '/', $name), '/');
         foreach ($forbiddenPatterns as $pattern) {
             if (zip_path_matches($name, $pattern)) {
                 $failures[] = "Forbidden entry in artifact: {$name}";
@@ -79,12 +101,25 @@ if (is_file($artifact)) {
     foreach ($it as $item) {
         $abs = str_replace('\\', '/', $item->getPathname());
         $name = ltrim(substr($abs, strlen($root)), '/');
+        $artifactEntries[] = $name;
         foreach ($forbiddenPatterns as $pattern) {
             if (zip_path_matches($name, $pattern)) {
                 $failures[] = "Forbidden entry in artifact: {$name}";
                 break;
             }
         }
+    }
+}
+
+foreach ($requiredEntries as $entry) {
+    if (!artifact_contains($artifactEntries, $entry)) {
+        $failures[] = "Required release entry missing: {$entry}";
+    }
+}
+
+foreach ($requiredPatterns as $pattern) {
+    if (!artifact_contains($artifactEntries, $pattern)) {
+        $failures[] = "Required release files missing: {$pattern}";
     }
 }
 

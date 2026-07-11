@@ -36,14 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd->execute();
 
             // Send email with reset link
-            send_customer_password_reset_email($email, $token);
+            EmailService::send_customer_password_reset_email($email, $token);
         }
         // Always show success to prevent email enumeration
         $success = true;
     }
 }
 
-$metaTitle = 'Forgot Password | Amber Fabrics';
+$metaTitle = SiteContext::title('Forgot Password');
 include __DIR__ . '/../includes/header.php';
 ?>
 

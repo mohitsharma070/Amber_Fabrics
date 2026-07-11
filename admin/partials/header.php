@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../../includes/init.php';
 require_admin();
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
-$siteSettings = get_site_settings();
+$siteSettings = SiteSettingsService::get();
 $siteName = $siteSettings['site_name'];
 $siteLogo = $siteSettings['branding_logo'];
 $isRefundQueue = $currentPage === 'orders.php' && (string) ($_GET['refund_queue'] ?? '') === '1';
@@ -34,20 +34,85 @@ try {
 } catch (Throwable $e) {
     $pendingReviews = 0;
 }
+
+if (!function_exists('admin_nav_safe_url')) {
+    function admin_nav_safe_url(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '' || preg_match('/[\x00-\x1F\x7F]/', $url)) {
+            return '';
+        }
+
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        if (is_string($scheme) && $scheme !== '' && !in_array(strtolower($scheme), ['http', 'https'], true)) {
+            return '';
+        }
+
+        return $url;
+    }
+}
+
+if (!function_exists('admin_nav_safe_icon')) {
+    function admin_nav_safe_icon(string $icon): string
+    {
+        $icon = trim($icon);
+        if ($icon === '' || !preg_match('/^[A-Za-z0-9 _-]{1,80}$/', $icon)) {
+            return '';
+        }
+        return $icon;
+    }
+}
+
+if (!function_exists('admin_nav_plugin_items')) {
+    function admin_nav_plugin_items(mysqli $conn, string $currentPage): array
+    {
+        $items = apply_filters('admin.nav.items', [], [
+            'conn' => $conn,
+            'current_page' => $currentPage,
+            'admin_id' => (int) ($_SESSION['admin_id'] ?? 0),
+            'admin_name' => (string) ($_SESSION['admin_name'] ?? 'admin'),
+        ]);
+        if (!is_array($items)) {
+            return [];
+        }
+
+        $safeItems = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $label = trim((string) ($item['label'] ?? ''));
+            $url = admin_nav_safe_url((string) ($item['url'] ?? ''));
+            if ($label === '' || $url === '') {
+                continue;
+            }
+            $safeItems[] = [
+                'label' => substr($label, 0, 80),
+                'url' => $url,
+                'icon' => admin_nav_safe_icon((string) ($item['icon'] ?? '')),
+                'active' => !empty($item['active']),
+            ];
+        }
+
+        return $safeItems;
+    }
+}
+
+$pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
 ?>
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo isset($metaTitle) ? $metaTitle : 'Amber Fabrics Admin'; ?></title>
-    <meta name="description" content="<?php echo isset($metaDescription) ? $metaDescription : 'Admin panel for Amber Fabrics.'; ?>">
-    <meta name="keywords" content="<?php echo isset($metaKeywords) ? $metaKeywords : 'admin, management, Amber Fabrics'; ?>">
-    <meta name="author" content="Amber Fabrics">
-    <meta property="og:title" content="<?php echo isset($metaTitle) ? $metaTitle : 'Amber Fabrics Admin'; ?>">
-    <meta property="og:description" content="<?php echo isset($metaDescription) ? $metaDescription : 'Admin panel for Amber Fabrics.'; ?>">
+    <title><?php echo e(isset($metaTitle) ? $metaTitle : ($siteName . ' Admin')); ?></title>
+    <meta name="description" content="<?php echo e(isset($metaDescription) ? $metaDescription : ('Admin panel for ' . $siteName . '.')); ?>">
+    <meta name="keywords" content="<?php echo e(isset($metaKeywords) ? $metaKeywords : ('admin, management, ' . $siteName)); ?>">
+    <meta name="author" content="<?php echo e($siteName); ?>">
+    <meta property="og:title" content="<?php echo e(isset($metaTitle) ? $metaTitle : ($siteName . ' Admin')); ?>">
+    <meta property="og:description" content="<?php echo e(isset($metaDescription) ? $metaDescription : ('Admin panel for ' . $siteName . '.')); ?>">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="<?php echo (isset($metaUrl) ? $metaUrl : 'https://amberfabrics.com/admin'); ?>">
+    <meta property="og:url" content="<?php echo e(isset($metaUrl) ? $metaUrl : SiteContext::url('/admin')); ?>">
     <meta property="og:image" content="<?php echo (isset($metaImage) ? $metaImage : '../images/fabrics/default.jpg'); ?>">
     <!-- Favicons: Light/Dark theme support -->
     <link rel="icon" type="image/svg+xml" href="../images/favicon-light.svg" media="(prefers-color-scheme: light)">
@@ -131,6 +196,12 @@ try {
                 </div>
 
                 <a class="nav-link <?php echo $isSettingsNav ? 'active' : ''; ?>" href="settings.php"><i class="bi bi-sliders me-2" aria-hidden="true"></i>Settings</a>
+
+                <?php foreach ($pluginNavItems as $pluginNavItem): ?>
+                    <a class="nav-link <?php echo !empty($pluginNavItem['active']) ? 'active' : ''; ?>" href="<?php echo e((string) $pluginNavItem['url']); ?>">
+                        <?php if (!empty($pluginNavItem['icon'])): ?><i class="<?php echo e((string) $pluginNavItem['icon']); ?> me-2" aria-hidden="true"></i><?php endif; ?><?php echo e((string) $pluginNavItem['label']); ?>
+                    </a>
+                <?php endforeach; ?>
 
                 <form method="POST" action="logout.php" class="d-inline">
                     <?php echo csrf_field(); ?>

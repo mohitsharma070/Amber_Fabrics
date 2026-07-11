@@ -131,7 +131,7 @@ if (!empty($_SESSION['export_inquiry_old']) && is_array($_SESSION['export_inquir
     unset($_SESSION['export_inquiry_old']);
 }
 
-$metaTitle = 'International Buyers | Amber Fabrics';
+$metaTitle = SiteContext::title('International Buyers');
 include __DIR__ . '/includes/header.php';
 ?>
 

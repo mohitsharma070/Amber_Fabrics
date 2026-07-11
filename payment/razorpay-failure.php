@@ -57,7 +57,7 @@ try {
     $paymentRowId = (int) ($paymentRow['id'] ?? 0);
 
     if ($paymentRow && $rzpOrderId !== '' && (string) ($paymentRow['razorpay_order_id'] ?? '') !== '' && (string) $paymentRow['razorpay_order_id'] !== $rzpOrderId) {
-        payment_attempt_touch(
+        PaymentService::payment_attempt_touch(
             $conn,
             'razorpay',
             $rzpOrderId,
@@ -80,7 +80,7 @@ try {
     if ((string) ($order['payment_status'] ?? '') !== 'paid') {
         $attemptRef = $rzpOrderId !== '' ? $rzpOrderId : (string) ($paymentRow['razorpay_order_id'] ?? '');
         if ($attemptRef !== '') {
-            payment_attempt_touch(
+            PaymentService::payment_attempt_touch(
                 $conn,
                 'razorpay',
                 $attemptRef,
@@ -111,7 +111,7 @@ try {
             $parts[] = 'reason: ' . $errorDescription;
         }
         $note = implode(' | ', $parts);
-        razorpay_mark_order_failed(
+        PaymentService::razorpay_mark_order_failed(
             $conn,
             $orderId,
             (string) ($order['payment_status'] ?? ''),
@@ -119,7 +119,7 @@ try {
             $paymentId,
             $rzpOrderId
         );
-        restore_order_inventory($conn, $orderId);
+        InventoryService::restore_order_inventory($conn, $orderId);
         log_order_activity($conn, $orderId, 'payment_failed', 'customer', $customerId, 'customer', $note);
     }
 

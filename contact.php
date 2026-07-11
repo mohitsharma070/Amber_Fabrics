@@ -51,9 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
     }
 }
 
-$metaTitle = 'Contact | Amber Fabrics';
-$metaDescription = 'Contact Amber Fabrics for bulk orders, support, and business inquiries.';
-$metaKeywords = 'contact, bulk inquiry, support, Amber Fabrics';
+$metaTitle = SiteContext::title('Contact');
+$metaDescription = 'Contact ' . SiteContext::name() . ' for bulk orders, support, and business inquiries.';
+$metaKeywords = 'contact, bulk inquiry, support, ' . SiteContext::name();
 include __DIR__ . '/includes/header.php';
 ?>
 

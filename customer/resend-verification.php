@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd->bind_param('ssi', $tokenHash, $verifyExpires, $customer['id']);
             $upd->execute();
 
-            send_customer_verification_email($email, (string) $customer['name'], $token);
+            EmailService::send_customer_verification_email($email, (string) $customer['name'], $token);
         }
 
         // Always show success to avoid disclosing which emails are registered
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$metaTitle = 'Resend Verification Email | Amber Fabrics';
+$metaTitle = SiteContext::title('Resend Verification Email');
 include __DIR__ . '/../includes/header.php';
 ?>
 

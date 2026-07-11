@@ -4,12 +4,15 @@
  *
  * Critical jobs:
  * - stale_razorpay_release
- * - shiprocket_sync
  *
  * Exit codes:
  * - 0 success (or safe overlap skip)
  * - 1 one or more critical jobs failed
  * - 2 bootstrap/runtime fatal
+ *
+ * Local smoke mode (CLI only):
+ * - php cron/run-plugins.php --local-smoke
+ * - Allows APP_MODE=local and downgrades critical jobs to non-critical.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -33,11 +36,12 @@ function cron_log_event(string $level, string $event, array $fields = []): void
         'event' => $event,
     ] + $fields;
     $line = '[cron] ' . json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    error_log($line);
     if (PHP_SAPI === 'cli') {
         $stream = ($record['level'] === 'error' || $record['level'] === 'warning') ? STDERR : STDOUT;
         fwrite($stream, $line . PHP_EOL);
+        return;
     }
+    error_log($line);
 }
 
 function cron_run_job(string $name, bool $critical, callable $fn): array
@@ -119,12 +123,20 @@ function cron_db_lock_release(mysqli $conn, string $lockName): void
 }
 
 $mode = strtolower((string) ($GLOBALS['_app_mode'] ?? ''));
-if ($mode !== 'production') {
+$isCli = PHP_SAPI === 'cli';
+$isLocalSmoke = $isCli && in_array('--local-smoke', $argv, true);
+if ($mode !== 'production' && !$isLocalSmoke) {
     cron_log_event('error', 'bootstrap_mode_invalid', [
         'message' => 'APP_MODE must be production for cron runtime.',
         'current_mode' => $mode === '' ? '(unknown)' : $mode,
     ]);
     exit(2);
+}
+if ($isLocalSmoke) {
+    cron_log_event('warning', 'local_smoke_enabled', [
+        'message' => 'Local smoke mode enabled (critical jobs downgraded).',
+        'current_mode' => $mode === '' ? '(unknown)' : $mode,
+    ]);
 }
 
 $lockFile = rtrim((string) sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'amber-fabrics-cron.lock';
@@ -161,28 +173,16 @@ cron_log_event('info', 'cron_start', [
     'started_at' => $runStartedAt,
     'pid' => function_exists('getmypid') ? getmypid() : 0,
     'mode' => $mode,
+    'local_smoke' => $isLocalSmoke,
 ]);
 
 $results = [];
 
-$results[] = cron_run_job('stale_razorpay_release', true, static function () use ($conn): array {
-    $released = release_stale_pending_razorpay_orders_global($conn, 30, 200);
-    return ['released_count' => (int) $released, 'ttl_minutes' => 30, 'limit' => 200];
-});
+$isCriticalJob = !$isLocalSmoke;
 
-$results[] = cron_run_job('shiprocket_sync', true, static function () use ($conn): array {
-    $sync = shiprocket_reconcile_active_shipments($conn, 25);
-    if (!empty($sync['ok'])) {
-        return ['synced' => (int) ($sync['synced'] ?? 0), 'manual_fallback' => false];
-    }
-    if (!empty($sync['manual_fallback'])) {
-        return [
-            'synced' => 0,
-            'manual_fallback' => true,
-            'reason' => (string) ($sync['reason'] ?? 'manual fallback'),
-        ];
-    }
-    throw new RuntimeException('Shiprocket sync failed: ' . (string) ($sync['reason'] ?? $sync['error'] ?? 'unknown'));
+$results[] = cron_run_job('stale_razorpay_release', $isCriticalJob, static function () use ($conn): array {
+    $released = PaymentService::release_stale_pending_razorpay_orders_global($conn, 30, 200);
+    return ['released_count' => (int) $released, 'ttl_minutes' => 30, 'limit' => 200];
 });
 
 $results[] = cron_run_job('plugin_tick', false, static function () use ($conn): array {
@@ -206,7 +206,7 @@ $results[] = cron_run_job('cron_heartbeat_save', false, static function () use (
     if (!function_exists('save_site_settings_to_db')) {
         return ['saved' => false, 'reason' => 'save_site_settings_to_db unavailable'];
     }
-    save_site_settings_to_db($conn, ['cron_last_run_at' => date('Y-m-d H:i:s')]);
+    SiteSettingsService::saveToDb($conn, ['cron_last_run_at' => date('Y-m-d H:i:s')]);
     return ['saved' => true];
 });
 

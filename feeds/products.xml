@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<products generated_at="2026-05-21T02:34:04+00:00" count="17">
+<products generated_at="2026-06-27T05:14:54+00:00" count="17">
   <product>
     <id>17</id>
     <title>Dorimon Bedsheet</title>
@@ -210,7 +210,7 @@
     <price currency="INR">1.00</price>
     <sale_price currency="INR">1.00</sale_price>
     <unit_type>meter</unit_type>
-    <stock>4</stock>
+    <stock>1</stock>
   </product>
   <product>
     <id>1</id>

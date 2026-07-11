@@ -4,13 +4,14 @@ $itemsCount = (int) ($data['items_count'] ?? 0);
 $subtotal = (float) ($data['subtotal'] ?? 0);
 $summary = trim((string) ($data['cart_summary'] ?? ''));
 $cartUrl = (string) ($data['cart_url'] ?? '');
+$siteName = SiteContext::name();
 
-$subject = 'You left items in your Amber Fabrics cart';
+$subject = 'You left items in your ' . $siteName . ' cart';
 $lines = [
     'Dear ' . $name . ',',
     '',
     'You still have ' . $itemsCount . ' item(s) in your cart.',
-    'Current cart value: Rs ' . number_format($subtotal, 2),
+    'Current cart value: ' . money($subtotal),
     '',
 ];
 if ($summary !== '') {
@@ -21,7 +22,6 @@ if ($summary !== '') {
 $lines[] = 'Complete your order here: ' . $cartUrl;
 $lines[] = '';
 $lines[] = 'Regards,';
-$lines[] = 'Amber Fabrics';
+$lines[] = $siteName;
 
 return ['subject' => $subject, 'body' => implode("\r\n", $lines)];
-

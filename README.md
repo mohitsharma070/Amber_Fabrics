@@ -1,4 +1,4 @@
-# Amber Fabrics (PHP + MySQL)
+# Ecommerce Website (PHP + MySQL)
 
 Local setup guide for running this project safely on **XAMPP + phpMyAdmin**.
 
@@ -74,7 +74,7 @@ This repository was missing a top-level setup guide. Important steps that were n
 ## Step A: Place project in XAMPP
 
 1. Copy project folder to:
-   - `C:\xampp\htdocs\Amber Fabrics-Textiles`
+   - `C:\xampp\htdocs\ecommerce-website`
 2. Start **Apache** and **MySQL** from XAMPP Control Panel.
 
 ## Step B: Install PHP dependencies
@@ -143,8 +143,8 @@ php database/setup.php
 
 ## Step F: Open the site
 
-- Frontend: `http://localhost/Amber Fabrics-Textiles/`
-- Admin login: `http://localhost/Amber Fabrics-Textiles/admin/login.php`
+- Frontend: `http://localhost/ecommerce-website/`
+- Admin login: `http://localhost/ecommerce-website/admin/login.php`
 
 If bootstrap admin was created by `setup.php`, the admin email is printed in terminal output. Admin login is OTP-only, so confirm mail delivery before going live.
 
@@ -170,7 +170,7 @@ Before first real use:
 Run it via CLI or secured HTTP:
 
 - CLI:
-  - Local/default: `php cron/run-plugins.php`
+  - Local smoke: `php cron/run-plugins.php --local-smoke`
   - Production Windows CMD/XAMPP:
     `set APP_MODE=production&& C:\xampp\php\php.exe cron\run-plugins.php`
   - Production PowerShell/XAMPP:
@@ -180,6 +180,17 @@ Run it via CLI or secured HTTP:
   - or send header: `X-CRON-TOKEN: <CRON_RUN_TOKEN>`
 
 For IIS or Windows Task Scheduler, create a job every 5-10 minutes that runs the production CLI command with `APP_MODE=production`, or calls the secured HTTP URL.
+
+## Operational checks (local/prod readiness)
+
+Run these scripts from project root:
+
+- Runtime and operations status:
+  - `php scripts/ops-health.php`
+- Index coverage audit (catalog/admin hot paths):
+  - `php scripts/index-audit.php`
+- Production gate (strict, production mode only):
+  - `php scripts/production-check.php`
 
 ## COD Guard WhatsApp confirmation
 

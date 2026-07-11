@@ -1,8 +1,8 @@
 <?php require_once 'includes/init.php'; ?>
 <?php
-$metaTitle = 'About Us | Amber Fabrics';
-$metaDescription = 'Learn about Amber Fabrics, a modern home textile ecommerce brand.';
-$metaKeywords = 'about Amber Fabrics, home textiles brand, ecommerce';
+$metaTitle = SiteContext::title('About Us');
+$metaDescription = 'Learn about ' . SiteContext::name() . ', a modern home textile ecommerce brand.';
+$metaKeywords = 'about ' . SiteContext::name() . ', home textiles brand, ecommerce';
 
 $aboutMediaItems = [];
 try {
@@ -26,7 +26,7 @@ include 'includes/header.php'; ?>
         <div class="about-hero-inner animate-in">
             <p class="about-kicker mb-2">Trusted Textile Partner</p>
             <h1 class="mb-3">Built for Reliable Quality, Fast Fulfillment, and Scalable Growth</h1>
-            <p class="about-hero-desc">Amber Fabrics helps growing brands and buyers source premium home textiles with practical MOQ, quality-first processes, and dependable dispatch.</p>
+            <p class="about-hero-desc"><?php echo e(SiteContext::name()); ?> helps growing brands and buyers source premium home textiles with practical MOQ, quality-first processes, and dependable dispatch.</p>
             <div class="about-hero-actions">
                 <a href="/catalog.php" class="btn btn-light btn-lg">Shop Collection</a>
                 <a href="/international-buyers.php" class="btn btn-outline-light btn-lg">Bulk Inquiry</a>
@@ -48,7 +48,7 @@ include 'includes/header.php'; ?>
                 <p class="mb-0 text-muted">A modern textile brand combining traditional fabric sensibility with ecommerce speed.</p>
             </div>
             <div class="about-story-body">
-                <p>We started Amber Fabrics to solve a common buyer challenge: finding reliable textile quality at practical order quantities without slow communication or delayed dispatch.</p>
+                <p>We started <?php echo e(SiteContext::name()); ?> to solve a common buyer challenge: finding reliable textile quality at practical order quantities without slow communication or delayed dispatch.</p>
                 <p class="mb-0">From daily-use bedsheets and towels to scalable bulk programs, our team focuses on consistency, transparent coordination, and long-term buyer trust.</p>
             </div>
         </div>
@@ -58,7 +58,7 @@ include 'includes/header.php'; ?>
 <section class="section-block pt-0">
     <div class="container">
         <div class="section-head text-center mb-4">
-            <h2 class="mb-2">Inside Amber Fabrics</h2>
+            <h2 class="mb-2">Inside <?php echo e(SiteContext::name()); ?></h2>
             <p class="text-muted mb-0">A quick look at our fabric quality, production mood, and dispatch-ready process.</p>
         </div>
         <div class="about-media-grid">

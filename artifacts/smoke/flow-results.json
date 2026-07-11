@@ -1,0 +1,51 @@
+{
+  "steps": [
+    {
+      "step": "catalog_open",
+      "url": "http://localhost:8000/catalog.php",
+      "title": "Shop | Amber Fabrics",
+      "screenshot": "artifacts/smoke/catalog.png"
+    },
+    {
+      "step": "add_to_cart_click",
+      "url": "http://localhost:8000/cart.php",
+      "title": "Your Cart | Amber Fabrics",
+      "screenshot": "artifacts/smoke/after-add.png"
+    },
+    {
+      "step": "cart_open",
+      "url": "http://localhost:8000/cart.php",
+      "title": "Your Cart | Amber Fabrics",
+      "cart_has_checkout": true,
+      "screenshot": "artifacts/smoke/cart-after-add.png"
+    },
+    {
+      "step": "checkout_open",
+      "url": "http://localhost:8000/checkout.php",
+      "title": "Checkout | Amber Fabrics",
+      "has_checkout_form": true,
+      "screenshot": "artifacts/smoke/checkout-after-add.png"
+    },
+    {
+      "step": "shipping_quote_api",
+      "response": {
+        "http": 200,
+        "json": {
+          "ok": true,
+          "source": "manual",
+          "quote_token": "5a1adf8b2237b3a3e31fc7aeadf743cf",
+          "base_shipping": 0,
+          "cod_fee": 50,
+          "shipping_total": 50
+        }
+      }
+    },
+    {
+      "step": "admin_login_open",
+      "url": "http://localhost:8000/admin/login.php",
+      "title": "Admin Login | Amber Fabrics",
+      "has_form": true,
+      "screenshot": "artifacts/smoke/admin-login-check.png"
+    }
+  ]
+}

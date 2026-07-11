@@ -66,13 +66,7 @@ function product_feed_fetch_rows(mysqli $conn): array
 
 function product_feed_product_url(int $productId): string
 {
-    $appUrl = rtrim(_cfg('APP_URL', ''), '/');
-    if ($appUrl === '') {
-        $protocol = app_request_is_https() ? 'https' : 'http';
-        $host = (string) ($_SERVER['SERVER_NAME'] ?? 'localhost');
-        $appUrl = $protocol . '://' . $host;
-    }
-    return $appUrl . '/fabric.php?id=' . $productId;
+    return SiteContext::url('/fabric.php?id=' . $productId);
 }
 
 function product_feed_image_url(string $image): string
@@ -81,13 +75,7 @@ function product_feed_image_url(string $image): string
     if ($image === '') {
         return '';
     }
-    $appUrl = rtrim(_cfg('APP_URL', ''), '/');
-    if ($appUrl === '') {
-        $protocol = app_request_is_https() ? 'https' : 'http';
-        $host = (string) ($_SERVER['SERVER_NAME'] ?? 'localhost');
-        $appUrl = $protocol . '://' . $host;
-    }
-    return $appUrl . '/images/fabrics/' . $image;
+    return SiteContext::url('/images/fabrics/' . $image);
 }
 
 function product_feed_normalize_row(array $row): array

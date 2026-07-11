@@ -10,16 +10,16 @@ if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
 $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
-$hydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$hydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
 $items = $hydrated['items'];
-$subtotal = cart_items_subtotal($items);
+$subtotal = CartService::cart_items_subtotal($items);
 
 if (!empty($hydrated['removed_keys'])) {
     foreach ($hydrated['removed_keys'] as $cartKey) {
         unset($_SESSION['cart'][$cartKey], $_SESSION['cart_size'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
     }
     if (!empty($_SESSION['customer_id'])) {
-        cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
+        CartService::cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
     }
     if (!empty($hydrated['invalid_variant_found'])) {
         flash('error', 'Some unavailable variants were removed from your cart. Please review before checkout.');
@@ -160,35 +160,19 @@ $old['shipping_address_id'] = $selectedAddressId;
 $selectedPayment = in_array((string) ($old['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $old['payment_method']
     : 'cod';
-$selectedOnlineMethod = sanitize_online_payment_method((string) ($old['online_method'] ?? 'upi'));
+$selectedOnlineMethod = InventoryService::sanitize_online_payment_method((string) ($old['online_method'] ?? 'upi'));
 if ($selectedOnlineMethod === '') {
     $selectedOnlineMethod = 'upi';
 }
 $codFeeApply = ($selectedPayment === 'cod') ? 1 : 0;
 $countryForCalc = trim((string) ($old['country'] ?? ''));
-$shipping = checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
+$shipping = CartService::checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
 $isIndia = (bool) $shipping['is_india'];
 $baseShippingAmount = (float) $shipping['base_shipping'];
 $codFeeAmount = (float) $shipping['cod_fee'];
 $shippingAmount = (float) $shipping['shipping_total'];
 $shippingRateSource = 'manual';
-$shippingRateCourier = '';
-
-if ($isIndia) {
-    $forwardRate = shiprocket_calculate_forward_rate(
-        (float) $subtotal,
-        trim(_cfg('SHIPROCKET_PICKUP_PINCODE', '')),
-        trim((string) ($old['pincode'] ?? '')),
-        $selectedPayment === 'cod'
-    );
-    if (!empty($forwardRate['ok'])) {
-        $baseShippingAmount = max(0.0, (float) ($forwardRate['rate'] ?? $baseShippingAmount));
-        $shippingAmount = round($baseShippingAmount + $codFeeAmount, 2);
-        $shippingRateSource = 'live';
-        $shippingRateCourier = (string) ($forwardRate['courier_name'] ?? '');
-    }
-}
-$shippingQuoteToken = shipping_quote_store(
+$shippingQuoteToken = InventoryService::shipping_quote_store(
     (float) $subtotal,
     (string) $countryForCalc,
     (string) ($old['pincode'] ?? ''),
@@ -197,7 +181,7 @@ $shippingQuoteToken = shipping_quote_store(
     (float) $codFeeAmount,
     (float) $shippingAmount,
     (string) $shippingRateSource,
-    (string) $shippingRateCourier
+    ''
 );
 $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
 $couponInfo = get_active_coupon_discount($conn, $couponCode, (float) $subtotal);
@@ -224,7 +208,7 @@ if (!$isIndia) {
     ]);
 }
 
-$metaTitle = 'Checkout | Amber Fabrics';
+$metaTitle = SiteContext::title('Checkout');
 do_action('checkout.view', [
     'conn' => $conn,
     'customer_id' => $customerId,
@@ -510,7 +494,7 @@ include __DIR__ . '/includes/header.php';
                                     <span class="text-muted"> (<?php echo e($item['selected_size']); ?>)</span>
                                 <?php endif; ?>
                             </div>
-                            <span>Rs <?php echo number_format($item['subtotal'], 2); ?></span>
+                            <span><?php echo e(money($item['subtotal'])); ?></span>
                         </div>
                     <?php endforeach; ?>
 
@@ -546,35 +530,27 @@ include __DIR__ . '/includes/header.php';
                     <?php endif; ?>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Subtotal</span>
-                        <span id="summary_subtotal">Rs <?php echo number_format($subtotal, 2); ?></span>
+                        <span id="summary_subtotal"><?php echo e(money($subtotal)); ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Discount</span>
-                        <span class="text-success" id="summary_discount">- Rs <?php echo number_format($discountAmount, 2); ?></span>
+                        <span class="text-success" id="summary_discount">- <?php echo e(money($discountAmount)); ?></span>
                     </div>
 
                     <div class="d-flex justify-content-between mb-1">
                         <span>Shipping</span>
-                        <span id="summary_shipping">Rs <?php echo number_format($baseShippingAmount, 2); ?></span>
+                        <span id="summary_shipping"><?php echo e(money($baseShippingAmount)); ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span>COD Fee</span>
-                        <span id="summary_cod_fee">Rs <?php echo number_format($codFeeAmount, 2); ?></span>
+                        <span id="summary_cod_fee"><?php echo e(money($codFeeAmount)); ?></span>
                     </div>
                     <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
                         <span>Total</span>
-                        <span id="summary_total">Rs <?php echo number_format($totalAmount, 2); ?></span>
+                        <span id="summary_total"><?php echo e(money($totalAmount)); ?></span>
                     </div>
                     <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note">
-                        <?php if ($shippingRateSource === 'live'): ?>
-                            Live courier estimate enabled<?php echo $shippingRateCourier !== '' ? ' via ' . e($shippingRateCourier) : ''; ?>. Manual fallback applies automatically if courier API is unavailable.
-                        <?php else: ?>
-                            Manual shipping fallback active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
-                        <?php endif; ?>
-                    </div>
-                    <div class="mt-2" id="courier_select_wrap" style="display:none;">
-                        <label for="courier_select" class="form-label small mb-1">Courier Option</label>
-                        <select id="courier_select" class="form-select form-select-sm"></select>
+                        Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
                     </div>
                 </div>
             </div>
@@ -585,7 +561,7 @@ include __DIR__ . '/includes/header.php';
 <div class="d-lg-none position-fixed bottom-0 start-0 end-0 bg-white border-top p-3" style="z-index:1050;">
     <div class="d-flex justify-content-between align-items-center mb-2">
         <span class="small text-muted">Total</span>
-        <strong id="mobile_summary_total">Rs <?php echo number_format($totalAmount, 2); ?></strong>
+        <strong id="mobile_summary_total"><?php echo e(money($totalAmount)); ?></strong>
     </div>
     <button type="button" id="mobile_place_order_btn" class="btn btn-primary w-100">Place Order</button>
 </div>
@@ -622,9 +598,6 @@ include __DIR__ . '/includes/header.php';
     var onlinePanels = document.querySelectorAll('.checkout-online-panel');
     var onlineMethodInput = document.getElementById('online_method');
     var shippingQuoteTokenInput = document.getElementById('shipping_quote_token');
-    var courierSelectWrap = document.getElementById('courier_select_wrap');
-    var courierSelect = document.getElementById('courier_select');
-    var liveCourierOptions = [];
     var mobileTotalEl = document.getElementById('mobile_summary_total');
     var mobileSubmitBtn = document.getElementById('mobile_place_order_btn');
     var checkoutForm = document.getElementById('checkout_form');
@@ -771,9 +744,6 @@ include __DIR__ . '/includes/header.php';
         body.set('pincode', pincode);
         body.set('subtotal', String(subtotal));
         body.set('payment_method', paymentMethod);
-        if (courierSelect && courierSelect.value) {
-            body.set('courier_id', String(courierSelect.value));
-        }
         fetch('/shipping-rate.php', {
             method: 'POST',
             headers: {
@@ -791,30 +761,6 @@ include __DIR__ . '/includes/header.php';
             var liveCodFee = Number(data.cod_fee || 0);
             if (shippingQuoteTokenInput && data.quote_token) {
                 shippingQuoteTokenInput.value = String(data.quote_token);
-            }
-            if (courierSelectWrap && courierSelect) {
-                liveCourierOptions = Array.isArray(data.courier_options) ? data.courier_options : [];
-                if (liveCourierOptions.length > 0 && data.source === 'live') {
-                    courierSelect.innerHTML = '';
-                    liveCourierOptions.forEach(function (opt) {
-                        var o = document.createElement('option');
-                        var cid = Number(opt.courier_id || 0);
-                        o.value = String(cid);
-                        var label = String(opt.courier_name || 'Courier') + ' - Rs ' + Number(opt.rate || 0).toFixed(2);
-                        if (Number(opt.estimated_days || 0) > 0) {
-                            label += ' (' + Number(opt.estimated_days) + 'd)';
-                        }
-                        o.textContent = label;
-                        if (Number(data.courier_id || 0) === cid) {
-                            o.selected = true;
-                        }
-                        courierSelect.appendChild(o);
-                    });
-                    courierSelectWrap.style.display = '';
-                } else {
-                    courierSelect.innerHTML = '';
-                    courierSelectWrap.style.display = 'none';
-                }
             }
             var taxable = Math.max(0, subtotal - discount);
             var total = taxable + liveShipping + liveCodFee;
@@ -901,11 +847,6 @@ include __DIR__ . '/includes/header.php';
         syncSummary();
     }
     maybeFetchLiveRate();
-    if (courierSelect) {
-        courierSelect.addEventListener('change', function () {
-            maybeFetchLiveRate();
-        });
-    }
     if (mobileSubmitBtn && checkoutForm) {
         mobileSubmitBtn.addEventListener('click', function () {
             checkoutForm.requestSubmit();

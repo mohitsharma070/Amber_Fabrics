@@ -8,3 +8,5 @@ tmp_sessions/
 tmp_sessions/*
 config/app-config.php
 vendor/
+dist/
+node_modules/

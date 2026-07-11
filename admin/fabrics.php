@@ -75,20 +75,28 @@ $listSql = "SELECT
                 f.price, f.sale_price, f.stock, f.unit_type,
                 f.stock_meters,
                 CASE
-                    WHEN COALESCE(fv.variant_count, 0) > 0 THEN COALESCE(fv.variant_stock, 0)
+                    WHEN COALESCE(fv.variant_count, 0) > 0 THEN
+                        CASE
+                            WHEN f.unit_type = 'meter' THEN COALESCE(fv.variant_stock_meters, 0)
+                            ELSE COALESCE(fv.variant_stock_units, 0)
+                        END
                     WHEN f.stock_meters IS NOT NULL AND f.stock_meters > 0 THEN f.stock_meters
                     ELSE COALESCE(f.stock, 0)
                 END AS effective_stock,
                 f.status, f.is_featured,
                 f.gsm, f.width, f.moq, f.lead_time,
                 COALESCE(fv.variant_count, 0) AS variant_count,
-                COALESCE(fv.variant_stock, 0) AS variant_stock
+                CASE
+                    WHEN f.unit_type = 'meter' THEN COALESCE(fv.variant_stock_meters, 0)
+                    ELSE COALESCE(fv.variant_stock_units, 0)
+                END AS variant_stock
             FROM fabrics f
             LEFT JOIN (
                 SELECT
                     fabric_id,
                     COUNT(*) AS variant_count,
-                    SUM(CASE WHEN unit_type_parent = 'meter' THEN stock_meters ELSE stock END) AS variant_stock,
+                    SUM(COALESCE(stock, 0)) AS variant_stock_units,
+                    SUM(COALESCE(stock_meters, 0)) AS variant_stock_meters,
                     MAX(
                         COALESCE(
                             NULLIF(image, ''),
@@ -97,19 +105,8 @@ $listSql = "SELECT
                             NULLIF(image4, '')
                         )
                     ) AS variant_preview_image
-                FROM (
-                    SELECT fv2.fabric_id,
-                           fv2.stock,
-                           fv2.stock_meters,
-                           fv2.image,
-                           fv2.image2,
-                           fv2.image3,
-                           fv2.image4,
-                           fab.unit_type AS unit_type_parent
-                    FROM fabric_variants fv2
-                    JOIN fabrics fab ON fab.id = fv2.fabric_id
-                    WHERE fv2.is_active = 1
-                ) sub
+                FROM fabric_variants
+                WHERE is_active = 1
                 GROUP BY fabric_id
             ) fv ON fv.fabric_id = f.id
             {$whereSql}
@@ -122,9 +119,9 @@ $listStmt->bind_param($allTypes, ...$allParams);
 $listStmt->execute();
 $products = fetch_all_assoc($listStmt->get_result());
 
-$metaTitle = 'Manage Products | Amber Fabrics';
-$metaDescription = 'Admin page to manage products for Amber Fabrics.';
-$metaKeywords = 'admin, products, manage, Amber Fabrics';
+$metaTitle = SiteContext::title('Manage Products');
+$metaDescription = 'Admin page to manage products for ' . SiteContext::name() . '.';
+$metaKeywords = 'admin, products, manage, ' . SiteContext::name();
 include 'partials/header.php';
 ?>
 
@@ -234,7 +231,7 @@ include 'partials/header.php';
                 </td>
                 <td data-label="Stock">
                     <span class="<?php echo $isLowStock ? 'text-danger fw-bold' : ''; ?>">
-                        <?php echo e(format_quantity_by_unit($stockVal, $unitType)); ?><?php echo quantity_unit_suffix($unitType); ?>
+                        <?php echo e(format_quantity_by_unit($stockVal, $unitType)); ?><?php echo InventoryService::quantity_unit_suffix($unitType); ?>
                     </span>
                     <?php if ($isLowStock): ?>
                         <div class="small text-danger">Low stock</div>

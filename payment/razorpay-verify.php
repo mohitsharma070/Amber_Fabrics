@@ -71,7 +71,7 @@ try {
 
     $paymentRowId = (int) ($payRow['id'] ?? 0);
     if (!$payRow || (string) $payRow['razorpay_order_id'] !== $rzpOrderId) {
-        payment_attempt_touch(
+        PaymentService::payment_attempt_touch(
             $conn,
             'razorpay',
             $rzpOrderId,
@@ -92,13 +92,13 @@ try {
     }
 
     if (($order['payment_status'] ?? '') === 'paid') {
-        checkout_session_clear_after_order($conn, $customerId);
+        CartService::checkout_session_clear_after_order($conn, $customerId);
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
 
     $remoteValidation = ['ok' => false, 'error' => 'validation_not_attempted'];
     for ($attempt = 1; $attempt <= 3; $attempt++) {
-        $remoteValidation = razorpay_validate_remote_capture(
+        $remoteValidation = PaymentService::razorpay_validate_remote_capture(
             $paymentId,
             $rzpOrderId,
             (float) ($order['total_amount'] ?? 0)
@@ -153,7 +153,7 @@ try {
     }
     if (($lockedOrder['payment_status'] ?? '') === 'paid') {
         $conn->commit();
-        checkout_session_clear_after_order($conn, $customerId);
+        CartService::checkout_session_clear_after_order($conn, $customerId);
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
     if (!in_array((string) ($lockedOrder['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
@@ -161,7 +161,7 @@ try {
     }
 
     if (empty($remoteValidation['ok'])) {
-        payment_attempt_touch(
+        PaymentService::payment_attempt_touch(
             $conn,
             'razorpay',
             $rzpOrderId,
@@ -193,7 +193,7 @@ try {
         redirect('/customer/orders.php');
     }
 
-    razorpay_mark_order_paid(
+    PaymentService::razorpay_mark_order_paid(
         $conn,
         $orderId,
         (string) ($lockedOrder['payment_status'] ?? ''),
@@ -201,7 +201,7 @@ try {
         $rzpOrderId,
         $signature
     );
-    payment_attempt_touch(
+    PaymentService::payment_attempt_touch(
         $conn,
         'razorpay',
         $rzpOrderId,
@@ -229,7 +229,7 @@ try {
         'Razorpay payment id: ' . $paymentId
     );
 
-    consume_coupon_after_razorpay_capture(
+    PaymentService::consume_coupon_after_razorpay_capture(
         $conn,
         $orderId,
         $customerId,
@@ -239,20 +239,7 @@ try {
 
     $conn->commit();
 
-    $awbResult = shiprocket_auto_create_awb_for_order($conn, $orderId);
-    if (empty($awbResult['ok'])) {
-        log_order_activity(
-            $conn,
-            $orderId,
-            'shipment_manual_fallback',
-            'system',
-            0,
-            'shiprocket',
-            (string) ($awbResult['reason'] ?? 'Auto AWB failed')
-        );
-    }
-
-    checkout_session_clear_after_order($conn, $customerId);
+    CartService::checkout_session_clear_after_order($conn, $customerId);
 
     do_action('order.after_payment_success', [
         'conn' => $conn,
@@ -263,7 +250,7 @@ try {
         'payment_status' => 'paid',
     ]);
 
-    send_order_confirmation_email($conn, $orderId);
+    EmailService::send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {
     try {

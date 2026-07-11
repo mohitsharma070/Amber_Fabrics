@@ -43,7 +43,7 @@ $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
 $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
 
-$hydrated = cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$hydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
 if (!empty($hydrated['removed_keys'])) {
     foreach ($hydrated['removed_keys'] as $badKey) {
         unset($cart[$badKey], $cartSizes[$badKey], $cartMeterMap[$badKey]);
@@ -54,7 +54,7 @@ if (!empty($hydrated['removed_keys'])) {
 
     $customerId = (int) ($_SESSION['customer_id'] ?? 0);
     if ($customerId > 0) {
-        cart_save_to_db($conn, $customerId, $cart, $cartMeterMap);
+        CartService::cart_save_to_db($conn, $customerId, $cart, $cartMeterMap);
     }
 }
 if (empty($hydrated['items'])) {
@@ -62,7 +62,7 @@ if (empty($hydrated['items'])) {
     flash('error', 'Your cart is empty after removing unavailable items.');
     redirect(coupon_redirect_target('/cart.php'));
 }
-$subtotal = cart_items_subtotal($hydrated['items']);
+$subtotal = CartService::cart_items_subtotal($hydrated['items']);
 
 $selectedPayment = in_array((string) ($_SESSION['checkout_old']['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $_SESSION['checkout_old']['payment_method']
@@ -82,7 +82,7 @@ if ($countryForCalc === '' && !empty($_SESSION['customer_id'])) {
 }
 $isIndia = strcasecmp($countryForCalc, 'india') === 0;
 
-$shipping = checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
+$shipping = CartService::checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
 
 $customerIdForCoupon = (int) ($_SESSION['customer_id'] ?? 0);
 $discountInfo = get_active_coupon_discount_for_customer($conn, $code, (float) $subtotal, $customerIdForCoupon);

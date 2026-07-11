@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currentOrderStatus = (string) ($currentRow['order_status'] ?? '');
         $currentPaymentStatus = (string) ($currentRow['payment_status'] ?? 'pending');
         $method = strtolower((string) ($currentRow['payment_method'] ?? ''));
-        if (!can_transition_order_status($currentOrderStatus, $targetStatus)) {
+        if (!InventoryService::can_transition_order_status($currentOrderStatus, $targetStatus)) {
             flash('error', 'Invalid order status transition.');
             redirect('order-view.php?id=' . $id);
         }
@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($currentOrderStatus !== 'cancelled' && $targetStatus === 'cancelled') {
-                restore_order_inventory($conn, $id);
+                InventoryService::restore_order_inventory($conn, $id);
                 release_coupon_usage_for_order($conn, $id);
             }
             log_order_activity(
@@ -124,22 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('order-view.php?id=' . $id);
         }
 
-        if (in_array($targetStatus, ['confirmed', 'packed', 'shipped', 'delivered'], true)) {
-            $awbResult = shiprocket_auto_create_awb_for_order($conn, $id);
-            if (empty($awbResult['ok'])) {
-                log_order_activity(
-                    $conn,
-                    $id,
-                    'shipment_manual_fallback',
-                    'admin',
-                    (int) ($_SESSION['admin_id'] ?? 0),
-                    (string) ($_SESSION['admin_name'] ?? 'admin'),
-                    (string) ($awbResult['reason'] ?? 'Auto AWB failed')
-                );
-            }
-        }
-
-        send_order_status_update_email($conn, $id, $targetStatus);
+        EmailService::send_order_status_update_email($conn, $id, $targetStatus);
         flash('success', 'Order moved to ' . ucfirst($targetStatus) . '.');
         redirect('order-view.php?id=' . $id);
     }
@@ -150,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'mark_refunded') {
-        $result = admin_mark_order_refunded($conn, $id);
+        $result = PaymentService::admin_mark_order_refunded($conn, $id);
         if (!empty($result['ok'])) {
             flash('success', (string) ($result['message'] ?? 'Order marked as refunded.'));
         } else {
@@ -159,8 +144,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('order-view.php?id=' . $id);
     }
 
+    if ($action === 'mark_paid') {
+        $result = PaymentService::admin_mark_order_paid($conn, $id);
+        if (!empty($result['ok'])) {
+            flash('success', (string) ($result['message'] ?? 'Payment marked as paid.'));
+        } else {
+            flash('error', (string) ($result['message'] ?? 'Unable to mark payment as paid.'));
+        }
+        redirect('order-view.php?id=' . $id);
+    }
+
     if ($action === 'sync_refund_status') {
-        $result = admin_sync_razorpay_refund_status($conn, $id);
+        $result = PaymentService::admin_sync_razorpay_refund_status($conn, $id);
         if (!empty($result['ok'])) {
             flash('success', (string) ($result['message'] ?? 'Refund status synced.'));
         } else {
@@ -177,11 +172,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shipmentChanged = false;
         $previousTrackingId = '';
         $shipmentEmailStatus = '';
+        $savedShipment = [];
+        $adminId = (int) ($_SESSION['admin_id'] ?? 0);
+        $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
 
         if ($shippingCost < 0) {
             $shippingCost = 0;
         }
-        if ($trackingUrl !== '' && safe_external_url($trackingUrl) === '') {
+        if ($trackingUrl !== '' && InventoryService::safe_external_url($trackingUrl) === '') {
             flash('error', 'Tracking URL must be a valid http/https URL.');
             redirect('order-view.php?id=' . $id);
         }
@@ -208,9 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Shipment details cannot be edited for cancelled/refunded orders.');
             }
 
-            $shipSelectForUpdate = shipments_support_shiprocket_refs($conn)
-                ? "SELECT id, shipped_at, delivered_at, shiprocket_order_id, shiprocket_shipment_id, awb_code FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE"
-                : "SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE";
+            $shipSelectForUpdate = "SELECT id, shipped_at, delivered_at, tracking_id FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE";
             $shipStmt = $conn->prepare($shipSelectForUpdate);
             $shipStmt->bind_param('i', $id);
             $shipStmt->execute();
@@ -222,27 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($existingShipment) {
                 $shipmentId = (int) $existingShipment['id'];
-                if (shipments_support_shiprocket_refs($conn)) {
-                    $shiprocketOrderId = trim((string) ($existingShipment['shiprocket_order_id'] ?? ''));
-                    $shiprocketShipmentId = trim((string) ($existingShipment['shiprocket_shipment_id'] ?? ''));
-                    $awbCode = trim((string) ($existingShipment['awb_code'] ?? ''));
-                    $updateShip = $conn->prepare(
-                        "UPDATE shipments
-                         SET shiprocket_order_id = ?,
-                             shiprocket_shipment_id = ?,
-                             awb_code = ?,
-                             courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
-                         WHERE id = ?"
-                    );
-                    $updateShip->bind_param('ssssssdssi', $shiprocketOrderId, $shiprocketShipmentId, $awbCode, $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
-                } else {
-                    $updateShip = $conn->prepare(
-                        "UPDATE shipments
-                         SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
-                         WHERE id = ?"
-                    );
-                    $updateShip->bind_param('sssdssi', $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
-                }
+                $updateShip = $conn->prepare(
+                    "UPDATE shipments
+                     SET courier_name = ?, tracking_id = ?, tracking_url = ?, shipping_cost = ?, shipped_at = ?, delivered_at = ?
+                     WHERE id = ?"
+                );
+                $updateShip->bind_param('sssdssi', $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt, $shipmentId);
                 $updateShip->execute();
                 $shipmentChanged = true;
             } else {
@@ -252,11 +233,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $insertShip->bind_param('isssdss', $id, $courierName, $trackingId, $trackingUrl, $shippingCost, $shippedAt, $deliveredAt);
                 $insertShip->execute();
+                $shipmentId = (int) $conn->insert_id;
                 $shipmentChanged = true;
             }
             if ($shipmentChanged) {
-                $adminId = (int) ($_SESSION['admin_id'] ?? 0);
-                $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');
+                $savedShipment = [
+                    'id' => $shipmentId,
+                    'order_id' => $id,
+                    'courier_name' => $courierName,
+                    'tracking_id' => $trackingId,
+                    'tracking_url' => $trackingUrl,
+                    'shipping_cost' => $shippingCost,
+                    'shipped_at' => $shippedAt,
+                    'delivered_at' => $deliveredAt,
+                ];
                 $details = 'Courier: ' . ($courierName !== '' ? $courierName : '-') .
                     ' | Tracking ID: ' . ($trackingId !== '' ? $trackingId : '-') .
                     ($trackingUrl !== '' ? (' | URL: ' . $trackingUrl) : '');
@@ -273,13 +263,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('order-view.php?id=' . $id);
         }
 
+        if ($shipmentChanged) {
+            do_action('shipment.after_save', [
+                'conn' => $conn,
+                'order_id' => $id,
+                'shipment' => $savedShipment,
+                'previous_tracking_id' => $previousTrackingId,
+                'admin_id' => $adminId,
+                'admin_name' => $adminName,
+                'action' => $action,
+            ]);
+        }
+
         $flashMsg = 'Shipment details saved.';
         if ($shipmentChanged && $trackingId !== '' && $trackingId !== $previousTrackingId) {
             $shipmentEmailStatus = 'shipped';
         }
 
         if ($shipmentEmailStatus !== '') {
-            send_order_status_update_email($conn, $id, $shipmentEmailStatus);
+            EmailService::send_order_status_update_email($conn, $id, $shipmentEmailStatus);
         }
 
         flash('success', $flashMsg);
@@ -287,7 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$financialSelect = orders_structured_financial_columns_ready($conn)
+$financialSelect = PaymentService::orders_structured_financial_columns_ready($conn)
     ? "coupon_id, coupon_code, coupon_discount, shipping_quote_token, shipping_source, courier_id, courier_name, cod_fee, base_shipping"
     : "NULL AS coupon_id, NULL AS coupon_code, 0.00 AS coupon_discount, NULL AS shipping_quote_token, NULL AS shipping_source, NULL AS courier_id, NULL AS courier_name, 0.00 AS cod_fee, 0.00 AS base_shipping";
 $orderStmt = $conn->prepare(
@@ -323,10 +325,18 @@ if ($systemNotes !== '') {
     }
 }
 
+$variantImageJoin = order_items_supports_variant($conn)
+    ? "LEFT JOIN fabric_variants fv ON fv.id = oi.variant_id"
+    : "LEFT JOIN fabric_variants fv ON fv.fabric_id = COALESCE(oi.fabric_id, oi.product_id)
+        AND fv.color = oi.color
+        AND fv.size = oi.size
+        AND fv.is_active = 1";
 $itemStmt = $conn->prepare(
-    "SELECT oi.*, f.image
+    "SELECT oi.*,
+            COALESCE(NULLIF(fv.image, ''), NULLIF(f.image, '')) AS product_image
      FROM order_items oi
-     LEFT JOIN fabrics f ON f.id = oi.product_id
+     LEFT JOIN fabrics f ON f.id = COALESCE(oi.fabric_id, oi.product_id)
+     {$variantImageJoin}
      WHERE oi.order_id = ?
      ORDER BY oi.id ASC"
 );
@@ -334,15 +344,10 @@ $itemStmt->bind_param('i', $id);
 $itemStmt->execute();
 $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$shipmentSelect = shipments_support_shiprocket_refs($conn)
-    ? "SELECT id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at, shiprocket_order_id, shiprocket_shipment_id, awb_code
-       FROM shipments
-       WHERE order_id = ?
-       LIMIT 1"
-    : "SELECT id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
-       FROM shipments
-       WHERE order_id = ?
-       LIMIT 1";
+$shipmentSelect = "SELECT id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
+                   FROM shipments
+                   WHERE order_id = ?
+                   LIMIT 1";
 $shipmentStmt = $conn->prepare($shipmentSelect);
 $shipmentStmt->bind_param('i', $id);
 $shipmentStmt->execute();
@@ -353,9 +358,6 @@ $shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [
     'shipping_cost' => '0.00',
     'shipped_at' => null,
     'delivered_at' => null,
-    'shiprocket_order_id' => '',
-    'shiprocket_shipment_id' => '',
-    'awb_code' => '',
 ];
 $activityStmt = $conn->prepare(
     "SELECT action, actor_type, actor_name, details, created_at
@@ -374,6 +376,7 @@ $orderActivity = apply_filters('order.timeline.events', is_array($orderActivity)
 ]);
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
 $gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
+$currency = 'INR';
 $workflowStatuses = ['pending', 'confirmed', 'packed', 'shipped', 'delivered'];
 $currentWorkflowStatus = strtolower((string) ($order['order_status'] ?? 'pending'));
 $currentWorkflowIndex = array_search($currentWorkflowStatus, $workflowStatuses, true);
@@ -382,7 +385,7 @@ $nextStatusActions = [];
 $paymentMethodNow = strtolower((string) ($order['payment_method'] ?? ''));
 $paymentStatusNow = strtolower((string) ($order['payment_status'] ?? 'pending'));
 foreach ($validOrderStatuses as $candidateStatus) {
-    if (!can_transition_order_status((string) ($order['order_status'] ?? ''), $candidateStatus)) {
+    if (!InventoryService::can_transition_order_status((string) ($order['order_status'] ?? ''), $candidateStatus)) {
         continue;
     }
     if (in_array($candidateStatus, ['shipped', 'delivered'], true) && in_array($paymentMethodNow, ['razorpay', 'upi'], true) && $paymentStatusNow !== 'paid') {
@@ -433,15 +436,15 @@ include 'partials/header.php';
                         $lineTotal = (float) (($item['total'] ?? 0) > 0 ? $item['total'] : ($item['line_total'] ?? 0));
                     ?>
                     <div class="d-flex gap-3 align-items-start py-2 border-bottom">
-                        <?php if (!empty($item['image'])): ?>
-                            <img src="../images/fabrics/<?php echo e((string) $item['image']); ?>" alt="<?php echo e($name); ?>" class="rounded" style="width:50px;height:50px;object-fit:cover;">
+                        <?php if (!empty($item['product_image'])): ?>
+                            <img src="../images/fabrics/<?php echo e((string) $item['product_image']); ?>" alt="<?php echo e($name); ?>" class="rounded" style="width:50px;height:50px;object-fit:cover;">
                         <?php else: ?>
                             <div style="width:50px;height:50px;background:#eee;border-radius:4px;flex-shrink:0;"></div>
                         <?php endif; ?>
                         <div class="flex-grow-1">
                             <div class="fw-semibold"><?php echo e($name); ?></div>
                             <div class="text-muted small">
-                                Qty: <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo quantity_unit_suffix($unitType); ?>
+                                Qty: <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo InventoryService::quantity_unit_suffix($unitType); ?>
                                 <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
                                     (<?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces)
                                 <?php endif; ?>
@@ -450,21 +453,21 @@ include 'partials/header.php';
                             </div>
                         </div>
                         <div class="text-end">
-                            <div class="small text-muted">Rs <?php echo number_format($price, 2); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></div>
-                            <div class="fw-semibold">Rs <?php echo number_format($lineTotal, 2); ?></div>
+                            <div class="small text-muted"><?php echo e(money($price, $currency)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></div>
+                            <div class="fw-semibold"><?php echo e(money($lineTotal, $currency)); ?></div>
                         </div>
                     </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
 
                 <div class="mt-3 pt-2 border-top">
-                    <div class="d-flex justify-content-between small"><span>Subtotal</span><span>Rs <?php echo number_format((float) ($order['subtotal'] ?? 0), 2); ?></span></div>
-                    <div class="d-flex justify-content-between small"><span>Shipping</span><span>Rs <?php echo number_format((float) ($order['shipping_amount'] ?? 0), 2); ?></span></div>
-                    <div class="d-flex justify-content-between small"><span>Discount</span><span>- Rs <?php echo number_format((float) ($order['discount_amount'] ?? 0), 2); ?></span></div>
+                    <div class="d-flex justify-content-between small"><span>Subtotal</span><span><?php echo e(money((float) ($order['subtotal'] ?? 0), $currency)); ?></span></div>
+                    <div class="d-flex justify-content-between small"><span>Shipping</span><span><?php echo e(money((float) ($order['shipping_amount'] ?? 0), $currency)); ?></span></div>
+                    <div class="d-flex justify-content-between small"><span>Discount</span><span>- <?php echo e(money((float) ($order['discount_amount'] ?? 0), $currency)); ?></span></div>
                     <?php if (!empty($gst['enabled'])): ?>
-                    <div class="d-flex justify-content-between small"><span>Including GST</span><span>Rs <?php echo number_format((float) $gst['gst_amount'], 2); ?></span></div>
+                    <div class="d-flex justify-content-between small"><span>Including GST</span><span><?php echo e(money((float) $gst['gst_amount'], $currency)); ?></span></div>
                     <?php endif; ?>
-                    <div class="d-flex justify-content-between fw-bold mt-2"><span>Total</span><span>Rs <?php echo number_format((float) ($order['total_amount'] ?? 0), 2); ?></span></div>
+                    <div class="d-flex justify-content-between fw-bold mt-2"><span>Total</span><span><?php echo e(money((float) ($order['total_amount'] ?? 0), $currency)); ?></span></div>
                 </div>
             </div>
         </div>
@@ -506,20 +509,6 @@ include 'partials/header.php';
                         <label class="form-label">Tracking ID</label>
                         <input type="text" class="form-control" name="tracking_id" value="<?php echo e((string) ($shipment['tracking_id'] ?? '')); ?>">
                     </div>
-                    <?php if (shipments_support_shiprocket_refs($conn)): ?>
-                    <div class="mb-3">
-                        <label class="form-label">Shiprocket Shipment ID</label>
-                        <input type="text" class="form-control" value="<?php echo e((string) ($shipment['shiprocket_shipment_id'] ?? '')); ?>" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Shiprocket Order ID</label>
-                        <input type="text" class="form-control" value="<?php echo e((string) ($shipment['shiprocket_order_id'] ?? '')); ?>" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">AWB Code</label>
-                        <input type="text" class="form-control" value="<?php echo e((string) ($shipment['awb_code'] ?? '')); ?>" readonly>
-                    </div>
-                    <?php endif; ?>
                     <div class="mb-3">
                         <label class="form-label">Tracking URL</label>
                         <input type="url" class="form-control" name="tracking_url" value="<?php echo e((string) ($shipment['tracking_url'] ?? '')); ?>" placeholder="https://...">
@@ -569,8 +558,14 @@ include 'partials/header.php';
             <div class="card-body">
                 <h6 class="card-title">Quick Actions</h6>
                 <div class="d-flex flex-column gap-2">
+                    <?php if (strtolower((string) ($order['payment_status'] ?? 'pending')) === 'paid'): ?>
                     <a href="invoice.php?order=<?php echo e((string) $order['order_number']); ?>" target="_blank"
                        class="btn btn-outline-primary btn-sm"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print Invoice</a>
+                    <?php else: ?>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="Invoice available after payment is marked paid.">
+                        <i class="bi bi-printer me-1" aria-hidden="true"></i>Print Invoice (After Paid)
+                    </button>
+                    <?php endif; ?>
                     <a href="packing-slip.php?order=<?php echo e((string) $order['order_number']); ?>" target="_blank"
                        class="btn btn-outline-secondary btn-sm"><i class="bi bi-box2 me-1" aria-hidden="true"></i>Packing Slip</a>
                 </div>
@@ -612,10 +607,10 @@ include 'partials/header.php';
                     <div>Method: <strong><?php echo strtoupper(e((string) $order['payment_method'])); ?></strong></div>
                     <div>Status: <strong><?php echo ucfirst(e((string) $order['payment_status'])); ?></strong></div>
                     <?php if (!empty($order['coupon_code'])): ?>
-                        <div>Coupon: <strong><?php echo e((string) $order['coupon_code']); ?></strong> (Rs <?php echo number_format((float) ($order['coupon_discount'] ?? 0), 2); ?>)</div>
+                        <div>Coupon: <strong><?php echo e((string) $order['coupon_code']); ?></strong> (<?php echo e(money((float) ($order['coupon_discount'] ?? 0), $currency)); ?>)</div>
                     <?php endif; ?>
-                    <div>Base Shipping: <strong>Rs <?php echo number_format((float) ($order['base_shipping'] ?? 0), 2); ?></strong></div>
-                    <div>COD Fee: <strong>Rs <?php echo number_format((float) ($order['cod_fee'] ?? 0), 2); ?></strong></div>
+                    <div>Base Shipping: <strong><?php echo e(money((float) ($order['base_shipping'] ?? 0), $currency)); ?></strong></div>
+                    <div>COD Fee: <strong><?php echo e(money((float) ($order['cod_fee'] ?? 0), $currency)); ?></strong></div>
                     <?php if (!empty($order['shipping_source'])): ?>
                         <div>Shipping Source: <strong><?php echo e((string) $order['shipping_source']); ?></strong></div>
                     <?php endif; ?>
@@ -623,6 +618,17 @@ include 'partials/header.php';
                         <div>Checkout Courier: <strong><?php echo e((string) $order['courier_name']); ?></strong></div>
                     <?php endif; ?>
                 </div>
+                <?php
+                    $paymentStatusView = strtolower((string) ($order['payment_status'] ?? 'pending'));
+                    $orderStatusView = strtolower((string) ($order['order_status'] ?? 'pending'));
+                ?>
+                <?php if ($paymentStatusView !== 'paid' && $paymentStatusView !== 'refunded' && !in_array($orderStatusView, ['cancelled', 'refunded'], true)): ?>
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" data-confirm-modal data-confirm-title="Mark Payment Paid" data-confirm-message="Confirm this payment has been received?" data-confirm-ok="Mark Paid">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="action" value="mark_paid">
+                        <button type="submit" class="btn btn-sm btn-outline-success w-100"><i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Mark Paid</button>
+                    </form>
+                <?php endif; ?>
                 <?php if (($order['order_status'] ?? '') === 'cancelled' && ($order['payment_status'] ?? '') === 'paid'): ?>
                     <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" data-confirm-modal data-confirm-title="Confirm Refund" data-confirm-message="Mark this order as refunded now?" data-confirm-ok="Mark Refunded">
                         <?php echo csrf_field(); ?>

@@ -30,30 +30,35 @@ if (!$order) {
     redirect('/customer/orders.php');
 }
 
+$variantImageJoin = order_items_supports_variant($conn)
+    ? "LEFT JOIN fabric_variants fv ON fv.id = oi.variant_id"
+    : "LEFT JOIN fabric_variants fv ON fv.fabric_id = COALESCE(oi.fabric_id, oi.product_id)
+        AND fv.color = oi.color
+        AND fv.size = oi.size
+        AND fv.is_active = 1";
 $itemStmt = $conn->prepare(
-    "SELECT oi.*, f.image AS fabric_image
+    "SELECT oi.*,
+            COALESCE(NULLIF(fv.image, ''), NULLIF(f.image, '')) AS product_image
      FROM order_items oi
-     LEFT JOIN fabrics f ON f.id = oi.fabric_id
+     LEFT JOIN fabrics f ON f.id = COALESCE(oi.fabric_id, oi.product_id)
+     {$variantImageJoin}
      WHERE oi.order_id = ?"
 );
 $itemStmt->bind_param('i', $orderId);
 $itemStmt->execute();
 $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$shipmentSelect = shipments_support_shiprocket_refs($conn)
-    ? "SELECT courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at, shiprocket_order_id, shiprocket_shipment_id, awb_code
-       FROM shipments
-       WHERE order_id = ?
-       LIMIT 1"
-    : "SELECT courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
-       FROM shipments
-       WHERE order_id = ?
-       LIMIT 1";
+$shipmentSelect = "SELECT courier_name,
+                          COALESCE(NULLIF(tracking_id, ''), NULLIF(awb_code, ''), '') AS tracking_id,
+                          tracking_url, shipping_cost, shipped_at, delivered_at
+                   FROM shipments
+                   WHERE order_id = ?
+                   LIMIT 1";
 $shipmentStmt = $conn->prepare($shipmentSelect);
 $shipmentStmt->bind_param('i', $orderId);
 $shipmentStmt->execute();
 $shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [];
-$trackingUrl = safe_external_url((string) ($shipment['tracking_url'] ?? ''));
+$trackingUrl = InventoryService::safe_external_url((string) ($shipment['tracking_url'] ?? ''));
 
 $returnStmt = $conn->prepare(
     "SELECT id, return_number, status, reason, customer_note, image_1, image_2, admin_note, requested_at, updated_at
@@ -126,7 +131,7 @@ if (empty($shipping)) {
         $shipping = [];
     }
 }
-$symbol   = $order['currency'] === 'USD' ? '$' : 'Rs ';
+$currency = (string) ($order['currency'] ?? 'INR');
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
 $gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
 $displayShipping = (float) (($order['shipping_amount'] ?? 0) > 0 ? $order['shipping_amount'] : ($order['shipping_cost'] ?? 0));
@@ -134,8 +139,8 @@ $displayTotal = (float) (($order['total_amount'] ?? 0) > 0 ? $order['total_amoun
 $displayDiscount = (float) ($order['discount_amount'] ?? 0);
 
 $effectiveOrderStatus = (string) ($order['order_status'] ?? $order['status'] ?? '');
-$s = order_status_meta($effectiveOrderStatus);
-$payMeta = payment_status_meta((string) ($order['payment_status'] ?? 'pending'));
+$s = InventoryService::order_status_meta($effectiveOrderStatus);
+$payMeta = InventoryService::payment_status_meta((string) ($order['payment_status'] ?? 'pending'));
 $isRefundInitiated = in_array(strtolower($effectiveOrderStatus), ['cancelled', 'refunded'], true)
     && in_array(strtolower((string) ($order['payment_method'] ?? '')), ['razorpay', 'upi'], true)
     && strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
@@ -143,7 +148,7 @@ $deliveredAtForReturn = trim((string) ($shipment['delivered_at'] ?? ''));
 $isWithinReturnWindow = $deliveredAtForReturn !== '' && strtotime($deliveredAtForReturn) >= strtotime('-7 days');
 $canRequestReturn = strtolower($effectiveOrderStatus) === 'delivered' && $isWithinReturnWindow && !$returnRequest;
 
-$metaTitle = 'Order ' . e($order['order_number']) . ' | Amber Fabrics';
+$metaTitle = 'Order ' . e($order['order_number']) . ' | ' . site_name();
 include __DIR__ . '/../includes/header.php';
 ?>
 
@@ -173,8 +178,8 @@ include __DIR__ . '/../includes/header.php';
                         $lineTotal = (float) (($item['total'] ?? 0) > 0 ? $item['total'] : ($item['line_total'] ?? 0));
                     ?>
                     <div class="d-flex gap-3 align-items-start mb-3 pb-3 border-bottom">
-                        <?php if (!empty($item['fabric_image'])): ?>
-                            <img src="/images/fabrics/<?php echo e((string) $item['fabric_image']); ?>"
+                        <?php if (!empty($item['product_image'])): ?>
+                            <img src="/images/fabrics/<?php echo e((string) $item['product_image']); ?>"
                                  alt="<?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Product')); ?>"
                                  style="width:60px;height:60px;object-fit:cover;border-radius:4px;flex-shrink:0;">
                         <?php else: ?>
@@ -186,37 +191,37 @@ include __DIR__ . '/../includes/header.php';
                                 <div class="text-muted small">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></div>
                             <?php endif; ?>
                             <div class="text-muted small">
-                                <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo quantity_unit_suffix($unitType); ?> x <?php echo $symbol . number_format($unitPrice, 2); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?>
+                                <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo InventoryService::quantity_unit_suffix($unitType); ?> x <?php echo e(money($unitPrice, $currency)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?>
                                 <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
                                     | <?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <div class="fw-semibold"><?php echo $symbol . number_format($lineTotal, 2); ?></div>
+                        <div class="fw-semibold"><?php echo e(money($lineTotal, $currency)); ?></div>
                     </div>
                     <?php endforeach; ?>
 
                     <div class="d-flex justify-content-between text-muted small">
                         <span>Subtotal</span>
-                        <span><?php echo $symbol . number_format((float)$order['subtotal'], 2); ?></span>
+                        <span><?php echo e(money((float) $order['subtotal'], $currency)); ?></span>
                     </div>
                     <div class="d-flex justify-content-between text-muted small">
                         <span>Shipping</span>
-                        <span><?php echo $symbol . number_format($displayShipping, 2); ?></span>
+                        <span><?php echo e(money($displayShipping, $currency)); ?></span>
                     </div>
                     <div class="d-flex justify-content-between text-muted small">
                         <span>Discount</span>
-                        <span>- <?php echo $symbol . number_format($displayDiscount, 2); ?></span>
+                        <span>- <?php echo e(money($displayDiscount, $currency)); ?></span>
                     </div>
                     <?php if (!empty($gst['enabled'])): ?>
                     <div class="d-flex justify-content-between text-muted small">
                         <span>Including GST</span>
-                        <span><?php echo $symbol . number_format((float) $gst['gst_amount'], 2); ?></span>
+                        <span><?php echo e(money((float) $gst['gst_amount'], $currency)); ?></span>
                     </div>
                     <?php endif; ?>
                     <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
                         <span>Total</span>
-                        <span><?php echo $symbol . number_format($displayTotal, 2); ?> <?php echo e($order['currency']); ?></span>
+                        <span><?php echo e(money($displayTotal, $currency, true)); ?></span>
                     </div>
                 </div>
 
@@ -235,12 +240,6 @@ include __DIR__ . '/../includes/header.php';
                     <div class="text-muted small">
                         <div>Courier: <strong><?php echo !empty($shipment['courier_name']) ? e((string) $shipment['courier_name']) : '-'; ?></strong></div>
                         <div>Tracking ID: <strong><?php echo !empty($shipment['tracking_id']) ? e((string) $shipment['tracking_id']) : '-'; ?></strong></div>
-                        <?php if (!empty($shipment['awb_code'])): ?>
-                            <div>AWB Code: <strong><?php echo e((string) $shipment['awb_code']); ?></strong></div>
-                        <?php endif; ?>
-                        <?php if (!empty($shipment['shiprocket_shipment_id'])): ?>
-                            <div>Shiprocket Shipment ID: <strong><?php echo e((string) $shipment['shiprocket_shipment_id']); ?></strong></div>
-                        <?php endif; ?>
                         <div>Shipped At: <strong><?php echo !empty($shipment['shipped_at']) ? e((string) $shipment['shipped_at']) : '-'; ?></strong></div>
                         <div>Delivered At: <strong><?php echo !empty($shipment['delivered_at']) ? e((string) $shipment['delivered_at']) : '-'; ?></strong></div>
                     </div>
@@ -294,11 +293,7 @@ include __DIR__ . '/../includes/header.php';
                     </form>
                     <?php endif; ?>
                     <?php
-                    $invoiceStatuses = ['confirmed','processing','packed','shipped','delivered'];
-                    $isCod = strtolower((string) ($order['payment_method'] ?? '')) === 'cod';
-                    $showInvoice = $isCod
-                        || $order['payment_status'] === 'paid'
-                        || in_array($effectiveOrderStatus, $invoiceStatuses, true);
+                    $showInvoice = strtolower((string) ($order['payment_status'] ?? 'pending')) === 'paid';
                     ?>
                     <?php if ($showInvoice): ?>
                     <a href="/invoice.php?order=<?php echo e($order['order_number']); ?>" target="_blank"
@@ -319,16 +314,22 @@ include __DIR__ . '/../includes/header.php';
                                 $riUnitType = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $item['unit_type'] : 'meter';
                                 $riQty = (($item['quantity'] ?? 0) > 0 ? (float) $item['quantity'] : (float) ($item['quantity_meters'] ?? 0));
                                 if ($riQty <= 0 || $riOrderItemId <= 0) { continue; }
+                                $riDefaultQty = '0';
+                                $riIsFixedSingleQty = ($riUnitType === 'piece' || $riUnitType === 'set') && (int) round($riQty) === 1;
+                                if ($riIsFixedSingleQty) {
+                                    $riDefaultQty = '1';
+                                }
                                 ?>
                                 <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                                    <div class="small text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo quantity_unit_suffix($riUnitType); ?>)</div>
+                                    <div class="small text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo InventoryService::quantity_unit_suffix($riUnitType); ?>)</div>
                                     <input type="number"
                                            class="form-control form-control-sm"
                                            name="return_qty[<?php echo $riOrderItemId; ?>]"
                                            min="0"
                                            max="<?php echo e((string) $riQty); ?>"
                                            step="<?php echo $riUnitType === 'meter' ? '0.01' : '1'; ?>"
-                                           value="0"
+                                           value="<?php echo e($riDefaultQty); ?>"
+                                           <?php echo $riIsFixedSingleQty ? 'readonly aria-readonly="true"' : ''; ?>
                                            style="max-width:110px;">
                                 </div>
                             <?php endforeach; ?>
@@ -384,7 +385,7 @@ include __DIR__ . '/../includes/header.php';
                         <?php if (!empty($returnItems)): ?>
                             <div class="mt-2">Items:</div>
                             <?php foreach ($returnItems as $ri): ?>
-                                <div>- <?php echo e((string) ($ri['product_name'] ?? 'Item')); ?>: <?php echo e(format_quantity_by_unit((float) ($ri['quantity'] ?? 0), (string) ($ri['unit_type'] ?? 'meter'))); ?><?php echo quantity_unit_suffix((string) ($ri['unit_type'] ?? 'meter')); ?> (Rs <?php echo number_format((float) ($ri['line_total'] ?? 0), 2); ?>)</div>
+                                <div>- <?php echo e((string) ($ri['product_name'] ?? 'Item')); ?>: <?php echo e(format_quantity_by_unit((float) ($ri['quantity'] ?? 0), (string) ($ri['unit_type'] ?? 'meter'))); ?><?php echo InventoryService::quantity_unit_suffix((string) ($ri['unit_type'] ?? 'meter')); ?> (<?php echo e(money((float) ($ri['line_total'] ?? 0), $currency)); ?>)</div>
                             <?php endforeach; ?>
                         <?php endif; ?>
                         <?php if (!empty($returnRequest['image_1'])): ?>
@@ -440,5 +441,16 @@ include __DIR__ . '/../includes/header.php';
         </div>
     </div>
 </section>
+
+<?php do_action('customer.order_view.after', [
+    'conn' => $conn,
+    'order' => $order,
+    'order_id' => $orderId,
+    'customer_id' => $customerId,
+    'items' => $items,
+    'shipment' => $shipment,
+    'return_request' => $returnRequest,
+    'order_activity' => $orderActivity,
+]); ?>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

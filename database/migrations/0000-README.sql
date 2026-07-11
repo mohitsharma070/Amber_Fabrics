@@ -1,0 +1,12 @@
+-- Migration naming convention:
+--   YYYY-MM-DD-short-description.sql
+--
+-- Example:
+--   2026-06-01-add-orders-index.sql
+--
+-- Rules:
+-- 1) Never edit an already-applied migration file.
+-- 2) Add a new migration file for every schema/data change.
+-- 3) Keep migrations idempotent where possible.
+-- 4) After applying migration, also update database/schema.sql
+--    so fresh installs include the latest structure.

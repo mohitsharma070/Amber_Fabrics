@@ -7,10 +7,11 @@
 return [
     'local' => [
         // 1) Required first: APP_URL + DB_* + RAZORPAY_* + SMTP_* (if using SMTP)
-        // 2) Then fill optional integrations (Shiprocket, Meta CAPI, WhatsApp).
+        // 2) Then fill optional integrations (Meta CAPI, WhatsApp).
 
         // App
         'APP_ENV' => 'local',
+        'APP_DEBUG' => '1',
         'APP_URL' => 'http://localhost:8000',
         'APP_FORCE_HTTPS' => '0',
 
@@ -38,21 +39,6 @@ return [
         'RAZORPAY_KEY_SECRET' => 'replace-with-test-secret',
         'RAZORPAY_WEBHOOK_SECRET' => 'replace-with-test-webhook-secret',
 
-        // Shipping (Shiprocket)
-        'SHIPROCKET_ENABLED' => '0',
-        'SHIPROCKET_BASE_URL' => 'https://apiv2.shiprocket.in',
-        'SHIPROCKET_EMAIL' => 'ops@example.com',
-        'SHIPROCKET_PASSWORD' => 'replace-with-shiprocket-password',
-        'SHIPROCKET_WEBHOOK_SECRET' => 'replace-with-shiprocket-webhook-secret',
-        'SHIPROCKET_PICKUP_LOCATION' => 'Primary',
-        'SHIPROCKET_PICKUP_PINCODE' => '110001',
-        'SHIPROCKET_DEFAULT_WEIGHT_KG' => '0.5',
-        'SHIPROCKET_DEFAULT_REVERSE_WEIGHT_KG' => '0.5',
-        'SHIPROCKET_DEFAULT_LENGTH_CM' => '20',
-        'SHIPROCKET_DEFAULT_BREADTH_CM' => '20',
-        'SHIPROCKET_DEFAULT_HEIGHT_CM' => '2',
-        'SHIPROCKET_TRACKING_URL_BASE' => 'https://shiprocket.co/tracking/',
-
         // COD guard / WhatsApp
         'COD_GUARD_WHATSAPP_THRESHOLD' => '1000',
         'COD_GUARD_CALL_THRESHOLD' => '2000',
@@ -74,6 +60,12 @@ return [
         'META_CAPI_PIXEL_ID' => 'optional-override-pixel-id',
         'META_CAPI_ACCESS_TOKEN' => 'replace-with-meta-capi-access-token',
         'META_CAPI_TEST_EVENT_CODE' => 'optional-test-event-code',
+        // Google Analytics 4 (GA4)
+        'GOOGLE_ANALYTICS_ENABLED' => '1',
+        'GOOGLE_ANALYTICS_MEASUREMENT_ID' => 'G-XXXXXXXXXX',
+        'GOOGLE_ANALYTICS_DEBUG_MODE' => '1',
+        'GOOGLE_ANALYTICS_ENHANCED_ECOMMERCE_ENABLED' => '1',
+        'GOOGLE_ANALYTICS_CONSENT_REQUIRED' => '1',
 
         // Plugins / automations
         'ABANDONED_CART_EMAIL_ENABLED' => '1',
@@ -110,10 +102,11 @@ return [
 
     'production' => [
         // 1) Required first: APP_URL + DB_* + RAZORPAY_* + SMTP_*
-        // 2) Replace all "replace-with-..." placeholders before go-live.
+        // 2) Keep disabled optional integrations blank until you are ready to use them.
 
         // App
         'APP_ENV' => 'production',
+        'APP_DEBUG' => '0',
         'APP_URL' => 'https://yourdomain.com',
         'APP_FORCE_HTTPS' => '1',
 
@@ -141,21 +134,6 @@ return [
         'RAZORPAY_KEY_SECRET' => 'replace-with-live-secret',
         'RAZORPAY_WEBHOOK_SECRET' => 'replace-with-live-webhook-secret',
 
-        // Shipping (Shiprocket)
-        'SHIPROCKET_ENABLED' => '0',
-        'SHIPROCKET_BASE_URL' => 'https://apiv2.shiprocket.in',
-        'SHIPROCKET_EMAIL' => 'ops@yourdomain.com',
-        'SHIPROCKET_PASSWORD' => 'replace-with-live-shiprocket-password',
-        'SHIPROCKET_WEBHOOK_SECRET' => 'replace-with-live-shiprocket-webhook-secret',
-        'SHIPROCKET_PICKUP_LOCATION' => 'Primary',
-        'SHIPROCKET_PICKUP_PINCODE' => '110001',
-        'SHIPROCKET_DEFAULT_WEIGHT_KG' => '0.5',
-        'SHIPROCKET_DEFAULT_REVERSE_WEIGHT_KG' => '0.5',
-        'SHIPROCKET_DEFAULT_LENGTH_CM' => '20',
-        'SHIPROCKET_DEFAULT_BREADTH_CM' => '20',
-        'SHIPROCKET_DEFAULT_HEIGHT_CM' => '2',
-        'SHIPROCKET_TRACKING_URL_BASE' => 'https://shiprocket.co/tracking/',
-
         // COD guard / WhatsApp
         'COD_GUARD_WHATSAPP_THRESHOLD' => '1000',
         'COD_GUARD_CALL_THRESHOLD' => '2000',
@@ -168,15 +146,21 @@ return [
         'COD_GUARD_WHATSAPP_TEMPLATE_NAME' => '',
         'COD_GUARD_WHATSAPP_TEMPLATE_LANGUAGE' => 'en',
         'COD_GUARD_WHATSAPP_APP_SECRET' => '',
-        'COD_GUARD_WEBHOOK_VERIFY_TOKEN' => 'replace-with-random-verify-token',
-        'COD_GUARD_WEBHOOK_TOKEN' => 'replace-with-random-post-token',
+        'COD_GUARD_WEBHOOK_VERIFY_TOKEN' => '',
+        'COD_GUARD_WEBHOOK_TOKEN' => '',
 
         // Marketing / Tracking
         'UTM_COOKIE_DAYS' => '30',
-        'META_PIXEL_ID' => 'replace-with-meta-pixel-id',
-        'META_CAPI_PIXEL_ID' => 'optional-override-pixel-id',
-        'META_CAPI_ACCESS_TOKEN' => 'replace-with-meta-capi-access-token',
-        'META_CAPI_TEST_EVENT_CODE' => 'optional-test-event-code',
+        'META_PIXEL_ID' => '',
+        'META_CAPI_PIXEL_ID' => '',
+        'META_CAPI_ACCESS_TOKEN' => '',
+        'META_CAPI_TEST_EVENT_CODE' => '',
+        // Google Analytics 4 (GA4). Leave measurement ID blank until ready.
+        'GOOGLE_ANALYTICS_ENABLED' => '1',
+        'GOOGLE_ANALYTICS_MEASUREMENT_ID' => '',
+        'GOOGLE_ANALYTICS_DEBUG_MODE' => '0',
+        'GOOGLE_ANALYTICS_ENHANCED_ECOMMERCE_ENABLED' => '1',
+        'GOOGLE_ANALYTICS_CONSENT_REQUIRED' => '1',
 
         // Plugins / automations
         'ABANDONED_CART_EMAIL_ENABLED' => '1',

@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param('sssssss', $name, $email, $hash, $phone, $country, $tokenHash, $verifyExpires);
         $stmt->execute();
 
-        $emailSent = send_customer_verification_email($email, $name, $token);
+        $emailSent = EmailService::send_customer_verification_email($email, $name, $token);
 
         if ($emailSent) {
             flash('success', 'Account created! Please check your email to verify your address before logging in.');
@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$metaTitle = 'Register | Amber Fabrics';
+$metaTitle = SiteContext::title('Register');
 include __DIR__ . '/../includes/header.php';
 ?>
 

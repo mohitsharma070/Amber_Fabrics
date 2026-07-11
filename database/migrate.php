@@ -3,10 +3,11 @@
  * CLI migration runner.
  *
  * Usage:
+ *   APP_MODE=local php database/migrate.php
  *   APP_MODE=production php database/migrate.php
  *   APP_MODE=production php database/migrate.php --baseline
- *   APP_MODE=production php database/migrate.php --baseline-before=2026-05-21-production-hardening-indexes.sql
- *   APP_MODE=production php database/migrate.php --only=2026-05-21-production-hardening-indexes.sql
+ *   APP_MODE=production php database/migrate.php --baseline-before=2026-06-01-first-new-migration.sql
+ *   APP_MODE=production php database/migrate.php --only=2026-06-01-example.sql
  */
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
@@ -30,7 +31,7 @@ $conn->query(
 
 function migration_run_sql(mysqli $conn, string $sql, string $name): void
 {
-    if (trim($sql) === '') {
+    if (!migration_has_executable_sql($sql)) {
         return;
     }
 
@@ -50,6 +51,28 @@ function migration_run_sql(mysqli $conn, string $sql, string $name): void
     }
 }
 
+function migration_has_executable_sql(string $sql): bool
+{
+    $withoutBlockComments = preg_replace('/\/\*.*?\*\//s', '', $sql);
+    if (!is_string($withoutBlockComments)) {
+        return trim($sql) !== '';
+    }
+
+    $lines = preg_split('/\R/', $withoutBlockComments);
+    if (!is_array($lines)) {
+        return trim($withoutBlockComments) !== '';
+    }
+
+    foreach ($lines as $line) {
+        $trimmed = trim($line);
+        if ($trimmed === '' || str_starts_with($trimmed, '--') || str_starts_with($trimmed, '#')) {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
 $files = glob(__DIR__ . '/migrations/*.sql') ?: [];
 sort($files, SORT_STRING);
 
@@ -65,12 +88,28 @@ foreach ($argv as $arg) {
     }
 }
 
+$migrationNames = array_map('basename', $files);
+if ($only !== '' && !in_array($only, $migrationNames, true)) {
+    fwrite(STDERR, "Requested migration not found: {$only}\n");
+    exit(2);
+}
+if ($baselineBefore !== '' && !in_array($baselineBefore, $migrationNames, true)) {
+    fwrite(STDERR, "Baseline boundary migration not found: {$baselineBefore}\n");
+    exit(2);
+}
+if ($baselineAll && $only !== '') {
+    fwrite(STDERR, "--baseline cannot be combined with --only.\n");
+    exit(2);
+}
+
 $applied = 0;
+$baselined = 0;
 foreach ($files as $file) {
     $name = basename($file);
     if ($only !== '' && $name !== $only) {
         continue;
     }
+
     $checksum = hash_file('sha256', $file);
     if ($checksum === false) {
         fwrite(STDERR, "Unable to checksum {$name}\n");
@@ -94,6 +133,7 @@ foreach ($files as $file) {
         $insert = $conn->prepare("INSERT INTO schema_migrations (migration, checksum) VALUES (?, ?)");
         $insert->bind_param('ss', $name, $checksum);
         $insert->execute();
+        $baselined++;
         echo "baseline {$name}\n";
         continue;
     }
@@ -117,4 +157,5 @@ foreach ($files as $file) {
     }
 }
 
-echo "OK: {$applied} migration(s) applied\n";
+echo "OK: {$applied} migration(s) applied, {$baselined} migration(s) baselined\n";
+exit(0);

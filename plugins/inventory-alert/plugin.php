@@ -86,9 +86,9 @@ function inventory_alert_send_email(array $lines): bool
         return false;
     }
     try {
-        $mail = _mailer_base();
+        $mail = EmailService::_mailer_base();
         $mail->addAddress($to, 'Admin');
-        $mail->Subject = 'Low Inventory Alert - Amber Fabrics';
+        $mail->Subject = 'Low Inventory Alert - ' . SiteContext::name();
         $mail->Body = implode("\r\n", $lines);
         $mail->send();
         return true;

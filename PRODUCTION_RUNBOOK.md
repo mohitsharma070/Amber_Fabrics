@@ -54,8 +54,19 @@ outside the deployed web root. Required production keys:
 - `RAZORPAY_KEY_SECRET`
 - `RAZORPAY_WEBHOOK_SECRET`
 
+Required PHP runtime extensions:
+
+- `curl`
+- `fileinfo`
+- `json`
+- `mbstring`
+- `mysqli`
+- `openssl`
+
 The app now fails closed in production if required keys are missing or still look
-like placeholders.
+like placeholders. Optional integrations such as Shiprocket, COD Guard WhatsApp,
+Meta Pixel, and Meta CAPI should be left blank until they are intentionally
+enabled with real provider credentials.
 
 ## 3. Deploy
 
@@ -63,8 +74,11 @@ Build and verify a release artifact before upload:
 
 ```powershell
 C:\xampp\php\php.exe scripts\build-release.php
-C:\xampp\php\php.exe scripts\verify-release.php dist\release-YYYYMMDD-HHMMSS
+C:\xampp\php\php.exe scripts\verify-release.php "dist\release-YYYYMMDD-HHMMSS"
 ```
+
+Use the artifact path printed by `build-release.php`; it may be a directory or a
+`.zip` depending on the PHP runtime.
 
 Do not deploy from a raw git checkout.
 
@@ -79,7 +93,9 @@ Expected production layout:
 
 The artifact process removes `.git`, temp/session folders, docs, local config,
 composer binary, and dev/test files, reducing blast radius from web-server
-misconfiguration.
+misconfiguration. It must include `database/migrate.php` and
+`database/migrations/*.sql`, and it must exclude setup-only database files such
+as `database/setup.php` and `database/schema.sql`.
 
 Install dependencies on the target or in the artifact:
 
@@ -96,16 +112,20 @@ $env:APP_MODE='production'; C:\xampp\php\php.exe database\migrate.php
 To apply one migration during an emergency or controlled hotfix:
 
 ```powershell
-$env:APP_MODE='production'; C:\xampp\php\php.exe database\migrate.php --only=2026-05-21-production-hardening-indexes.sql
+$env:APP_MODE='production'; C:\xampp\php\php.exe database\migrate.php --only=YYYY-MM-DD-target-migration.sql
 ```
 
 If the database already received older SQL files manually before this runner
 existed, baseline the historical files first, then run pending migrations:
 
 ```powershell
-$env:APP_MODE='production'; C:\xampp\php\php.exe database\migrate.php --baseline-before=2026-05-21-production-hardening-indexes.sql
+$env:APP_MODE='production'; C:\xampp\php\php.exe database\migrate.php --baseline-before=YYYY-MM-DD-first-new-migration.sql
 $env:APP_MODE='production'; C:\xampp\php\php.exe database\migrate.php
 ```
+
+For an existing production database, do not remove historical migration files
+until the database is verified to match them or `schema_migrations` has been
+baselined intentionally.
 
 Verify the production runtime:
 
@@ -125,7 +145,7 @@ Cron runtime guarantees:
 
 - Structured per-job logs with start, finish, duration, status, and errors
 - Overlap protection using file lock + DB lock
-- Nonzero exit code when critical jobs fail (`stale_razorpay_release`, `shiprocket_sync`)
+- Nonzero exit code when critical jobs fail (`stale_razorpay_release`)
 
 Recommended crontab (Linux):
 

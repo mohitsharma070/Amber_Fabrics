@@ -1,0 +1,60 @@
+CREATE TABLE IF NOT EXISTS shipping_courier_shipments (
+    id                   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id             INT NOT NULL,
+    shipment_id          INT NOT NULL,
+    provider             VARCHAR(64) NOT NULL,
+    provider_order_id    VARCHAR(191) DEFAULT NULL,
+    provider_shipment_id VARCHAR(191) DEFAULT NULL,
+    provider_status      VARCHAR(80) DEFAULT NULL,
+    label_url            VARCHAR(500) DEFAULT NULL,
+    raw_response_json    JSON DEFAULT NULL,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_shipping_courier_shipment_provider (shipment_id, provider),
+    INDEX idx_shipping_courier_order (order_id),
+    INDEX idx_shipping_courier_provider_order (provider, provider_order_id),
+    INDEX idx_shipping_courier_provider_shipment (provider, provider_shipment_id),
+    INDEX idx_shipping_courier_status (provider, provider_status),
+    CONSTRAINT fk_shipping_courier_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    CONSTRAINT fk_shipping_courier_shipment FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_courier_webhook_events (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider     VARCHAR(64) NOT NULL,
+    event_id     VARCHAR(191) NOT NULL,
+    signature    VARCHAR(255) DEFAULT NULL,
+    payload_hash CHAR(64) DEFAULT NULL,
+    raw_payload  LONGTEXT DEFAULT NULL,
+    status       ENUM('received','processing','processed','failed') NOT NULL DEFAULT 'received',
+    attempts     INT NOT NULL DEFAULT 0,
+    last_error   TEXT DEFAULT NULL,
+    processed_at DATETIME DEFAULT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_shipping_courier_webhook_event (provider, event_id),
+    INDEX idx_shipping_courier_webhook_status (provider, status),
+    INDEX idx_shipping_courier_webhook_processed (processed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_courier_reverse_pickups (
+    id                   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    return_id            INT NOT NULL,
+    order_id             INT NOT NULL,
+    provider             VARCHAR(64) NOT NULL,
+    provider_order_id    VARCHAR(191) DEFAULT NULL,
+    provider_pickup_id   VARCHAR(191) DEFAULT NULL,
+    provider_status      VARCHAR(80) DEFAULT NULL,
+    tracking_id          VARCHAR(255) DEFAULT NULL,
+    tracking_url         VARCHAR(500) DEFAULT NULL,
+    label_url            VARCHAR(500) DEFAULT NULL,
+    raw_response_json    JSON DEFAULT NULL,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_shipping_courier_reverse_return_provider (return_id, provider),
+    INDEX idx_shipping_courier_reverse_order (order_id),
+    INDEX idx_shipping_courier_reverse_pickup (provider, provider_pickup_id),
+    INDEX idx_shipping_courier_reverse_status (provider, provider_status),
+    CONSTRAINT fk_shipping_courier_reverse_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
+    CONSTRAINT fk_shipping_courier_reverse_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

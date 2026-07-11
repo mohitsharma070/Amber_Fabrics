@@ -1,6 +1,6 @@
 {
   "name": "amber-fabrics/ecommerce",
-  "description": "Amber Fabrics PHP storefront, admin, payments, shipping, and customer workflows.",
+  "description": "PHP storefront, admin, payments, shipping, and customer workflows.",
   "type": "project",
   "license": "proprietary",
   "require": {

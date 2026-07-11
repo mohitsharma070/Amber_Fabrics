@@ -1,8 +1,8 @@
 <?php require_once 'includes/init.php'; ?>
 <?php
-$metaTitle = 'Thank You | Amber Fabrics';
-$metaDescription = 'Thank you for contacting Amber Fabrics. We appreciate your inquiry and will respond soon.';
-$metaKeywords = 'thank you, inquiry, Amber Fabrics';
+$metaTitle = SiteContext::title('Thank You');
+$metaDescription = 'Thank you for contacting ' . SiteContext::name() . '. We appreciate your inquiry and will respond soon.';
+$metaKeywords = 'thank you, inquiry, ' . SiteContext::name();
 include 'includes/header.php'; ?>
 
 <section class="section-block">

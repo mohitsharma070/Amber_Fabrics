@@ -32,6 +32,11 @@ if (!$order) {
     redirect('orders.php');
 }
 
+if (strtolower((string) ($order['payment_status'] ?? 'pending')) !== 'paid') {
+    flash('error', 'Invoice is available only after payment is marked paid.');
+    redirect('order-view.php?id=' . (int) ($order['id'] ?? 0));
+}
+
 // ── Fetch items ──────────────────────────────────────────────────────────────
 $supportsTaxSnapshot = order_items_supports_tax_snapshot($conn);
 $itemSql = "SELECT oi.fabric_name_snapshot, oi.fabric_sku_snapshot, oi.size, oi.color,
@@ -48,7 +53,13 @@ $itemStmt->execute();
 $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // ── Fetch shipment (courier + AWB) ────────────────────────────────────────────
-$shipStmt = $conn->prepare("SELECT courier_name, tracking_id FROM shipments WHERE order_id = ? LIMIT 1");
+$shipStmt = $conn->prepare(
+    "SELECT courier_name,
+            COALESCE(NULLIF(tracking_id, ''), NULLIF(awb_code, ''), '') AS tracking_id
+     FROM shipments
+     WHERE order_id = ?
+     LIMIT 1"
+);
 $shipStmt->bind_param('i', $orderId);
 $shipStmt->execute();
 $shipment = $shipStmt->get_result()->fetch_assoc() ?: [];
@@ -59,18 +70,19 @@ $subtotal      = (float) ($order['subtotal']        ?? 0);
 $shippingCost  = (float) ($order['shipping_amount'] ?? 0);
 $discount      = (float) ($order['discount_amount'] ?? 0);
 $total         = (float) ($order['total_amount']    ?? 0);
+$currency      = (string) ($order['currency'] ?? 'INR');
 $taxableAmount = max(0.0, $subtotal - $discount);
 $gst           = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
 
 // ── Site settings ────────────────────────────────────────────────────────────
-$siteSettings  = get_site_settings();
-$siteName      = (string) ($siteSettings['site_name']       ?? 'Amber Fabrics');
+$siteSettings  = SiteSettingsService::get();
+$siteName      = site_name();
 $siteAddress   = (string) ($siteSettings['company_address'] ?? '');
 $sitePhone     = (string) ($siteSettings['company_phone']   ?? '');
 $gstin         = (string) ($siteSettings['gst_number']      ?? '');
 $panNumber     = (string) ($siteSettings['pan_number']      ?? '');
 $hsnCode       = (string) ($siteSettings['hsn_code']        ?? '5208');
-$contactEmail  = (string) ($siteSettings['contact_email']   ?? '');
+$contactEmail  = contact_email();
 $companyState  = strtolower(trim((string) ($siteSettings['company_state'] ?? '')));
 $gstRate       = (float)  ($siteSettings['gst_rate']        ?? 18);
 
@@ -353,77 +365,77 @@ body {
                     <br><span style="color:#888;font-size:11px"><?php echo e(implode(' · ', $attrs)); ?></span>
                 <?php endif; ?>
             </td>
-            <td style="text-align:right"><?php echo $symbol . number_format($unitPrice, 2); ?></td>
+            <td style="text-align:right"><?php echo e(money($unitPrice, $currency)); ?></td>
             <td style="text-align:center"><?php
                 $bQtyDisp   = (int) ($item['bundle_quantity'] ?? 0);
                 $bMeterDisp = (float) ($item['meter_length'] ?? 0);
                 if ($unitType === 'meter' && $bQtyDisp > 0 && $bMeterDisp > 0) {
                     echo e($bQtyDisp . ' × ' . format_meter_quantity($bMeterDisp) . 'm');
                 } else {
-                    echo e(format_quantity_by_unit($qty, $unitType)) . e(quantity_unit_suffix($unitType));
+                    echo e(format_quantity_by_unit($qty, $unitType)) . e(InventoryService::quantity_unit_suffix($unitType));
                 }
             ?></td>
-            <td style="text-align:right"><?php echo $itemDiscount > 0 ? $symbol . number_format($itemDiscount, 2) : '-'; ?></td>
-            <td style="text-align:right"><?php echo $symbol . number_format($itemAmount, 2); ?></td>
+            <td style="text-align:right"><?php echo $itemDiscount > 0 ? e(money($itemDiscount, $currency)) : '-'; ?></td>
+            <td style="text-align:right"><?php echo e(money($itemAmount, $currency)); ?></td>
             <td style="text-align:center;font-size:11px">
                 <?php if ($displayTaxType === 'igst'): ?>
-                    IGST@<?php echo number_format($displayGstRate, 1); ?>%=<?php echo $symbol . number_format($displayIgst, 2); ?>
+                    IGST@<?php echo number_format($displayGstRate, 1); ?>%=<?php echo e(money($displayIgst, $currency)); ?>
                 <?php elseif ($displayTaxType === 'cgst_sgst'): ?>
-                    CGST@<?php echo number_format($displayGstRate / 2, 1); ?>%=<?php echo $symbol . number_format($displayCgst, 2); ?><br>
-                    SGST@<?php echo number_format($displayGstRate / 2, 1); ?>%=<?php echo $symbol . number_format($displaySgst, 2); ?>
+                    CGST@<?php echo number_format($displayGstRate / 2, 1); ?>%=<?php echo e(money($displayCgst, $currency)); ?><br>
+                    SGST@<?php echo number_format($displayGstRate / 2, 1); ?>%=<?php echo e(money($displaySgst, $currency)); ?>
                 <?php else: ?>-<?php endif; ?>
             </td>
-            <td style="text-align:right"><?php echo $symbol . number_format($itemTotal, 2); ?></td>
+            <td style="text-align:right"><?php echo e(money($itemTotal, $currency)); ?></td>
         </tr>
         <?php endforeach; ?>
         </tbody>
         <tfoot>
             <tr style="background:#f5f5f5; font-size:12px;">
                 <td colspan="7" style="text-align:right; padding:7px 10px; border-top:2px solid #ccc;">Items Total</td>
-                <td style="text-align:right; padding:7px 10px; border-top:2px solid #ccc; white-space:nowrap;"><?php echo $symbol . number_format($subtotal, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; border-top:2px solid #ccc; white-space:nowrap;"><?php echo e(money($subtotal, $currency)); ?></td>
             </tr>
             <?php if ($discount > 0): ?>
             <tr style="background:#f5f5f5; font-size:12px;">
                 <td colspan="7" style="text-align:right; padding:7px 10px;">Discount</td>
-                <td style="text-align:right; padding:7px 10px; color:#c0392b; white-space:nowrap;">- <?php echo $symbol . number_format($discount, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; color:#c0392b; white-space:nowrap;">- <?php echo e(money($discount, $currency)); ?></td>
             </tr>
             <?php endif; ?>
             <?php if ($taxType !== 'none' && $gstInclTotal > 0): ?>
             <tr style="background:#fafafa; font-size:12px;">
                 <td colspan="7" style="text-align:right; padding:7px 10px;">Total Before Tax</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo $symbol . number_format($baseNet, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($baseNet, $currency)); ?></td>
             </tr>
             <?php if ($taxType === 'igst'): ?>
             <tr style="background:#fafafa; font-size:12px;">
                 <td colspan="7" style="text-align:right; padding:7px 10px;">IGST (<?php echo number_format($gstRate, 1); ?>%)</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo $symbol . number_format($gstInclTotal, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($gstInclTotal, $currency)); ?></td>
             </tr>
             <?php else: ?>
             <tr style="background:#fafafa; font-size:12px;">
                 <td colspan="7" style="text-align:right; padding:7px 10px;">CGST (<?php echo number_format($gstRate / 2, 1); ?>%)</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo $symbol . number_format($cgstIncl, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($cgstIncl, $currency)); ?></td>
             </tr>
             <tr style="background:#fafafa; font-size:12px;">
                 <td colspan="7" style="text-align:right; padding:7px 10px;">SGST (<?php echo number_format($gstRate / 2, 1); ?>%)</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo $symbol . number_format($sgstIncl, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($sgstIncl, $currency)); ?></td>
             </tr>
             <?php endif; ?>
             <tr style="background:#fafafa; font-size:12px; font-weight:600;">
                 <td colspan="7" style="text-align:right; padding:7px 10px;">Total Tax</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo $symbol . number_format($gstInclTotal, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($gstInclTotal, $currency)); ?></td>
             </tr>
             <?php endif; ?>
             <?php if ($shippingCost > 0): ?>
             <tr style="background:#f5f5f5; font-size:12px;">
                 <td colspan="7" style="text-align:right; padding:7px 10px;">Shipping</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo $symbol . number_format($shippingCost, 2); ?></td>
+                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($shippingCost, $currency)); ?></td>
             </tr>
             <?php endif; ?>
             <tr style="background:#1a1a1a; color:#fff; font-weight:700; font-size:14px;">
                 <td colspan="7" style="text-align:right; padding:12px 10px;">Invoice Total</td>
                 <td style="text-align:right; padding:12px 10px; white-space:nowrap;">
-                    <?php echo $symbol . number_format($total, 2); ?> <?php echo e($order['currency']); ?><br>
-                    <small style="font-weight:400; opacity:0.75; font-size:11px;">Incl. GST <?php echo $symbol . number_format($gstInclTotal, 2); ?></small>
+                    <?php echo e(money($total, $currency, true)); ?><br>
+                    <small style="font-weight:400; opacity:0.75; font-size:11px;">Incl. GST <?php echo e(money($gstInclTotal, $currency)); ?></small>
                 </td>
             </tr>
         </tfoot>

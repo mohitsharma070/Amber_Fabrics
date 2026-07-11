@@ -13,7 +13,7 @@ $product = $stmt->get_result()->fetch_assoc();
 
 if (!$product) {
     header('HTTP/1.1 404 Not Found');
-    $metaTitle = 'Product Not Found | Amber Fabrics';
+    $metaTitle = SiteContext::title('Product Not Found');
     include 'includes/header.php';
     echo '<div class="container py-5 text-center"><a href="/catalog.php">&larr; Back to Shop</a></div>';
     include 'includes/footer.php';
@@ -58,7 +58,7 @@ $galleryImages = array_values(array_filter([
 ]));
 $videoFile = (string) ($product['video'] ?? '');
 // --- Variant-level data ---
-$variants = get_fabric_variants($conn, (int) $product['id']);
+$variants = InventoryService::get_fabric_variants($conn, (int) $product['id']);
 $firstVariantWithMedia = null;
 foreach ($variants as $vv) {
     if ((int) ($vv['is_active'] ?? 0) !== 1) {
@@ -270,7 +270,7 @@ if ($unitType === 'meter') {
 $quantityOptions = array_values(array_unique($quantityOptions));
 sort($quantityOptions);
 
-$metaTitle = e($product['name']) . ' | Amber Fabrics';
+$metaTitle = e($product['name']) . ' | ' . SiteContext::name();
 $metaDescriptionRaw = (string) ($product['description'] ?? '');
 if ($metaDescriptionRaw !== '') {
     $metaDescriptionTrimmed = function_exists('mb_strimwidth')
@@ -278,7 +278,7 @@ if ($metaDescriptionRaw !== '') {
         : (strlen($metaDescriptionRaw) > 155 ? substr($metaDescriptionRaw, 0, 155) . '...' : $metaDescriptionRaw);
     $metaDescription = e($metaDescriptionTrimmed);
 } else {
-    $metaDescription = 'Product details from Amber Fabrics.';
+    $metaDescription = 'Product details from ' . SiteContext::name() . '.';
 }
 $metaImage = !empty($product['image']) ? 'images/fabrics/' . e($product['image']) : '';
 include 'includes/header.php';
@@ -442,10 +442,10 @@ do_action('product.view', [
 
                 <div class="mb-3" id="product_price_block">
                     <?php if ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice): ?>
-                        <span class="fs-4 fw-bold text-primary">₹<?php echo number_format($salePrice, 2); ?> / <?php echo e($unitSingleLabel); ?></span>
-                        <span class="ms-3 text-muted"><del>₹<?php echo number_format($regularPrice, 2); ?> / <?php echo e($unitSingleLabel); ?></del></span>
+                        <span class="fs-4 fw-bold text-primary"><?php echo e(money($salePrice)); ?> / <?php echo e($unitSingleLabel); ?></span>
+                        <span class="ms-3 text-muted"><del><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></del></span>
                     <?php elseif ($regularPrice > 0): ?>
-                        <span class="fs-4 fw-bold text-primary">₹<?php echo number_format($regularPrice, 2); ?> / <?php echo e($unitSingleLabel); ?></span>
+                        <span class="fs-4 fw-bold text-primary"><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></span>
                     <?php else: ?>
                         <span class="text-muted">Price on request</span>
                     <?php endif; ?>
@@ -614,7 +614,7 @@ do_action('product.view', [
                         <div class="small text-muted mt-2" id="meter_purchase_summary">
                             1 x <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m = <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m
                             <?php if ($effectiveBasePrice > 0): ?>
-                                | Total: Rs <?php echo number_format((float) $effectiveBasePrice * (float) $defaultMeterLength, 2); ?>
+                                | Total: <?php echo e(money((float) $effectiveBasePrice * (float) $defaultMeterLength)); ?>
                             <?php endif; ?>
                         </div>
                         <?php endif; ?>

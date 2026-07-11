@@ -47,15 +47,19 @@ $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // ── Fetch shipment ───────────────────────────────────────────────────────────
 $shipStmt = $conn->prepare(
-    "SELECT courier_name, tracking_id FROM shipments WHERE order_id = ? LIMIT 1"
+    "SELECT courier_name,
+            COALESCE(NULLIF(tracking_id, ''), NULLIF(awb_code, ''), '') AS tracking_id
+     FROM shipments
+     WHERE order_id = ?
+     LIMIT 1"
 );
 $shipStmt->bind_param('i', $orderId);
 $shipStmt->execute();
 $shipment = $shipStmt->get_result()->fetch_assoc() ?: [];
 
 // ── Site settings ────────────────────────────────────────────────────────────
-$siteSettings = get_site_settings();
-$siteName     = (string) ($siteSettings['site_name']       ?? 'Amber Fabrics');
+$siteSettings = SiteSettingsService::get();
+$siteName     = SiteContext::name();
 $siteAddress  = (string) ($siteSettings['company_address'] ?? '');
 $sitePhone    = (string) ($siteSettings['company_phone']   ?? '');
 $gstin        = (string) ($siteSettings['gst_number']      ?? '');
@@ -327,7 +331,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1
                 </td>
                 <td style="color:#555"><?php echo $sku; ?></td>
                 <td style="color:#555"><?php echo $sku; ?></td>
-                <td><?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo e(quantity_unit_suffix($unitType)); ?></td>
+                <td><?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo e(InventoryService::quantity_unit_suffix($unitType)); ?></td>
             </tr>
             <?php endforeach; ?>
             </tbody>

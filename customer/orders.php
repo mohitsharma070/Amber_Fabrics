@@ -5,7 +5,7 @@ require_once __DIR__ . '/../includes/customer-auth.php';
 require_customer();
 
 $customerId = (int) $_SESSION['customer_id'];
-release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
+PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 $stmt = $conn->prepare(
     "SELECT
@@ -101,7 +101,7 @@ function order_refund_initiated(string $orderStatus, string $paymentMethod, stri
         && $paymentStatus === 'paid';
 }
 
-$metaTitle = 'My Orders | Amber Fabrics';
+$metaTitle = SiteContext::title('My Orders');
 include __DIR__ . '/../includes/header.php';
 ?>
 
@@ -124,9 +124,8 @@ include __DIR__ . '/../includes/header.php';
             <div class="d-md-none">
                 <?php foreach ($orders as $o):
                     $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
-                    $s = order_status_meta($effectiveOrderStatus);
-                    $payMeta = payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
-                    $symbol = $o['currency'] === 'USD' ? '$' : '&#8377;';
+                    $s = InventoryService::order_status_meta($effectiveOrderStatus);
+                    $payMeta = InventoryService::payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
                     $totalQty = (float) ($o['total_qty'] ?? 0);
                     $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
                     $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
@@ -145,7 +144,7 @@ include __DIR__ . '/../includes/header.php';
                         </div>
                         <div class="small mb-2">
                             <div>Items: <?php echo e(format_meter_quantity($totalQty)); ?></div>
-                            <div>Total: <strong><?php echo $symbol . number_format((float) $o['total'], 2); ?> <?php echo e($o['currency']); ?></strong></div>
+                            <div>Total: <strong><?php echo e(money((float) $o['total'], (string) ($o['currency'] ?? 'INR'), true)); ?></strong></div>
                             <div>Payment: <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?></div>
                         </div>
                         <div class="d-flex gap-2 flex-wrap">
@@ -186,9 +185,8 @@ include __DIR__ . '/../includes/header.php';
                     <tbody>
                     <?php foreach ($orders as $o):
                         $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
-                        $s      = order_status_meta($effectiveOrderStatus);
-                        $payMeta = payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
-                        $symbol = $o['currency'] === 'USD' ? '$' : '&#8377;';
+                        $s      = InventoryService::order_status_meta($effectiveOrderStatus);
+                        $payMeta = InventoryService::payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
                         $totalQty = (float) ($o['total_qty'] ?? 0);
                         $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
                         $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
@@ -203,7 +201,7 @@ include __DIR__ . '/../includes/header.php';
                             <td class="fw-semibold"><?php echo e($o['order_number']); ?></td>
                             <td class="text-muted small"><?php echo date('d M Y', strtotime($o['created_at'])); ?></td>
                             <td class="text-muted small"><?php echo e(format_meter_quantity($totalQty)); ?> total</td>
-                            <td><?php echo $symbol . number_format((float) $o['total'], 2); ?> <?php echo e($o['currency']); ?></td>
+                            <td><?php echo e(money((float) $o['total'], (string) ($o['currency'] ?? 'INR'), true)); ?></td>
                             <td class="text-muted small">
                                 <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?>
                                 <div class="mt-1">

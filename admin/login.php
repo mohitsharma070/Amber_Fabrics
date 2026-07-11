@@ -9,8 +9,6 @@ const ADMIN_OTP_TTL_SECONDS = 300;
 const ADMIN_OTP_RESEND_SECONDS = 60;
 const ADMIN_OTP_REQUEST_WINDOW_SECONDS = 900;
 const ADMIN_OTP_REQUEST_MAX_ATTEMPTS = 5;
-const ADMIN_OTP_VERIFY_WINDOW_SECONDS = 900;
-const ADMIN_OTP_VERIFY_MAX_ATTEMPTS = 8;
 
 $errors = [];
 $oldEmail = '';
@@ -64,9 +62,23 @@ function admin_record_attempt(mysqli $conn, string $attemptKey, bool $success): 
     $stmt->execute();
 }
 
-function admin_verify_attempt_key(int $adminId, string $ip): string
+function admin_otp_issue_cooldown_seconds(mysqli $conn, int $adminId): int
 {
-    return hash('sha256', 'admin_otp_verify|' . $adminId . '|' . trim($ip));
+    if ($adminId <= 0) {
+        return 0;
+    }
+    $stmt = $conn->prepare("SELECT resend_available_at FROM admin_login_otps WHERE admin_id = ? LIMIT 1");
+    $stmt->bind_param('i', $adminId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    if (!$row) {
+        return 0;
+    }
+    $resendAt = admin_utc_mysql_to_timestamp((string) ($row['resend_available_at'] ?? ''));
+    if ($resendAt === null || $resendAt <= time()) {
+        return 0;
+    }
+    return max(0, $resendAt - time());
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -94,14 +106,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!$admin) {
                 admin_record_attempt($conn, $attemptKey, false);
-                $errors['_login'] = 'Unable to send OTP for this email.';
+                $errors['_login'] = 'Unable to process login request.';
             } else {
                 if (isset($admin['is_active']) && (int) ($admin['is_active'] ?? 1) !== 1) {
                     admin_record_attempt($conn, $attemptKey, false);
-                    $errors['_login'] = 'Admin account is disabled.';
+                    $errors['_login'] = 'Unable to process login request.';
                     log_admin_activity($conn, (int) ($admin['id'] ?? 0), 'admin_login_blocked_inactive', 'admin', (int) ($admin['id'] ?? 0), 'Inactive admin login attempt.', 'denied');
                     goto render_login;
                 }
+
+                $cooldownSeconds = admin_otp_issue_cooldown_seconds($conn, (int) $admin['id']);
+                if ($cooldownSeconds > 0) {
+                    $errors['_login'] = 'OTP already sent. Please wait ' . $cooldownSeconds . ' seconds before requesting a new OTP.';
+                    log_admin_activity($conn, (int) ($admin['id'] ?? 0), 'admin_otp_send_throttled', 'admin', (int) ($admin['id'] ?? 0), 'OTP send throttled due to cooldown.', 'denied');
+                    goto render_login;
+                }
+
                 $otp = (string) random_int(100000, 999999);
                 $otpHash = hash('sha256', $otp);
 
@@ -124,14 +144,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $mailSent = false;
                 try {
-                    $mailSent = send_admin_login_otp_email(
+                    $mailSent = EmailService::send_admin_login_otp_email(
                         (string) $admin['email'],
                         (string) $admin['name'],
                         $otp,
                         false
                     );
                 } catch (Throwable $e) {
-                    error_log('[amberfabrics] admin otp email send failed: ' . $e->getMessage());
+                    error_log('[app] admin otp email send failed: ' . $e->getMessage());
                 }
 
                 if (!$mailSent) {
@@ -142,7 +162,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['admin_pending_otp_email'] = (string) $admin['email'];
                     $_SESSION['admin_pending_otp_name'] = (string) $admin['name'];
                     $_SESSION['admin_pending_otp_role'] = strtolower(trim((string) ($admin['role'] ?? 'viewer')));
-                    $_SESSION['admin_pending_otp_verify_key'] = admin_verify_attempt_key($adminId, $ip);
                     flash('success', 'OTP sent to your email.');
                     redirect('verify-otp.php');
                 }
@@ -157,7 +176,7 @@ render_login:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login | Amber Fabrics</title>
+    <title><?php echo e(SiteContext::title('Admin Login')); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="../css/style.css?v=20260506c">
 </head>

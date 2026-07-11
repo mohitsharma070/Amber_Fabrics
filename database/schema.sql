@@ -1,5 +1,5 @@
 -- ============================================================
--- Amber Fabrics - Production Database Schema
+-- Production Database Schema
 -- Engine  : InnoDB | Charset : utf8mb4_unicode_ci
 -- Import  : mysql -u <user> -p < database/schema.sql
 -- After   : php database/setup.php   (CLI only - seeds admin)
@@ -319,6 +319,38 @@ CREATE TABLE IF NOT EXISTS inventory_alert_logs (
     CONSTRAINT fk_inventory_alert_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS back_in_stock_subscriptions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    variant_id INT DEFAULT NULL,
+    customer_id INT DEFAULT NULL,
+    email VARCHAR(255) NOT NULL,
+    status ENUM('pending','processing','sent','cancelled') NOT NULL DEFAULT 'pending',
+    unsubscribe_token CHAR(64) NOT NULL,
+    requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    notified_at DATETIME DEFAULT NULL,
+    last_error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    active_subscription_key CHAR(64) GENERATED ALWAYS AS (
+        CASE
+            WHEN status IN ('pending','processing')
+            THEN SHA2(CONCAT(LOWER(TRIM(email)), ':', product_id, ':', COALESCE(variant_id, 0)), 256)
+            ELSE NULL
+        END
+    ) STORED,
+    UNIQUE KEY uq_bis_unsubscribe_token (unsubscribe_token),
+    UNIQUE KEY uq_bis_active_subscription (active_subscription_key),
+    INDEX idx_bis_product_status (product_id, status),
+    INDEX idx_bis_variant_status (variant_id, status),
+    INDEX idx_bis_customer (customer_id),
+    INDEX idx_bis_email (email),
+    INDEX idx_bis_status_requested (status, requested_at),
+    CONSTRAINT fk_bis_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE,
+    CONSTRAINT fk_bis_variant FOREIGN KEY (variant_id) REFERENCES fabric_variants(id) ON DELETE SET NULL,
+    CONSTRAINT fk_bis_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ecommerce_event_logs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     event_type VARCHAR(64) NOT NULL,
@@ -503,8 +535,6 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE TABLE IF NOT EXISTS shipments (
     id            INT           AUTO_INCREMENT PRIMARY KEY,
     order_id      INT           NOT NULL,
-    shiprocket_order_id VARCHAR(64) DEFAULT NULL,
-    shiprocket_shipment_id VARCHAR(64) DEFAULT NULL,
     awb_code      VARCHAR(255)  DEFAULT NULL,
     courier_name  VARCHAR(255)  DEFAULT NULL,
     tracking_id   VARCHAR(255)  DEFAULT NULL,
@@ -514,10 +544,47 @@ CREATE TABLE IF NOT EXISTS shipments (
     delivered_at  DATETIME      DEFAULT NULL,
     created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_shipments_order_id  (order_id),
-    INDEX idx_shipments_shiprocket_order_id (shiprocket_order_id),
-    INDEX idx_shipments_shiprocket_shipment_id (shiprocket_shipment_id),
     INDEX idx_shipments_awb_code (awb_code),
     INDEX idx_shipments_tracking_id   (tracking_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_courier_shipments (
+    id                   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id             INT NOT NULL,
+    shipment_id          INT NOT NULL,
+    provider             VARCHAR(64) NOT NULL,
+    provider_order_id    VARCHAR(191) DEFAULT NULL,
+    provider_shipment_id VARCHAR(191) DEFAULT NULL,
+    provider_status      VARCHAR(80) DEFAULT NULL,
+    label_url            VARCHAR(500) DEFAULT NULL,
+    raw_response_json    JSON DEFAULT NULL,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_shipping_courier_shipment_provider (shipment_id, provider),
+    INDEX idx_shipping_courier_order (order_id),
+    INDEX idx_shipping_courier_provider_order (provider, provider_order_id),
+    INDEX idx_shipping_courier_provider_shipment (provider, provider_shipment_id),
+    INDEX idx_shipping_courier_status (provider, provider_status),
+    CONSTRAINT fk_shipping_courier_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    CONSTRAINT fk_shipping_courier_shipment FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_courier_webhook_events (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider     VARCHAR(64) NOT NULL,
+    event_id     VARCHAR(191) NOT NULL,
+    signature    VARCHAR(255) DEFAULT NULL,
+    payload_hash CHAR(64) DEFAULT NULL,
+    raw_payload  LONGTEXT DEFAULT NULL,
+    status       ENUM('received','processing','processed','failed') NOT NULL DEFAULT 'received',
+    attempts     INT NOT NULL DEFAULT 0,
+    last_error   TEXT DEFAULT NULL,
+    processed_at DATETIME DEFAULT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_shipping_courier_webhook_event (provider, event_id),
+    INDEX idx_shipping_courier_webhook_status (provider, status),
+    INDEX idx_shipping_courier_webhook_processed (processed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Business Expenses
@@ -628,6 +695,28 @@ CREATE TABLE IF NOT EXISTS returns (
     INDEX idx_returns_customer_id (customer_id),
     INDEX idx_returns_status (status),
     INDEX idx_returns_requested_at (requested_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shipping_courier_reverse_pickups (
+    id                   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    return_id            INT NOT NULL,
+    order_id             INT NOT NULL,
+    provider             VARCHAR(64) NOT NULL,
+    provider_order_id    VARCHAR(191) DEFAULT NULL,
+    provider_pickup_id   VARCHAR(191) DEFAULT NULL,
+    provider_status      VARCHAR(80) DEFAULT NULL,
+    tracking_id          VARCHAR(255) DEFAULT NULL,
+    tracking_url         VARCHAR(500) DEFAULT NULL,
+    label_url            VARCHAR(500) DEFAULT NULL,
+    raw_response_json    JSON DEFAULT NULL,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_shipping_courier_reverse_return_provider (return_id, provider),
+    INDEX idx_shipping_courier_reverse_order (order_id),
+    INDEX idx_shipping_courier_reverse_pickup (provider, provider_pickup_id),
+    INDEX idx_shipping_courier_reverse_status (provider, provider_status),
+    CONSTRAINT fk_shipping_courier_reverse_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
+    CONSTRAINT fk_shipping_courier_reverse_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Payment webhook idempotency
@@ -746,27 +835,6 @@ CREATE TABLE IF NOT EXISTS admin_activity_logs (
     INDEX idx_admin_activity_action_created (action, created_at),
     INDEX idx_admin_activity_status_created (status, created_at),
     CONSTRAINT fk_admin_activity_admin FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS shiprocket_tracking_events (
-    id                     BIGINT AUTO_INCREMENT PRIMARY KEY,
-    order_id               INT DEFAULT NULL,
-    shipment_id            INT DEFAULT NULL,
-    source                 VARCHAR(32) NOT NULL DEFAULT 'webhook',
-    external_event_id      VARCHAR(191) DEFAULT NULL,
-    shiprocket_order_id    VARCHAR(64) DEFAULT NULL,
-    shiprocket_shipment_id VARCHAR(64) DEFAULT NULL,
-    awb_code               VARCHAR(255) DEFAULT NULL,
-    status                 VARCHAR(80) DEFAULT NULL,
-    courier_name           VARCHAR(255) DEFAULT NULL,
-    tracking_url           VARCHAR(500) DEFAULT NULL,
-    payload_json           LONGTEXT,
-    created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_shiprocket_tracking_events_order_id (order_id),
-    INDEX idx_shiprocket_tracking_events_shipment_id (shipment_id),
-    INDEX idx_shiprocket_tracking_events_awb_code (awb_code),
-    INDEX idx_shiprocket_tracking_events_status (status),
-    INDEX idx_shiprocket_tracking_events_event_id (external_event_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS shipping_quotes (

@@ -2,9 +2,10 @@
 $name = (string) ($data['name'] ?? 'Admin');
 $otp = (string) ($data['otp'] ?? '');
 $isResend = !empty($data['is_resend']);
+$siteName = SiteContext::name();
 $subject = $isResend
-    ? 'Amber Fabrics Admin Login OTP (Resend)'
-    : 'Amber Fabrics Admin Login OTP';
+    ? $siteName . ' Admin Login OTP (Resend)'
+    : $siteName . ' Admin Login OTP';
 $lines = [
     'Hi ' . $name . ',',
     '',
@@ -13,6 +14,6 @@ $lines = [
     '',
     'If you did not request this OTP, ignore this email.',
     '',
-    'Amber Fabrics',
+    $siteName,
 ];
 return ['subject' => $subject, 'body' => implode("\r\n", $lines)];

@@ -67,6 +67,16 @@ function admin_otp_record_attempt(mysqli $conn, string $attemptKey, bool $succes
     $stmt->execute();
 }
 
+function admin_clear_pending_otp_session(): void
+{
+    unset(
+        $_SESSION['admin_pending_otp_admin_id'],
+        $_SESSION['admin_pending_otp_email'],
+        $_SESSION['admin_pending_otp_name'],
+        $_SESSION['admin_pending_otp_role']
+    );
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
         flash('error', 'Invalid session token. Please try again.');
@@ -88,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $otpRow = $otpStmt->get_result()->fetch_assoc();
 
         if (!$otpRow) {
+            admin_clear_pending_otp_session();
             flash('error', 'OTP session expired. Please start login again.');
             redirect('login.php');
         }
@@ -116,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $update->execute();
 
         try {
-            $mailSent = send_admin_login_otp_email($pendingEmail, $pendingName, $otp, true);
+            $mailSent = EmailService::send_admin_login_otp_email($pendingEmail, $pendingName, $otp, true);
             if ($mailSent) {
                 admin_otp_record_attempt($conn, $resendKey, true, ADMIN_OTP_RESEND_MAX_ATTEMPTS, ADMIN_OTP_RESEND_WINDOW_SECONDS);
                 log_admin_activity($conn, $pendingAdminId, 'admin_otp_resent', 'admin', $pendingAdminId, 'OTP resend successful.', 'ok');
@@ -127,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (Throwable $e) {
             admin_otp_record_attempt($conn, $resendKey, false, ADMIN_OTP_RESEND_MAX_ATTEMPTS, ADMIN_OTP_RESEND_WINDOW_SECONDS);
-            error_log('[amberfabrics] admin otp resend failed: ' . $e->getMessage());
+            error_log('[app] admin otp resend failed: ' . $e->getMessage());
             flash('error', 'OTP resend failed. Check mail configuration.');
         }
 
@@ -137,6 +148,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $otpInput = trim((string) ($_POST['otp'] ?? ''));
     $verifyKey = admin_otp_attempt_key('verify', $pendingAdminId, $ip);
     if (admin_otp_rate_limited($conn, $verifyKey)) {
+        $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
+        $del->bind_param('i', $pendingAdminId);
+        $del->execute();
+        admin_clear_pending_otp_session();
         flash('error', 'Too many OTP verification attempts. Please start login again.');
         redirect('login.php');
     }
@@ -154,6 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $otpRow = $otpStmt->get_result()->fetch_assoc();
 
         if (!$otpRow) {
+            admin_clear_pending_otp_session();
             flash('error', 'OTP session expired. Start login again.');
             redirect('login.php');
         }
@@ -164,6 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
             $del->bind_param('i', $pendingAdminId);
             $del->execute();
+            admin_clear_pending_otp_session();
             flash('error', 'OTP expired. Please login again.');
             redirect('login.php');
         }
@@ -172,6 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
             $del->bind_param('i', $pendingAdminId);
             $del->execute();
+            admin_clear_pending_otp_session();
             flash('error', 'Too many invalid OTP attempts. Start login again.');
             redirect('login.php');
         }
@@ -186,16 +204,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $inc->bind_param('i', $pendingAdminId);
             $inc->execute();
+            $newAttempts = $attempts + 1;
+            if ($newAttempts >= ADMIN_OTP_MAX_VERIFY_ATTEMPTS) {
+                $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
+                $del->bind_param('i', $pendingAdminId);
+                $del->execute();
+                admin_clear_pending_otp_session();
+                flash('error', 'Too many invalid OTP attempts. Start login again.');
+                redirect('login.php');
+            }
             $errors['otp'] = 'Invalid OTP.';
         } else {
             if ($appMfaPassphrase !== '') {
                 $passphraseInput = trim((string) ($_POST['passphrase'] ?? ''));
                 if ($passphraseInput === '' || !hash_equals($appMfaPassphrase, $passphraseInput)) {
                     admin_otp_record_attempt($conn, $verifyKey, false, ADMIN_OTP_VERIFY_MAX_ATTEMPTS, ADMIN_OTP_VERIFY_WINDOW_SECONDS);
+                    $inc = $conn->prepare(
+                        "UPDATE admin_login_otps
+                         SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+                         WHERE admin_id = ?"
+                    );
+                    $inc->bind_param('i', $pendingAdminId);
+                    $inc->execute();
+                    $newAttempts = $attempts + 1;
+                    if ($newAttempts >= ADMIN_OTP_MAX_VERIFY_ATTEMPTS) {
+                        $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
+                        $del->bind_param('i', $pendingAdminId);
+                        $del->execute();
+                        admin_clear_pending_otp_session();
+                        flash('error', 'Too many failed verification attempts. Start login again.');
+                        redirect('login.php');
+                    }
                     $errors['otp'] = 'Verification failed.';
                     log_admin_activity($conn, $pendingAdminId, 'admin_login_mfa_failed', 'admin', $pendingAdminId, 'Passphrase verification failed after OTP.', 'denied');
                     goto otp_render;
                 }
+            }
+
+            $adminStatusStmt = $conn->prepare("SELECT is_active, role, name, email FROM admins WHERE id = ? LIMIT 1");
+            $adminStatusStmt->bind_param('i', $pendingAdminId);
+            $adminStatusStmt->execute();
+            $adminStatus = $adminStatusStmt->get_result()->fetch_assoc();
+            if (!$adminStatus || (isset($adminStatus['is_active']) && (int) ($adminStatus['is_active'] ?? 1) !== 1)) {
+                $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
+                $del->bind_param('i', $pendingAdminId);
+                $del->execute();
+                admin_clear_pending_otp_session();
+                flash('error', 'Admin access is unavailable. Contact a super admin.');
+                redirect('login.php');
+            }
+            $pendingName = trim((string) ($adminStatus['name'] ?? $pendingName));
+            if ($pendingName === '') {
+                $pendingName = 'Admin';
+            }
+            $pendingEmail = trim((string) ($adminStatus['email'] ?? $pendingEmail));
+            $pendingRole = strtolower(trim((string) ($adminStatus['role'] ?? $pendingRole)));
+            if ($pendingRole === '') {
+                $pendingRole = 'viewer';
             }
 
             admin_otp_record_attempt($conn, $verifyKey, true, ADMIN_OTP_VERIFY_MAX_ATTEMPTS, ADMIN_OTP_VERIFY_WINDOW_SECONDS);
@@ -206,13 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['admin_session_started_at'] = time();
             $_SESSION['admin_last_seen_at'] = time();
             $_SESSION['admin_session_fingerprint'] = hash('sha256', trim((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0')) . '|' . trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? '')));
-            unset(
-                $_SESSION['admin_pending_otp_admin_id'],
-                $_SESSION['admin_pending_otp_email'],
-                $_SESSION['admin_pending_otp_name'],
-                $_SESSION['admin_pending_otp_role'],
-                $_SESSION['admin_pending_otp_verify_key']
-            );
+            admin_clear_pending_otp_session();
 
             $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
             $del->bind_param('i', $pendingAdminId);
@@ -230,7 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $updAdmin->bind_param('sssi', $nowUtc, $loginIp, $loginUa, $pendingAdminId);
                 $updAdmin->execute();
             } catch (Throwable $e) {
-                error_log('[amberfabrics] admin login metadata update failed: ' . $e->getMessage());
+                error_log('[app] admin login metadata update failed: ' . $e->getMessage());
             }
             log_admin_activity($conn, $pendingAdminId, 'admin_login_success', 'admin', $pendingAdminId, 'OTP login completed.', 'ok');
 
@@ -241,7 +300,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     send_email($securityAlertRecipient, $alertSubject, $alertBody);
                 } catch (Throwable $alertError) {
-                    error_log('[amberfabrics] admin login alert email failed: ' . $alertError->getMessage());
+                    error_log('[app] admin login alert email failed: ' . $alertError->getMessage());
                 }
             }
 
@@ -269,7 +328,7 @@ if ($otpState) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify OTP | Amber Fabrics Admin</title>
+    <title><?php echo e('Verify OTP | ' . SiteContext::name() . ' Admin'); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="../css/style.css?v=20260506c">
 </head>

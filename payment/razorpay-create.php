@@ -48,7 +48,7 @@ $cancelInvalidRazorpayOrder = static function (mysqli $conn, int $orderId, strin
         $paymentUpdate->bind_param('i', $orderId);
         $paymentUpdate->execute();
 
-        restore_order_inventory($conn, $orderId);
+        InventoryService::restore_order_inventory($conn, $orderId);
         log_order_activity($conn, $orderId, 'payment_invalid_amount', 'system', 0, 'system', $reason);
         $conn->commit();
     } catch (Throwable $cleanupException) {
@@ -67,10 +67,9 @@ if (empty($_SESSION['pending_order_id'])) {
 }
 
 $orderId = (int) $_SESSION['pending_order_id'];
-$orderNumber = (string) ($_SESSION['pending_order_number'] ?? '');
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
-release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
-$preferredOnlineMethod = sanitize_online_payment_method((string) ($_SESSION['pending_online_method'] ?? ''));
+PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
+$preferredOnlineMethod = InventoryService::sanitize_online_payment_method((string) ($_SESSION['pending_online_method'] ?? ''));
 
 $stmt = $conn->prepare(
     "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status, order_status, created_at
@@ -134,7 +133,7 @@ try {
     $remoteRzpOrderId = '';
 
     if ($existingRzpOrderId === '') {
-        $createResp = razorpay_create_order_remote($orderId, (string) $order['order_number'], $amountPaise);
+        $createResp = PaymentService::razorpay_create_order_remote($orderId, (string) $order['order_number'], $amountPaise);
         if (empty($createResp['ok'])) {
             $providerError = (string) ($createResp['error'] ?? 'gateway_create_failed');
             $durationMs = (int) ($createResp['duration_ms'] ?? 0);
@@ -177,7 +176,7 @@ try {
         log_order_activity($conn, $orderId, 'payment_session_created', 'system', 0, 'system', 'Razorpay order id: ' . $rzpOrderId);
     }
 
-    payment_attempt_touch(
+    PaymentService::payment_attempt_touch(
         $conn,
         'razorpay',
         $rzpOrderId,
@@ -206,7 +205,7 @@ try {
     redirect('/checkout.php');
 }
 
-$metaTitle = 'Razorpay Payment | Amber Fabrics';
+$metaTitle = SiteContext::title('Razorpay Payment');
 include __DIR__ . '/../includes/header.php';
 ?>
 
@@ -219,7 +218,7 @@ include __DIR__ . '/../includes/header.php';
                 <div class="surface-panel p-4 text-center">
                     <p class="mb-1 text-muted">Order</p>
                     <h5 class="mb-3"><?php echo e((string) $order['order_number']); ?></h5>
-                    <p class="fs-4 fw-bold mb-4">Rs <?php echo number_format((float) $order['total_amount'], 2); ?></p>
+                    <p class="fs-4 fw-bold mb-4"><?php echo e(money((float) $order['total_amount'])); ?></p>
                     <button id="rzpPayBtn" class="btn btn-primary btn-lg w-100">Pay with Razorpay</button>
                     <p id="rzpPayHint" class="text-muted small mt-3">Your order will be marked paid only after secure verification.</p>
                     <div id="rzpPayLoading" class="d-none mt-3">
@@ -282,7 +281,7 @@ var options = {
     key: <?php echo json_encode($keyId); ?>,
     amount: <?php echo $amountPaise; ?>,
     currency: 'INR',
-    name: 'Amber Fabrics',
+    name: <?php echo json_encode(SiteContext::name()); ?>,
     description: 'Order #<?php echo e((string) $order['order_number']); ?>',
     order_id: <?php echo json_encode($rzpOrderId); ?>,
     prefill: {

@@ -1,7 +1,7 @@
 <?php
-$metaTitle = 'Admin Logout | Amber Fabrics';
-$metaDescription = 'Admin logout page for Amber Fabrics. End your session securely.';
-$metaKeywords = 'admin, logout, secure, Amber Fabrics';
+$metaTitle = SiteContext::title('Admin Logout');
+$metaDescription = 'Admin logout page for ' . SiteContext::name() . '. End your session securely.';
+$metaKeywords = 'admin, logout, secure, ' . SiteContext::name();
 require_once __DIR__ . '/../includes/init.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {

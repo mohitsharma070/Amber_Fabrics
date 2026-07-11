@@ -13,7 +13,7 @@ $cartKey = trim((string) ($_POST['cart_key'] ?? ''));
 $productId = 0;
 $variantId = 0;
 if ($cartKey !== '') {
-    [$productId, $variantId] = cart_parse_key($cartKey);
+    [$productId, $variantId] = CartService::cart_parse_key($cartKey);
 }
 $productId = $productId > 0 ? $productId : (int) ($_POST['product_id'] ?? 0);
 $cartKey   = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::0') : '');
@@ -45,7 +45,7 @@ $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
 $allowedMeterOptions = ($unitType === 'meter')
-    ? parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
+    ? CartService::parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
     : [];
 $quantity = normalize_quantity_by_unit($quantityInput, $unitType, (float) $minOrder);
 if (($unitType === 'piece' || $unitType === 'set') && is_numeric($quantityInput)) {
@@ -63,7 +63,7 @@ if ($unitType === 'meter') {
         $meterLength = round((float) $_SESSION['cart_meter_length'][$cartKey], 2);
     }
 
-    if ($meterLength === null || !meter_length_is_allowed($meterLength, $allowedMeterOptions)) {
+    if ($meterLength === null || !CartService::meter_length_is_allowed($meterLength, $allowedMeterOptions)) {
         flash('error', 'Selected meter option is unavailable.');
         redirect('/cart.php');
     }
@@ -86,7 +86,7 @@ if ($product) {
     // Use variant stock when available; fall back to fabric-level.
     $stock = 0.0;
     if ($variantId > 0) {
-        $variantRow = get_variant_by_id($conn, $variantId);
+        $variantRow = InventoryService::get_variant_by_id($conn, $variantId);
         if (!$variantRow || (int) ($variantRow['fabric_id'] ?? 0) !== $productId || (int) ($variantRow['is_active'] ?? 0) !== 1) {
             unset($_SESSION['cart'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
             flash('error', 'Selected variant is unavailable and was removed from your cart.');
@@ -115,7 +115,7 @@ if ($product) {
 $_SESSION['cart'][$cartKey] = normalize_quantity_by_unit($quantity, $unitType, (float) $minOrder);
 
 if (!empty($_SESSION['customer_id'])) {
-    cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'], $_SESSION['cart_meter_length'] ?? []);
+    CartService::cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'], $_SESSION['cart_meter_length'] ?? []);
 }
 
 flash('success', 'Cart updated.');

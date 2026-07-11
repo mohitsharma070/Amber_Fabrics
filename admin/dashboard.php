@@ -255,8 +255,8 @@ $statusColors = [
     'refunded' => 'dark',
 ];
 
-$metaTitle = 'Admin Dashboard | Amber Fabrics';
-$metaDescription = 'Ecommerce dashboard overview for Amber Fabrics.';
+$metaTitle = SiteContext::title('Admin Dashboard');
+$metaDescription = 'Ecommerce dashboard overview for ' . SiteContext::name() . '.';
 $metaKeywords = 'admin, dashboard, ecommerce, orders, products, inquiries, profit';
 include 'partials/header.php';
 ?>
@@ -297,17 +297,17 @@ include 'partials/header.php';
     <div class="dashboard-kpi-grid">
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Total Sales</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($totalSalesAllTime, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($totalSalesAllTime)); ?></h3>
             <p class="kpi-sub">All-time paid sales</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Today Sales</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($todaySales, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($todaySales)); ?></h3>
             <p class="kpi-sub">Paid orders today</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Net Profit / Loss</p>
-            <h3 class="kpi-value <?php echo $netProfit >= 0 ? 'kpi-positive' : 'kpi-negative'; ?>">Rs <?php echo number_format($netProfit, 2); ?></h3>
+            <h3 class="kpi-value <?php echo $netProfit >= 0 ? 'kpi-positive' : 'kpi-negative'; ?>"><?php echo e(money($netProfit)); ?></h3>
             <p class="kpi-sub">For selected date range</p>
         </div>
         <div class="dashboard-kpi-card">
@@ -337,37 +337,37 @@ include 'partials/header.php';
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Product Cost</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($productCostEstimate, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($productCostEstimate)); ?></h3>
             <p class="kpi-sub">COGS in selected range</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Total Expenses</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($totalExpenses, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($totalExpenses)); ?></h3>
             <p class="kpi-sub">Recorded in selected range</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Shipping (Expense)</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($shippingExpense, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($shippingExpense)); ?></h3>
             <p class="kpi-sub">From expenses</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Marketing (Expense)</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($marketingExpense, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($marketingExpense)); ?></h3>
             <p class="kpi-sub">From expenses</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Packaging (Expense)</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($packagingExpense, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($packagingExpense)); ?></h3>
             <p class="kpi-sub">From expenses</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Payment Fees</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($paymentFeesExpense, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($paymentFeesExpense)); ?></h3>
             <p class="kpi-sub">Detected from expense notes</p>
         </div>
         <div class="dashboard-kpi-card">
             <p class="kpi-label">Returns</p>
-            <h3 class="kpi-value">Rs <?php echo number_format($returnsExpense, 2); ?></h3>
+            <h3 class="kpi-value"><?php echo e(money($returnsExpense)); ?></h3>
             <p class="kpi-sub">Refunded/returned order value</p>
         </div>
         <div class="dashboard-kpi-card">
@@ -399,35 +399,35 @@ include 'partials/header.php';
                     <tbody>
                         <tr>
                             <th scope="row">Sales</th>
-                            <td class="text-end">Rs <?php echo number_format($totalSalesMonth, 2); ?></td>
+                            <td class="text-end"><?php echo e(money($totalSalesMonth)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Product Cost</th>
-                            <td class="text-end">- Rs <?php echo number_format($productCostEstimate, 2); ?></td>
+                            <td class="text-end">- <?php echo e(money($productCostEstimate)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Shipping</th>
-                            <td class="text-end">- Rs <?php echo number_format($shippingExpense, 2); ?></td>
+                            <td class="text-end">- <?php echo e(money($shippingExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Marketing</th>
-                            <td class="text-end">- Rs <?php echo number_format($marketingExpense, 2); ?></td>
+                            <td class="text-end">- <?php echo e(money($marketingExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Packaging</th>
-                            <td class="text-end">- Rs <?php echo number_format($packagingExpense, 2); ?></td>
+                            <td class="text-end">- <?php echo e(money($packagingExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Payment Fees</th>
-                            <td class="text-end">- Rs <?php echo number_format($paymentFeesExpense, 2); ?></td>
+                            <td class="text-end">- <?php echo e(money($paymentFeesExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Returns</th>
-                            <td class="text-end">- Rs <?php echo number_format($returnsExpense, 2); ?></td>
+                            <td class="text-end">- <?php echo e(money($returnsExpense)); ?></td>
                         </tr>
                         <tr class="table-light fw-bold">
                             <th scope="row">Net Profit / Loss</th>
-                            <td class="text-end <?php echo $netProfit >= 0 ? 'text-success' : 'text-danger'; ?>">Rs <?php echo number_format($netProfit, 2); ?></td>
+                            <td class="text-end <?php echo $netProfit >= 0 ? 'text-success' : 'text-danger'; ?>"><?php echo e(money($netProfit)); ?></td>
                         </tr>
                     </tbody>
                 </table>
@@ -471,7 +471,7 @@ include 'partials/header.php';
                                 <tr>
                                     <td class="font-monospace"><?php echo e((string) $order['order_number']); ?></td>
                                     <td><?php echo e((string) $order['customer_name']); ?></td>
-                                    <td>Rs <?php echo number_format((float) ($order['total_amount'] ?? 0), 2); ?></td>
+                                    <td><?php echo e(money((float) ($order['total_amount'] ?? 0))); ?></td>
                                     <td>
                                         <span class="badge <?php echo ($order['payment_status'] ?? '') === 'paid' ? 'bg-success' : 'bg-secondary'; ?>">
                                             <?php echo ucfirst(e((string) $order['payment_status'])); ?>

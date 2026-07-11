@@ -279,10 +279,10 @@ include 'partials/header.php';
                                 <?php if ($coupon['discount_type'] === 'percent'): ?>
                                     <?php echo number_format((float) $coupon['discount_value'], 2); ?>%
                                 <?php else: ?>
-                                    Rs <?php echo number_format((float) $coupon['discount_value'], 2); ?>
+                                    <?php echo e(money((float) $coupon['discount_value'])); ?>
                                 <?php endif; ?>
                             </td>
-                            <td>Rs <?php echo number_format((float) $coupon['min_order_amount'], 2); ?></td>
+                            <td><?php echo e(money((float) $coupon['min_order_amount'])); ?></td>
                             <td><?php echo (int) $coupon['used_count']; ?> / <?php echo (int) $coupon['usage_limit'] === 0 ? 'Unlimited' : (int) $coupon['usage_limit']; ?></td>
                             <td>
                                 <?php echo e($coupon['start_date'] ?: '-'); ?> to <?php echo e($coupon['end_date'] ?: '-'); ?>

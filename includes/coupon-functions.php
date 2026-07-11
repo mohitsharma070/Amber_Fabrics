@@ -107,7 +107,7 @@ function validate_coupon_for_amount(array $coupon, float $amount, string $today)
 
     $minOrder = (float) ($coupon['min_order_amount'] ?? 0);
     if ($amount < $minOrder) {
-        return ['valid' => false, 'message' => 'Minimum order amount for this coupon is Rs ' . number_format($minOrder, 2) . '.'];
+        return ['valid' => false, 'message' => 'Minimum order amount for this coupon is ' . money($minOrder) . '.'];
     }
 
     $usageLimit = (int) ($coupon['usage_limit'] ?? 0);

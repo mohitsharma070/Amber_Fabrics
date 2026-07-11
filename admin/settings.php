@@ -1,21 +1,21 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../includes/init.php';
 require_admin();
 
 // Load settings (DB-first with JSON fallback)
 $settingsFile = __DIR__ . '/../config/site-settings.json';
-$settings = get_site_settings();
+$settings = SiteSettingsService::get();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
 
-    // ── Reset announcement dismissals (special action) ──────────────────────
+    // -- Reset announcement dismissals (special action) ----------------------
     if (isset($_POST['reset_announcement_dismissals'])) {
         try {
             ensure_announcement_dismissals_table($conn);
             $conn->query("DELETE FROM announcement_dismissals");
             flash('success', 'Announcement dismissals reset.');
         } catch (Throwable $e) {
-            error_log('[amberfabrics] reset announcement dismissals failed: ' . $e->getMessage());
+            error_log('[app] reset announcement dismissals failed: ' . $e->getMessage());
             flash('error', 'Could not reset announcement dismissals.');
         }
         redirect('settings.php?tab=announcements');
@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
 
     $tab = trim((string) ($_POST['tab'] ?? 'general'));
 
-    // ── Only update fields belonging to the submitted tab ──────────────────
+    // -- Only update fields belonging to the submitted tab ------------------
     switch ($tab) {
         case 'general':
             $settings['site_name']        = trim($_POST['site_name']        ?? $settings['site_name']);
@@ -62,6 +62,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
             }
             break;
 
+        case 'homepage':
+            $homepageKeys = [
+                'home_hero_badge', 'home_hero_title', 'home_hero_desc', 'home_hero_shop_cta', 'home_hero_inquiry_cta',
+                'home_categories_title', 'home_categories_subtitle',
+                'home_latest_title', 'home_latest_subtitle', 'home_latest_view_all_cta', 'home_latest_empty_text',
+                'home_latest_empty_cta', 'home_latest_browse_cta',
+                'home_why_title_prefix', 'home_why_subtitle',
+                'home_why_card_1_title', 'home_why_card_1_desc', 'home_why_card_2_title', 'home_why_card_2_desc',
+                'home_why_card_3_title', 'home_why_card_3_desc', 'home_why_card_4_title', 'home_why_card_4_desc',
+                'home_b2b_eyebrow', 'home_b2b_title', 'home_b2b_desc', 'home_b2b_primary_cta', 'home_b2b_secondary_cta',
+                'home_testimonials_title', 'home_testimonials_subtitle',
+                'home_testimonial_1_text', 'home_testimonial_1_name', 'home_testimonial_1_location',
+                'home_testimonial_2_text', 'home_testimonial_2_name', 'home_testimonial_2_location',
+                'home_testimonial_3_text', 'home_testimonial_3_name', 'home_testimonial_3_location',
+            ];
+            foreach ($homepageKeys as $k) {
+                $settings[$k] = trim((string) ($_POST[$k] ?? ($settings[$k] ?? '')));
+            }
+            break;
+
+        case 'footercopy':
+            $footerKeys = [
+                'footer_description',
+                'footer_support_title', 'footer_support_hours', 'footer_support_contact_cta',
+                'footer_explore_title', 'footer_explore_shop_cta', 'footer_explore_categories_cta', 'footer_explore_inquiry_cta', 'footer_explore_faq_cta',
+                'footer_policies_title', 'footer_policy_shipping_cta', 'footer_policy_return_cta', 'footer_policy_privacy_cta',
+                'footer_policy_terms_cta', 'footer_policy_size_guide_cta', 'footer_policy_international_cta',
+                'footer_bottom_tagline',
+            ];
+            foreach ($footerKeys as $k) {
+                $settings[$k] = trim((string) ($_POST[$k] ?? ($settings[$k] ?? '')));
+            }
+            break;
+
+        case 'policies':
+            $settings['shipping_policy_subtitle'] = trim((string) ($_POST['shipping_policy_subtitle'] ?? ($settings['shipping_policy_subtitle'] ?? '')));
+            $settings['return_policy_subtitle'] = trim((string) ($_POST['return_policy_subtitle'] ?? ($settings['return_policy_subtitle'] ?? '')));
+            $settings['privacy_policy_subtitle'] = trim((string) ($_POST['privacy_policy_subtitle'] ?? ($settings['privacy_policy_subtitle'] ?? '')));
+            $settings['terms_policy_subtitle'] = trim((string) ($_POST['terms_policy_subtitle'] ?? ($settings['terms_policy_subtitle'] ?? '')));
+            $settings['international_policy_subtitle'] = trim((string) ($_POST['international_policy_subtitle'] ?? ($settings['international_policy_subtitle'] ?? '')));
+            $settings['faq_subtitle'] = trim((string) ($_POST['faq_subtitle'] ?? ($settings['faq_subtitle'] ?? '')));
+            $settings['size_guide_subtitle'] = trim((string) ($_POST['size_guide_subtitle'] ?? ($settings['size_guide_subtitle'] ?? '')));
+
+            $settings['shipping_policy_body_html'] = trim((string) ($_POST['shipping_policy_body_html'] ?? ($settings['shipping_policy_body_html'] ?? '')));
+            $settings['return_policy_body_html'] = trim((string) ($_POST['return_policy_body_html'] ?? ($settings['return_policy_body_html'] ?? '')));
+            $settings['privacy_policy_body_html'] = trim((string) ($_POST['privacy_policy_body_html'] ?? ($settings['privacy_policy_body_html'] ?? '')));
+            $settings['terms_policy_body_html'] = trim((string) ($_POST['terms_policy_body_html'] ?? ($settings['terms_policy_body_html'] ?? '')));
+            $settings['international_policy_body_html'] = trim((string) ($_POST['international_policy_body_html'] ?? ($settings['international_policy_body_html'] ?? '')));
+            $settings['faq_body_html'] = trim((string) ($_POST['faq_body_html'] ?? ($settings['faq_body_html'] ?? '')));
+            $settings['size_guide_body_html'] = trim((string) ($_POST['size_guide_body_html'] ?? ($settings['size_guide_body_html'] ?? '')));
+            break;
+
         case 'branding':
             $maxSize     = 2 * 1024 * 1024;
             $allowedExt  = ['jpg', 'jpeg', 'png', 'webp'];
@@ -98,11 +150,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
             break;
     }
 
-    // ── Persist ─────────────────────────────────────────────────────────────
+    // -- Persist -------------------------------------------------------------
     try {
-        save_site_settings_to_db($conn, $settings);
+        SiteSettingsService::saveToDb($conn, $settings);
     } catch (Throwable $e) {
-        error_log('[amberfabrics] save site settings to db failed: ' . $e->getMessage());
+        error_log('[app] save site settings to db failed: ' . $e->getMessage());
         flash('error', 'Could not save settings to database.');
     }
     $tmpFile = $settingsFile . '.tmp';
@@ -116,13 +168,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
 }
 
 $activeTab = preg_replace('/[^a-z]/', '', strtolower(trim((string) ($_GET['tab'] ?? 'general'))));
-if (!in_array($activeTab, ['general','invoice','packing','announcements','branding'], true)) {
+if (!in_array($activeTab, ['general','invoice','packing','announcements','branding','homepage','footercopy','policies'], true)) {
     $activeTab = 'general';
 }
 
-$metaTitle       = 'Admin Settings | Amber Fabrics';
-$metaDescription = 'Edit site text, contact info, and branding for Amber Fabrics.';
-$metaKeywords    = 'admin, settings, site text, contact, branding, Amber Fabrics';
+$metaTitle       = SiteContext::title('Admin Settings');
+$metaDescription = 'Edit site text, contact info, and branding for ' . SiteContext::name() . '.';
+$metaKeywords    = 'admin, settings, site text, contact, branding, ' . SiteContext::name();
 include 'partials/header.php';
 ?>
 <h2>Site Settings</h2>
@@ -138,6 +190,9 @@ include 'partials/header.php';
     <?php
     $tabs = [
         'general'       => 'General',
+        'homepage'      => 'Homepage Copy',
+        'footercopy'    => 'Footer Copy',
+        'policies'      => 'Policy Copy',
         'invoice'       => 'Invoice Details',
         'packing'       => 'Packing Slip',
         'announcements' => 'Announcements',
@@ -152,7 +207,7 @@ include 'partials/header.php';
     <?php endforeach; ?>
 </ul>
 
-<?php // ── GENERAL ─────────────────────────────────────────────────────────────
+<?php // -- GENERAL -------------------------------------------------------------
 if ($activeTab === 'general'): ?>
 <form method="post">
     <?php echo csrf_field(); ?>
@@ -175,10 +230,139 @@ if ($activeTab === 'general'): ?>
                value="<?php echo e((string) ($settings['gst_rate'] ?? '18')); ?>">
         <small class="text-muted">Used for GST breakdown on India orders.</small>
     </div>
+    <div class="alert alert-secondary">
+        <div class="fw-semibold mb-1">Category Taxonomy Mode: <?php echo e(ucfirst(category_taxonomy_mode())); ?></div>
+        <div class="small text-muted mb-1">Storefront category slugs are business-rule locked and should not be treated as free-form taxonomy.</div>
+        <div class="small">
+            Allowed slugs:
+            <?php foreach (locked_storefront_category_slugs() as $i => $slug): ?>
+                <?php if ($i > 0): ?>, <?php endif; ?><code><?php echo e($slug); ?></code>
+            <?php endforeach; ?>
+        </div>
+    </div>
     <button type="submit" class="btn btn-primary">Save General</button>
 </form>
 
-<?php // ── INVOICE ─────────────────────────────────────────────────────────────
+<?php // -- HOMEPAGE COPY -------------------------------------------------------
+elseif ($activeTab === 'homepage'): ?>
+<form method="post">
+    <?php echo csrf_field(); ?>
+    <input type="hidden" name="tab" value="homepage">
+    <p class="text-muted">Editable storefront copy for homepage sections.</p>
+    <div class="row g-3 mb-3">
+        <div class="col-md-6"><label class="form-label">Hero Badge</label><input type="text" class="form-control" name="home_hero_badge" value="<?php echo e((string) ($settings['home_hero_badge'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Hero Title</label><input type="text" class="form-control" name="home_hero_title" value="<?php echo e((string) ($settings['home_hero_title'] ?? '')); ?>"></div>
+        <div class="col-12"><label class="form-label">Hero Description (after site name)</label><textarea class="form-control" rows="2" name="home_hero_desc"><?php echo e((string) ($settings['home_hero_desc'] ?? '')); ?></textarea></div>
+        <div class="col-md-6"><label class="form-label">Hero CTA 1</label><input type="text" class="form-control" name="home_hero_shop_cta" value="<?php echo e((string) ($settings['home_hero_shop_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Hero CTA 2</label><input type="text" class="form-control" name="home_hero_inquiry_cta" value="<?php echo e((string) ($settings['home_hero_inquiry_cta'] ?? '')); ?>"></div>
+    </div>
+
+    <h6 class="mt-4">Categories & Latest</h6>
+    <div class="row g-3 mb-3">
+        <div class="col-md-6"><label class="form-label">Categories Title</label><input type="text" class="form-control" name="home_categories_title" value="<?php echo e((string) ($settings['home_categories_title'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Latest Title</label><input type="text" class="form-control" name="home_latest_title" value="<?php echo e((string) ($settings['home_latest_title'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Categories Subtitle</label><textarea class="form-control" rows="2" name="home_categories_subtitle"><?php echo e((string) ($settings['home_categories_subtitle'] ?? '')); ?></textarea></div>
+        <div class="col-md-6"><label class="form-label">Latest Subtitle</label><textarea class="form-control" rows="2" name="home_latest_subtitle"><?php echo e((string) ($settings['home_latest_subtitle'] ?? '')); ?></textarea></div>
+        <div class="col-md-4"><label class="form-label">Latest View All CTA</label><input type="text" class="form-control" name="home_latest_view_all_cta" value="<?php echo e((string) ($settings['home_latest_view_all_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Latest Empty Text</label><input type="text" class="form-control" name="home_latest_empty_text" value="<?php echo e((string) ($settings['home_latest_empty_text'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Latest Empty CTA</label><input type="text" class="form-control" name="home_latest_empty_cta" value="<?php echo e((string) ($settings['home_latest_empty_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Latest Browse CTA</label><input type="text" class="form-control" name="home_latest_browse_cta" value="<?php echo e((string) ($settings['home_latest_browse_cta'] ?? '')); ?>"></div>
+    </div>
+
+    <h6 class="mt-4">Why Choose</h6>
+    <div class="row g-3 mb-3">
+        <div class="col-md-6"><label class="form-label">Why Title Prefix</label><input type="text" class="form-control" name="home_why_title_prefix" value="<?php echo e((string) ($settings['home_why_title_prefix'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Why Subtitle</label><input type="text" class="form-control" name="home_why_subtitle" value="<?php echo e((string) ($settings['home_why_subtitle'] ?? '')); ?>"></div>
+        <?php for ($i = 1; $i <= 4; $i++): ?>
+            <div class="col-md-6"><label class="form-label">Why Card <?php echo $i; ?> Title</label><input type="text" class="form-control" name="home_why_card_<?php echo $i; ?>_title" value="<?php echo e((string) ($settings['home_why_card_' . $i . '_title'] ?? '')); ?>"></div>
+            <div class="col-md-6"><label class="form-label">Why Card <?php echo $i; ?> Description</label><textarea class="form-control" rows="2" name="home_why_card_<?php echo $i; ?>_desc"><?php echo e((string) ($settings['home_why_card_' . $i . '_desc'] ?? '')); ?></textarea></div>
+        <?php endfor; ?>
+    </div>
+
+    <h6 class="mt-4">B2B CTA & Testimonials</h6>
+    <div class="row g-3 mb-3">
+        <div class="col-md-4"><label class="form-label">B2B Eyebrow</label><input type="text" class="form-control" name="home_b2b_eyebrow" value="<?php echo e((string) ($settings['home_b2b_eyebrow'] ?? '')); ?>"></div>
+        <div class="col-md-8"><label class="form-label">B2B Title</label><input type="text" class="form-control" name="home_b2b_title" value="<?php echo e((string) ($settings['home_b2b_title'] ?? '')); ?>"></div>
+        <div class="col-12"><label class="form-label">B2B Description</label><textarea class="form-control" rows="2" name="home_b2b_desc"><?php echo e((string) ($settings['home_b2b_desc'] ?? '')); ?></textarea></div>
+        <div class="col-md-6"><label class="form-label">B2B Primary CTA</label><input type="text" class="form-control" name="home_b2b_primary_cta" value="<?php echo e((string) ($settings['home_b2b_primary_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">B2B Secondary CTA</label><input type="text" class="form-control" name="home_b2b_secondary_cta" value="<?php echo e((string) ($settings['home_b2b_secondary_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Testimonials Title</label><input type="text" class="form-control" name="home_testimonials_title" value="<?php echo e((string) ($settings['home_testimonials_title'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Testimonials Subtitle</label><input type="text" class="form-control" name="home_testimonials_subtitle" value="<?php echo e((string) ($settings['home_testimonials_subtitle'] ?? '')); ?>"></div>
+        <?php for ($i = 1; $i <= 3; $i++): ?>
+            <div class="col-12"><label class="form-label">Testimonial <?php echo $i; ?> Text</label><textarea class="form-control" rows="2" name="home_testimonial_<?php echo $i; ?>_text"><?php echo e((string) ($settings['home_testimonial_' . $i . '_text'] ?? '')); ?></textarea></div>
+            <div class="col-md-6"><label class="form-label">Testimonial <?php echo $i; ?> Name</label><input type="text" class="form-control" name="home_testimonial_<?php echo $i; ?>_name" value="<?php echo e((string) ($settings['home_testimonial_' . $i . '_name'] ?? '')); ?>"></div>
+            <div class="col-md-6"><label class="form-label">Testimonial <?php echo $i; ?> Location</label><input type="text" class="form-control" name="home_testimonial_<?php echo $i; ?>_location" value="<?php echo e((string) ($settings['home_testimonial_' . $i . '_location'] ?? '')); ?>"></div>
+        <?php endfor; ?>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Homepage Copy</button>
+</form>
+
+<?php // -- FOOTER COPY ---------------------------------------------------------
+elseif ($activeTab === 'footercopy'): ?>
+<form method="post">
+    <?php echo csrf_field(); ?>
+    <input type="hidden" name="tab" value="footercopy">
+    <p class="text-muted">Editable copy for storefront footer labels and text.</p>
+    <div class="row g-3 mb-3">
+        <div class="col-12"><label class="form-label">Footer Description</label><textarea class="form-control" rows="2" name="footer_description"><?php echo e((string) ($settings['footer_description'] ?? '')); ?></textarea></div>
+        <div class="col-md-4"><label class="form-label">Support Title</label><input type="text" class="form-control" name="footer_support_title" value="<?php echo e((string) ($settings['footer_support_title'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Support Hours</label><input type="text" class="form-control" name="footer_support_hours" value="<?php echo e((string) ($settings['footer_support_hours'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Support Contact CTA</label><input type="text" class="form-control" name="footer_support_contact_cta" value="<?php echo e((string) ($settings['footer_support_contact_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Explore Title</label><input type="text" class="form-control" name="footer_explore_title" value="<?php echo e((string) ($settings['footer_explore_title'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Explore Shop CTA</label><input type="text" class="form-control" name="footer_explore_shop_cta" value="<?php echo e((string) ($settings['footer_explore_shop_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Explore Categories CTA</label><input type="text" class="form-control" name="footer_explore_categories_cta" value="<?php echo e((string) ($settings['footer_explore_categories_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Explore International CTA</label><input type="text" class="form-control" name="footer_explore_inquiry_cta" value="<?php echo e((string) ($settings['footer_explore_inquiry_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Explore FAQ CTA</label><input type="text" class="form-control" name="footer_explore_faq_cta" value="<?php echo e((string) ($settings['footer_explore_faq_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Policies Title</label><input type="text" class="form-control" name="footer_policies_title" value="<?php echo e((string) ($settings['footer_policies_title'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Shipping CTA</label><input type="text" class="form-control" name="footer_policy_shipping_cta" value="<?php echo e((string) ($settings['footer_policy_shipping_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Return CTA</label><input type="text" class="form-control" name="footer_policy_return_cta" value="<?php echo e((string) ($settings['footer_policy_return_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Privacy CTA</label><input type="text" class="form-control" name="footer_policy_privacy_cta" value="<?php echo e((string) ($settings['footer_policy_privacy_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Terms CTA</label><input type="text" class="form-control" name="footer_policy_terms_cta" value="<?php echo e((string) ($settings['footer_policy_terms_cta'] ?? '')); ?>"></div>
+        <div class="col-md-4"><label class="form-label">Size Guide CTA</label><input type="text" class="form-control" name="footer_policy_size_guide_cta" value="<?php echo e((string) ($settings['footer_policy_size_guide_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">International Policy CTA</label><input type="text" class="form-control" name="footer_policy_international_cta" value="<?php echo e((string) ($settings['footer_policy_international_cta'] ?? '')); ?>"></div>
+        <div class="col-md-6"><label class="form-label">Bottom Tagline</label><input type="text" class="form-control" name="footer_bottom_tagline" value="<?php echo e((string) ($settings['footer_bottom_tagline'] ?? '')); ?>"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Footer Copy</button>
+</form>
+
+<?php // -- POLICY COPY ---------------------------------------------------------
+elseif ($activeTab === 'policies'): ?>
+<form method="post">
+    <?php echo csrf_field(); ?>
+    <input type="hidden" name="tab" value="policies">
+    <p class="text-muted">Editable hero subtitle and body HTML for policy pages.</p>
+    <?php
+    $policyBlocks = [
+        ['label' => 'Shipping Policy', 'subtitle_key' => 'shipping_policy_subtitle', 'body_key' => 'shipping_policy_body_html'],
+        ['label' => 'Return Policy', 'subtitle_key' => 'return_policy_subtitle', 'body_key' => 'return_policy_body_html'],
+        ['label' => 'Privacy Policy', 'subtitle_key' => 'privacy_policy_subtitle', 'body_key' => 'privacy_policy_body_html'],
+        ['label' => 'Terms & Conditions', 'subtitle_key' => 'terms_policy_subtitle', 'body_key' => 'terms_policy_body_html'],
+        ['label' => 'International Orders Policy', 'subtitle_key' => 'international_policy_subtitle', 'body_key' => 'international_policy_body_html'],
+        ['label' => 'FAQ', 'subtitle_key' => 'faq_subtitle', 'body_key' => 'faq_body_html'],
+        ['label' => 'Size & Fabric Guide', 'subtitle_key' => 'size_guide_subtitle', 'body_key' => 'size_guide_body_html'],
+    ];
+    foreach ($policyBlocks as $policyBlock):
+        $plabel = (string) ($policyBlock['label'] ?? '');
+        $subtitleKey = (string) ($policyBlock['subtitle_key'] ?? '');
+        $bodyKey = (string) ($policyBlock['body_key'] ?? '');
+    ?>
+    <div class="border rounded p-3 mb-3">
+        <h6 class="mb-3"><?php echo e($plabel); ?></h6>
+        <div class="mb-2">
+            <label class="form-label">Hero Subtitle</label>
+            <input type="text" class="form-control" name="<?php echo e($subtitleKey); ?>" value="<?php echo e((string) ($settings[$subtitleKey] ?? '')); ?>">
+        </div>
+        <div>
+            <label class="form-label">Body HTML</label>
+            <textarea class="form-control" rows="8" name="<?php echo e($bodyKey); ?>"><?php echo e((string) ($settings[$bodyKey] ?? '')); ?></textarea>
+            <small class="text-muted">Allowed: HTML headings/paragraphs/links. Use placeholders: {{site_name}}, {{contact_email}}</small>
+        </div>
+    </div>
+    <?php endforeach; ?>
+    <button type="submit" class="btn btn-primary">Save Policy Copy</button>
+</form>
+
+<?php // -- INVOICE -------------------------------------------------------------
 elseif ($activeTab === 'invoice'): ?>
 <form method="post">
     <?php echo csrf_field(); ?>
@@ -227,7 +411,7 @@ elseif ($activeTab === 'invoice'): ?>
     <button type="submit" class="btn btn-primary">Save Invoice Details</button>
 </form>
 
-<?php // ── PACKING SLIP ─────────────────────────────────────────────────────────
+<?php // -- PACKING SLIP ---------------------------------------------------------
 elseif ($activeTab === 'packing'): ?>
 <form method="post">
     <?php echo csrf_field(); ?>
@@ -265,7 +449,7 @@ elseif ($activeTab === 'packing'): ?>
     <button type="submit" class="btn btn-primary">Save Packing Slip</button>
 </form>
 
-<?php // ── ANNOUNCEMENTS ─────────────────────────────────────────────────────────
+<?php // -- ANNOUNCEMENTS ---------------------------------------------------------
 elseif ($activeTab === 'announcements'): ?>
 <form method="post">
     <?php echo csrf_field(); ?>
@@ -302,7 +486,7 @@ elseif ($activeTab === 'announcements'): ?>
     <button type="submit" class="btn btn-primary">Save Announcements</button>
 </form>
 
-<?php // ── BRANDING ─────────────────────────────────────────────────────────────
+<?php // -- BRANDING -------------------------------------------------------------
 elseif ($activeTab === 'branding'): ?>
 <form method="post" enctype="multipart/form-data">
     <?php echo csrf_field(); ?>

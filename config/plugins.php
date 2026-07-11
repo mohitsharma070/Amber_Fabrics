@@ -6,7 +6,7 @@
  * 'enabled' => ['utm-attribution', 'meta-pixel'],
  */
 return [
-    'enabled' => ['cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'shipping-rto-risk', 'review-rating', 'order-timeline'],
+    'enabled' => ['cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'google-analytics', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'back-in-stock-alert', 'newsletter', 'shipping-rto-risk', 'shipping-courier', 'review-rating', 'order-timeline', 'seo-suite', 'recommendations', 'support-tickets'],
     'settings' => [
         'cod-guard' => [
             'whatsapp_threshold' => (float) (function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_THRESHOLD', '1000') : '1000'),
@@ -34,6 +34,13 @@ return [
             'access_token' => function_exists('_cfg') ? _cfg('META_CAPI_ACCESS_TOKEN', '') : '',
             'test_event_code' => function_exists('_cfg') ? _cfg('META_CAPI_TEST_EVENT_CODE', '') : '',
         ],
+        'google-analytics' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('GOOGLE_ANALYTICS_ENABLED', '1') : '1'),
+            'measurement_id' => function_exists('_cfg') ? _cfg('GOOGLE_ANALYTICS_MEASUREMENT_ID', '') : '',
+            'debug_mode' => (int) (function_exists('_cfg') ? _cfg('GOOGLE_ANALYTICS_DEBUG_MODE', '0') : '0'),
+            'enhanced_ecommerce_enabled' => (int) (function_exists('_cfg') ? _cfg('GOOGLE_ANALYTICS_ENHANCED_ECOMMERCE_ENABLED', '1') : '1'),
+            'consent_required' => (int) (function_exists('_cfg') ? _cfg('GOOGLE_ANALYTICS_CONSENT_REQUIRED', '1') : '1'),
+        ],
         'abandoned-cart-email' => [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('ABANDONED_CART_EMAIL_ENABLED', '1') : '1'),
             'delay_minutes' => (int) (function_exists('_cfg') ? _cfg('ABANDONED_CART_EMAIL_DELAY_MINUTES', '60') : '60'),
@@ -51,10 +58,36 @@ return [
             'meter_threshold' => (float) (function_exists('_cfg') ? _cfg('INVENTORY_ALERT_METER_THRESHOLD', '10') : '10'),
             'cooldown_hours' => (int) (function_exists('_cfg') ? _cfg('INVENTORY_ALERT_COOLDOWN_HOURS', '24') : '24'),
         ],
+        'back-in-stock-alert' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_ENABLED', '1') : '1'),
+            'batch_size' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_BATCH_SIZE', '50') : '50'),
+            'cooldown_hours' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_COOLDOWN_HOURS', '1') : '1'),
+            'from_name' => function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_FROM_NAME', '') : '',
+        ],
+        'newsletter' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_ENABLED', '1') : '1'),
+            'double_opt_in' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_DOUBLE_OPT_IN', '0') : '0'),
+            'send_welcome_email' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_SEND_WELCOME_EMAIL', '0') : '0'),
+            'batch_size' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_BATCH_SIZE', '50') : '50'),
+            'from_name' => function_exists('_cfg') ? _cfg('NEWSLETTER_FROM_NAME', '') : '',
+            'footer_form_enabled' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_FOOTER_FORM_ENABLED', '1') : '1'),
+            'source_tracking_enabled' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_SOURCE_TRACKING_ENABLED', '1') : '1'),
+        ],
         'shipping-rto-risk' => [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_RTO_RISK_ENABLED', '1') : '1'),
             'high_threshold' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_RTO_RISK_HIGH_THRESHOLD', '70') : '70'),
             'medium_threshold' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_RTO_RISK_MEDIUM_THRESHOLD', '40') : '40'),
+        ],
+        'shipping-courier' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_COURIER_ENABLED', '0') : '0'),
+            'provider' => function_exists('_cfg') ? _cfg('SHIPPING_COURIER_PROVIDER', '') : '',
+            'test_mode' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_COURIER_TEST_MODE', '1') : '1'),
+            'auto_create' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_COURIER_AUTO_CREATE', '0') : '0'),
+            'tracking_sync' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_COURIER_TRACKING_SYNC', '1') : '1'),
+            'webhook_secret' => function_exists('_cfg') ? _cfg('SHIPPING_COURIER_WEBHOOK_SECRET', '') : '',
+            'api_base_url' => function_exists('_cfg') ? _cfg('SHIPPING_COURIER_API_BASE_URL', '') : '',
+            'api_key' => function_exists('_cfg') ? _cfg('SHIPPING_COURIER_API_KEY', '') : '',
+            'api_secret' => function_exists('_cfg') ? _cfg('SHIPPING_COURIER_API_SECRET', '') : '',
         ],
         'review-rating' => [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('REVIEW_RATING_ENABLED', '1') : '1'),
@@ -65,6 +98,41 @@ return [
         'order-timeline' => [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('ORDER_TIMELINE_ENABLED', '1') : '1'),
             'show_internal_to_admin' => (int) (function_exists('_cfg') ? _cfg('ORDER_TIMELINE_SHOW_INTERNAL_TO_ADMIN', '1') : '1'),
+        ],
+        'seo-suite' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('SEO_SUITE_ENABLED', '1') : '1'),
+            'meta_enabled' => (int) (function_exists('_cfg') ? _cfg('SEO_SUITE_META_ENABLED', '1') : '1'),
+            'schema_enabled' => (int) (function_exists('_cfg') ? _cfg('SEO_SUITE_SCHEMA_ENABLED', '1') : '1'),
+            'sitemap_enabled' => (int) (function_exists('_cfg') ? _cfg('SEO_SUITE_SITEMAP_ENABLED', '1') : '1'),
+            'robots_enabled' => (int) (function_exists('_cfg') ? _cfg('SEO_SUITE_ROBOTS_ENABLED', '1') : '1'),
+        ],
+        'recommendations' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_ENABLED', '1') : '1'),
+            'related_products_enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_RELATED_PRODUCTS_ENABLED', '1') : '1'),
+            'recently_viewed_enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_RECENTLY_VIEWED_ENABLED', '1') : '1'),
+            'cart_upsells_enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_CART_UPSELLS_ENABLED', '1') : '1'),
+            'popular_picks_enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_POPULAR_PICKS_ENABLED', '1') : '1'),
+            'price_similarity_enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_PRICE_SIMILARITY_ENABLED', '1') : '1'),
+            'exclude_out_of_stock' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_EXCLUDE_OUT_OF_STOCK', '1') : '1'),
+            'analytics_enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_ANALYTICS_ENABLED', '1') : '1'),
+            'impression_logging_enabled' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_IMPRESSION_LOGGING_ENABLED', '0') : '0'),
+            'min_popularity_events' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_MIN_POPULARITY_EVENTS', '1') : '1'),
+            'max_items' => (int) (function_exists('_cfg') ? _cfg('RECOMMENDATIONS_MAX_ITEMS', '4') : '4'),
+            'title_related' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_RELATED', 'You may also like') : 'You may also like',
+            'title_recently_viewed' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_RECENTLY_VIEWED', 'Recently viewed') : 'Recently viewed',
+            'title_cart_upsells' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_CART_UPSELLS', 'Complete Your Cart') : 'Complete Your Cart',
+            'title_popular' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_POPULAR', 'Popular picks') : 'Popular picks',
+            'title_personalized' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_PERSONALIZED', 'Recommended for you') : 'Recommended for you',
+        ],
+        'support-tickets' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_ENABLED', '1') : '1'),
+            'allow_order_tickets' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_ALLOW_ORDER_TICKETS', '1') : '1'),
+            'allow_general_tickets' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_ALLOW_GENERAL_TICKETS', '1') : '1'),
+            'notify_admin' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_NOTIFY_ADMIN', '1') : '1'),
+            'notify_customer' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_NOTIFY_CUSTOMER', '1') : '1'),
+            'auto_close_days' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_AUTO_CLOSE_DAYS', '14') : '14'),
+            'max_open_tickets_per_customer' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_MAX_OPEN_TICKETS_PER_CUSTOMER', '5') : '5'),
+            'max_message_length' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_MAX_MESSAGE_LENGTH', '2000') : '2000'),
         ],
     ],
 ];
