@@ -34,6 +34,9 @@ $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
 $onlineMethod = InventoryService::sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
+if ($paymentMethod === 'razorpay' && $onlineMethod === '') {
+    $onlineMethod = 'upi';
+}
 $shippingAddressId = (int) ($_POST['shipping_address_id'] ?? 0);
 $shippingQuoteToken = trim((string) ($_POST['shipping_quote_token'] ?? ''));
 $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
@@ -75,26 +78,33 @@ $_SESSION['checkout_old'] = [
     'country' => $country,
     'order_notes' => $orderNotes,
     'payment_method' => $paymentMethod,
+    'online_method' => $onlineMethod,
     'cod_fee_apply' => $codFeeApply,
     'shipping_address_id' => $shippingAddressId,
     'create_account' => $wantsCreateAccount ? 1 : 0,
 ];
+$_SESSION['checkout_draft'] = $_SESSION['checkout_old'];
 
 $errors = [];
+$validationRules = checkout_validation_constraints();
 if ($fullName === '') { $errors['full_name'] = 'Full name is required.'; }
+elseif (strlen($fullName) > 120) { $errors['full_name'] = 'Full name must be 120 characters or fewer.'; }
 if ($phone === '') {
     $errors['phone'] = 'Phone is required.';
-} elseif (!preg_match('/^[0-9+\-\s()]{7,20}$/', $phone)) {
+} elseif (!preg_match('/' . $validationRules['phone_pattern'] . '/', $phone)) {
     $errors['phone'] = 'Enter a valid phone number.';
 }
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { $errors['email'] = 'Valid email is required.'; }
+elseif (strlen($email) > 190) { $errors['email'] = 'Email must be 190 characters or fewer.'; }
 if ($address === '') { $errors['address'] = 'Address is required.'; }
 elseif (strlen($address) > 500) { $errors['address'] = 'Address must be 500 characters or fewer.'; }
 if ($city === '') { $errors['city'] = 'City is required.'; }
+elseif (strlen($city) > 120) { $errors['city'] = 'City must be 120 characters or fewer.'; }
 if ($state === '') { $errors['state'] = 'State is required.'; }
+elseif (strlen($state) > 120) { $errors['state'] = 'State must be 120 characters or fewer.'; }
 if ($pincode === '') {
     $errors['pincode'] = 'Pincode is required.';
-} elseif (strcasecmp($country, 'india') === 0 && !preg_match('/^[1-9][0-9]{5}$/', $pincode)) {
+} elseif (strcasecmp($country, 'india') === 0 && !preg_match('/' . $validationRules['pincode_pattern'] . '/', $pincode)) {
     $errors['pincode'] = 'Enter a valid 6-digit Indian pincode.';
 }
 if ($country === '') { $errors['country'] = 'Country is required.'; }

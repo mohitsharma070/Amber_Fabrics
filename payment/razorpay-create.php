@@ -68,7 +68,7 @@ $orderId = (int) $_SESSION['pending_order_id'];
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 require_order_access($conn, $orderId);
 PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
-$preferredOnlineMethod = InventoryService::sanitize_online_payment_method((string) ($_SESSION['pending_online_method'] ?? ''));
+$preferredOnlineMethod = InventoryService::sanitize_online_payment_method((string) ($_SESSION['pending_online_method'] ?? '')) ?: 'upi';
 
 $stmt = $conn->prepare(
     "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status, order_status, created_at

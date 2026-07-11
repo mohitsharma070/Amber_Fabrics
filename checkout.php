@@ -102,12 +102,24 @@ if ($customerId > 0) {
 
 if (!empty($_SESSION['checkout_old']) && is_array($_SESSION['checkout_old'])) {
     $old = array_merge($old, $_SESSION['checkout_old']);
-    unset($_SESSION['checkout_old']);
+}
+if (!empty($_SESSION['checkout_draft']) && is_array($_SESSION['checkout_draft'])) {
+    $old = array_merge($old, $_SESSION['checkout_draft']);
 }
 
 if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'])) {
     $errors = $_SESSION['checkout_errors'];
     unset($_SESSION['checkout_errors']);
+}
+$checkoutFieldError = static function (string $field) use ($errors): string {
+    $message = (string) ($errors[$field] ?? '');
+    return '<div id="checkout_' . e($field) . '_error" class="invalid-feedback' . ($message !== '' ? ' d-block' : '') . '" aria-live="polite">' . e($message) . '</div>';
+};
+$checkoutValidationMessages = [];
+foreach ($errors as $field => $message) {
+    if ($field !== '_cart' && (string) $message !== '') {
+        $checkoutValidationMessages[] = (string) $message;
+    }
 }
 // India-only checkout path: keep country fixed for consistent pricing/shipping rules.
 $old['country'] = 'India';
@@ -248,10 +260,12 @@ include __DIR__ . '/includes/header.php';
             <div class="col-lg-7">
                 <form id="checkout_form" method="POST" action="/place-order.php" novalidate>
                     <?php echo csrf_field(); ?>
+                    <input type="hidden" name="redirect_to" value="checkout">
                     <input type="hidden" name="order_nonce" value="<?php echo e($_SESSION['order_nonce']); ?>">
                     <input type="hidden" name="online_method" id="online_method" value="<?php echo e($selectedOnlineMethod); ?>">
                     <input type="hidden" name="shipping_address_id" id="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
                     <input type="hidden" name="shipping_quote_token" id="shipping_quote_token" value="<?php echo e($shippingQuoteToken); ?>">
+                    <div id="checkout_validation_summary" class="alert alert-danger<?php echo empty($checkoutValidationMessages) ? ' d-none' : ''; ?>" role="alert" aria-live="assertive" tabindex="-1"><?php echo !empty($checkoutValidationMessages) ? e('Please correct the following: ' . implode(' ', $checkoutValidationMessages)) : ''; ?></div>
 
                     <div class="surface-panel p-4 mb-4 checkout-section" id="checkout_section_address">
                         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
@@ -303,18 +317,18 @@ include __DIR__ . '/includes/header.php';
                         <div class="row g-3">
                             <div class="col-sm-6">
                                 <label class="form-label" for="checkout_full_name">Full Name *</label>
-                                <input type="text" id="checkout_full_name" name="full_name" class="<?php echo form_class($errors, 'full_name'); ?>" required value="<?php echo e($old['full_name']); ?>">
-                                <?php echo form_error($errors, 'full_name'); ?>
+                                <input type="text" id="checkout_full_name" name="full_name" class="<?php echo form_class($errors, 'full_name'); ?>" required maxlength="120" autocomplete="name" aria-invalid="<?php echo !empty($errors['full_name']) ? 'true' : 'false'; ?>" aria-describedby="checkout_full_name_error" value="<?php echo e($old['full_name']); ?>">
+                                <?php echo $checkoutFieldError('full_name'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label" for="checkout_phone">Phone *</label>
-                                <input type="text" id="checkout_phone" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" required value="<?php echo e($old['phone']); ?>">
-                                <?php echo form_error($errors, 'phone'); ?>
+                                <input type="tel" id="checkout_phone" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" required maxlength="20" inputmode="tel" autocomplete="tel" aria-invalid="<?php echo !empty($errors['phone']) ? 'true' : 'false'; ?>" aria-describedby="checkout_phone_error" value="<?php echo e($old['phone']); ?>">
+                                <?php echo $checkoutFieldError('phone'); ?>
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="checkout_email">Email *</label>
-                                <input type="email" id="checkout_email" name="email" class="<?php echo form_class($errors, 'email'); ?>" required value="<?php echo e($old['email']); ?>">
-                                <?php echo form_error($errors, 'email'); ?>
+                                <input type="email" id="checkout_email" name="email" class="<?php echo form_class($errors, 'email'); ?>" required maxlength="190" inputmode="email" autocomplete="email" aria-invalid="<?php echo !empty($errors['email']) ? 'true' : 'false'; ?>" aria-describedby="checkout_email_error" value="<?php echo e($old['email']); ?>">
+                                <?php echo $checkoutFieldError('email'); ?>
                             </div>
                             <?php if ($customerId <= 0): ?>
                                 <div class="col-12">
@@ -328,38 +342,38 @@ include __DIR__ . '/includes/header.php';
                                         <div class="row g-3">
                                             <div class="col-sm-6">
                                                 <label class="form-label" for="create_account_password">Password</label>
-                                                <input type="password" id="create_account_password" name="create_account_password" class="<?php echo form_class($errors, 'create_account_password'); ?>" autocomplete="new-password">
-                                                <?php echo form_error($errors, 'create_account_password'); ?>
+                                                <input type="password" id="create_account_password" name="create_account_password" class="<?php echo form_class($errors, 'create_account_password'); ?>" minlength="10" autocomplete="new-password" aria-invalid="<?php echo !empty($errors['create_account_password']) ? 'true' : 'false'; ?>" aria-describedby="checkout_create_account_password_error">
+                                                <?php echo $checkoutFieldError('create_account_password'); ?>
                                             </div>
                                             <div class="col-sm-6">
                                                 <label class="form-label" for="create_account_confirm_password">Confirm Password</label>
-                                                <input type="password" id="create_account_confirm_password" name="create_account_confirm_password" class="<?php echo form_class($errors, 'create_account_confirm_password'); ?>" autocomplete="new-password">
-                                                <?php echo form_error($errors, 'create_account_confirm_password'); ?>
+                                                <input type="password" id="create_account_confirm_password" name="create_account_confirm_password" class="<?php echo form_class($errors, 'create_account_confirm_password'); ?>" minlength="10" autocomplete="new-password" aria-invalid="<?php echo !empty($errors['create_account_confirm_password']) ? 'true' : 'false'; ?>" aria-describedby="checkout_create_account_confirm_password_error">
+                                                <?php echo $checkoutFieldError('create_account_confirm_password'); ?>
                                             </div>
                                         </div>
-                                        <div class="small text-muted mt-2">We will send email verification before first login.</div>
+                                        <div class="small text-muted mt-2">Use at least 10 characters, including uppercase, lowercase and a number. We will send email verification before first login.</div>
                                     </div>
                                 </div>
                             <?php endif; ?>
                             <div class="col-12">
                                 <label class="form-label" for="checkout_address">Address *</label>
-                                <textarea id="checkout_address" name="address" class="<?php echo form_class($errors, 'address'); ?>" rows="2" maxlength="500" required><?php echo e($old['address']); ?></textarea>
-                                <?php echo form_error($errors, 'address'); ?>
+                                <textarea id="checkout_address" name="address" class="<?php echo form_class($errors, 'address'); ?>" rows="2" maxlength="500" required autocomplete="street-address" aria-invalid="<?php echo !empty($errors['address']) ? 'true' : 'false'; ?>" aria-describedby="checkout_address_error"><?php echo e($old['address']); ?></textarea>
+                                <?php echo $checkoutFieldError('address'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label" for="checkout_city">City *</label>
-                                <input type="text" id="checkout_city" name="city" class="<?php echo form_class($errors, 'city'); ?>" required value="<?php echo e($old['city']); ?>">
-                                <?php echo form_error($errors, 'city'); ?>
+                                <input type="text" id="checkout_city" name="city" class="<?php echo form_class($errors, 'city'); ?>" required maxlength="120" autocomplete="address-level2" aria-invalid="<?php echo !empty($errors['city']) ? 'true' : 'false'; ?>" aria-describedby="checkout_city_error" value="<?php echo e($old['city']); ?>">
+                                <?php echo $checkoutFieldError('city'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label" for="checkout_state">State *</label>
-                                <input type="text" id="checkout_state" name="state" class="<?php echo form_class($errors, 'state'); ?>" required value="<?php echo e($old['state']); ?>">
-                                <?php echo form_error($errors, 'state'); ?>
+                                <input type="text" id="checkout_state" name="state" class="<?php echo form_class($errors, 'state'); ?>" required maxlength="120" autocomplete="address-level1" aria-invalid="<?php echo !empty($errors['state']) ? 'true' : 'false'; ?>" aria-describedby="checkout_state_error" value="<?php echo e($old['state']); ?>">
+                                <?php echo $checkoutFieldError('state'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label" for="checkout_pincode">Pincode *</label>
-                                <input type="text" id="checkout_pincode" name="pincode" class="<?php echo form_class($errors, 'pincode'); ?>" required value="<?php echo e($old['pincode']); ?>">
-                                <?php echo form_error($errors, 'pincode'); ?>
+                                <input type="text" id="checkout_pincode" name="pincode" class="<?php echo form_class($errors, 'pincode'); ?>" required maxlength="6" inputmode="numeric" autocomplete="postal-code" aria-invalid="<?php echo !empty($errors['pincode']) ? 'true' : 'false'; ?>" aria-describedby="checkout_pincode_error" value="<?php echo e($old['pincode']); ?>">
+                                <?php echo $checkoutFieldError('pincode'); ?>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label" for="checkout_country">Country *</label>
@@ -386,17 +400,17 @@ include __DIR__ . '/includes/header.php';
                         </div>
                         <div class="checkout-section-summary d-none" id="checkout_payment_summary"></div>
                         <div class="checkout-section-body" id="checkout_payment_body">
-                        <div class="checkout-payment-options">
+                        <div class="checkout-payment-options" role="radiogroup" aria-label="Payment method">
                             <label class="checkout-pay-option" for="payment_cod" data-pay-option="cod">
                                 <span class="checkout-pay-main">
-                                    <input class="form-check-input mt-0" type="radio" name="payment_method" id="payment_cod" value="cod" <?php echo ($old['payment_method'] ?? 'cod') === 'cod' ? 'checked' : ''; ?>>
+                                    <input class="form-check-input mt-0" type="radio" name="payment_method" id="payment_cod" value="cod" aria-controls="cod-panel" aria-expanded="false" <?php echo $selectedPayment === 'cod' ? 'checked' : ''; ?>>
                                     <span>
                                         <strong>Cash on Delivery (COD)</strong>
                                         <small class="d-block text-muted">Pay in cash when your order is delivered.</small>
                                     </span>
                                 </span>
                             </label>
-                            <div class="checkout-pay-panel" id="cod-panel">
+                            <div class="checkout-pay-panel" id="cod-panel" aria-hidden="true">
                                 <div class="small text-muted">
                                     COD handling fee of Rs 50 is applied for India orders.
                                 </div>
@@ -404,18 +418,18 @@ include __DIR__ . '/includes/header.php';
 
                             <label class="checkout-pay-option" for="payment_razorpay" data-pay-option="razorpay">
                                 <span class="checkout-pay-main">
-                                    <input class="form-check-input mt-0" type="radio" name="payment_method" id="payment_razorpay" value="razorpay" <?php echo ($old['payment_method'] ?? '') === 'razorpay' ? 'checked' : ''; ?>>
+                                    <input class="form-check-input mt-0" type="radio" name="payment_method" id="payment_razorpay" value="razorpay" aria-controls="razorpay-panel" aria-expanded="false" <?php echo $selectedPayment === 'razorpay' ? 'checked' : ''; ?>>
                                     <span>
                                         <strong>Pay Online (Razorpay)</strong>
                                         <small class="d-block text-muted">Choose UPI, Card, Netbanking or EMI in secure checkout.</small>
                                     </span>
                                 </span>
                             </label>
-                            <div class="checkout-pay-panel" id="razorpay-panel">
-                                <div class="checkout-online-methods">
-                                    <button type="button" class="checkout-online-method is-active" data-online-method="upi">UPI</button>
-                                    <button type="button" class="checkout-online-method" data-online-method="card">Card</button>
-                                    <button type="button" class="checkout-online-method" data-online-method="emi">EMI</button>
+                            <div class="checkout-pay-panel" id="razorpay-panel" aria-hidden="true">
+                                <div class="checkout-online-methods" role="tablist" aria-label="Online payment method">
+                                    <button type="button" class="checkout-online-method" id="online_method_upi_tab" role="tab" aria-controls="online_method_upi_panel" aria-selected="false" tabindex="-1" data-online-method="upi">UPI</button>
+                                    <button type="button" class="checkout-online-method" id="online_method_card_tab" role="tab" aria-controls="online_method_card_panel" aria-selected="false" tabindex="-1" data-online-method="card">Card</button>
+                                    <button type="button" class="checkout-online-method" id="online_method_emi_tab" role="tab" aria-controls="online_method_emi_panel" aria-selected="false" tabindex="-1" data-online-method="emi">EMI</button>
                                 </div>
                                 <noscript>
                                     <div class="mb-3">
@@ -428,7 +442,7 @@ include __DIR__ . '/includes/header.php';
                                     </div>
                                 </noscript>
                                 <div class="checkout-online-panels">
-                                    <div class="checkout-online-panel is-active" data-online-panel="upi">
+                                    <div class="checkout-online-panel" id="online_method_upi_panel" role="tabpanel" aria-labelledby="online_method_upi_tab" data-online-panel="upi" hidden>
                                         <div class="small text-muted mb-2">Pay instantly with any UPI app in secure Razorpay checkout.</div>
                                         <div class="checkout-brand-chips">
                                             <span class="checkout-brand-chip">Google Pay</span>
@@ -437,7 +451,7 @@ include __DIR__ . '/includes/header.php';
                                             <span class="checkout-brand-chip">BHIM</span>
                                         </div>
                                     </div>
-                                    <div class="checkout-online-panel" data-online-panel="card">
+                                    <div class="checkout-online-panel" id="online_method_card_panel" role="tabpanel" aria-labelledby="online_method_card_tab" data-online-panel="card" hidden>
                                         <div class="small text-muted mb-2">Domestic and international cards are supported.</div>
                                         <div class="checkout-brand-chips">
                                             <span class="checkout-brand-chip">Visa</span>
@@ -446,7 +460,7 @@ include __DIR__ . '/includes/header.php';
                                             <span class="checkout-brand-chip">Amex</span>
                                         </div>
                                     </div>
-                                    <div class="checkout-online-panel" data-online-panel="emi">
+                                    <div class="checkout-online-panel" id="online_method_emi_panel" role="tabpanel" aria-labelledby="online_method_emi_tab" data-online-panel="emi" hidden>
                                         <div class="small text-muted mb-2">No-cost/standard EMI options shown based on card and bank eligibility.</div>
                                         <div class="checkout-brand-chips">
                                             <span class="checkout-brand-chip">HDFC</span>
@@ -462,7 +476,8 @@ include __DIR__ . '/includes/header.php';
                     </div>
 
                     <?php if ($isIndia): ?>
-                        <button type="submit" class="btn btn-primary btn-lg w-100">Place Order</button>
+                        <button type="submit" id="place_order_btn" class="btn btn-primary btn-lg w-100 d-none d-lg-block">Place Order</button>
+                        <div id="checkout_submit_status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
                         <div class="trust-badge-block mt-3 mb-2" aria-label="Checkout trust badges">
                             <span class="trust-badge-pill">COD Available</span>
                             <span class="trust-badge-pill">Secure Payment</span>
@@ -498,36 +513,25 @@ include __DIR__ . '/includes/header.php';
                         </div>
                     <?php endforeach; ?>
 
-                    <form method="POST" action="/apply-coupon.php" class="mb-3">
-                        <?php echo csrf_field(); ?>
-                        <input type="hidden" name="redirect_to" value="checkout">
-                        <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
+                    <div class="mb-3" id="checkout_coupon_panel">
                         <label class="form-label">Coupon Code</label>
                         <div class="d-flex gap-2">
-                            <input type="text" name="coupon_code" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
-                            <button class="btn btn-outline-dark" type="submit">Apply</button>
+                            <input type="text" id="coupon_code" name="coupon_code" form="checkout_form" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>" autocomplete="off">
+                            <button id="coupon_apply_button" class="btn btn-outline-dark" type="submit" form="checkout_form" formaction="/apply-coupon.php" formmethod="post">Apply</button>
                         </div>
-                    </form>
+                    </div>
+                    <div id="coupon_status" class="small mb-2" role="status" aria-live="polite" aria-atomic="true"></div>
 
-                    <?php if ($couponInfo['valid']): ?>
-                    <form method="POST" action="/remove-coupon.php" class="mb-2">
-                        <?php echo csrf_field(); ?>
-                        <input type="hidden" name="redirect_to" value="checkout">
-                        <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
-                        <div class="d-flex justify-content-between small">
+                    <div class="d-flex justify-content-between small mb-2<?php echo $couponInfo['valid'] ? '' : ' d-none'; ?>" id="checkout_applied_coupon">
                             <span>Coupon: <strong><?php echo e($couponInfo['code']); ?></strong></span>
-                            <button type="submit" class="btn btn-link btn-sm p-0 text-danger">Remove</button>
-                        </div>
-                    </form>
-                    <?php endif; ?>
+                            <button id="coupon_remove_button" type="submit" form="checkout_form" formaction="/remove-coupon.php" formmethod="post" class="btn btn-link btn-sm p-0 text-danger">Remove</button>
+                    </div>
 
                     <hr>
-                    <?php if ($couponInfo['valid']): ?>
-                    <div class="d-flex justify-content-between mb-1 small">
+                    <div class="d-flex justify-content-between mb-1 small<?php echo $couponInfo['valid'] ? '' : ' d-none'; ?>" id="summary_coupon_row">
                         <span>Coupon (<?php echo e($couponInfo['code']); ?>)</span>
                         <span class="text-success">Applied</span>
                     </div>
-                    <?php endif; ?>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Subtotal</span>
                         <span id="summary_subtotal"><?php echo e(money($subtotal)); ?></span>
@@ -549,6 +553,8 @@ include __DIR__ . '/includes/header.php';
                         <span>Total</span>
                         <span id="summary_total"><?php echo e(money($totalAmount)); ?></span>
                     </div>
+                    <div id="shipping_quote_status" class="small mt-2" role="status" aria-live="polite" aria-atomic="true"></div>
+                    <button type="button" id="shipping_quote_retry" class="btn btn-link btn-sm p-0 d-none">Retry shipping calculation</button>
                     <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note">
                         Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
                     </div>
@@ -558,19 +564,19 @@ include __DIR__ . '/includes/header.php';
     </div>
 </section>
 <?php if ($isIndia): ?>
-<div class="d-lg-none position-fixed bottom-0 start-0 end-0 bg-white border-top p-3" style="z-index:1050;">
+<div id="checkout_mobile_submit_bar" class="checkout-mobile-submit-bar d-lg-none" aria-label="Checkout quick submit bar">
     <div class="d-flex justify-content-between align-items-center mb-2">
         <span class="small text-muted">Total</span>
         <strong id="mobile_summary_total"><?php echo e(money($totalAmount)); ?></strong>
     </div>
     <button type="button" id="mobile_place_order_btn" class="btn btn-primary w-100">Place Order</button>
 </div>
-<div class="d-lg-none" style="height:88px;"></div>
 <?php endif; ?>
 
 <script nonce="<?php echo $cspNonce; ?>">
 (function () {
     var csrfToken = <?php echo json_encode(csrf_token()); ?>;
+    var checkoutValidationRules = <?php echo json_encode(checkout_validation_constraints()); ?>;
     var codRadio = document.getElementById('payment_cod');
     var razorpayRadio = document.getElementById('payment_razorpay');
     var countryInput = document.querySelector('[name="country"]');
@@ -582,6 +588,7 @@ include __DIR__ . '/includes/header.php';
     var cityInput = document.getElementById('checkout_city');
     var stateInput = document.getElementById('checkout_state');
     var pincodeInput = document.getElementById('checkout_pincode');
+    var emailInput = document.getElementById('checkout_email');
     var countryFieldInput = document.getElementById('checkout_country');
     var subtotal = <?php echo json_encode((float) $subtotal); ?>;
     var discount = <?php echo json_encode((float) $discountAmount); ?>;
@@ -597,9 +604,31 @@ include __DIR__ . '/includes/header.php';
     var onlineMethodButtons = document.querySelectorAll('.checkout-online-method');
     var onlinePanels = document.querySelectorAll('.checkout-online-panel');
     var onlineMethodInput = document.getElementById('online_method');
+    var onlineMethods = ['upi', 'card', 'emi'];
+    var paymentState = {
+        paymentMethod: codRadio.checked ? 'cod' : 'razorpay',
+        selectedOnlineMethod: onlineMethods.indexOf(String(onlineMethodInput && onlineMethodInput.value || '')) !== -1
+            ? String(onlineMethodInput.value)
+            : 'upi',
+        lastValidOnlineMethod: 'upi'
+    };
+    paymentState.lastValidOnlineMethod = paymentState.selectedOnlineMethod;
     var shippingQuoteTokenInput = document.getElementById('shipping_quote_token');
     var mobileTotalEl = document.getElementById('mobile_summary_total');
     var mobileSubmitBtn = document.getElementById('mobile_place_order_btn');
+    var mobileSubmitBar = document.getElementById('checkout_mobile_submit_bar');
+    var cookieConsentBanner = document.getElementById('cookieConsentBanner');
+    var placeOrderBtn = document.getElementById('place_order_btn');
+    var shippingQuoteStatus = document.getElementById('shipping_quote_status');
+    var shippingQuoteRetryBtn = document.getElementById('shipping_quote_retry');
+    var couponInput = document.getElementById('coupon_code');
+    var couponApplyButton = document.getElementById('coupon_apply_button');
+    var couponRemoveButton = document.getElementById('coupon_remove_button');
+    var couponStatus = document.getElementById('coupon_status');
+    var couponApplied = document.getElementById('checkout_applied_coupon');
+    var summaryCouponRow = document.getElementById('summary_coupon_row');
+    var discountEl = document.getElementById('summary_discount');
+    var submitStatusEl = document.getElementById('checkout_submit_status');
     var checkoutForm = document.getElementById('checkout_form');
     var sectionAddress = document.getElementById('checkout_section_address');
     var sectionPayment = document.getElementById('checkout_section_payment');
@@ -613,9 +642,34 @@ include __DIR__ . '/includes/header.php';
     var createAccountFields = document.getElementById('create_account_fields');
     var createAccountPassword = document.getElementById('create_account_password');
     var createAccountConfirmPassword = document.getElementById('create_account_confirm_password');
+    var validationSummary = document.getElementById('checkout_validation_summary');
 
     if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
         return;
+    }
+
+    function isElementVisible(el) {
+        if (!el || el.classList.contains('d-none')) return false;
+        return window.getComputedStyle(el).display !== 'none';
+    }
+
+    function measuredHeight(el) {
+        if (!isElementVisible(el)) return 0;
+        return Math.ceil(el.getBoundingClientRect().height || 0);
+    }
+
+    function syncMobileCheckoutLayout() {
+        if (!mobileSubmitBar) return;
+        var isMobileViewport = window.matchMedia('(max-width: 991.98px)').matches;
+        var cookieVisible = isElementVisible(cookieConsentBanner);
+        var cookieHeight = cookieVisible ? measuredHeight(cookieConsentBanner) : 0;
+        var barHeight = (!cookieVisible && isMobileViewport) ? measuredHeight(mobileSubmitBar) : 0;
+
+        document.documentElement.style.setProperty('--cookie-consent-height', cookieHeight + 'px');
+        document.documentElement.style.setProperty('--checkout-mobile-bar-height', barHeight + 'px');
+        document.body.classList.add('checkout-has-mobile-submit-bar');
+        document.body.classList.toggle('checkout-mobile-bar-hidden', cookieVisible || !isMobileViewport);
+        mobileSubmitBar.setAttribute('aria-hidden', (cookieVisible || !isMobileViewport) ? 'true' : 'false');
     }
 
     function applySavedAddressOption(optionEl) {
@@ -643,7 +697,12 @@ include __DIR__ . '/includes/header.php';
     function syncSummary() {
         var country = String(countryInput.value || '').trim().toLowerCase();
         var isIndia = country === 'india';
-        var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
+        var paymentMethod = paymentState.paymentMethod;
+
+        // A local estimate must never replace a quote for a different checkout state.
+        if (typeof shippingQuoteState !== 'undefined' && shippingQuoteState && shippingQuoteState.validKey !== shippingKey(shippingSnapshot())) {
+            return;
+        }
 
         var shipping = 0;
         var codFee = 0;
@@ -670,36 +729,72 @@ include __DIR__ . '/includes/header.php';
         createAccountFields.style.display = enabled ? '' : 'none';
         if (createAccountPassword) createAccountPassword.required = enabled;
         if (createAccountConfirmPassword) createAccountConfirmPassword.required = enabled;
+        if (!enabled) {
+            if (createAccountPassword) { createAccountPassword.value = ''; setFieldError(createAccountPassword, ''); }
+            if (createAccountConfirmPassword) { createAccountConfirmPassword.value = ''; setFieldError(createAccountConfirmPassword, ''); }
+            if (validationSummary && !validationSummary.classList.contains('d-none')) {
+                validateAddressSection();
+            }
+        }
     }
 
     function isValidEmail(val) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(val || '').trim());
     }
 
-    function setFieldError(input, hasError) {
+    function setFieldError(input, message) {
         if (!input) return;
-        input.classList.toggle('is-invalid', !!hasError);
+        var hasError = !!message;
+        input.classList.toggle('is-invalid', hasError);
+        input.setAttribute('aria-invalid', hasError ? 'true' : 'false');
+        var errorId = input.getAttribute('aria-describedby');
+        var errorEl = errorId ? document.getElementById(errorId) : null;
+        if (errorEl) {
+            errorEl.textContent = message || '';
+            errorEl.classList.toggle('d-block', hasError);
+        }
     }
 
     function validateAddressSection() {
-        var hasError = false;
+        var invalidFields = [];
         var fv = String(fullNameInput ? fullNameInput.value : '').trim();
         var ph = String(phoneInput ? phoneInput.value : '').trim();
-        var em = String(document.getElementById('checkout_email') ? document.getElementById('checkout_email').value : '').trim();
+        var em = String(emailInput ? emailInput.value : '').trim();
         var ad = String(addressInput ? addressInput.value : '').trim();
         var ct = String(cityInput ? cityInput.value : '').trim();
         var st = String(stateInput ? stateInput.value : '').trim();
         var pc = String(pincodeInput ? pincodeInput.value : '').trim();
-        setFieldError(fullNameInput, fv === '');
-        setFieldError(phoneInput, !/^[0-9+\-\s()]{7,20}$/.test(ph));
-        setFieldError(document.getElementById('checkout_email'), !isValidEmail(em));
-        setFieldError(addressInput, ad === '');
-        setFieldError(cityInput, ct === '');
-        setFieldError(stateInput, st === '');
-        setFieldError(pincodeInput, !/^[1-9][0-9]{5}$/.test(pc));
-        hasError = [fullNameInput, phoneInput, document.getElementById('checkout_email'), addressInput, cityInput, stateInput, pincodeInput]
-            .some(function (el) { return !!(el && el.classList.contains('is-invalid')); });
-        return !hasError;
+        var phonePattern = new RegExp(checkoutValidationRules.phone_pattern);
+        var pincodePattern = new RegExp(checkoutValidationRules.pincode_pattern);
+        function validate(input, message) {
+            setFieldError(input, message);
+            if (message && input) invalidFields.push({ input: input, message: message });
+        }
+        validate(fullNameInput, fv === '' ? 'Full name is required.' : (fv.length > 120 ? 'Full name must be 120 characters or fewer.' : ''));
+        validate(phoneInput, ph === '' ? 'Phone is required.' : (!phonePattern.test(ph) ? 'Enter a valid phone number.' : ''));
+        validate(emailInput, !isValidEmail(em) ? 'Valid email is required.' : (em.length > 190 ? 'Email must be 190 characters or fewer.' : ''));
+        validate(addressInput, ad === '' ? 'Address is required.' : (ad.length > checkoutValidationRules.address_max_length ? 'Address must be 500 characters or fewer.' : ''));
+        validate(cityInput, ct === '' ? 'City is required.' : (ct.length > 120 ? 'City must be 120 characters or fewer.' : ''));
+        validate(stateInput, st === '' ? 'State is required.' : (st.length > 120 ? 'State must be 120 characters or fewer.' : ''));
+        validate(pincodeInput, pc === '' ? 'Pincode is required.' : (!pincodePattern.test(pc) ? 'Enter a valid 6-digit Indian pincode.' : ''));
+        if (createAccountCheckbox && createAccountCheckbox.checked) {
+            var password = String(createAccountPassword ? createAccountPassword.value : '');
+            var confirmation = String(createAccountConfirmPassword ? createAccountConfirmPassword.value : '');
+            var passwordMessage = password.length < checkoutValidationRules.password_min_length
+                ? 'Password must be at least ' + checkoutValidationRules.password_min_length + ' characters.'
+                : (!new RegExp(checkoutValidationRules.password_uppercase_pattern).test(password)
+                    ? 'Password must include at least one uppercase letter.'
+                    : (!new RegExp(checkoutValidationRules.password_lowercase_pattern).test(password)
+                        ? 'Password must include at least one lowercase letter.'
+                        : (!new RegExp(checkoutValidationRules.password_number_pattern).test(password) ? 'Password must include at least one number.' : '')));
+            validate(createAccountPassword, passwordMessage);
+            validate(createAccountConfirmPassword, password !== confirmation ? 'Passwords do not match.' : '');
+        }
+        if (validationSummary) {
+            validationSummary.classList.toggle('d-none', invalidFields.length === 0);
+            validationSummary.textContent = invalidFields.length ? 'Please correct the following: ' + invalidFields.map(function (field) { return field.message; }).join(' ') : '';
+        }
+        return invalidFields;
     }
 
     function updateSectionSummaries() {
@@ -711,8 +806,25 @@ include __DIR__ . '/includes/header.php';
             sectionAddressSummary.textContent = [nm, ph, [ct, pc].filter(Boolean).join(' - ')].filter(Boolean).join(' | ');
         }
         if (sectionPaymentSummary) {
-            sectionPaymentSummary.textContent = codRadio.checked ? 'Cash on Delivery' : 'Online Payment (Razorpay)';
+            sectionPaymentSummary.textContent = paymentState.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment (Razorpay · ' + paymentState.selectedOnlineMethod.toUpperCase() + ')';
         }
+    }
+
+    function syncOnlineMethodInput() {
+        if (!onlineMethodInput) {
+            return;
+        }
+        onlineMethodInput.value = paymentState.selectedOnlineMethod;
+    }
+
+    function ensureValidOnlineMethodForRazorpay() {
+        if (onlineMethods.indexOf(paymentState.selectedOnlineMethod) === -1) {
+            paymentState.selectedOnlineMethod = onlineMethods.indexOf(paymentState.lastValidOnlineMethod) !== -1
+                ? paymentState.lastValidOnlineMethod
+                : 'upi';
+        }
+        paymentState.lastValidOnlineMethod = paymentState.selectedOnlineMethod;
+        syncOnlineMethodInput();
     }
 
     function setSectionCollapsed(sectionEl, bodyEl, summaryEl, editBtn, collapsed) {
@@ -732,79 +844,235 @@ include __DIR__ . '/includes/header.php';
         return true;
     }
 
-    function maybeFetchLiveRate() {
-        var country = String(countryInput.value || '').trim().toLowerCase();
-        var pincode = pincodeInput ? String(pincodeInput.value || '').trim() : '';
-        if (country !== 'india' || !/^[1-9][0-9]{5}$/.test(pincode)) {
+    var shippingQuoteState = { generation: 0, controller: null, pending: false, validKey: '', retryCount: 0 };
+    function shippingSnapshot() {
+        return {
+            pincode: pincodeInput ? String(pincodeInput.value || '').trim() : '',
+            payment_method: paymentState.paymentMethod,
+            subtotal: Number(subtotal).toFixed(2),
+            country: String(countryInput.value || '').trim().toLowerCase()
+        };
+    }
+    function shippingKey(snapshot) {
+        return [snapshot.pincode, snapshot.payment_method, snapshot.subtotal, snapshot.country].join('|');
+    }
+    function quoteSnapshotIsValid(snapshot) {
+        return snapshot.country === 'india' && /^[1-9][0-9]{5}$/.test(snapshot.pincode);
+    }
+    function responseMatchesSnapshot(data, snapshot) {
+        var bound = data && data.quote_for;
+        return !!bound && String(bound.pincode || '') === snapshot.pincode &&
+            String(bound.payment_method || '') === snapshot.payment_method &&
+            Number(bound.subtotal || 0).toFixed(2) === snapshot.subtotal &&
+            String(bound.country || '').toLowerCase() === snapshot.country;
+    }
+    var shippingSubmissionEnabled = true;
+    var submissionState = { inProgress: false, restoreTimer: null };
+
+    function setPlaceOrderButtonDisabled(button, disabled) {
+        if (!button) return;
+        button.disabled = !!disabled;
+        button.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    }
+
+    function setPlaceOrderButtonLabel(button, label, isProcessing) {
+        if (!button) return;
+        if (!button.getAttribute('data-default-label')) {
+            button.setAttribute('data-default-label', String(button.textContent || '').trim() || 'Place Order');
+        }
+        if (!isProcessing) {
+            button.textContent = label;
             return;
         }
-        var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' + label;
+    }
+
+    function updateSubmitAnnouncement(message) {
+        if (!submitStatusEl) return;
+        submitStatusEl.textContent = message || '';
+    }
+
+    function syncSubmitControls() {
+        var disabled = submissionState.inProgress || !shippingSubmissionEnabled;
+        setPlaceOrderButtonDisabled(placeOrderBtn, disabled);
+        setPlaceOrderButtonDisabled(mobileSubmitBtn, disabled);
+    }
+
+    function clearSubmissionRestoreTimer() {
+        if (!submissionState.restoreTimer) return;
+        window.clearTimeout(submissionState.restoreTimer);
+        submissionState.restoreTimer = null;
+    }
+
+    function exitSubmissionProcessing(reason) {
+        if (!submissionState.inProgress) return;
+        submissionState.inProgress = false;
+        clearSubmissionRestoreTimer();
+        if (checkoutForm) checkoutForm.removeAttribute('aria-busy');
+        setPlaceOrderButtonLabel(placeOrderBtn, placeOrderBtn ? (placeOrderBtn.getAttribute('data-default-label') || 'Place Order') : 'Place Order', false);
+        setPlaceOrderButtonLabel(mobileSubmitBtn, mobileSubmitBtn ? (mobileSubmitBtn.getAttribute('data-default-label') || 'Place Order') : 'Place Order', false);
+        syncSubmitControls();
+        updateSubmitAnnouncement(reason || '');
+    }
+
+    function enterSubmissionProcessing() {
+        if (submissionState.inProgress) return false;
+        submissionState.inProgress = true;
+        if (checkoutForm) checkoutForm.setAttribute('aria-busy', 'true');
+        setPlaceOrderButtonLabel(placeOrderBtn, 'Processing order…', true);
+        setPlaceOrderButtonLabel(mobileSubmitBtn, 'Processing order…', true);
+        syncSubmitControls();
+        updateSubmitAnnouncement('Processing order…');
+        clearSubmissionRestoreTimer();
+        submissionState.restoreTimer = window.setTimeout(function () {
+            exitSubmissionProcessing('Order processing timed out in this tab. Please review and try again.');
+        }, 30000);
+        return true;
+    }
+
+    function setShippingSubmissionEnabled(enabled) {
+        shippingSubmissionEnabled = !!enabled;
+        syncSubmitControls();
+    }
+    function setShippingStatus(message, kind, canRetry) {
+        if (shippingQuoteStatus) {
+            shippingQuoteStatus.className = 'small mt-2 ' + (kind === 'error' ? 'text-danger' : (kind === 'pending' ? 'text-muted' : 'text-success'));
+            shippingQuoteStatus.textContent = message;
+        }
+        if (shippingQuoteRetryBtn) shippingQuoteRetryBtn.classList.toggle('d-none', !canRetry);
+    }
+    function clearCurrentShippingQuote() {
+        shippingQuoteState.validKey = '';
+        if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
+        setShippingSubmissionEnabled(false);
+    }
+    function abortLiveShippingRequest() {
+        if (shippingQuoteState.controller && typeof shippingQuoteState.controller.abort === 'function') {
+            shippingQuoteState.controller.abort();
+        }
+        shippingQuoteState.controller = null;
+    }
+    function maybeFetchLiveRate(options) {
+        options = options || {};
+        var snapshot = shippingSnapshot();
+        var key = shippingKey(snapshot);
+        if (!options.retry) shippingQuoteState.retryCount = 0;
+        abortLiveShippingRequest();
+        var generation = ++shippingQuoteState.generation;
+        shippingQuoteState.pending = false;
+        if (!quoteSnapshotIsValid(snapshot)) {
+            clearCurrentShippingQuote();
+            setShippingStatus('Enter a valid Indian pincode to calculate shipping.', 'error', false);
+            return;
+        }
+        shippingQuoteState.pending = true;
+        clearCurrentShippingQuote();
+        setShippingStatus('Calculating shipping…', 'pending', false);
+        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        shippingQuoteState.controller = controller;
         var body = new URLSearchParams();
         body.set('csrf_token', csrfToken);
-        body.set('pincode', pincode);
-        body.set('subtotal', String(subtotal));
-        body.set('payment_method', paymentMethod);
-        fetch('/shipping-rate.php', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-            },
-            body: body.toString()
-        }).then(function (res) {
-            return res.ok ? res.json() : null;
+        body.set('pincode', snapshot.pincode);
+        body.set('subtotal', snapshot.subtotal);
+        body.set('payment_method', snapshot.payment_method);
+        body.set('country', snapshot.country);
+        var requestOptions = { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body: body.toString() };
+        if (controller) requestOptions.signal = controller.signal;
+        fetch('/shipping-rate.php', requestOptions).then(function (res) {
+            if (!res.ok) throw new Error('Shipping quote request failed (' + res.status + ').');
+            return res.json();
         }).then(function (data) {
-            if (!data || !data.ok) {
-                return;
+            if (generation !== shippingQuoteState.generation || shippingKey(shippingSnapshot()) !== key) return;
+            if (!data || !data.ok || !data.quote_token || !responseMatchesSnapshot(data, snapshot)) {
+                throw new Error('Shipping quote did not match the current checkout details.');
             }
+            shippingQuoteState.pending = false;
+            shippingQuoteState.validKey = key;
+            shippingQuoteState.retryCount = 0;
+            shippingQuoteState.controller = null;
             var liveShipping = Number(data.base_shipping || 0);
             var liveCodFee = Number(data.cod_fee || 0);
-            if (shippingQuoteTokenInput && data.quote_token) {
-                shippingQuoteTokenInput.value = String(data.quote_token);
-            }
-            var taxable = Math.max(0, subtotal - discount);
-            var total = taxable + liveShipping + liveCodFee;
+            shippingQuoteTokenInput.value = String(data.quote_token);
+            var total = Math.max(0, subtotal - discount) + liveShipping + liveCodFee;
             shippingEl.textContent = toMoney(liveShipping);
             codFeeEl.textContent = toMoney(liveCodFee);
             totalEl.textContent = toMoney(total);
-            if (mobileTotalEl) {
-                mobileTotalEl.textContent = toMoney(total);
-            }
-        }).catch(function () {});
+            if (mobileTotalEl) mobileTotalEl.textContent = toMoney(total);
+            setShippingSubmissionEnabled(true);
+            setShippingStatus('Shipping calculated.', 'success', false);
+        }).catch(function (error) {
+            if (generation !== shippingQuoteState.generation || (error && error.name === 'AbortError')) return;
+            shippingQuoteState.pending = false;
+            shippingQuoteState.controller = null;
+            clearCurrentShippingQuote();
+            setShippingStatus('We could not calculate shipping. Check your connection and retry.', 'error', shippingQuoteState.retryCount < 2);
+        });
     }
 
     function syncPaymentPanels() {
-        var selected = codRadio.checked ? 'cod' : 'razorpay';
+        var selected = paymentState.paymentMethod;
         payOptionCards.forEach(function (card) {
             card.classList.toggle('is-active', card.getAttribute('data-pay-option') === selected);
         });
         if (codPanel) {
             codPanel.classList.toggle('is-open', selected === 'cod');
+            codPanel.hidden = selected !== 'cod';
+            codPanel.classList.toggle('d-none', selected !== 'cod');
+            codPanel.setAttribute('aria-hidden', selected === 'cod' ? 'false' : 'true');
         }
         if (razorpayPanel) {
             razorpayPanel.classList.toggle('is-open', selected === 'razorpay');
+            razorpayPanel.hidden = selected !== 'razorpay';
+            razorpayPanel.classList.toggle('d-none', selected !== 'razorpay');
+            razorpayPanel.setAttribute('aria-hidden', selected === 'razorpay' ? 'false' : 'true');
         }
-        if (onlineMethodInput && selected === 'cod') {
-            onlineMethodInput.value = '';
+        if (codRadio) {
+            codRadio.setAttribute('aria-expanded', selected === 'cod' ? 'true' : 'false');
+        }
+        if (razorpayRadio) {
+            razorpayRadio.setAttribute('aria-expanded', selected === 'razorpay' ? 'true' : 'false');
+        }
+        if (selected === 'razorpay') {
+            ensureValidOnlineMethodForRazorpay();
+            activateOnlineMethod(paymentState.selectedOnlineMethod);
         }
     }
 
-    function activateOnlineMethod(method) {
+    function activateOnlineMethod(method, focusSelected) {
+        paymentState.selectedOnlineMethod = onlineMethods.indexOf(method) !== -1 ? method : 'upi';
+        paymentState.lastValidOnlineMethod = paymentState.selectedOnlineMethod;
+        syncOnlineMethodInput();
         onlineMethodButtons.forEach(function (btn) {
-            btn.classList.toggle('is-active', btn.getAttribute('data-online-method') === method);
+            var active = btn.getAttribute('data-online-method') === paymentState.selectedOnlineMethod;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+            btn.tabIndex = active ? 0 : -1;
+            if (active && focusSelected) btn.focus();
         });
         onlinePanels.forEach(function (panel) {
-            panel.classList.toggle('is-active', panel.getAttribute('data-online-panel') === method);
+            var active = panel.getAttribute('data-online-panel') === paymentState.selectedOnlineMethod;
+            panel.classList.toggle('is-active', active);
+            panel.hidden = !active;
+            panel.classList.toggle('d-none', !active);
+            panel.setAttribute('aria-hidden', active ? 'false' : 'true');
         });
-        if (onlineMethodInput) {
-            onlineMethodInput.value = method || 'upi';
-        }
+        updateSectionSummaries();
     }
 
-    codRadio.addEventListener('change', syncSummary);
-    razorpayRadio.addEventListener('change', syncSummary);
-    codRadio.addEventListener('change', syncPaymentPanels);
-    razorpayRadio.addEventListener('change', syncPaymentPanels);
+    function handlePaymentMethodChange() {
+        paymentState.paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
+        if (paymentState.paymentMethod === 'razorpay') {
+            ensureValidOnlineMethodForRazorpay();
+        } else {
+            syncOnlineMethodInput();
+        }
+        syncPaymentPanels();
+        syncSummary();
+        updateSectionSummaries();
+        maybeFetchLiveRate();
+    }
+    codRadio.addEventListener('change', handlePaymentMethodChange);
+    razorpayRadio.addEventListener('change', handlePaymentMethodChange);
     countryInput.addEventListener('input', syncSummary);
     if (pincodeInput) {
         pincodeInput.addEventListener('input', function () {
@@ -812,15 +1080,91 @@ include __DIR__ . '/includes/header.php';
             maybeFetchLiveRate();
         });
     }
+
+    var couponRequestInFlight = false;
+    function setCouponBusy(busy) {
+        if (couponApplyButton) couponApplyButton.disabled = busy;
+        if (couponRemoveButton) couponRemoveButton.disabled = busy;
+        if (couponInput) couponInput.disabled = busy;
+    }
+    function updateCouponSummary(data) {
+        discount = Number(data.discount_amount || 0);
+        if (discountEl) discountEl.textContent = '- ' + toMoney(discount);
+        // Coupon responses can race address/payment changes too; accept their quote only when it is bound to this exact state.
+        if (data && data.shipping_quote_token && responseMatchesSnapshot(data, shippingSnapshot())) {
+            abortLiveShippingRequest();
+            shippingQuoteState.generation += 1;
+            shippingQuoteState.pending = false;
+            shippingQuoteState.validKey = shippingKey(shippingSnapshot());
+            if (shippingEl) shippingEl.textContent = toMoney(Number(data.shipping || 0));
+            if (codFeeEl) codFeeEl.textContent = toMoney(Number(data.cod_fee || 0));
+            if (totalEl) totalEl.textContent = toMoney(Number(data.final_total || 0));
+            if (mobileTotalEl) mobileTotalEl.textContent = toMoney(Number(data.final_total || 0));
+            shippingQuoteTokenInput.value = String(data.shipping_quote_token);
+            setShippingSubmissionEnabled(true);
+            setShippingStatus('Shipping calculated.', 'success', false);
+        } else if (shippingQuoteState.validKey !== shippingKey(shippingSnapshot())) {
+            maybeFetchLiveRate();
+        }
+        var hasCoupon = String(data.coupon_code || '') !== '' && Number(data.discount_amount || 0) > 0;
+        if (couponApplied) {
+            couponApplied.classList.toggle('d-none', !hasCoupon);
+            var appliedCode = couponApplied.querySelector('strong');
+            if (appliedCode) appliedCode.textContent = String(data.coupon_code || '');
+        }
+        if (summaryCouponRow) {
+            summaryCouponRow.classList.toggle('d-none', !hasCoupon);
+            var label = summaryCouponRow.querySelector('span');
+            if (label) label.textContent = hasCoupon ? 'Coupon (' + String(data.coupon_code) + ')' : '';
+        }
+        if (couponInput && hasCoupon) couponInput.value = String(data.coupon_code);
+    }
+    function couponRequest(url) {
+        if (couponRequestInFlight || !checkoutForm) return;
+        couponRequestInFlight = true;
+        setCouponBusy(true);
+        if (couponStatus) { couponStatus.className = 'small mb-2 text-muted'; couponStatus.textContent = 'Updating coupon…'; }
+        var body = new URLSearchParams(new FormData(checkoutForm));
+        body.set('ajax', '1');
+        fetch(url, { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body: body.toString() })
+            .then(function (res) { return res.json().catch(function () { return { ok: false, message: 'Unable to update coupon. Please try again.' }; }); })
+            .then(function (data) {
+                updateCouponSummary(data || {});
+                if (couponStatus) { couponStatus.className = 'small mb-2 ' + (data && data.ok ? 'text-success' : 'text-danger'); couponStatus.textContent = (data && data.message) || 'Unable to update coupon.'; }
+            }).catch(function () {
+                if (couponStatus) { couponStatus.className = 'small mb-2 text-danger'; couponStatus.textContent = 'Network error. Your coupon was not changed; please try again.'; }
+            }).finally(function () { couponRequestInFlight = false; setCouponBusy(false); });
+    }
     countryInput.addEventListener('change', maybeFetchLiveRate);
-    codRadio.addEventListener('change', maybeFetchLiveRate);
-    razorpayRadio.addEventListener('change', maybeFetchLiveRate);
     onlineMethodButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
-            activateOnlineMethod(btn.getAttribute('data-online-method'));
-            razorpayRadio.checked = true;
-            syncPaymentPanels();
-            syncSummary();
+            var method = btn.getAttribute('data-online-method');
+            if (!razorpayRadio.checked) {
+                razorpayRadio.checked = true;
+                handlePaymentMethodChange();
+            }
+            activateOnlineMethod(method, true);
+            syncOnlineMethodInput();
+            maybeFetchLiveRate();
+        });
+        btn.addEventListener('keydown', function (ev) {
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].indexOf(ev.key) === -1) return;
+            ev.preventDefault();
+            var buttons = Array.prototype.slice.call(onlineMethodButtons);
+            var index = buttons.indexOf(btn);
+            if (ev.key === 'ArrowRight') index = (index + 1) % buttons.length;
+            if (ev.key === 'ArrowLeft') index = (index - 1 + buttons.length) % buttons.length;
+            if (ev.key === 'ArrowDown') index = (index + 1) % buttons.length;
+            if (ev.key === 'ArrowUp') index = (index - 1 + buttons.length) % buttons.length;
+            if (ev.key === 'Home') index = 0;
+            if (ev.key === 'End') index = buttons.length - 1;
+            if (!razorpayRadio.checked) {
+                razorpayRadio.checked = true;
+                handlePaymentMethodChange();
+            }
+            activateOnlineMethod(buttons[index].getAttribute('data-online-method'), true);
+            syncOnlineMethodInput();
+            maybeFetchLiveRate();
         });
     });
     if (savedAddressSelect) {
@@ -830,7 +1174,7 @@ include __DIR__ . '/includes/header.php';
             maybeFetchLiveRate();
         });
     }
-    [fullNameInput, phoneInput, addressInput, cityInput, stateInput, pincodeInput, countryFieldInput].forEach(function (field) {
+    [fullNameInput, phoneInput, emailInput, addressInput, cityInput, stateInput, pincodeInput, countryFieldInput, createAccountPassword, createAccountConfirmPassword].forEach(function (field) {
         if (!field) return;
         field.addEventListener('input', function () {
             if (shippingAddressIdInput && shippingAddressIdInput.value !== '') {
@@ -838,6 +1182,9 @@ include __DIR__ . '/includes/header.php';
             }
             if (savedAddressSelect && savedAddressSelect.value !== '') {
                 savedAddressSelect.value = '';
+            }
+            if (field.getAttribute('aria-invalid') === 'true') {
+                validateAddressSection();
             }
         });
     });
@@ -849,6 +1196,9 @@ include __DIR__ . '/includes/header.php';
     maybeFetchLiveRate();
     if (mobileSubmitBtn && checkoutForm) {
         mobileSubmitBtn.addEventListener('click', function () {
+            if (submissionState.inProgress) {
+                return;
+            }
             checkoutForm.requestSubmit();
         });
     }
@@ -871,30 +1221,98 @@ include __DIR__ . '/includes/header.php';
     if (sectionPayment) {
         sectionPayment.addEventListener('click', function () {
             updateSectionSummaries();
-            if (validateAddressSection()) {
+            if (validateAddressSection().length === 0) {
                 setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, true);
             }
         });
     }
     if (checkoutForm) {
         checkoutForm.addEventListener('submit', function (ev) {
-            updateSectionSummaries();
-            var okAddress = validateAddressSection();
-            if (!okAddress) {
+            if (submissionState.inProgress) {
                 ev.preventDefault();
-                setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, false);
-                setSectionCollapsed(sectionPayment, sectionPaymentBody, sectionPaymentSummary, editPaymentBtn, false);
+                return;
+            }
+            updateSectionSummaries();
+            var invalidFields = validateAddressSection();
+            if (invalidFields.length > 0) {
+                ev.preventDefault();
                 focusFirstError();
                 return;
             }
-            setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, true);
-            setSectionCollapsed(sectionPayment, sectionPaymentBody, sectionPaymentSummary, editPaymentBtn, true);
+            if (couponRequestInFlight) {
+                ev.preventDefault();
+                if (couponStatus) {
+                    couponStatus.className = 'small mb-2 text-danger';
+                    couponStatus.textContent = 'Please wait while coupon updates finish before placing your order.';
+                }
+                return;
+            }
+            if (shippingQuoteState.pending || shippingQuoteState.validKey !== shippingKey(shippingSnapshot()) || !shippingQuoteTokenInput.value) {
+                ev.preventDefault();
+                setShippingSubmissionEnabled(false);
+                setShippingStatus(shippingQuoteState.pending ? 'Calculating shipping… Please wait before placing your order.' : 'Calculate shipping before placing your order.', 'error', !shippingQuoteState.pending);
+                return;
+            }
+            if (!enterSubmissionProcessing()) {
+                ev.preventDefault();
+                return;
+            }
         });
     }
+    if (shippingQuoteRetryBtn) {
+        shippingQuoteRetryBtn.addEventListener('click', function () {
+            if (shippingQuoteState.pending || shippingQuoteState.retryCount >= 2) return;
+            shippingQuoteState.retryCount += 1;
+            maybeFetchLiveRate({ retry: true });
+        });
+    }
+    if (couponApplyButton) couponApplyButton.addEventListener('click', function (ev) { ev.preventDefault(); couponRequest('/apply-coupon.php'); });
+    if (couponRemoveButton) couponRemoveButton.addEventListener('click', function (ev) { ev.preventDefault(); couponRequest('/remove-coupon.php'); });
     updateSectionSummaries();
     focusFirstError();
-    activateOnlineMethod(onlineMethodInput && onlineMethodInput.value ? onlineMethodInput.value : 'upi');
+    if (paymentState.paymentMethod === 'razorpay') {
+        ensureValidOnlineMethodForRazorpay();
+    }
+    activateOnlineMethod(paymentState.selectedOnlineMethod);
     syncPaymentPanels();
+
+    if (placeOrderBtn) {
+        placeOrderBtn.setAttribute('data-default-label', String(placeOrderBtn.textContent || '').trim() || 'Place Order');
+    }
+    if (mobileSubmitBtn) {
+        mobileSubmitBtn.setAttribute('data-default-label', String(mobileSubmitBtn.textContent || '').trim() || 'Place Order');
+    }
+    syncSubmitControls();
+    if (mobileSubmitBar) {
+        syncMobileCheckoutLayout();
+        if (cookieConsentBanner && typeof MutationObserver !== 'undefined') {
+            var consentObserver = new MutationObserver(function () {
+                syncMobileCheckoutLayout();
+            });
+            consentObserver.observe(cookieConsentBanner, { attributes: true, attributeFilter: ['class', 'style', 'data-consent-status'] });
+        }
+        if (typeof ResizeObserver !== 'undefined') {
+            var layoutObserver = new ResizeObserver(function () {
+                syncMobileCheckoutLayout();
+            });
+            layoutObserver.observe(mobileSubmitBar);
+            if (cookieConsentBanner) {
+                layoutObserver.observe(cookieConsentBanner);
+            }
+        }
+        window.addEventListener('resize', syncMobileCheckoutLayout);
+        window.addEventListener('orientationchange', syncMobileCheckoutLayout);
+        document.addEventListener('cookie-consent-visibility-change', syncMobileCheckoutLayout);
+    }
+    window.addEventListener('pageshow', function () {
+        exitSubmissionProcessing('');
+        if (mobileSubmitBar) {
+            syncMobileCheckoutLayout();
+        }
+    });
+    window.addEventListener('beforeunload', function () {
+        clearSubmissionRestoreTimer();
+    });
 })();
 </script>
 

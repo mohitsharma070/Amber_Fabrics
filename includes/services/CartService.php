@@ -796,6 +796,7 @@ final class CartService
             $_SESSION['cart_size'],
             $_SESSION['cart_meter_length'],
             $_SESSION['checkout_old'],
+            $_SESSION['checkout_draft'],
             $_SESSION['checkout_errors'],
             $_SESSION['applied_coupon_code']
         );

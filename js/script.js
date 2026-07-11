@@ -512,16 +512,28 @@ document.addEventListener("DOMContentLoaded", function () {
         var buttons = banner.querySelectorAll("[data-consent-choice]");
         if (!buttons.length) return;
 
+        function notifyConsentLayout() {
+            var visible = !banner.classList.contains("d-none") && window.getComputedStyle(banner).display !== "none";
+            var height = visible ? Math.ceil(banner.getBoundingClientRect().height || 0) : 0;
+            document.dispatchEvent(new CustomEvent("cookie-consent-visibility-change", {
+                detail: { visible: visible, height: height }
+            }));
+        }
+
         function showBanner() {
             banner.classList.remove("d-none");
+            notifyConsentLayout();
         }
 
         function hideBanner() {
             banner.classList.add("d-none");
+            notifyConsentLayout();
         }
 
         if (String(banner.getAttribute("data-consent-status") || "").toLowerCase() !== "unknown") {
             hideBanner();
+        } else {
+            notifyConsentLayout();
         }
 
         openTriggers.forEach(function (trigger) {
@@ -572,6 +584,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 })
                 .catch(function () {
                     setBusy(false);
+                    notifyConsentLayout();
                 });
         }
 

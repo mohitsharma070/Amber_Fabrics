@@ -26,6 +26,74 @@ function get_coupon_by_code(mysqli $conn, string $code): ?array
     return $coupon ?: null;
 }
 
+/** Coupon requests from checkout carry a small, non-sensitive draft so a fallback
+ * redirect can rebuild the form exactly as the customer left it. */
+function coupon_store_checkout_draft(array $input): void
+{
+    $fields = [
+        'full_name' => 120, 'phone' => 30, 'email' => 190, 'address' => 500,
+        'city' => 120, 'state' => 120, 'pincode' => 12, 'order_notes' => 500,
+    ];
+    $draft = [];
+    foreach ($fields as $name => $length) {
+        $draft[$name] = substr(trim((string) ($input[$name] ?? '')), 0, $length);
+    }
+    $draft['country'] = 'India';
+    $draft['payment_method'] = in_array((string) ($input['payment_method'] ?? ''), ['cod', 'razorpay'], true)
+        ? (string) $input['payment_method'] : 'cod';
+    $draft['online_method'] = InventoryService::sanitize_online_payment_method((string) ($input['online_method'] ?? 'upi')) ?: 'upi';
+    $draft['cod_fee_apply'] = $draft['payment_method'] === 'cod' ? 1 : 0;
+    $draft['shipping_address_id'] = max(0, (int) ($input['shipping_address_id'] ?? 0));
+    $draft['create_account'] = !empty($input['create_account']) ? 1 : 0;
+    $_SESSION['checkout_draft'] = $draft;
+}
+
+function coupon_wants_json(): bool
+{
+    return (string) ($_POST['ajax'] ?? '') === '1'
+        || stripos((string) ($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json') !== false;
+}
+
+/** Server-authoritative checkout amounts for the coupon JSON contract. */
+function coupon_checkout_totals(mysqli $conn, string $couponCode = ''): array
+{
+    $cart = (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) ? $_SESSION['cart'] : [];
+    $sizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
+    $meters = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
+    $hydrated = CartService::cart_hydrate_items($conn, $cart, $sizes, $meters);
+    if (!empty($hydrated['removed_keys'])) {
+        foreach ($hydrated['removed_keys'] as $key) { unset($cart[$key], $sizes[$key], $meters[$key]); }
+        $_SESSION['cart'] = $cart; $_SESSION['cart_size'] = $sizes; $_SESSION['cart_meter_length'] = $meters;
+        $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+        if ($customerId > 0) {
+            CartService::cart_save_to_db($conn, $customerId, $cart, $meters);
+        }
+    }
+    $subtotal = round((float) CartService::cart_items_subtotal($hydrated['items']), 2);
+    $draft = (isset($_SESSION['checkout_draft']) && is_array($_SESSION['checkout_draft'])) ? $_SESSION['checkout_draft'] : [];
+    $payment = in_array((string) ($draft['payment_method'] ?? ''), ['cod', 'razorpay'], true) ? $draft['payment_method'] : 'cod';
+    $pincode = trim((string) ($draft['pincode'] ?? ''));
+    $manual = CartService::checkout_shipping_breakdown($subtotal, 'India', $payment, $payment === 'cod');
+    $quote = apply_filters('shipping.quote', [
+        'base_shipping' => (float) $manual['base_shipping'], 'cod_fee' => (float) $manual['cod_fee'],
+        'shipping_total' => (float) $manual['shipping_total'], 'source' => 'manual', 'courier_name' => '', 'courier_id' => 0,
+    ], ['conn' => $conn, 'subtotal' => $subtotal, 'country' => 'India', 'pincode' => $pincode, 'payment_method' => $payment]);
+    $shipping = max(0.0, round((float) ($quote['base_shipping'] ?? $manual['base_shipping']), 2));
+    $codFee = max(0.0, round((float) ($quote['cod_fee'] ?? $manual['cod_fee']), 2));
+    $token = InventoryService::shipping_quote_store($subtotal, 'India', $pincode, $payment, $shipping, $codFee, $shipping + $codFee,
+        substr(trim((string) ($quote['source'] ?? 'manual')), 0, 32) ?: 'manual', trim((string) ($quote['courier_name'] ?? '')), max(0, (int) ($quote['courier_id'] ?? 0)));
+    $code = normalize_coupon_code($couponCode);
+    $discountInfo = get_active_coupon_discount_for_customer($conn, $code, $subtotal, (int) ($_SESSION['customer_id'] ?? 0));
+    $discount = $discountInfo['valid'] ? min((float) $discountInfo['discount'], $subtotal) : 0.0;
+    return [
+        'coupon_code' => $discountInfo['valid'] ? (string) $discountInfo['code'] : '',
+        'discount_amount' => round($discount, 2), 'subtotal' => $subtotal, 'shipping' => $shipping,
+        'cod_fee' => $codFee, 'final_total' => round(max(0, $subtotal - $discount) + $shipping + $codFee, 2),
+        'shipping_quote_token' => $token, 'coupon_info' => $discountInfo, 'cart_empty' => empty($hydrated['items']),
+        'quote_for' => ['pincode' => $pincode, 'payment_method' => $payment, 'subtotal' => $subtotal, 'country' => 'india'],
+    ];
+}
+
 function has_customer_used_coupon(mysqli $conn, int $couponId, int $customerId): bool
 {
     if ($couponId <= 0 || $customerId <= 0) {
@@ -233,11 +301,6 @@ function validate_coupon_for_amount(array $coupon, float $amount, string $today)
         'code' => (string) ($coupon['code'] ?? ''),
         'coupon_id' => (int) ($coupon['id'] ?? 0),
     ];
-}
-
-function validate_coupon_for_subtotal(array $coupon, float $subtotal, string $today): array
-{
-    return validate_coupon_for_amount($coupon, $subtotal, $today);
 }
 
 function get_active_coupon_discount(mysqli $conn, ?string $couponCode, float $amount): array
