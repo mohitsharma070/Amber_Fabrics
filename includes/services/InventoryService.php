@@ -377,7 +377,7 @@ final class InventoryService
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
         $stmt = $conn->prepare(
-            "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, wastage_percent_override, stock, stock_meters, is_active
+            "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active
              FROM fabric_variants
              WHERE id IN ($placeholders)"
         );

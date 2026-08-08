@@ -266,6 +266,15 @@ final class PaymentService
             CURLOPT_USERPWD => $keyId . ':' . $keySecret,
             CURLOPT_HTTPHEADER => $headers,
         ]);
+        $caBundlePath = trim((string) _cfg('RAZORPAY_HTTP_CA_BUNDLE', ''));
+        if ($caBundlePath !== '' && is_file($caBundlePath)) {
+            curl_setopt($ch, CURLOPT_CAINFO, $caBundlePath);
+        }
+        $skipTlsVerify = strtolower(trim((string) _cfg('RAZORPAY_HTTP_SKIP_TLS_VERIFY', '0')));
+        if (in_array($skipTlsVerify, ['1', 'true', 'yes', 'on'], true)) {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        }
         if ($json !== null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
         }

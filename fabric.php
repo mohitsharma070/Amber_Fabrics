@@ -270,17 +270,17 @@ if ($unitType === 'meter') {
 $quantityOptions = array_values(array_unique($quantityOptions));
 sort($quantityOptions);
 
-$metaTitle = e($product['name']) . ' | ' . SiteContext::name();
+$metaTitle = (string) $product['name'] . ' | ' . SiteContext::name();
 $metaDescriptionRaw = (string) ($product['description'] ?? '');
 if ($metaDescriptionRaw !== '') {
     $metaDescriptionTrimmed = function_exists('mb_strimwidth')
         ? mb_strimwidth($metaDescriptionRaw, 0, 155, '...')
         : (strlen($metaDescriptionRaw) > 155 ? substr($metaDescriptionRaw, 0, 155) . '...' : $metaDescriptionRaw);
-    $metaDescription = e($metaDescriptionTrimmed);
+    $metaDescription = $metaDescriptionTrimmed;
 } else {
     $metaDescription = 'Product details from ' . SiteContext::name() . '.';
 }
-$metaImage = !empty($product['image']) ? 'images/fabrics/' . e($product['image']) : '';
+$metaImage = !empty($product['image']) ? 'images/fabrics/' . (string) $product['image'] : '';
 include 'includes/header.php';
 do_action('product.view', [
     'conn' => $conn,

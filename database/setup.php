@@ -814,6 +814,7 @@ function ensure_tables(mysqli $conn): void
         "CREATE TABLE IF NOT EXISTS shipments (
             id INT AUTO_INCREMENT PRIMARY KEY,
             order_id INT NOT NULL,
+            awb_code VARCHAR(255) DEFAULT NULL,
             courier_name VARCHAR(255) DEFAULT NULL,
             tracking_id VARCHAR(255) DEFAULT NULL,
             tracking_url VARCHAR(500) DEFAULT NULL,
@@ -822,9 +823,241 @@ function ensure_tables(mysqli $conn): void
             delivered_at DATETIME DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_shipments_order_id (order_id),
+            INDEX idx_shipments_awb_code (awb_code),
             INDEX idx_shipments_tracking_id (tracking_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    $ensureColumns($conn, 'shipments', [
+        'awb_code' => "VARCHAR(255) NULL DEFAULT NULL",
+    ]);
+    if ($columnExists($conn, 'shipments', 'awb_code')) {
+        $awbIndexCheck = $conn->query(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'shipments'
+               AND INDEX_NAME = 'idx_shipments_awb_code'"
+        );
+        $awbIndexExists = ((int) ($awbIndexCheck->fetch_assoc()['total'] ?? 0)) > 0;
+        if (!$awbIndexExists) {
+            $conn->query("CREATE INDEX idx_shipments_awb_code ON shipments (awb_code)");
+        }
+    }
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS shipping_courier_shipments (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_id INT NOT NULL,
+            shipment_id INT NOT NULL,
+            provider VARCHAR(64) NOT NULL,
+            provider_order_id VARCHAR(191) DEFAULT NULL,
+            provider_shipment_id VARCHAR(191) DEFAULT NULL,
+            provider_status VARCHAR(80) DEFAULT NULL,
+            label_url VARCHAR(500) DEFAULT NULL,
+            raw_response_json JSON DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_shipping_courier_shipment_provider (shipment_id, provider),
+            INDEX idx_shipping_courier_order (order_id),
+            INDEX idx_shipping_courier_provider_order (provider, provider_order_id),
+            INDEX idx_shipping_courier_provider_shipment (provider, provider_shipment_id),
+            INDEX idx_shipping_courier_status (provider, provider_status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $shippingCourierColumns = [];
+    $shippingCourierColumnRes = $conn->query(
+        "SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_shipments'"
+    );
+    while ($row = $shippingCourierColumnRes ? $shippingCourierColumnRes->fetch_assoc() : null) {
+        $shippingCourierColumns[(string) $row['COLUMN_NAME']] = true;
+    }
+    $shippingCourierColumnAdds = [
+        'provider_order_id' => "ALTER TABLE shipping_courier_shipments ADD COLUMN provider_order_id VARCHAR(191) DEFAULT NULL AFTER provider",
+        'provider_shipment_id' => "ALTER TABLE shipping_courier_shipments ADD COLUMN provider_shipment_id VARCHAR(191) DEFAULT NULL AFTER provider_order_id",
+        'provider_status' => "ALTER TABLE shipping_courier_shipments ADD COLUMN provider_status VARCHAR(80) DEFAULT NULL AFTER provider_shipment_id",
+        'label_url' => "ALTER TABLE shipping_courier_shipments ADD COLUMN label_url VARCHAR(500) DEFAULT NULL AFTER provider_status",
+        'raw_response_json' => "ALTER TABLE shipping_courier_shipments ADD COLUMN raw_response_json JSON DEFAULT NULL AFTER label_url",
+    ];
+    foreach ($shippingCourierColumnAdds as $column => $ddl) {
+        if (empty($shippingCourierColumns[$column])) {
+            $conn->query($ddl);
+        }
+    }
+
+    $shippingCourierIndexes = [];
+    $shippingCourierIndexRes = $conn->query(
+        "SELECT DISTINCT INDEX_NAME
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_shipments'"
+    );
+    while ($row = $shippingCourierIndexRes ? $shippingCourierIndexRes->fetch_assoc() : null) {
+        $shippingCourierIndexes[(string) $row['INDEX_NAME']] = true;
+    }
+    if (empty($shippingCourierIndexes['uq_shipping_courier_shipment_provider'])) {
+        $conn->query("ALTER TABLE shipping_courier_shipments ADD UNIQUE KEY uq_shipping_courier_shipment_provider (shipment_id, provider)");
+    }
+    if (empty($shippingCourierIndexes['idx_shipping_courier_order'])) {
+        $conn->query("ALTER TABLE shipping_courier_shipments ADD INDEX idx_shipping_courier_order (order_id)");
+    }
+    if (empty($shippingCourierIndexes['idx_shipping_courier_provider_order'])) {
+        $conn->query("ALTER TABLE shipping_courier_shipments ADD INDEX idx_shipping_courier_provider_order (provider, provider_order_id)");
+    }
+    if (empty($shippingCourierIndexes['idx_shipping_courier_provider_shipment'])) {
+        $conn->query("ALTER TABLE shipping_courier_shipments ADD INDEX idx_shipping_courier_provider_shipment (provider, provider_shipment_id)");
+    }
+    if (empty($shippingCourierIndexes['idx_shipping_courier_status'])) {
+        $conn->query("ALTER TABLE shipping_courier_shipments ADD INDEX idx_shipping_courier_status (provider, provider_status)");
+    }
+
+    $shippingCourierOrderFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_shipments'
+           AND CONSTRAINT_NAME = 'fk_shipping_courier_order'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $shippingCourierOrderFkExists = ((int) ($shippingCourierOrderFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$shippingCourierOrderFkExists) {
+        $conn->query(
+            "DELETE scs
+             FROM shipping_courier_shipments scs
+             LEFT JOIN orders o ON o.id = scs.order_id
+             WHERE o.id IS NULL"
+        );
+        $conn->query(
+            "ALTER TABLE shipping_courier_shipments
+             ADD CONSTRAINT fk_shipping_courier_order
+             FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE"
+        );
+    }
+
+    $shippingCourierShipmentFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_shipments'
+           AND CONSTRAINT_NAME = 'fk_shipping_courier_shipment'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $shippingCourierShipmentFkExists = ((int) ($shippingCourierShipmentFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$shippingCourierShipmentFkExists) {
+        $conn->query(
+            "DELETE scs
+             FROM shipping_courier_shipments scs
+             LEFT JOIN shipments s ON s.id = scs.shipment_id
+             WHERE s.id IS NULL"
+        );
+        $conn->query(
+            "ALTER TABLE shipping_courier_shipments
+             ADD CONSTRAINT fk_shipping_courier_shipment
+             FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE"
+        );
+    }
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS shipping_courier_webhook_events (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            provider VARCHAR(64) NOT NULL,
+            event_id VARCHAR(191) NOT NULL,
+            signature VARCHAR(255) DEFAULT NULL,
+            payload_hash CHAR(64) DEFAULT NULL,
+            raw_payload LONGTEXT DEFAULT NULL,
+            status ENUM('received','processing','processed','failed') NOT NULL DEFAULT 'received',
+            attempts INT NOT NULL DEFAULT 0,
+            last_error TEXT DEFAULT NULL,
+            processed_at DATETIME DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_shipping_courier_webhook_event (provider, event_id),
+            INDEX idx_shipping_courier_webhook_status (provider, status),
+            INDEX idx_shipping_courier_webhook_processed (processed_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS shipping_courier_reverse_pickups (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            return_id INT NOT NULL,
+            order_id INT NOT NULL,
+            provider VARCHAR(64) NOT NULL,
+            provider_order_id VARCHAR(191) DEFAULT NULL,
+            provider_pickup_id VARCHAR(191) DEFAULT NULL,
+            provider_status VARCHAR(80) DEFAULT NULL,
+            tracking_id VARCHAR(255) DEFAULT NULL,
+            tracking_url VARCHAR(500) DEFAULT NULL,
+            label_url VARCHAR(500) DEFAULT NULL,
+            raw_response_json JSON DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_shipping_courier_reverse_return_provider (return_id, provider),
+            INDEX idx_shipping_courier_reverse_order (order_id),
+            INDEX idx_shipping_courier_reverse_provider_order (provider, provider_order_id),
+            INDEX idx_shipping_courier_reverse_pickup (provider, provider_pickup_id),
+            INDEX idx_shipping_courier_reverse_status (provider, provider_status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $returnsTableCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'returns'"
+    );
+    $returnsTableExists = ((int) ($returnsTableCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if ($returnsTableExists) {
+        $shippingCourierReverseReturnFkCheck = $conn->query(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLE_CONSTRAINTS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'shipping_courier_reverse_pickups'
+               AND CONSTRAINT_NAME = 'fk_shipping_courier_reverse_return'
+               AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+        );
+        $shippingCourierReverseReturnFkExists = ((int) ($shippingCourierReverseReturnFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+        if (!$shippingCourierReverseReturnFkExists) {
+            $conn->query(
+                "DELETE scrp
+                 FROM shipping_courier_reverse_pickups scrp
+                 LEFT JOIN returns r ON r.id = scrp.return_id
+                 WHERE r.id IS NULL"
+            );
+            $conn->query(
+                "ALTER TABLE shipping_courier_reverse_pickups
+                 ADD CONSTRAINT fk_shipping_courier_reverse_return
+                 FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE"
+            );
+        }
+    }
+
+    $shippingCourierReverseOrderFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_reverse_pickups'
+           AND CONSTRAINT_NAME = 'fk_shipping_courier_reverse_order'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $shippingCourierReverseOrderFkExists = ((int) ($shippingCourierReverseOrderFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$shippingCourierReverseOrderFkExists) {
+        $conn->query(
+            "DELETE scrp
+             FROM shipping_courier_reverse_pickups scrp
+             LEFT JOIN orders o ON o.id = scrp.order_id
+             WHERE o.id IS NULL"
+        );
+        $conn->query(
+            "ALTER TABLE shipping_courier_reverse_pickups
+             ADD CONSTRAINT fk_shipping_courier_reverse_order
+             FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE"
+        );
+    }
 
     // Business expenses
     $conn->query(
@@ -1397,6 +1630,64 @@ function ensure_tables(mysqli $conn): void
     $returnItemsFkExists = ((int) ($returnItemsFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
     if (!$returnItemsFkExists) {
         $conn->query("ALTER TABLE return_items ADD CONSTRAINT fk_return_items_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE");
+    }
+
+    $reverseProviderOrderIdxCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_reverse_pickups'
+           AND INDEX_NAME = 'idx_shipping_courier_reverse_provider_order'"
+    );
+    $reverseProviderOrderIdxExists = ((int) ($reverseProviderOrderIdxCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$reverseProviderOrderIdxExists) {
+        $conn->query("ALTER TABLE shipping_courier_reverse_pickups ADD INDEX idx_shipping_courier_reverse_provider_order (provider, provider_order_id)");
+    }
+
+    $shippingCourierReverseReturnFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_reverse_pickups'
+           AND CONSTRAINT_NAME = 'fk_shipping_courier_reverse_return'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $shippingCourierReverseReturnFkExists = ((int) ($shippingCourierReverseReturnFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$shippingCourierReverseReturnFkExists) {
+        $conn->query(
+            "DELETE scrp
+             FROM shipping_courier_reverse_pickups scrp
+             LEFT JOIN returns r ON r.id = scrp.return_id
+             WHERE r.id IS NULL"
+        );
+        $conn->query(
+            "ALTER TABLE shipping_courier_reverse_pickups
+             ADD CONSTRAINT fk_shipping_courier_reverse_return
+             FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE"
+        );
+    }
+
+    $shippingCourierReverseOrderFkCheck = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'shipping_courier_reverse_pickups'
+           AND CONSTRAINT_NAME = 'fk_shipping_courier_reverse_order'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $shippingCourierReverseOrderFkExists = ((int) ($shippingCourierReverseOrderFkCheck->fetch_assoc()['total'] ?? 0)) > 0;
+    if (!$shippingCourierReverseOrderFkExists) {
+        $conn->query(
+            "DELETE scrp
+             FROM shipping_courier_reverse_pickups scrp
+             LEFT JOIN orders o ON o.id = scrp.order_id
+             WHERE o.id IS NULL"
+        );
+        $conn->query(
+            "ALTER TABLE shipping_courier_reverse_pickups
+             ADD CONSTRAINT fk_shipping_courier_reverse_order
+             FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE"
+        );
     }
 
     $result = $conn->query("SELECT COUNT(*) AS total FROM admins");

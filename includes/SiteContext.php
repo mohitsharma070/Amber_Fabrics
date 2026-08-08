@@ -28,8 +28,10 @@ final class SiteContext
     {
         $baseUrl = rtrim(_cfg('APP_URL', ''), '/');
         if ($baseUrl === '') {
-            $protocol = app_request_is_https() ? 'https' : 'http';
-            $baseUrl = $protocol . '://' . ($_SERVER['SERVER_NAME'] ?? 'localhost');
+            // Never construct canonical URLs from the inbound Host header.
+            // Production configuration validation requires APP_URL; this stable fallback
+            // keeps local/CLI output deterministic when it has not been configured.
+            $baseUrl = 'http://localhost';
         }
 
         return $path === '' ? $baseUrl : $baseUrl . '/' . ltrim($path, '/');

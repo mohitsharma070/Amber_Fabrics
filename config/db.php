@@ -86,8 +86,13 @@ function app_config_apply_env_overrides(array $config): array
         'SHIPPING_COURIER_ENABLED', 'SHIPPING_COURIER_PROVIDER',
         'SHIPPING_COURIER_TEST_MODE', 'SHIPPING_COURIER_AUTO_CREATE',
         'SHIPPING_COURIER_TRACKING_SYNC', 'SHIPPING_COURIER_WEBHOOK_SECRET',
-        'SHIPPING_COURIER_API_BASE_URL', 'SHIPPING_COURIER_API_KEY',
-        'SHIPPING_COURIER_API_SECRET',
+        'SHIPPING_COURIER_API_BASE_URL',
+        'BIGSHIP_BASE_URL', 'BIGSHIP_USERNAME', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY',
+        'BIGSHIP_WAREHOUSE_ID', 'BIGSHIP_WAREHOUSE_PINCODE', 'BIGSHIP_SEGMENT',
+        'BIGSHIP_RISK_TYPE_ID', 'BIGSHIP_PRODUCT_CATEGORY_ID',
+        'BIGSHIP_HTTP_SKIP_TLS_VERIFY',
+        'BIGSHIP_PARCEL_WEIGHT_KG', 'BIGSHIP_PARCEL_LENGTH_CM',
+        'BIGSHIP_PARCEL_WIDTH_CM', 'BIGSHIP_PARCEL_HEIGHT_CM',
         'REVIEW_RATING_ENABLED', 'REVIEW_RATING_AUTO_APPROVE',
         'REVIEW_RATING_MIN_LENGTH', 'REVIEW_RATING_MAX_LENGTH',
         'ORDER_TIMELINE_ENABLED', 'ORDER_TIMELINE_SHOW_INTERNAL_TO_ADMIN',
@@ -206,6 +211,14 @@ function app_config_validate_production(array $config): void
         app_bootstrap_fail(
             'Server configuration error. Production configuration is incomplete.',
             '[fabric-export] FATAL: unsafe production configuration keys: ' . implode(', ', $unsafe),
+            2
+        );
+    }
+
+    if ((int) trim((string) ($config['BIGSHIP_HTTP_SKIP_TLS_VERIFY'] ?? '0')) === 1) {
+        app_bootstrap_fail(
+            'Server configuration error. Production configuration is invalid.',
+            '[fabric-export] FATAL: BIGSHIP_HTTP_SKIP_TLS_VERIFY must be 0 in production.',
             2
         );
     }

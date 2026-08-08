@@ -234,7 +234,7 @@ paths:
               $ref: '#/components/schemas/PlaceOrderRequest'
       responses:
         '302':
-          description: Redirect to order success, payment, or back to checkout
+          description: Redirect to order success, Razorpay payment, login for unauthenticated Razorpay checkout, or back to checkout
         '403':
           description: Invalid CSRF token
 

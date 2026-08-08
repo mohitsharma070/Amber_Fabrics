@@ -172,6 +172,7 @@ $baseShippingAmount = (float) $shipping['base_shipping'];
 $codFeeAmount = (float) $shipping['cod_fee'];
 $shippingAmount = (float) $shipping['shipping_total'];
 $shippingRateSource = 'manual';
+$selectedCourierName = '';
 $shippingQuoteToken = InventoryService::shipping_quote_store(
     (float) $subtotal,
     (string) $countryForCalc,
@@ -181,7 +182,7 @@ $shippingQuoteToken = InventoryService::shipping_quote_store(
     (float) $codFeeAmount,
     (float) $shippingAmount,
     (string) $shippingRateSource,
-    ''
+    $selectedCourierName
 );
 $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
 $couponInfo = get_active_coupon_discount($conn, $couponCode, (float) $subtotal);
@@ -407,7 +408,10 @@ include __DIR__ . '/includes/header.php';
                                     <input class="form-check-input mt-0" type="radio" name="payment_method" id="payment_razorpay" value="razorpay" <?php echo ($old['payment_method'] ?? '') === 'razorpay' ? 'checked' : ''; ?>>
                                     <span>
                                         <strong>Pay Online (Razorpay)</strong>
-                                        <small class="d-block text-muted">Choose UPI, Card, Netbanking or EMI in secure checkout.</small>
+                                        <small class="d-block text-muted">
+                                            Choose UPI, Card, Netbanking or EMI in secure checkout.
+                                            <?php if ($customerId <= 0): ?> Login is required before the order is created.<?php endif; ?>
+                                        </small>
                                     </span>
                                 </span>
                             </label>
@@ -549,8 +553,12 @@ include __DIR__ . '/includes/header.php';
                         <span>Total</span>
                         <span id="summary_total"><?php echo e(money($totalAmount)); ?></span>
                     </div>
-                    <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note">
-                        Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
+                    <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note" id="summary_shipping_note">
+                        <?php if (strtolower((string) $shippingRateSource) !== 'manual'): ?>
+                            Live courier rate active<?php echo !empty($old['courier_name']) ? ': ' . e((string) $old['courier_name']) : '.'; ?>
+                        <?php else: ?>
+                            Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -590,6 +598,11 @@ include __DIR__ . '/includes/header.php';
     var shippingEl = document.getElementById('summary_shipping');
     var codFeeEl = document.getElementById('summary_cod_fee');
     var totalEl = document.getElementById('summary_total');
+    var shippingNoteEl = document.getElementById('summary_shipping_note');
+    var shippingSource = <?php echo json_encode((string) $shippingRateSource); ?>;
+    var shippingCourierName = <?php echo json_encode((string) $selectedCourierName); ?>;
+    var shippingDebugReason = '';
+    var shippingDebugMessage = '';
 
     var payOptionCards = document.querySelectorAll('[data-pay-option]');
     var codPanel = document.getElementById('cod-panel');
@@ -640,6 +653,27 @@ include __DIR__ . '/includes/header.php';
         return 'Rs ' + Number(v).toFixed(2);
     }
 
+    function setShippingNote(source, courierName, debugReason, debugMessage) {
+        if (!shippingNoteEl) {
+            return;
+        }
+        var src = String(source || '').trim().toLowerCase();
+        var courier = String(courierName || '').trim();
+        var reason = String(debugReason || '').trim();
+        var message = String(debugMessage || '').trim();
+        if (src !== '' && src !== 'manual') {
+            shippingNoteEl.textContent = courier !== ''
+                ? ('Live courier rate active: ' + courier + '.')
+                : 'Live courier rate active.';
+            return;
+        }
+        if (reason !== '') {
+            shippingNoteEl.textContent = 'Manual shipping fallback (' + reason + ')' + (message !== '' ? (': ' + message) : '.');
+            return;
+        }
+        shippingNoteEl.textContent = 'Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.';
+    }
+
     function syncSummary() {
         var country = String(countryInput.value || '').trim().toLowerCase();
         var isIndia = country === 'india';
@@ -662,6 +696,7 @@ include __DIR__ . '/includes/header.php';
         if (mobileTotalEl) {
             mobileTotalEl.textContent = toMoney(total);
         }
+        setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
     }
 
     function syncCreateAccountFields() {
@@ -762,6 +797,10 @@ include __DIR__ . '/includes/header.php';
             if (shippingQuoteTokenInput && data.quote_token) {
                 shippingQuoteTokenInput.value = String(data.quote_token);
             }
+            shippingSource = String(data.source || 'manual');
+            shippingCourierName = String(data.courier_name || '');
+            shippingDebugReason = String(data.debug_reason || '');
+            shippingDebugMessage = String(data.debug_message || '');
             var taxable = Math.max(0, subtotal - discount);
             var total = taxable + liveShipping + liveCodFee;
             shippingEl.textContent = toMoney(liveShipping);
@@ -770,6 +809,7 @@ include __DIR__ . '/includes/header.php';
             if (mobileTotalEl) {
                 mobileTotalEl.textContent = toMoney(total);
             }
+            setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
         }).catch(function () {});
     }
 

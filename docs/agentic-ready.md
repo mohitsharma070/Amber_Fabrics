@@ -24,6 +24,21 @@ Status for this run:
 - A best-effort compliance mapping was performed based on the explicit repo-readiness goals in the task.
 - Replace/confirm checklist items once the external criteria file is shared in this environment.
 
+## Checkout Safety Contract
+
+- Guest COD checkout remains supported.
+- Guest Razorpay submissions must redirect to customer login before account creation, order persistence, or inventory reservation.
+- Razorpay verification retains payment signature checks; both browser callbacks retain CSRF and customer-ownership checks.
+
+## Courier Integration Contract
+
+- Bigship Direct authentication is performed only on the server through `POST /api/outbound/login` using `BIGSHIP_USERNAME`, `BIGSHIP_PASSWORD`, and `BIGSHIP_ACCESS_KEY`.
+- Courier API calls use a cached, unexpired `Authorization: Bearer` token. Browser code receives neither credentials nor bearer tokens.
+- Domestic checkout quotes use Bigship's configured warehouse pincode and parcel dimensions, then persist the selected courier partner and its `totalCharge` in the existing quote flow.
+- Courier shipment creation follows Bigship's create-order, courier-cost, then place-order lifecycle and stores the resulting IDs, AWB, selected courier/rate, and raw lifecycle responses in existing shipment metadata.
+- Cron-based tracking sync uses the stored `CustomGlobalOrderId`; Bigship webhooks are rejected until signature verification details are available.
+- Bigship secrets are supported only through server environment variables or external `secure-config.php`; tracked configuration examples use empty credential placeholders.
+
 ## Validation Performed
 
 - Endpoint contract test execution via PHP CLI.

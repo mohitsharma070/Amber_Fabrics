@@ -36,7 +36,7 @@ final class CartService
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
-        $sql = "SELECT id, name, image, unit_type, meter_options, min_order_meters, qty_step, wastage_percent, price, sale_price, price_inr, stock, stock_meters, is_available, dispatch_time
+        $sql = "SELECT id, name, image, unit_type, meter_options, min_order_meters, qty_step, price, sale_price, price_inr, stock, stock_meters, is_available, dispatch_time
                 FROM fabrics
                 WHERE status = 'active' AND id IN ($placeholders)";
         $stmt = $conn->prepare($sql);

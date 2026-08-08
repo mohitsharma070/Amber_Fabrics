@@ -64,7 +64,13 @@ These endpoints validate signatures/tokens before payload processing.
 
 - Cart/session state in PHP session, with optional persistence for logged-in customers.
 - Orders/payments managed in DB with payment workflow through Razorpay.
+- Guest checkout is supported for COD. Razorpay order creation requires an authenticated customer session; guest submissions are returned through login before any order or inventory transaction begins.
 - Plugin hooks extend analytics, courier, COD guard, newsletters, reviews, and related features.
+- Bigship Direct calls are server-side only: the courier plugin authenticates at `POST /api/outbound/login` with `BIGSHIP_USERNAME`, `BIGSHIP_PASSWORD`, and `BIGSHIP_ACCESS_KEY`, caches the expiring bearer token, and uses it for subsequent Bigship API calls. Those credentials are not exposed to browser code.
+- Checkout shipping quotes call Bigship's `POST /api/outbound/user-rate-calculator` for `domestic_b2c` shipments. The server supplies the warehouse pincode and configured parcel measurements; the checkout supplies the destination pincode, payment method, and COD amount. The selected rate's courier ID, name, and `totalCharge` are persisted through the existing shipping-quote fields.
+- After a confirmed order is eligible for fulfilment, the courier plugin creates the Bigship order, retrieves courier-wise shipment cost, and places the order with the quote-selected courier. It retains the Bigship `CustomGlobalOrderId`, shipment/AWB data, courier and rate details, and the lifecycle responses in the existing shipment and courier-metadata tables.
+- The existing cron tracking sync uses `GET /api/outbound/track-order?CustomGlobalOrderId=...`, stores the Bigship AWB and delivery timestamp, and maps supported Bigship statuses into local shipment/order status. Bigship webhooks remain disabled pending verified signature requirements.
+- Bigship configuration is server-only: `BIGSHIP_BASE_URL`, credentials, warehouse ID/pincode, parcel defaults, and `BIGSHIP_SEGMENT` (default `domestic_b2c`) are loaded only from server environment variables or external `secure-config.php`.
 
 ## Testing and Quality
 

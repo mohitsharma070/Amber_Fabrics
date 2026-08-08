@@ -90,10 +90,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
         drawer.addEventListener("shown.bs.offcanvas", function () {
             document.body.classList.add("mobile-nav-open");
+            document.querySelectorAll("[data-mobile-nav-menu], [data-mobile-bottom-menu]").forEach(function (button) {
+                button.setAttribute("aria-expanded", "true");
+            });
         });
 
         drawer.addEventListener("hidden.bs.offcanvas", function () {
             document.body.classList.remove("mobile-nav-open");
+            document.querySelectorAll("[data-mobile-nav-menu], [data-mobile-bottom-menu]").forEach(function (button) {
+                button.setAttribute("aria-expanded", "false");
+            });
         });
 
         var drawerLinks = drawer.querySelectorAll("a.nav-link, a.drawer-utility-link");
@@ -106,13 +112,13 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
 
-        var bottomMenuBtn = document.querySelector("[data-mobile-bottom-menu]");
-        if (bottomMenuBtn) {
-            bottomMenuBtn.addEventListener("click", function () {
+        var drawerMenuButtons = document.querySelectorAll("[data-mobile-bottom-menu], [data-mobile-nav-menu]");
+        drawerMenuButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
                 var instance = bootstrap.Offcanvas.getOrCreateInstance(drawer);
                 instance.show();
             });
-        }
+        });
     }());
 
     // Avoid overlap with product sticky CTA on product detail pages
@@ -495,7 +501,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         btn.addEventListener("click", function () {
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
         });
 
         window.addEventListener("scroll", syncVisibility, { passive: true });

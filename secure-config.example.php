@@ -30,6 +30,22 @@ return [
         'RAZORPAY_KEY_SECRET' => 'replace-with-live-secret',
         'RAZORPAY_WEBHOOK_SECRET' => 'replace-with-live-webhook-secret',
 
+        // Bigship Direct secrets belong only in this external file or server environment variables.
+        'BIGSHIP_BASE_URL' => '',
+        'BIGSHIP_USERNAME' => '',
+        'BIGSHIP_PASSWORD' => '',
+        'BIGSHIP_ACCESS_KEY' => '',
+        'BIGSHIP_WAREHOUSE_ID' => '',
+        'BIGSHIP_WAREHOUSE_PINCODE' => '',
+        'BIGSHIP_PARCEL_WEIGHT_KG' => '0.5',
+        'BIGSHIP_PARCEL_LENGTH_CM' => '10',
+        'BIGSHIP_PARCEL_WIDTH_CM' => '10',
+        'BIGSHIP_PARCEL_HEIGHT_CM' => '10',
+        'BIGSHIP_SEGMENT' => 'domestic_b2c',
+        'BIGSHIP_RISK_TYPE_ID' => '2',
+        'BIGSHIP_PRODUCT_CATEGORY_ID' => '1',
+        'BIGSHIP_HTTP_SKIP_TLS_VERIFY' => '0',
+
         // Enable only after WhatsApp webhook verification is configured.
         'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID' => '',
         'COD_GUARD_WHATSAPP_ACCESS_TOKEN' => '',

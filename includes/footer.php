@@ -139,7 +139,7 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['checkout.php', 'login.php
             <span>Account</span>
         </a>
     <?php endif; ?>
-    <button type="button" class="mobile-bottom-nav__item mobile-bottom-nav__menu-btn" data-mobile-bottom-menu aria-label="Open menu">
+    <button type="button" class="mobile-bottom-nav__item mobile-bottom-nav__menu-btn" data-mobile-bottom-menu aria-controls="mobileNavDrawer" aria-expanded="false" aria-label="Open menu">
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/></svg>
         <span>Menu</span>
     </button>

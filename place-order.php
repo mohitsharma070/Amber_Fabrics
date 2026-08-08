@@ -45,7 +45,6 @@ $wantsCreateAccount = ($customerId <= 0 && (int) ($_POST['create_account'] ?? 0)
 $createAccountPassword = (string) ($_POST['create_account_password'] ?? '');
 $createAccountConfirmPassword = (string) ($_POST['create_account_confirm_password'] ?? '');
 $createdGuestAccount = false;
-PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 if ($customerId > 0 && $shippingAddressId > 0 && customer_addresses_table_ready($conn)) {
     $savedAddress = customer_address_get($conn, $customerId, $shippingAddressId);
@@ -77,6 +76,16 @@ $_SESSION['checkout_old'] = [
     'shipping_address_id' => $shippingAddressId,
     'create_account' => $wantsCreateAccount ? 1 : 0,
 ];
+
+// Razorpay callbacks are bound to the authenticated customer session. Stop a
+// guest before account creation, inventory reservation, or order persistence so
+// the payment flow can never strand an ownerless pending order.
+if ($paymentMethod === 'razorpay' && $customerId <= 0) {
+    flash('error', 'Please log in before paying online. Your checkout details and cart have been kept.');
+    redirect('/customer/login.php?return=%2Fcheckout.php');
+}
+
+PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 $errors = [];
 if ($fullName === '') { $errors['full_name'] = 'Full name is required.'; }
@@ -196,7 +205,7 @@ try {
 
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
-    $sql = "SELECT id, name, sku, unit_type, meter_options, min_order_meters, qty_step, wastage_percent, stock, stock_meters, is_available, status, price, sale_price, price_inr, cost_price, size, color
+    $sql = "SELECT id, name, sku, unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price, price_inr, cost_price, size, color
             FROM fabrics
             WHERE id IN ($placeholders)
             FOR UPDATE";

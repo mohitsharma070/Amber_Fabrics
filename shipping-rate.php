@@ -41,6 +41,8 @@ $source = trim((string) ($quote['source'] ?? 'manual'));
 $source = $source !== '' ? substr($source, 0, 32) : 'manual';
 $courierName = trim((string) ($quote['courier_name'] ?? ''));
 $courierId = max(0, (int) ($quote['courier_id'] ?? 0));
+$debugReason = trim((string) ($quote['debug_reason'] ?? ''));
+$debugMessage = trim((string) ($quote['debug_message'] ?? ''));
 
 $token = InventoryService::shipping_quote_store(
     (float) $subtotal,
@@ -55,7 +57,7 @@ $token = InventoryService::shipping_quote_store(
     $courierId
 );
 
-api_json([
+$response = [
     'ok' => true,
     'source' => $source,
     'quote_token' => $token,
@@ -64,4 +66,13 @@ api_json([
     'base_shipping' => $baseShipping,
     'cod_fee' => $codFee,
     'shipping_total' => $shippingTotal,
-]);
+];
+
+if (($GLOBALS['_app_mode'] ?? '') === 'local' && $debugReason !== '') {
+    $response['debug_reason'] = $debugReason;
+    if ($debugMessage !== '') {
+        $response['debug_message'] = $debugMessage;
+    }
+}
+
+api_json($response);

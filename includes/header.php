@@ -69,6 +69,9 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
             </div>
 
             <div class="site-header-right">
+                <button type="button" class="nav-drawer-btn d-none d-md-inline-flex d-lg-none" data-mobile-nav-menu aria-controls="mobileNavDrawer" aria-expanded="false" aria-label="Open navigation menu">
+                    <span></span><span></span><span></span>
+                </button>
                 <div class="dropdown d-none d-lg-inline-flex">
                     <button class="header-chip dropdown-toggle header-cat-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Shop Categories

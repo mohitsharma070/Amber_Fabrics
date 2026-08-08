@@ -120,6 +120,68 @@ Get these from Razorpay Dashboard in **Test Mode**:
 4. Generate/get Test Key ID and Test Key Secret
 5. Put them in `config/app-config.php` under `local`.
 
+## Bigship outbound shipping setup
+
+The checkout shipping quote and shipment lifecycle are integrated with Bigship Direct through the `shipping-courier` plugin.
+
+Add these keys in `config/app-config.php` (or secure server env / external `secure-config.php` in production):
+
+```env
+SHIPPING_COURIER_ENABLED=1
+SHIPPING_COURIER_PROVIDER=bigship
+SHIPPING_COURIER_AUTO_CREATE=1
+SHIPPING_COURIER_TRACKING_SYNC=1
+
+BIGSHIP_BASE_URL=https://api.bigship.direct
+BIGSHIP_USERNAME=your-bigship-login-email
+BIGSHIP_PASSWORD=your-bigship-login-password
+BIGSHIP_ACCESS_KEY=your-bigship-access-key
+
+BIGSHIP_WAREHOUSE_ID=your-bigship-warehouse-id
+BIGSHIP_WAREHOUSE_PINCODE=your-6-digit-pickup-pincode
+BIGSHIP_SEGMENT=domestic_b2c
+BIGSHIP_RISK_TYPE_ID=2
+BIGSHIP_PRODUCT_CATEGORY_ID=1
+
+BIGSHIP_PARCEL_WEIGHT_KG=0.5
+BIGSHIP_PARCEL_LENGTH_CM=10
+BIGSHIP_PARCEL_WIDTH_CM=10
+BIGSHIP_PARCEL_HEIGHT_CM=10
+```
+
+Notes:
+
+- Use `BIGSHIP_SEGMENT=domestic_b2c` for standard storefront orders.
+- `BIGSHIP_RISK_TYPE_ID` defaults to `2` (Owner Risk).
+- `BIGSHIP_PRODUCT_CATEGORY_ID` defaults to `1` and is used for B2C product payload mapping.
+- Keep Bigship credentials server-side only. Do not expose these values in frontend code.
+
+Integration behavior:
+
+- Checkout quote: `POST /api/outbound/user-rate-calculator`
+- Shipment create lifecycle:
+  - `POST /api/outbound/create-order`
+  - `POST /api/outbound/courier-wise-shipment-cost`
+  - `POST /api/outbound/place-order`
+- Tracking sync: `GET /api/outbound/track-order?CustomGlobalOrderId=...`
+- Label fetch: `GET /api/outbound/download-shipment-documents?...document_type=label`
+- Cancellation: `POST /api/outbound/cancel-order`
+
+### Bigship production hardening checklist
+
+Before go-live, verify all of the following:
+
+1. `BIGSHIP_HTTP_SKIP_TLS_VERIFY=0` in production (bootstrap now fails fast if set to `1`).
+2. Bigship credentials are set only in environment variables or external `secure-config.php`.
+3. `SHIPPING_COURIER_ENABLED=1`, `SHIPPING_COURIER_PROVIDER=bigship`, `SHIPPING_COURIER_TRACKING_SYNC=1`.
+4. Warehouse values are valid: `BIGSHIP_WAREHOUSE_ID`, `BIGSHIP_WAREHOUSE_PINCODE`.
+5. Parcel defaults are non-zero: `BIGSHIP_PARCEL_WEIGHT_KG`, `BIGSHIP_PARCEL_LENGTH_CM`, `BIGSHIP_PARCEL_WIDTH_CM`, `BIGSHIP_PARCEL_HEIGHT_CM`.
+6. Checkout quote returns source `bigship` (not `manual`) for a valid India pincode.
+7. One prepaid and one COD test order both create shipment metadata and AWB.
+8. Cron is active for tracking sync (`cron/run-plugins.php` every 5-10 minutes).
+9. Bigship webhook processing is currently disabled until verified signature requirements are available; rely on cron tracking sync in the meantime.
+10. Keep local debug signals local-only; they should not appear in production responses.
+
 ## Step D: Import database schema (phpMyAdmin)
 
 1. Open `http://localhost/phpmyadmin`

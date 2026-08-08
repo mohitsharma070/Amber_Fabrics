@@ -713,6 +713,7 @@ CREATE TABLE IF NOT EXISTS shipping_courier_reverse_pickups (
     updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_shipping_courier_reverse_return_provider (return_id, provider),
     INDEX idx_shipping_courier_reverse_order (order_id),
+    INDEX idx_shipping_courier_reverse_provider_order (provider, provider_order_id),
     INDEX idx_shipping_courier_reverse_pickup (provider, provider_pickup_id),
     INDEX idx_shipping_courier_reverse_status (provider, provider_status),
     CONSTRAINT fk_shipping_courier_reverse_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,

@@ -67,6 +67,7 @@
             return;
         }
         event.preventDefault();
+        event.stopImmediatePropagation();
         window.adminConfirm({
             title: form.getAttribute('data-confirm-title') || 'Please confirm',
             message: form.getAttribute('data-confirm-message') || 'Are you sure you want to continue?',
