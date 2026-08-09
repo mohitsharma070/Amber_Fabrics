@@ -1,12 +1,13 @@
 .env
 .env.local
 secure-config.php
+config/secure-config.local.php
+config/secure-config.production.php
 composer.phar
 tmp/
 tmp/*
 tmp_sessions/
 tmp_sessions/*
-config/app-config.php
 vendor/
 dist/
 node_modules/

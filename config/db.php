@@ -3,9 +3,8 @@
  * Centralized database + app credential bootstrap.
  *
  * Runtime config precedence, lowest to highest:
- * 1. config/app-config.php mode block
- * 2. secure-config.php from a server-only location, if present
- * 3. server environment variables
+ * 1. secure-config.<mode>.php from a server-only location
+ * 2. server environment variables
  */
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
@@ -224,11 +223,7 @@ function app_config_validate_production(array $config): void
     }
 }
 
-$configFile = __DIR__ . '/app-config.php';
-$allConfig = is_file($configFile) ? require $configFile : [];
-if (!is_array($allConfig)) {
-    app_bootstrap_fail('Server configuration error. Invalid app config.');
-}
+$allConfig = [];
 
 $httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
 $isLocalHost =
@@ -258,9 +253,9 @@ if (!is_array($activeConfig)) {
 
 $secureConfigFiles = array_filter([
     app_config_env('APP_CONFIG_FILE'),
-    dirname(__DIR__) . '/secure-config.php',
-    dirname(__DIR__, 2) . '/secure-config.php',
-    __DIR__ . '/secure-config.php',
+    dirname(__DIR__) . '/secure-config.' . $mode . '.php',
+    dirname(__DIR__, 2) . '/secure-config.' . $mode . '.php',
+    __DIR__ . '/secure-config.' . $mode . '.php',
 ]);
 foreach ($secureConfigFiles as $secureConfigFile) {
     $activeConfig = array_replace($activeConfig, app_config_load_file((string) $secureConfigFile, $mode));
@@ -297,7 +292,7 @@ $dbName = trim((string) ($activeConfig['DB_NAME'] ?? ''));
 if ($dbHost === '' || $dbUser === '' || $dbName === '') {
     app_bootstrap_fail(
         'Server configuration error. Missing database settings.',
-        '[fabric-export] FATAL: database configuration is incomplete in config/app-config.php',
+        '[fabric-export] FATAL: database configuration is incomplete. Set DB_* in secure-config.' . $mode . '.php or environment variables.',
         3
     );
 }

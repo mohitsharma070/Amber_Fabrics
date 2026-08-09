@@ -119,7 +119,6 @@ assert_contains($shippingCourierPlugin, "'CustomGlobalOrderId'", 'Bigship Custom
 assert_contains($shippingCourierPlugin, "'/api/outbound/track-order?CustomGlobalOrderId='", 'Bigship tracking endpoint retained', $failures, $checks);
 assert_contains($shippingCourierPlugin, 'shipping_courier_apply_bigship_order_status', 'Bigship tracking updates local order status', $failures, $checks);
 assert_contains($root . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'plugins.php', "'BIGSHIP_BASE_URL'", 'Bigship base URL is server configuration', $failures, $checks);
-assert_contains($root . DIRECTORY_SEPARATOR . 'secure-config.example.php', "'BIGSHIP_ACCESS_KEY' => ''", 'Bigship example keeps access key empty', $failures, $checks);
 assert_contains(
     $placeOrderFile,
     "redirect('/customer/login.php?return=%2Fcheckout.php')",

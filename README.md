@@ -6,8 +6,14 @@ Local setup guide for running this project safely on **XAMPP + phpMyAdmin**.
 
 This project uses:
 
-- `config/app-config.php` (local + production config map)
 - `config/db.php` (loads active mode config and creates mysqli connection)
+
+Optional server-only overrides (recommended):
+
+- `config/secure-config.local.php` for local mode
+- `config/secure-config.production.php` for production mode
+
+These files should stay outside version control and can be placed in project root, parent directory, or configured explicitly with `APP_CONFIG_FILE`.
 
 Expected DB variables:
 
@@ -17,7 +23,7 @@ Expected DB variables:
 - `DB_PASSWORD`
 - `DB_NAME`
 
-Email-related variables are also read from `config/app-config.php`:
+Email-related variables are read from secure config files or environment variables:
 
 - `ADMIN_NOTIFICATION_EMAIL`
 - `MAIL_FROM`
@@ -29,13 +35,14 @@ Email-related variables are also read from `config/app-config.php`:
 
 Database connection is centralized in `config/db.php`:
 
-1. Loads `config/app-config.php`.
-2. Selects `local` mode for localhost/CLI and `production` otherwise.
+1. Selects `local` mode for localhost/CLI and `production` otherwise.
    - Override explicitly with `APP_MODE=local` or `APP_MODE=production`.
    - Use `APP_MODE=production` for production CLI cron jobs.
-3. Keeps active values in the app config map for runtime access.
-4. Creates connection using `new mysqli(...)`.
-5. Sets charset to `utf8mb4`.
+2. Loads `config/secure-config.local.php` or `config/secure-config.production.php` based on active mode.
+3. Applies environment variable overrides.
+4. Keeps active values in the app config map for runtime access.
+5. Creates connection using `new mysqli(...)`.
+6. Sets charset to `utf8mb4`.
 
 ## 3) Can `schema.sql` be imported?
 
@@ -58,7 +65,7 @@ This repository was missing a top-level setup guide. Important steps that were n
 
 - XAMPP placement (`htdocs` path)
 - phpMyAdmin schema import
-- `config/app-config.php` creation/update from `config/app-config.example.php`
+- `config/secure-config.local.php` / `config/secure-config.production.php` setup
 - Composer dependency install
 - optional migration/setup script usage
 - admin bootstrap credentials behavior
@@ -92,8 +99,8 @@ This installs:
 
 ## Step C: Configure environment
 
-1. Copy `config/app-config.example.php` to `config/app-config.php`.
-2. Edit the `local` section values:
+1. Create or update `config/secure-config.local.php`.
+2. Set the local DB values:
 
 ```env
 DB_HOST=localhost
@@ -118,13 +125,13 @@ Get these from Razorpay Dashboard in **Test Mode**:
 2. Enable Test Mode toggle
 3. Go to `Settings -> API Keys`
 4. Generate/get Test Key ID and Test Key Secret
-5. Put them in `config/app-config.php` under `local`.
+5. Put them in `config/secure-config.local.php`.
 
 ## Bigship outbound shipping setup
 
 The checkout shipping quote and shipment lifecycle are integrated with Bigship Direct through the `shipping-courier` plugin.
 
-Add these keys in `config/app-config.php` (or secure server env / external `secure-config.php` in production):
+Add these keys in `config/secure-config.local.php` (or server environment / `config/secure-config.production.php` in production):
 
 ```env
 SHIPPING_COURIER_ENABLED=1
@@ -172,7 +179,7 @@ Integration behavior:
 Before go-live, verify all of the following:
 
 1. `BIGSHIP_HTTP_SKIP_TLS_VERIFY=0` in production (bootstrap now fails fast if set to `1`).
-2. Bigship credentials are set only in environment variables or external `secure-config.php`.
+2. Bigship credentials are set only in environment variables or `config/secure-config.production.php`.
 3. `SHIPPING_COURIER_ENABLED=1`, `SHIPPING_COURIER_PROVIDER=bigship`, `SHIPPING_COURIER_TRACKING_SYNC=1`.
 4. Warehouse values are valid: `BIGSHIP_WAREHOUSE_ID`, `BIGSHIP_WAREHOUSE_PINCODE`.
 5. Parcel defaults are non-zero: `BIGSHIP_PARCEL_WEIGHT_KG`, `BIGSHIP_PARCEL_LENGTH_CM`, `BIGSHIP_PARCEL_WIDTH_CM`, `BIGSHIP_PARCEL_HEIGHT_CM`.
@@ -214,7 +221,7 @@ If bootstrap admin was created by `setup.php`, the admin email is printed in ter
 
 Before first real use:
 
-1. Confirm `config/app-config.php` local DB credentials are correct.
+1. Confirm `config/secure-config.local.php` DB credentials are correct.
 2. Confirm schema import completed without SQL errors.
 3. Confirm `vendor/` exists after `composer install`.
 4. Confirm Apache rewrite/permissions are normal.
@@ -258,7 +265,7 @@ Run these scripts from project root:
 
 For COD orders at or above `COD_GUARD_WHATSAPP_THRESHOLD` (default `1000`), COD Guard creates a pending confirmation and sends a WhatsApp confirmation message after the order is committed. Orders at or above `COD_GUARD_CALL_THRESHOLD` (default `2000`) still receive the message and remain flagged for higher-touch confirmation.
 
-Set these in `config/app-config.php`:
+Set these in `config/secure-config.local.php` (or `config/secure-config.production.php` in production):
 
 ```env
 COD_GUARD_WHATSAPP_PHONE_NUMBER_ID=your-meta-phone-number-id
@@ -295,7 +302,7 @@ When the customer replies `YES <order number>`, the order moves to `confirmed` a
 
 ## 7) Troubleshooting
 
-- **`Access denied for user`**: fix `DB_USER` / `DB_PASSWORD` in `config/app-config.php`.
+- **`Access denied for user`**: fix `DB_USER` / `DB_PASSWORD` in `config/secure-config.local.php`.
 - **`Unknown database fabric_export`**: import `database/schema.sql` or create DB manually.
 - **`Class not found` (Razorpay/PHPMailer)**: run `composer install`.
 - **Blank page / 500**: check XAMPP Apache/PHP error logs.

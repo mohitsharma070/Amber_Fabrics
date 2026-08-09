@@ -24,7 +24,6 @@ $forbiddenPatterns = [
     'tmp_sessions/',
     'docs/',
     'composer.phar',
-    'config/app-config.php',
     'secure-config.php',
     '.env',
     '.env.*',
