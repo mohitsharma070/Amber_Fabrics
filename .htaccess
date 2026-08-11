@@ -28,9 +28,9 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 RewriteRule ^sitemap\.xml$ sitemap.php [L]
 RewriteRule ^feeds/products\.(xml|json)$ index.php?url=feeds/products.$1 [L,QSA]
 
-# Public, extensionless URLs. Keep action endpoints, webhooks, payments, and
-# admin/customer application routes on their explicit .php URLs so POST
-# requests and third-party callbacks are never redirected.
+# Public, extensionless URLs. Keep payment callbacks, webhooks, and other
+# machine-facing action endpoints on explicit .php URLs so third-party
+# integrations are never redirected.
 #
 # Redirect only direct browser GET/HEAD requests for the public page allowlist.
 # THE_REQUEST prevents a redirect loop after the internal rewrite below.
@@ -46,6 +46,22 @@ RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$
 RewriteCond %{THE_REQUEST} \s/+customer/(?:forgot-password|login|order-view|orders|profile|register|reset-password|support-tickets|verify-email)\.php(?:[?\s]|$) [NC]
 RewriteRule ^customer/(forgot-password|login|order-view|orders|profile|register|reset-password|support-tickets|verify-email)\.php$ /customer/$1 [R=301,L,NE]
 
+# Admin screens also use extensionless browser URLs. POST requests continue to
+# work with existing explicit handlers and are not redirected.
+RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$
+RewriteCond %{THE_REQUEST} \s/+admin/index\.php(?:[?\s]|$) [NC]
+RewriteRule ^admin/index\.php$ /admin/ [R=301,L,NE]
+
+RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$
+RewriteCond %{THE_REQUEST} \s/+admin/[A-Za-z0-9-]+\.php(?:[?\s]|$) [NC]
+RewriteRule ^admin/([A-Za-z0-9-]+)\.php$ /admin/$1 [R=301,L,NE]
+
+# Preserve POST bodies and multipart uploads while canonicalizing legacy admin
+# form actions. A temporary 307 avoids caching a method-preserving redirect.
+RewriteCond %{REQUEST_METHOD} !^(?:GET|HEAD)$
+RewriteCond %{THE_REQUEST} \s/+admin/[A-Za-z0-9-]+\.php(?:[?\s]|$) [NC]
+RewriteRule ^admin/([A-Za-z0-9-]+)\.php$ /admin/$1 [R=307,L,NE]
+
 # Serve the public allowlist without exposing the .php filename. Query strings
 # are retained, for example /fabric?id=123 and /catalog?category=cotton.
 RewriteCond %{REQUEST_FILENAME} !-f
@@ -57,6 +73,12 @@ RewriteRule ^(about|catalog|cart|checkout|contact|fabric|faq|international-buyer
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^customer/(forgot-password|login|order-view|orders|profile|register|reset-password|support-tickets|verify-email)$ customer/$1.php [L]
+
+# Resolve a clean top-level admin route only when the corresponding PHP screen
+# exists. Nested private includes such as admin/partials are not exposed.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^admin/([A-Za-z0-9-]+)$ admin/$1.php [L,QSA]
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
