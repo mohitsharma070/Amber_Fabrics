@@ -88,7 +88,7 @@ function app_config_apply_env_overrides(array $config): array
         'SHIPPING_COURIER_TRACKING_SYNC', 'SHIPPING_COURIER_WEBHOOK_SECRET', 'SHIPPING_COURIER_WEBHOOK_SIGNATURE_MODE',
         'SHIPPING_COURIER_API_BASE_URL',
         'BIGSHIP_BASE_URL', 'BIGSHIP_TEST_BASE_URL', 'BIGSHIP_USERNAME', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY',
-        'BIGSHIP_WAREHOUSE_ID', 'BIGSHIP_WAREHOUSE_PINCODE', 'BIGSHIP_SEGMENT',
+        'BIGSHIP_WAREHOUSE_ID', 'BIGSHIP_WAREHOUSE_PINCODE', 'BIGSHIP_SEGMENT', 'BIGSHIP_WAREHOUSE_SEGMENT',
         'BIGSHIP_RISK_TYPE_ID', 'BIGSHIP_RISK_TYPE', 'BIGSHIP_PRODUCT_CATEGORY_ID',
         'BIGSHIP_INVOICE_FIELD', 'BIGSHIP_EWAY_BILL_FIELD', 'BIGSHIP_INVOICE_TYPE',
         'BIGSHIP_HTTP_SKIP_TLS_VERIFY',
@@ -284,6 +284,10 @@ function app_config_validate_production(array $config): void
         }
         if (!in_array($segment, ['hyperlocal', 'domestic_b2b', 'domestic_b2c'], true)) {
             $invalid[] = 'BIGSHIP_SEGMENT';
+        }
+        $warehouseSegment = strtolower(trim((string) ($config['BIGSHIP_WAREHOUSE_SEGMENT'] ?? '')));
+        if ($warehouseSegment !== '' && !in_array($warehouseSegment, ['domestic', 'hyperlocal'], true)) {
+            $invalid[] = 'BIGSHIP_WAREHOUSE_SEGMENT';
         }
         foreach (['BIGSHIP_RISK_TYPE_ID', 'BIGSHIP_PARCEL_WEIGHT_KG', 'BIGSHIP_PARCEL_LENGTH_CM', 'BIGSHIP_PARCEL_WIDTH_CM', 'BIGSHIP_PARCEL_HEIGHT_CM'] as $numericKey) {
             if (!is_numeric($config[$numericKey] ?? null) || (float) $config[$numericKey] <= 0) {

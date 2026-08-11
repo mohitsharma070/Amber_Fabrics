@@ -32,6 +32,7 @@ function shipping_courier_settings(): array
         'bigship_warehouse_id' => trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_id', '')),
         'bigship_warehouse_pincode' => trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_pincode', '')),
         'bigship_segment' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_segment', 'domestic_b2c'))),
+        'bigship_warehouse_segment' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_segment', ''))),
         'bigship_risk_type_id' => (int) plugin_setting('shipping-courier', 'bigship_risk_type_id', 2),
         'bigship_risk_type' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_risk_type', 'owner'))),
         'bigship_product_category_id' => (int) plugin_setting('shipping-courier', 'bigship_product_category_id', 1),

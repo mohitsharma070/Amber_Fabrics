@@ -47,6 +47,19 @@ if (!str_contains($source, "'segment_type' =>")) {
     $failures[] = 'Warehouse segment_type default is missing.';
 }
 
+$warehouseSegmentMethod = $reflection->getMethod('warehouseSegment');
+$domesticService = new BigshipService(['bigship_segment' => 'domestic_b2c']);
+if ($warehouseSegmentMethod->invoke($domesticService) !== 'domestic') {
+    $failures[] = 'Domestic B2C is not normalized for the warehouse endpoint.';
+}
+$overrideService = new BigshipService([
+    'bigship_segment' => 'domestic_b2c',
+    'bigship_warehouse_segment' => 'hyperlocal',
+]);
+if ($warehouseSegmentMethod->invoke($overrideService) !== 'hyperlocal') {
+    $failures[] = 'Warehouse segment override is not honored.';
+}
+
 $pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/plugin.php');
 if (!str_contains($pluginSource, "'awb_assigned'")) {
     $failures[] = 'Bigship awb_assigned mapping is missing.';

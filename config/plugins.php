@@ -97,6 +97,7 @@ return [
             'bigship_warehouse_id' => function_exists('_cfg') ? _cfg('BIGSHIP_WAREHOUSE_ID', '') : '',
             'bigship_warehouse_pincode' => function_exists('_cfg') ? _cfg('BIGSHIP_WAREHOUSE_PINCODE', '') : '',
             'bigship_segment' => function_exists('_cfg') ? _cfg('BIGSHIP_SEGMENT', 'domestic_b2c') : 'domestic_b2c',
+            'bigship_warehouse_segment' => function_exists('_cfg') ? _cfg('BIGSHIP_WAREHOUSE_SEGMENT', '') : '',
             'bigship_risk_type_id' => function_exists('_cfg') ? _cfg('BIGSHIP_RISK_TYPE_ID', '2') : '2',
             'bigship_risk_type' => function_exists('_cfg') ? _cfg('BIGSHIP_RISK_TYPE', 'owner') : 'owner',
             'bigship_product_category_id' => function_exists('_cfg') ? _cfg('BIGSHIP_PRODUCT_CATEGORY_ID', '1') : '1',

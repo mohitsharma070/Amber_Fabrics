@@ -18,7 +18,7 @@ final class BigshipService
         return $this->request('GET', '/api/outbound/get-warehouse-list', array_replace([
             'page' => 1,
             'perPage' => 100,
-            'segment_type' => (string) ($this->settings['bigship_segment'] ?? 'domestic_b2c'),
+            'segment_type' => $this->warehouseSegment(),
         ], $query));
     }
     public function editWarehouse(array $payload): array { return $this->request('POST', '/api/outbound/edit-warehouse-data', $payload); }
@@ -102,6 +102,21 @@ final class BigshipService
             'password' => (string) ($this->settings['bigship_password'] ?? ''),
             'access_key' => (string) ($this->settings['bigship_access_key'] ?? ''),
         ];
+    }
+
+    /**
+     * Bigship's warehouse API groups domestic B2B and B2C warehouses under
+     * "domestic", while order/rate APIs use the more specific segment names.
+     */
+    private function warehouseSegment(): string
+    {
+        $configured = strtolower(trim((string) ($this->settings['bigship_warehouse_segment'] ?? '')));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $segment = strtolower(trim((string) ($this->settings['bigship_segment'] ?? 'domestic_b2c')));
+        return str_starts_with($segment, 'domestic_') ? 'domestic' : $segment;
     }
 
     private function accessToken(): array

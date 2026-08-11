@@ -28,7 +28,7 @@ $config = is_array($config[$mode] ?? null) ? $config[$mode] : $config;
 $keys = [
     'SHIPPING_COURIER_ENABLED', 'SHIPPING_COURIER_PROVIDER', 'SHIPPING_COURIER_TEST_MODE',
     'BIGSHIP_BASE_URL', 'BIGSHIP_TEST_BASE_URL', 'BIGSHIP_USERNAME', 'BIGSHIP_PASSWORD',
-    'BIGSHIP_ACCESS_KEY', 'BIGSHIP_SEGMENT', 'BIGSHIP_HTTP_SKIP_TLS_VERIFY',
+    'BIGSHIP_ACCESS_KEY', 'BIGSHIP_SEGMENT', 'BIGSHIP_WAREHOUSE_SEGMENT', 'BIGSHIP_HTTP_SKIP_TLS_VERIFY',
 ];
 foreach ($keys as $key) {
     $envValue = getenv($key);
@@ -70,6 +70,7 @@ $client = new BigshipService([
     'bigship_password' => $required['BIGSHIP_PASSWORD'],
     'bigship_access_key' => $required['BIGSHIP_ACCESS_KEY'],
     'bigship_segment' => trim((string) ($config['BIGSHIP_SEGMENT'] ?? 'domestic_b2c')),
+    'bigship_warehouse_segment' => trim((string) ($config['BIGSHIP_WAREHOUSE_SEGMENT'] ?? '')),
     'bigship_http_skip_tls_verify' => (int) ($config['BIGSHIP_HTTP_SKIP_TLS_VERIFY'] ?? 0),
 ]);
 $failed = false;
