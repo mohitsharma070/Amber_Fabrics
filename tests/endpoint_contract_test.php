@@ -40,6 +40,24 @@ foreach ($requiredEndpoints as $endpoint) {
     }
 }
 
+if (!str_contains($source, "'perPage' => 100") || !str_contains($source, "'page' => 1")) {
+    $failures[] = 'Warehouse pagination defaults are missing.';
+}
+if (!str_contains($source, "'segment_type' =>")) {
+    $failures[] = 'Warehouse segment_type default is missing.';
+}
+
+$pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/plugin.php');
+if (!str_contains($pluginSource, "'awb_assigned'")) {
+    $failures[] = 'Bigship awb_assigned mapping is missing.';
+}
+if (!str_contains($pluginSource, 'shipping_courier_bigship_allocate_product_totals')) {
+    $failures[] = 'Bigship product invoice allocation is missing.';
+}
+if (!str_contains($pluginSource, 'shipping_courier_bigship_parcel')) {
+    $failures[] = 'Bigship quantity-aware parcel calculation is missing.';
+}
+
 if ($failures !== []) {
     fwrite(STDERR, implode(PHP_EOL, $failures) . PHP_EOL);
     exit(1);

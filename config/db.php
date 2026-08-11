@@ -90,10 +90,13 @@ function app_config_apply_env_overrides(array $config): array
         'BIGSHIP_BASE_URL', 'BIGSHIP_TEST_BASE_URL', 'BIGSHIP_USERNAME', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY',
         'BIGSHIP_WAREHOUSE_ID', 'BIGSHIP_WAREHOUSE_PINCODE', 'BIGSHIP_SEGMENT',
         'BIGSHIP_RISK_TYPE_ID', 'BIGSHIP_RISK_TYPE', 'BIGSHIP_PRODUCT_CATEGORY_ID',
-        'BIGSHIP_INVOICE_FIELD', 'BIGSHIP_EWAY_BILL_FIELD',
+        'BIGSHIP_INVOICE_FIELD', 'BIGSHIP_EWAY_BILL_FIELD', 'BIGSHIP_INVOICE_TYPE',
         'BIGSHIP_HTTP_SKIP_TLS_VERIFY',
         'BIGSHIP_PARCEL_WEIGHT_KG', 'BIGSHIP_PARCEL_LENGTH_CM',
         'BIGSHIP_PARCEL_WIDTH_CM', 'BIGSHIP_PARCEL_HEIGHT_CM',
+        'BIGSHIP_PACKAGING_WEIGHT_KG', 'BIGSHIP_WEIGHT_PER_METER_KG',
+        'BIGSHIP_WEIGHT_PER_PIECE_KG', 'BIGSHIP_WEIGHT_PER_SET_KG',
+        'BIGSHIP_PARCEL_HEIGHT_PER_UNIT_CM', 'BIGSHIP_PARCEL_MAX_HEIGHT_CM',
         'REVIEW_RATING_ENABLED', 'REVIEW_RATING_AUTO_APPROVE',
         'REVIEW_RATING_MIN_LENGTH', 'REVIEW_RATING_MAX_LENGTH',
         'ORDER_TIMELINE_ENABLED', 'ORDER_TIMELINE_SHOW_INTERNAL_TO_ADMIN',
@@ -207,6 +210,27 @@ function app_config_validate_production(array $config): void
         }
     }
 
+    $courierEnabled = (int) trim((string) ($config['SHIPPING_COURIER_ENABLED'] ?? '0')) === 1;
+    $courierProvider = strtolower(trim((string) ($config['SHIPPING_COURIER_PROVIDER'] ?? '')));
+    $bigshipEnabled = $courierEnabled && in_array($courierProvider, ['bigship', 'big_ship', 'big-ship'], true);
+    if ($bigshipEnabled) {
+        array_push($required,
+            'BIGSHIP_BASE_URL',
+            'BIGSHIP_USERNAME',
+            'BIGSHIP_PASSWORD',
+            'BIGSHIP_ACCESS_KEY',
+            'BIGSHIP_WAREHOUSE_ID',
+            'BIGSHIP_WAREHOUSE_PINCODE',
+            'BIGSHIP_SEGMENT',
+            'BIGSHIP_RISK_TYPE_ID',
+            'BIGSHIP_RISK_TYPE',
+            'BIGSHIP_PARCEL_WEIGHT_KG',
+            'BIGSHIP_PARCEL_LENGTH_CM',
+            'BIGSHIP_PARCEL_WIDTH_CM',
+            'BIGSHIP_PARCEL_HEIGHT_CM'
+        );
+    }
+
     $unsafe = [];
     $required = array_values(array_unique($required));
     foreach ($required as $key) {
@@ -241,6 +265,38 @@ function app_config_validate_production(array $config): void
             '[fabric-export] FATAL: BIGSHIP_HTTP_SKIP_TLS_VERIFY must be 0 in production.',
             2
         );
+    }
+
+    if ($bigshipEnabled) {
+        $baseUrl = trim((string) ($config['BIGSHIP_BASE_URL'] ?? ''));
+        $segment = strtolower(trim((string) ($config['BIGSHIP_SEGMENT'] ?? '')));
+        $warehouseId = trim((string) ($config['BIGSHIP_WAREHOUSE_ID'] ?? ''));
+        $warehousePincode = trim((string) ($config['BIGSHIP_WAREHOUSE_PINCODE'] ?? ''));
+        $invalid = [];
+        if (filter_var($baseUrl, FILTER_VALIDATE_URL) === false || stripos($baseUrl, 'https://') !== 0) {
+            $invalid[] = 'BIGSHIP_BASE_URL';
+        }
+        if (!ctype_digit($warehouseId) || (int) $warehouseId <= 0) {
+            $invalid[] = 'BIGSHIP_WAREHOUSE_ID';
+        }
+        if (!preg_match('/^[1-9][0-9]{5}$/', $warehousePincode)) {
+            $invalid[] = 'BIGSHIP_WAREHOUSE_PINCODE';
+        }
+        if (!in_array($segment, ['hyperlocal', 'domestic_b2b', 'domestic_b2c'], true)) {
+            $invalid[] = 'BIGSHIP_SEGMENT';
+        }
+        foreach (['BIGSHIP_RISK_TYPE_ID', 'BIGSHIP_PARCEL_WEIGHT_KG', 'BIGSHIP_PARCEL_LENGTH_CM', 'BIGSHIP_PARCEL_WIDTH_CM', 'BIGSHIP_PARCEL_HEIGHT_CM'] as $numericKey) {
+            if (!is_numeric($config[$numericKey] ?? null) || (float) $config[$numericKey] <= 0) {
+                $invalid[] = $numericKey;
+            }
+        }
+        if ($invalid !== []) {
+            app_bootstrap_fail(
+                'Server configuration error. Bigship configuration is invalid.',
+                '[fabric-export] FATAL: invalid Bigship production keys: ' . implode(', ', array_values(array_unique($invalid))),
+                2
+            );
+        }
     }
 }
 
@@ -287,7 +343,7 @@ $activeConfig['APP_ENV'] = (string) ($activeConfig['APP_ENV'] ?? $mode);
 if ($mode === 'production') {
     // Warn if any secret is loaded from the config file rather than an environment variable.
     // Move secrets to server env vars (SetEnv / IIS app settings) before going live.
-    foreach (['DB_PASSWORD', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'SMTP_PASSWORD'] as $_warnKey) {
+    foreach (['DB_PASSWORD', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'SMTP_PASSWORD', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY'] as $_warnKey) {
         $_warnVal = trim((string) ($activeConfig[$_warnKey] ?? ''));
         if ($_warnVal !== '' && app_config_env($_warnKey) === null && !app_config_is_placeholder($_warnVal)) {
             error_log('[amber] WARNING: production secret "' . $_warnKey . '" is loaded from the config file, not an environment variable. Move secrets to server environment variables.');

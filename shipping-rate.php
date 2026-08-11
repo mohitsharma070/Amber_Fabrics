@@ -18,6 +18,12 @@ if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) {
     $paymentMethod = 'cod';
 }
 
+$cart = isset($_SESSION['cart']) && is_array($_SESSION['cart']) ? $_SESSION['cart'] : [];
+$cartSizes = isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size']) ? $_SESSION['cart_size'] : [];
+$cartMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length']) ? $_SESSION['cart_meter_length'] : [];
+$hydratedCart = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$quoteItems = is_array($hydratedCart['items'] ?? null) ? $hydratedCart['items'] : [];
+
 $manual = CartService::checkout_shipping_breakdown($subtotal, 'India', $paymentMethod, $paymentMethod === 'cod');
 $quote = apply_filters('shipping.quote', [
     'base_shipping' => (float) $manual['base_shipping'],
@@ -32,6 +38,7 @@ $quote = apply_filters('shipping.quote', [
     'country' => 'India',
     'pincode' => $pincode,
     'payment_method' => $paymentMethod,
+    'items' => $quoteItems,
 ]);
 
 $baseShipping = max(0.0, round((float) ($quote['base_shipping'] ?? $manual['base_shipping']), 2));

@@ -4,7 +4,7 @@
   "type": "project",
   "license": "proprietary",
   "scripts": {
-    "test": "php tests/endpoint_contract_test.php"
+    "test": "php tests/endpoint_contract_test.php && php tests/bigship_payload_test.php && php tests/clean_url_contract_test.php"
   },
   "require": {
     "php": "^8.2",

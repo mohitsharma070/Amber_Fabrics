@@ -37,11 +37,18 @@ function shipping_courier_settings(): array
         'bigship_product_category_id' => (int) plugin_setting('shipping-courier', 'bigship_product_category_id', 1),
         'bigship_invoice_field' => trim((string) plugin_setting('shipping-courier', 'bigship_invoice_field', 'invoice_file')),
         'bigship_eway_bill_field' => trim((string) plugin_setting('shipping-courier', 'bigship_eway_bill_field', 'eway_bill_file')),
+        'bigship_invoice_type' => trim((string) plugin_setting('shipping-courier', 'bigship_invoice_type', '')),
         'bigship_http_skip_tls_verify' => (int) plugin_setting('shipping-courier', 'bigship_http_skip_tls_verify', 0),
         'bigship_parcel_weight_kg' => (float) plugin_setting('shipping-courier', 'bigship_parcel_weight_kg', 0),
         'bigship_parcel_length_cm' => (float) plugin_setting('shipping-courier', 'bigship_parcel_length_cm', 0),
         'bigship_parcel_width_cm' => (float) plugin_setting('shipping-courier', 'bigship_parcel_width_cm', 0),
         'bigship_parcel_height_cm' => (float) plugin_setting('shipping-courier', 'bigship_parcel_height_cm', 0),
+        'bigship_packaging_weight_kg' => (float) plugin_setting('shipping-courier', 'bigship_packaging_weight_kg', 0.10),
+        'bigship_weight_per_meter_kg' => (float) plugin_setting('shipping-courier', 'bigship_weight_per_meter_kg', 0.25),
+        'bigship_weight_per_piece_kg' => (float) plugin_setting('shipping-courier', 'bigship_weight_per_piece_kg', 0.35),
+        'bigship_weight_per_set_kg' => (float) plugin_setting('shipping-courier', 'bigship_weight_per_set_kg', 0.75),
+        'bigship_parcel_height_per_unit_cm' => (float) plugin_setting('shipping-courier', 'bigship_parcel_height_per_unit_cm', 1.5),
+        'bigship_parcel_max_height_cm' => (float) plugin_setting('shipping-courier', 'bigship_parcel_max_height_cm', 60),
     ];
 }
 
@@ -176,10 +183,11 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
     $settings = shipping_courier_settings();
     $warehouse = shipping_courier_bigship_warehouse();
     $sourcePincode = (string) ($warehouse['pincode'] ?? '');
-    $weight = max(0.0, (float) ($settings['bigship_parcel_weight_kg'] ?? 0));
-    $length = max(0.0, (float) ($settings['bigship_parcel_length_cm'] ?? 0));
-    $width = max(0.0, (float) ($settings['bigship_parcel_width_cm'] ?? 0));
-    $height = max(0.0, (float) ($settings['bigship_parcel_height_cm'] ?? 0));
+    $parcel = shipping_courier_bigship_parcel((array) ($context['items'] ?? []), $settings);
+    $weight = (float) $parcel['weight'];
+    $length = (float) $parcel['length'];
+    $width = (float) $parcel['width'];
+    $height = (float) $parcel['height'];
     if (!preg_match('/^[1-9][0-9]{5}$/', $sourcePincode) || min($weight, $length, $width, $height) <= 0) {
         return $fallback($quote, 'bigship_origin_or_parcel_invalid', 'Warehouse pincode or parcel dimensions are invalid.');
     }
@@ -587,6 +595,19 @@ function shipping_courier_reference_cache_put(mysqli $conn, string $type, array 
     $stmt->execute();
 }
 
+function shipping_courier_reference_cache_forget(mysqli $conn, string $type): void
+{
+    if (!shipping_courier_reference_table_ready($conn)) {
+        return;
+    }
+    $provider = shipping_courier_provider_name();
+    $stmt = $conn->prepare(
+        'DELETE FROM shipping_courier_reference_cache WHERE provider = ? AND reference_type = ?'
+    );
+    $stmt->bind_param('ss', $provider, $type);
+    $stmt->execute();
+}
+
 function shipping_courier_bigship_sync_reference_data(mysqli $conn): array
 {
     if (!shipping_courier_enabled() || !shipping_courier_provider_configured()) {
@@ -594,6 +615,8 @@ function shipping_courier_bigship_sync_reference_data(mysqli $conn): array
     }
     $client = shipping_courier_bigship_client();
     $segment = shipping_courier_bigship_segment(shipping_courier_settings());
+    // Remove credentials that an older version may have cached with profile data.
+    shipping_courier_reference_cache_forget($conn, 'profile');
     $calls = [
         'profile' => $client->profile(),
         'warehouses' => $client->warehouses(),
@@ -607,7 +630,11 @@ function shipping_courier_bigship_sync_reference_data(mysqli $conn): array
     $failed = [];
     foreach ($calls as $type => $response) {
         if (!empty($response['ok']) && is_array($response['body'] ?? null)) {
-            shipping_courier_reference_cache_put($conn, $type, (array) $response['body'], $type === 'profile' || $type === 'warehouses' ? '' : $segment);
+            // Profile responses can contain account credentials and are only
+            // used as a connection check; never persist them in the cache.
+            if ($type !== 'profile') {
+                shipping_courier_reference_cache_put($conn, $type, (array) $response['body'], $type === 'warehouses' ? '' : $segment);
+            }
         } else {
             $failed[] = $type;
         }
@@ -621,7 +648,7 @@ function shipping_courier_bigship_sync_reference_data(mysqli $conn): array
 
 function shipping_courier_bigship_reference_rows(array $payload): array
 {
-    foreach (['data', 'result', 'list', 'items', 'records'] as $container) {
+    foreach (['data', 'result', 'list', 'items', 'records', 'warehouses'] as $container) {
         if (is_array($payload[$container] ?? null)) {
             return shipping_courier_bigship_reference_rows((array) $payload[$container]);
         }
@@ -638,7 +665,10 @@ function shipping_courier_bigship_reference_id(?array $payload, array $nameHints
         return 0;
     }
     foreach (shipping_courier_bigship_reference_rows($payload) as $row) {
-        $name = strtolower(shipping_courier_response_value($row, ['name', 'title', 'label', 'mode', 'risk_type', 'payment_mode']));
+        $name = strtolower(shipping_courier_response_value($row, [
+            'name', 'title', 'label', 'mode', 'risk_type', 'payment_mode',
+            'paymentModeName', 'riskName', 'slug',
+        ]));
         $matched = false;
         foreach ($nameHints as $hint) {
             if ($name !== '' && str_contains($name, strtolower((string) $hint))) {
@@ -916,9 +946,9 @@ function shipping_courier_shipment_data_from_response(array $body): array
 {
     $shippingCost = shipping_courier_response_value($body, ['shipping_cost', 'freight_charge', 'rate', 'totalCharge', 'total_charge']);
     return array_filter([
-        'awb_code' => shipping_courier_response_value($body, ['awb_code', 'awb', 'awb_number', 'awbNo', 'waybill']),
+        'awb_code' => shipping_courier_response_value($body, ['awb_assigned', 'awb_code', 'awb', 'awb_number', 'awbNo', 'AwbNumber', 'waybill']),
         'courier_name' => shipping_courier_response_value($body, ['courier_name', 'courierName', 'courier_partner_name', 'courierPartnerName', 'courier', 'carrier_name', 'provider']),
-        'tracking_id' => shipping_courier_response_value($body, ['tracking_id', 'tracking_number', 'awb_code', 'awb', 'awb_number', 'awbNo', 'waybill']),
+        'tracking_id' => shipping_courier_response_value($body, ['awb_assigned', 'tracking_id', 'tracking_number', 'awb_code', 'awb', 'awb_number', 'awbNo', 'AwbNumber', 'waybill']),
         'tracking_url' => shipping_courier_response_value($body, ['tracking_url', 'track_url']),
         'shipping_cost' => $shippingCost !== '' ? (float) $shippingCost : null,
         'shipped_at' => shipping_courier_response_timestamp($body, ['shipped_at', 'pickup_at', 'picked_up_at', 'shipped_on']),
@@ -1007,6 +1037,92 @@ function shipping_courier_bigship_invoice_amount(array $order): float
     return $invoiceAmount;
 }
 
+/**
+ * Allocate an order-level invoice value across line items in integer paise.
+ * Using the final line for the rounding remainder guarantees the Bigship B2C
+ * invariant: sum(products[].totalAmount) === MasterOrderInvoiceAmount.
+ */
+function shipping_courier_bigship_allocate_product_totals(array $items, float $invoiceAmount): array
+{
+    $count = count($items);
+    if ($count === 0) {
+        return [];
+    }
+
+    $targetPaise = max(0, (int) round($invoiceAmount * 100));
+    $weights = [];
+    $weightTotal = 0.0;
+    foreach ($items as $item) {
+        $weight = max(0.0, (float) ($item['line_total'] ?? $item['total'] ?? $item['subtotal'] ?? 0));
+        $weights[] = $weight;
+        $weightTotal += $weight;
+    }
+    if ($weightTotal <= 0) {
+        $weights = array_fill(0, $count, 1.0);
+        $weightTotal = (float) $count;
+    }
+
+    $allocated = [];
+    $usedPaise = 0;
+    foreach ($weights as $index => $weight) {
+        $paise = $index === $count - 1
+            ? $targetPaise - $usedPaise
+            : (int) round($targetPaise * ($weight / $weightTotal));
+        $paise = max(0, min($paise, $targetPaise - $usedPaise));
+        $allocated[] = $paise / 100;
+        $usedPaise += $paise;
+    }
+
+    return $allocated;
+}
+
+/**
+ * Estimate one parcel from the actual order/cart quantities. The configured
+ * parcel values remain minimum/fallback dimensions, while weight and height
+ * grow with metres, pieces, and sets in the order.
+ */
+function shipping_courier_bigship_parcel(array $items, ?array $settings = null): array
+{
+    $settings = $settings ?? shipping_courier_settings();
+    $minimumWeight = max(0.01, (float) ($settings['bigship_parcel_weight_kg'] ?? 0));
+    $length = max(1.0, (float) ($settings['bigship_parcel_length_cm'] ?? 0));
+    $width = max(1.0, (float) ($settings['bigship_parcel_width_cm'] ?? 0));
+    $baseHeight = max(1.0, (float) ($settings['bigship_parcel_height_cm'] ?? 0));
+    $weight = max(0.0, (float) ($settings['bigship_packaging_weight_kg'] ?? 0.10));
+    $equivalentUnits = 0.0;
+
+    foreach ($items as $item) {
+        $unitType = strtolower(trim((string) ($item['unit_type'] ?? 'piece')));
+        $quantity = $unitType === 'meter'
+            ? (float) ($item['quantity_meters'] ?? $item['quantity'] ?? 0)
+            : (float) ($item['quantity'] ?? $item['bundle_quantity'] ?? 0);
+        $quantity = max(0.0, $quantity);
+        if ($unitType === 'meter') {
+            $weight += $quantity * max(0.01, (float) ($settings['bigship_weight_per_meter_kg'] ?? 0.25));
+        } elseif (in_array($unitType, ['set', 'bundle'], true)) {
+            $weight += $quantity * max(0.01, (float) ($settings['bigship_weight_per_set_kg'] ?? 0.75));
+        } else {
+            $weight += $quantity * max(0.01, (float) ($settings['bigship_weight_per_piece_kg'] ?? 0.35));
+        }
+        $equivalentUnits += $quantity;
+    }
+
+    if ($items === []) {
+        $weight = $minimumWeight;
+        $equivalentUnits = 1.0;
+    }
+    $heightPerUnit = max(0.0, (float) ($settings['bigship_parcel_height_per_unit_cm'] ?? 1.5));
+    $maxHeight = max($baseHeight, (float) ($settings['bigship_parcel_max_height_cm'] ?? 60));
+    $height = min($maxHeight, $baseHeight + max(0, (int) ceil($equivalentUnits) - 1) * $heightPerUnit);
+
+    return [
+        'weight' => ceil(max($minimumWeight, $weight) * 10) / 10,
+        'length' => round($length, 2),
+        'width' => round($width, 2),
+        'height' => round($height, 2),
+    ];
+}
+
 function shipping_courier_bigship_mobile_number(string $value): string
 {
     $digits = preg_replace('/\D+/', '', $value) ?: '';
@@ -1026,10 +1142,11 @@ function shipping_courier_bigship_order_request(array $payload): array
 
     $warehouse = shipping_courier_bigship_warehouse();
     $warehouseId = (int) ($warehouse['id'] ?? 0);
-    $weight = max(0.0, (float) ($settings['bigship_parcel_weight_kg'] ?? 0));
-    $length = max(1.0, (float) ($settings['bigship_parcel_length_cm'] ?? 0));
-    $width = max(1.0, (float) ($settings['bigship_parcel_width_cm'] ?? 0));
-    $height = max(1.0, (float) ($settings['bigship_parcel_height_cm'] ?? 0));
+    $parcel = shipping_courier_bigship_parcel($items, $settings);
+    $weight = (float) $parcel['weight'];
+    $length = (float) $parcel['length'];
+    $width = (float) $parcel['width'];
+    $height = (float) $parcel['height'];
     if ($warehouseId <= 0) {
         return shipping_courier_result(false, 'Bigship warehouse id is not configured.');
     }
@@ -1113,17 +1230,16 @@ function shipping_courier_bigship_order_request(array $payload): array
 
     $categoryId = max(1, (int) ($settings['bigship_product_category_id'] ?? 1));
     $products = [];
-    foreach ($items as $item) {
+    $allocatedTotals = shipping_courier_bigship_allocate_product_totals($items, $invoiceAmount);
+    foreach ($items as $index => $item) {
         $name = trim((string) ($item['product_name'] ?? $item['fabric_name_snapshot'] ?? 'Item'));
         $qty = max(1, (int) round((float) ($item['quantity'] ?? $item['quantity_meters'] ?? 1)));
-        $lineAmount = round(max(0.0, (float) ($item['line_total'] ?? $item['total'] ?? 0)), 2);
-        if ($lineAmount <= 0) {
-            $lineAmount = round(max(0.0, $invoiceAmount / max(1, count($items))), 2);
-        }
+        $lineAmount = round(max(0.0, (float) ($allocatedTotals[$index] ?? 0)), 2);
+        $unitAmount = round($lineAmount / $qty, 2);
         $products[] = [
             'productName' => $name !== '' ? $name : 'Fabric Item',
             'qty' => $qty,
-            'amount' => $lineAmount,
+            'amount' => $unitAmount,
             'totalAmount' => $lineAmount,
             'collectableAmount' => $paymentModeId === 2 ? $lineAmount : 0,
             'categoryId' => (string) $categoryId,
@@ -1368,6 +1484,10 @@ function shipping_courier_create_shipment_unlocked(mysqli $conn, int $orderId): 
     if (in_array($segment, ['domestic_b2b', 'domestic_b2c'], true)) {
         $riskTypeId = shipping_courier_bigship_risk_type_id();
         $placePayload['riskTypeId'] = $riskTypeId;
+        $invoiceType = trim((string) ($settings['bigship_invoice_type'] ?? ''));
+        if ($invoiceType !== '') {
+            $placePayload['invoiceType'] = $invoiceType;
+        }
         $placePayload = array_merge($placePayload, shipping_courier_bigship_place_documents($orderId));
         $placeOrder = shipping_courier_bigship_client()->placeOrder($placePayload, true);
     } else {

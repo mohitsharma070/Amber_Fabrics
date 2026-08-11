@@ -40,11 +40,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+function bigship_admin_redact_response($value, string $key = '')
+{
+    $normalizedKey = strtolower(trim($key));
+    if ($normalizedKey === 'raw_body') {
+        return '[hidden]';
+    }
+    if (preg_match('/(?:password|secret|access[_-]?key|token|authorization)/i', $normalizedKey)) {
+        return '[hidden]';
+    }
+    if (!is_array($value)) {
+        return $value;
+    }
+    $safe = [];
+    foreach ($value as $childKey => $childValue) {
+        $safe[$childKey] = bigship_admin_redact_response($childValue, (string) $childKey);
+    }
+    return $safe;
+}
+
 $metaTitle = 'Bigship Service | Admin';
 include 'partials/header.php';
 $settings = shipping_courier_settings();
 $segment = shipping_courier_bigship_segment($settings);
-$safeResult = is_array($result) ? $result : null;
+$safeResult = is_array($result) ? bigship_admin_redact_response($result) : null;
 ?>
 
 <div class="admin-page-header d-flex justify-content-between align-items-center mb-4">

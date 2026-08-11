@@ -13,7 +13,14 @@ final class BigshipService
     public function login(): array { return $this->request('POST', '/api/outbound/login', $this->credentials(), [], false); }
     public function profile(): array { return $this->request('GET', '/api/outbound/profile'); }
     public function saveWarehouse(array $payload): array { return $this->request('POST', '/api/outbound/save-warehouse-data', $payload); }
-    public function warehouses(array $query = []): array { return $this->request('GET', '/api/outbound/get-warehouse-list', $query); }
+    public function warehouses(array $query = []): array
+    {
+        return $this->request('GET', '/api/outbound/get-warehouse-list', array_replace([
+            'page' => 1,
+            'perPage' => 100,
+            'segment_type' => (string) ($this->settings['bigship_segment'] ?? 'domestic_b2c'),
+        ], $query));
+    }
     public function editWarehouse(array $payload): array { return $this->request('POST', '/api/outbound/edit-warehouse-data', $payload); }
     public function packages(array $query = []): array { return $this->request('GET', '/api/outbound/hyperlocal/get-packages-list', $query); }
     public function paymentModes(string $segment): array { return $this->request('GET', '/api/outbound/get-payment-mode', ['segment_type' => $segment]); }
