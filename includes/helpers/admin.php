@@ -116,9 +116,11 @@ function admin_session_valid(mysqli $conn, int $adminId, string $sessionRole): b
         return false;
     }
 
-    $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
     $ua = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
-    $fp = hash('sha256', $ip . '|' . $ua);
+    // Exact IP binding causes false logouts behind mobile networks, IPv6,
+    // reverse proxies and CDNs. The session ID remains the primary secret;
+    // this lightweight fingerprint detects a browser-family change.
+    $fp = admin_session_fingerprint($ua);
     $storedFp = trim((string) ($_SESSION['admin_session_fingerprint'] ?? ''));
     if ($storedFp === '' || !hash_equals($storedFp, $fp)) {
         return false;
@@ -148,6 +150,12 @@ function admin_session_valid(mysqli $conn, int $adminId, string $sessionRole): b
 
     $_SESSION['admin_last_seen_at'] = $now;
     return true;
+}
+
+function admin_session_fingerprint(?string $userAgent = null): string
+{
+    $ua = $userAgent ?? (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
+    return hash('sha256', 'v2|' . trim($ua));
 }
 
 function require_admin(): void
@@ -363,4 +371,3 @@ function admin_notification_email(): string
     }
     return $email;
 }
-

@@ -707,7 +707,7 @@ function support_tickets_render_customer_page(mysqli $conn): void
     </section>
     <section class="section-block">
         <div class="container">
-            <div class="mb-3"><a href="/customer/orders.php" class="app-back-link">&larr; Back to My Orders</a></div>
+            <div class="mb-3"><a href="/customer/orders" class="app-back-link">&larr; Back to My Orders</a></div>
             <div class="row g-4">
                 <div class="col-lg-5">
                     <div class="surface-panel p-4 mb-4">
@@ -773,7 +773,7 @@ function support_tickets_render_customer_page(mysqli $conn): void
                             <p class="text-muted mb-0">No support tickets yet.</p>
                         <?php endif; ?>
                         <?php foreach ($tickets as $row): ?>
-                            <a class="d-block border rounded p-3 mb-2 text-decoration-none" href="/customer/support-tickets.php?id=<?php echo (int) $row['id']; ?>">
+                            <a class="d-block border rounded p-3 mb-2 text-decoration-none" href="/customer/support-tickets?id=<?php echo (int) $row['id']; ?>">
                                 <div class="d-flex justify-content-between gap-2">
                                     <strong><?php echo e((string) $row['ticket_number']); ?></strong>
                                     <span class="badge bg-secondary"><?php echo e($statuses[(string) $row['status']] ?? (string) $row['status']); ?></span>
@@ -1143,7 +1143,7 @@ function support_tickets_render_order_panel(array $context): void
                         <h5 class="mb-1">Need Help With This Order?</h5>
                         <p class="text-muted mb-0 small">Create an order-linked support ticket or review existing conversations.</p>
                     </div>
-                    <a class="btn btn-outline-secondary" href="/customer/support-tickets.php?order_id=<?php echo $orderId; ?>">View Support Center</a>
+                    <a class="btn btn-outline-secondary" href="/customer/support-tickets?order_id=<?php echo $orderId; ?>">View Support Center</a>
                 </div>
 
                 <?php if ($returnRequest): ?>

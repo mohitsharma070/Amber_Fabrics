@@ -162,7 +162,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['admin_pending_otp_email'] = (string) $admin['email'];
                     $_SESSION['admin_pending_otp_name'] = (string) $admin['name'];
                     $_SESSION['admin_pending_otp_role'] = strtolower(trim((string) ($admin['role'] ?? 'viewer')));
-                    flash('success', 'OTP sent to your email.');
+                    $localMailLog = strtolower((string) ($GLOBALS['_app_mode'] ?? '')) === 'local'
+                        && strtolower(trim(_cfg('MAIL_DRIVER', 'smtp'))) === 'log';
+                    flash(
+                        'success',
+                        $localMailLog
+                            ? 'Local OTP created. Open tmp/local-mail.log to read it.'
+                            : 'OTP sent to your email.'
+                    );
                     redirect('verify-otp.php');
                 }
             }
@@ -189,25 +196,31 @@ render_login:
                     <h1 class="h4 mb-3">Admin OTP Login</h1>
                     <p class="text-muted small mb-4">Enter your admin email to receive a one-time login code.</p>
 
+                    <?php if ((string) ($_GET['logged_out'] ?? '') === '1'): ?>
+                        <div class="alert alert-success" role="status">You have been logged out securely.</div>
+                    <?php endif; ?>
+
                     <?php if ($msg = flash('success')): ?>
-                        <div class="alert alert-success"><?php echo e($msg); ?></div>
+                        <div class="alert alert-success" role="status"><?php echo e($msg); ?></div>
                     <?php endif; ?>
                     <?php if ($msg = flash('error')): ?>
-                        <div class="alert alert-danger"><?php echo e($msg); ?></div>
+                        <div class="alert alert-danger" role="alert"><?php echo e($msg); ?></div>
                     <?php endif; ?>
                     <?php if (!empty($errors['_login'])): ?>
-                        <div class="alert alert-danger"><?php echo e($errors['_login']); ?></div>
+                        <div class="alert alert-danger" role="alert"><?php echo e($errors['_login']); ?></div>
                     <?php endif; ?>
 
                     <form method="POST" action="login.php" novalidate>
                         <?php echo csrf_field(); ?>
                         <div class="mb-3">
-                            <label class="form-label">Email Address</label>
+                            <label class="form-label" for="admin-email">Email Address</label>
                             <input
+                                id="admin-email"
                                 type="email"
                                 name="email"
                                 class="<?php echo form_class($errors, 'email'); ?>"
                                 value="<?php echo e($oldEmail); ?>"
+                                autocomplete="email"
                                 required
                                 autofocus
                             >

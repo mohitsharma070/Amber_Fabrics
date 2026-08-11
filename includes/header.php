@@ -98,6 +98,12 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
                     <a class="header-icon-link d-none d-lg-inline-flex <?php echo $currentPage === 'profile.php' ? 'active' : ''; ?>" href="/customer/profile" title="Account" aria-label="Account">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M14 14s-1-4-6-4-6 4-6 4 1 1 6 1 6-1 6-1Z"/></svg>
                     </a>
+                    <form method="POST" action="/customer/logout.php" class="d-none d-lg-inline-flex">
+                        <?php echo csrf_field(); ?>
+                        <button type="submit" class="header-icon-link" title="Log out" aria-label="Log out">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 0 .5.5h2a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 0 0 1H12v8h-1.5a.5.5 0 0 0-.5.5"/><path fill-rule="evenodd" d="M4.146 8.354a.5.5 0 0 1 0-.708l2-2a.5.5 0 1 1 .708.708L5.707 7.5H10.5a.5.5 0 0 1 0 1H5.707l1.147 1.146a.5.5 0 0 1-.708.708zM1.5 1A1.5 1.5 0 0 0 0 2.5v11A1.5 1.5 0 0 0 1.5 15h6A1.5 1.5 0 0 0 9 13.5v-1a.5.5 0 0 0-1 0v1a.5.5 0 0 1-.5.5h-6a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 .5.5v1a.5.5 0 0 0 1 0v-1A1.5 1.5 0 0 0 7.5 1z"/></svg>
+                        </button>
+                    </form>
                 <?php else: ?>
                     <a class="header-chip d-none d-lg-inline-flex" href="/customer/login">Login</a>
                 <?php endif; ?>
@@ -135,6 +141,10 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
             <?php if ($isLoggedIn): ?>
                 <a class="drawer-utility-link" href="/customer/orders">My Orders</a>
                 <a class="drawer-utility-link" href="/customer/profile">Account</a>
+                <form method="POST" action="/customer/logout.php">
+                    <?php echo csrf_field(); ?>
+                    <button type="submit" class="drawer-utility-link border-0 w-100 text-start">Log out</button>
+                </form>
             <?php else: ?>
                 <a class="drawer-utility-link" href="/customer/login">Login</a>
                 <a class="drawer-utility-link" href="/customer/register">Register</a>
@@ -145,12 +155,12 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
 
 <?php if (function_exists('flash')): ?>
     <?php if ($msg = flash('success')): ?>
-        <div class="alert alert-success text-center mb-0 rounded-0"><?php echo e($msg); ?></div>
+        <div class="alert alert-success text-center mb-0 rounded-0" role="status"><?php echo e($msg); ?></div>
     <?php endif; ?>
     <?php if ($msg = flash('error')): ?>
-        <div class="alert alert-danger text-center mb-0 rounded-0"><?php echo e($msg); ?></div>
+        <div class="alert alert-danger text-center mb-0 rounded-0" role="alert"><?php echo e($msg); ?></div>
     <?php endif; ?>
     <?php if ($msg = flash('warning')): ?>
-        <div class="alert alert-warning text-center mb-0 rounded-0"><?php echo e($msg); ?></div>
+        <div class="alert alert-warning text-center mb-0 rounded-0" role="status"><?php echo e($msg); ?></div>
     <?php endif; ?>
 <?php endif; ?>

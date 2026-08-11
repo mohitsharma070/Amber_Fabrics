@@ -85,7 +85,12 @@ return [
             'auto_create' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_COURIER_AUTO_CREATE', '0') : '0'),
             'tracking_sync' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_COURIER_TRACKING_SYNC', '1') : '1'),
             'webhook_secret' => function_exists('_cfg') ? _cfg('SHIPPING_COURIER_WEBHOOK_SECRET', '') : '',
-            'api_base_url' => function_exists('_cfg') ? _cfg('BIGSHIP_BASE_URL', '') : '',
+            'webhook_signature_mode' => function_exists('_cfg') ? _cfg('SHIPPING_COURIER_WEBHOOK_SIGNATURE_MODE', 'hmac_sha256') : 'hmac_sha256',
+            'api_base_url' => function_exists('_cfg')
+                ? (((int) _cfg('SHIPPING_COURIER_TEST_MODE', '1') === 1 && trim(_cfg('BIGSHIP_TEST_BASE_URL', '')) !== '')
+                    ? _cfg('BIGSHIP_TEST_BASE_URL', '')
+                    : _cfg('BIGSHIP_BASE_URL', ''))
+                : '',
             'bigship_username' => function_exists('_cfg') ? _cfg('BIGSHIP_USERNAME', '') : '',
             'bigship_password' => function_exists('_cfg') ? _cfg('BIGSHIP_PASSWORD', '') : '',
             'bigship_access_key' => function_exists('_cfg') ? _cfg('BIGSHIP_ACCESS_KEY', '') : '',
@@ -93,7 +98,10 @@ return [
             'bigship_warehouse_pincode' => function_exists('_cfg') ? _cfg('BIGSHIP_WAREHOUSE_PINCODE', '') : '',
             'bigship_segment' => function_exists('_cfg') ? _cfg('BIGSHIP_SEGMENT', 'domestic_b2c') : 'domestic_b2c',
             'bigship_risk_type_id' => function_exists('_cfg') ? _cfg('BIGSHIP_RISK_TYPE_ID', '2') : '2',
+            'bigship_risk_type' => function_exists('_cfg') ? _cfg('BIGSHIP_RISK_TYPE', 'owner') : 'owner',
             'bigship_product_category_id' => function_exists('_cfg') ? _cfg('BIGSHIP_PRODUCT_CATEGORY_ID', '1') : '1',
+            'bigship_invoice_field' => function_exists('_cfg') ? _cfg('BIGSHIP_INVOICE_FIELD', 'invoice_file') : 'invoice_file',
+            'bigship_eway_bill_field' => function_exists('_cfg') ? _cfg('BIGSHIP_EWAY_BILL_FIELD', 'eway_bill_file') : 'eway_bill_file',
             'bigship_http_skip_tls_verify' => (int) (function_exists('_cfg') ? _cfg('BIGSHIP_HTTP_SKIP_TLS_VERIFY', '0') : '0'),
             'bigship_parcel_weight_kg' => function_exists('_cfg') ? _cfg('BIGSHIP_PARCEL_WEIGHT_KG', '') : '',
             'bigship_parcel_length_cm' => function_exists('_cfg') ? _cfg('BIGSHIP_PARCEL_LENGTH_CM', '') : '',

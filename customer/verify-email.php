@@ -50,13 +50,13 @@ include __DIR__ . '/../includes/header.php';
             <div class="col-md-6 col-lg-4 text-center">
                 <?php if ($invalid): ?>
                     <div class="alert alert-danger">This verification link is invalid or has expired.</div>
-                    <p><a href="/customer/register.php">Register again</a> or <a href="/customer/login.php">log in</a>.</p>
+                    <p><a href="/customer/register">Register again</a> or <a href="/customer/login">log in</a>.</p>
                 <?php elseif ($already): ?>
                     <div class="alert alert-info">Your email is already verified.</div>
-                    <a href="/customer/login.php" class="btn btn-primary">Log In</a>
+                    <a href="/customer/login" class="btn btn-primary">Log In</a>
                 <?php else: ?>
                     <div class="alert alert-success">Your email has been verified successfully!</div>
-                    <a href="/customer/login.php" class="btn btn-primary">Log In Now</a>
+                    <a href="/customer/login" class="btn btn-primary">Log In Now</a>
                 <?php endif; ?>
             </div>
         </div>

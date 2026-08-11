@@ -1,9 +1,12 @@
 <?php
 
+require_once __DIR__ . '/../../includes/services/BigshipService.php';
+
 add_action('admin.order_view.sidebar', 'shipping_courier_render_admin_panel', 30);
 add_filter('admin.order_action.handled', 'shipping_courier_handle_admin_action', 20);
 add_action('order.after_commit', 'shipping_courier_after_order_commit', 30);
 add_action('order.after_payment_success', 'shipping_courier_after_payment_success', 30);
+add_action('order.after_status_change', 'shipping_courier_after_status_change', 30);
 add_action('cron.tick', 'shipping_courier_cron_tracking_sync', 35);
 add_filter('admin.return_action.handled', 'shipping_courier_handle_admin_return_action', 20);
 add_action('admin.return_row.actions', 'shipping_courier_render_return_actions', 20);
@@ -19,6 +22,7 @@ function shipping_courier_settings(): array
         'auto_create' => (int) plugin_setting('shipping-courier', 'auto_create', 0),
         'tracking_sync' => (int) plugin_setting('shipping-courier', 'tracking_sync', 1),
         'webhook_secret' => trim((string) plugin_setting('shipping-courier', 'webhook_secret', '')),
+        'webhook_signature_mode' => strtolower(trim((string) plugin_setting('shipping-courier', 'webhook_signature_mode', 'hmac_sha256'))),
         'api_base_url' => rtrim(trim((string) plugin_setting('shipping-courier', 'api_base_url', '')), '/'),
         // These values originate only from server configuration/environment and
         // are never rendered into browser responses.
@@ -29,7 +33,10 @@ function shipping_courier_settings(): array
         'bigship_warehouse_pincode' => trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_pincode', '')),
         'bigship_segment' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_segment', 'domestic_b2c'))),
         'bigship_risk_type_id' => (int) plugin_setting('shipping-courier', 'bigship_risk_type_id', 2),
+        'bigship_risk_type' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_risk_type', 'owner'))),
         'bigship_product_category_id' => (int) plugin_setting('shipping-courier', 'bigship_product_category_id', 1),
+        'bigship_invoice_field' => trim((string) plugin_setting('shipping-courier', 'bigship_invoice_field', 'invoice_file')),
+        'bigship_eway_bill_field' => trim((string) plugin_setting('shipping-courier', 'bigship_eway_bill_field', 'eway_bill_file')),
         'bigship_http_skip_tls_verify' => (int) plugin_setting('shipping-courier', 'bigship_http_skip_tls_verify', 0),
         'bigship_parcel_weight_kg' => (float) plugin_setting('shipping-courier', 'bigship_parcel_weight_kg', 0),
         'bigship_parcel_length_cm' => (float) plugin_setting('shipping-courier', 'bigship_parcel_length_cm', 0),
@@ -72,7 +79,11 @@ function shipping_courier_live_rate_readiness(): array
     if (!shipping_courier_provider_configured()) {
         $issues[] = 'Bigship API credentials are incomplete.';
     }
-    if (!preg_match('/^[1-9][0-9]{5}$/', (string) ($settings['bigship_warehouse_pincode'] ?? ''))) {
+    $warehouse = shipping_courier_bigship_warehouse();
+    if ((int) ($warehouse['id'] ?? 0) <= 0) {
+        $issues[] = 'A Bigship warehouse must be configured or synchronized.';
+    }
+    if (!preg_match('/^[1-9][0-9]{5}$/', (string) ($warehouse['pincode'] ?? ''))) {
         $issues[] = 'A valid 6-digit warehouse pincode is required.';
     }
     $dimensions = [
@@ -163,7 +174,8 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
     }
 
     $settings = shipping_courier_settings();
-    $sourcePincode = (string) ($settings['bigship_warehouse_pincode'] ?? '');
+    $warehouse = shipping_courier_bigship_warehouse();
+    $sourcePincode = (string) ($warehouse['pincode'] ?? '');
     $weight = max(0.0, (float) ($settings['bigship_parcel_weight_kg'] ?? 0));
     $length = max(0.0, (float) ($settings['bigship_parcel_length_cm'] ?? 0));
     $width = max(0.0, (float) ($settings['bigship_parcel_width_cm'] ?? 0));
@@ -172,10 +184,9 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
         return $fallback($quote, 'bigship_origin_or_parcel_invalid', 'Warehouse pincode or parcel dimensions are invalid.');
     }
 
-    $paymentModeId = $paymentMethod === 'cod' ? 2 : 1;
+    $paymentModeId = shipping_courier_bigship_payment_mode_id(['payment_method' => $paymentMethod]);
     $invoiceValue = round($subtotal, 2);
-    $riskTypeId = (int) ($context['risk_type_id'] ?? ($settings['bigship_risk_type_id'] ?? 2));
-    $riskTypeId = $riskTypeId > 0 ? $riskTypeId : 2;
+    $riskTypeId = (int) ($context['risk_type_id'] ?? shipping_courier_bigship_risk_type_id());
 
     $ratePayload = [
         'segment_type' => shipping_courier_bigship_segment($settings),
@@ -201,7 +212,7 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
         $ratePayload['codamount'] = $invoiceValue;
     }
 
-    $response = shipping_courier_http_json('POST', '/api/outbound/user-rate-calculator', $ratePayload);
+    $response = shipping_courier_bigship_client()->rates($ratePayload);
     $rate = !empty($response['ok']) && is_array($response['body'] ?? null)
         ? shipping_courier_bigship_selected_rate($response['body'])
         : null;
@@ -507,149 +518,224 @@ function shipping_courier_upsert_metadata(mysqli $conn, int $orderId, int $shipm
     return shipping_courier_get_metadata($conn, $shipmentId, $provider);
 }
 
-function shipping_courier_bigship_token_cache_key(array $settings): string
+function shipping_courier_bigship_client(): BigshipService
 {
-    return 'shipping_courier_bigship_token_' . hash('sha256', implode("\0", [
-        (string) ($settings['api_base_url'] ?? ''),
-        (string) ($settings['bigship_username'] ?? ''),
-        (string) ($settings['bigship_password'] ?? ''),
-        (string) ($settings['bigship_access_key'] ?? ''),
-    ]));
+    static $client = null;
+    if (!$client instanceof BigshipService) {
+        $client = new BigshipService(shipping_courier_settings());
+    }
+    return $client;
 }
 
-function shipping_courier_bigship_token_expiry(array $body): int
+function shipping_courier_reference_table_ready(mysqli $conn): bool
 {
-    $expiry = shipping_courier_response_value($body, ['expires_at', 'expiresAt', 'expiry', 'expiration', 'tokenExpiringAt', 'token_expiring_at']);
-    if ($expiry !== '') {
-        $timestamp = is_numeric($expiry) ? (int) $expiry : (int) strtotime($expiry);
-        if ($timestamp > 100000000000) {
-            $timestamp = (int) floor($timestamp / 1000);
-        }
-        if ($timestamp > time()) {
-            return $timestamp;
-        }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'shipping_courier_reference_cache'"
+        );
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return (int) ($row['total'] ?? 0) > 0;
+    } catch (Throwable $e) {
+        return false;
     }
-
-    $ttl = shipping_courier_response_value($body, ['expires_in', 'expiresIn', 'ttl']);
-    if (is_numeric($ttl) && (int) $ttl > 0) {
-        return time() + (int) $ttl;
-    }
-
-    return time();
 }
 
-function shipping_courier_bigship_access_token(array $settings): array
+function shipping_courier_reference_cache_get(mysqli $conn, string $type, string $segment = ''): ?array
 {
-    static $tokens = [];
-
-    $cacheKey = shipping_courier_bigship_token_cache_key($settings);
-    $now = time();
-    $cached = $tokens[$cacheKey] ?? null;
-    if (!is_array($cached) && function_exists('apcu_fetch')) {
-        $success = false;
-        $cached = apcu_fetch($cacheKey, $success);
-        if (!$success) {
-            $cached = null;
-        }
+    if (!shipping_courier_reference_table_ready($conn)) {
+        return null;
     }
-    if (is_array($cached) && !empty($cached['token']) && (int) ($cached['expires_at'] ?? 0) > $now + 30) {
-        $tokens[$cacheKey] = $cached;
-        return shipping_courier_result(true, '', ['token' => (string) $cached['token']]);
-    }
-
-    $login = shipping_courier_http_json_request('POST', (string) $settings['api_base_url'] . '/api/outbound/login', [
-        'username' => (string) $settings['bigship_username'],
-        'password' => (string) $settings['bigship_password'],
-        'access_key' => (string) $settings['bigship_access_key'],
-    ]);
-    if (empty($login['ok']) || !is_array($login['body'] ?? null)) {
-        return shipping_courier_result(false, 'Unable to authenticate with Bigship Direct.', ['status' => (int) ($login['status'] ?? 0)]);
-    }
-
-    $body = $login['body'];
-    $token = shipping_courier_response_value($body, ['access_token', 'accessToken', 'token']);
-    $expiresAt = shipping_courier_bigship_token_expiry($body);
-    if ($token === '' || $expiresAt <= $now) {
-        return shipping_courier_result(false, 'Bigship Direct returned an invalid access token.', ['status' => (int) ($login['status'] ?? 0)]);
-    }
-
-    $cached = ['token' => $token, 'expires_at' => $expiresAt];
-    $tokens[$cacheKey] = $cached;
-    if (function_exists('apcu_store')) {
-        apcu_store($cacheKey, $cached, max(1, $expiresAt - $now));
-    }
-
-    return shipping_courier_result(true, '', ['token' => $token]);
+    $provider = shipping_courier_provider_name();
+    $stmt = $conn->prepare(
+        "SELECT payload_json
+         FROM shipping_courier_reference_cache
+         WHERE provider = ? AND reference_type = ? AND segment_type = ?
+           AND expires_at > NOW()
+         LIMIT 1"
+    );
+    $stmt->bind_param('sss', $provider, $type, $segment);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $decoded = !empty($row['payload_json']) ? json_decode((string) $row['payload_json'], true) : null;
+    return is_array($decoded) ? $decoded : null;
 }
 
-function shipping_courier_http_json_request(string $method, string $url, array $payload = [], array $headers = []): array
+function shipping_courier_reference_cache_put(mysqli $conn, string $type, array $payload, string $segment = ''): void
 {
-    if (!function_exists('curl_init')) {
-        return shipping_courier_result(false, 'cURL is unavailable.', ['status' => 0, 'body' => null]);
+    if (!shipping_courier_reference_table_ready($conn)) {
+        return;
     }
-    if (InventoryService::safe_external_url($url) === '') {
-        return shipping_courier_result(false, 'Shipping courier API URL is invalid.', ['status' => 0, 'body' => null]);
+    $provider = shipping_courier_provider_name();
+    $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+    if (!is_string($json)) {
+        return;
     }
+    $stmt = $conn->prepare(
+        "INSERT INTO shipping_courier_reference_cache
+            (provider, reference_type, segment_type, payload_json, fetched_at, expires_at)
+         VALUES (?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 12 HOUR))
+         ON DUPLICATE KEY UPDATE
+            payload_json = VALUES(payload_json),
+            fetched_at = NOW(),
+            expires_at = VALUES(expires_at)"
+    );
+    $stmt->bind_param('ssss', $provider, $type, $segment, $json);
+    $stmt->execute();
+}
 
-    $method = strtoupper(trim($method));
-    if (!in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], true)) {
-        return shipping_courier_result(false, 'Shipping courier HTTP method is invalid.', ['status' => 0, 'body' => null]);
+function shipping_courier_bigship_sync_reference_data(mysqli $conn): array
+{
+    if (!shipping_courier_enabled() || !shipping_courier_provider_configured()) {
+        return shipping_courier_result(false, 'Bigship provider is disabled or incomplete.');
     }
-
-    $requestHeaders = array_merge([
-        'Accept: application/json',
-        'Content-Type: application/json',
-    ], $headers);
-
-    $settings = shipping_courier_settings();
-    $skipTlsVerify = ((int) ($settings['bigship_http_skip_tls_verify'] ?? 0) === 1)
-        && (($GLOBALS['_app_mode'] ?? '') === 'local');
-
-    $ch = curl_init($url);
-    if ($ch === false) {
-        return shipping_courier_result(false, 'Unable to initialize courier API request.', ['status' => 0, 'body' => null]);
-    }
-
-    $options = [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CONNECTTIMEOUT => 5,
-        CURLOPT_TIMEOUT => 25,
-        CURLOPT_HTTPHEADER => $requestHeaders,
-        CURLOPT_CUSTOMREQUEST => $method,
-        CURLOPT_SSL_VERIFYPEER => !$skipTlsVerify,
-        CURLOPT_SSL_VERIFYHOST => $skipTlsVerify ? 0 : 2,
+    $client = shipping_courier_bigship_client();
+    $segment = shipping_courier_bigship_segment(shipping_courier_settings());
+    $calls = [
+        'profile' => $client->profile(),
+        'warehouses' => $client->warehouses(),
+        'payment_modes' => $client->paymentModes($segment),
+        'risk_types' => $client->riskTypes(['segment_type' => $segment]),
     ];
-    if ($method !== 'GET') {
-        $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
-        if (!is_string($json)) {
-            curl_close($ch);
-            return shipping_courier_result(false, 'Unable to encode courier API payload.', ['status' => 0, 'body' => null]);
+    if ($segment === 'hyperlocal') {
+        $calls['packages'] = $client->packages();
+    }
+
+    $failed = [];
+    foreach ($calls as $type => $response) {
+        if (!empty($response['ok']) && is_array($response['body'] ?? null)) {
+            shipping_courier_reference_cache_put($conn, $type, (array) $response['body'], $type === 'profile' || $type === 'warehouses' ? '' : $segment);
+        } else {
+            $failed[] = $type;
         }
-        $options[CURLOPT_POSTFIELDS] = $json;
     }
-    curl_setopt_array($ch, $options);
-
-    $raw = curl_exec($ch);
-    $errno = curl_errno($ch);
-    $error = curl_error($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
-
-    if ($errno !== 0) {
-        return shipping_courier_result(false, 'Courier API request failed: ' . $error, [
-            'status' => $status,
-            'body' => null,
+    return shipping_courier_result(empty($failed), empty($failed)
+        ? 'Bigship profile and reference data synchronized.'
+        : 'Bigship reference synchronization failed for: ' . implode(', ', $failed) . '.', [
+            'responses' => $calls,
         ]);
-    }
+}
 
-    $body = json_decode((string) $raw, true);
-    $decodedBody = is_array($body) ? $body : null;
-    $ok = $status >= 200 && $status < 300;
-    return shipping_courier_result($ok, $ok ? 'Courier API request successful.' : ('Courier API returned HTTP ' . $status), [
-        'status' => $status,
-        'body' => $decodedBody,
-        'raw_body' => is_string($raw) ? $raw : '',
-    ]);
+function shipping_courier_bigship_reference_rows(array $payload): array
+{
+    foreach (['data', 'result', 'list', 'items', 'records'] as $container) {
+        if (is_array($payload[$container] ?? null)) {
+            return shipping_courier_bigship_reference_rows((array) $payload[$container]);
+        }
+    }
+    if (array_is_list($payload)) {
+        return array_values(array_filter($payload, 'is_array'));
+    }
+    return $payload !== [] ? [$payload] : [];
+}
+
+function shipping_courier_bigship_reference_id(?array $payload, array $nameHints, array $idKeys): int
+{
+    if (!is_array($payload)) {
+        return 0;
+    }
+    foreach (shipping_courier_bigship_reference_rows($payload) as $row) {
+        $name = strtolower(shipping_courier_response_value($row, ['name', 'title', 'label', 'mode', 'risk_type', 'payment_mode']));
+        $matched = false;
+        foreach ($nameHints as $hint) {
+            if ($name !== '' && str_contains($name, strtolower((string) $hint))) {
+                $matched = true;
+                break;
+            }
+        }
+        if (!$matched) {
+            continue;
+        }
+        $id = shipping_courier_response_value($row, $idKeys);
+        if (is_numeric($id) && (int) $id > 0) {
+            return (int) $id;
+        }
+    }
+    return 0;
+}
+
+function shipping_courier_bigship_warehouse(): array
+{
+    $settings = shipping_courier_settings();
+    $configuredId = max(0, (int) ($settings['bigship_warehouse_id'] ?? 0));
+    $configuredPincode = trim((string) ($settings['bigship_warehouse_pincode'] ?? ''));
+    $conn = $GLOBALS['conn'] ?? null;
+    if ($conn instanceof mysqli) {
+        $cached = shipping_courier_reference_cache_get($conn, 'warehouses');
+        foreach (shipping_courier_bigship_reference_rows($cached ?? []) as $row) {
+            $idValue = shipping_courier_response_value($row, ['id', 'warehouseId', 'WarehouseId', 'warehouse_id', 'pickup_location_id']);
+            $id = is_numeric($idValue) ? (int) $idValue : 0;
+            if ($id <= 0 || ($configuredId > 0 && $configuredId !== $id)) {
+                continue;
+            }
+            $pincode = shipping_courier_response_value($row, ['pincode', 'pinCode', 'zipCode', 'zipcode', 'postal_code']);
+            return [
+                'id' => $id,
+                'pincode' => preg_match('/^[1-9][0-9]{5}$/', $pincode) ? $pincode : $configuredPincode,
+                'data' => $row,
+            ];
+        }
+    }
+    return ['id' => $configuredId, 'pincode' => $configuredPincode, 'data' => []];
+}
+
+function shipping_courier_bigship_document_path(int $orderId, string $type): string
+{
+    $type = $type === 'eway_bill' ? 'eway-bill' : 'invoice';
+    return dirname(__DIR__, 2) . '/storage/private/shipping-documents/' . $orderId . '-' . $type . '.pdf';
+}
+
+function shipping_courier_bigship_save_document_upload(int $orderId, string $type, array $file): array
+{
+    if ($orderId <= 0 || !in_array($type, ['invoice', 'eway_bill'], true)) {
+        return shipping_courier_result(false, 'Invalid courier document request.');
+    }
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        return shipping_courier_result(false, 'Select a PDF document to upload.');
+    }
+    if ((int) ($file['size'] ?? 0) <= 0 || (int) ($file['size'] ?? 0) > 5 * 1024 * 1024) {
+        return shipping_courier_result(false, 'Courier documents must be PDF files no larger than 5 MB.');
+    }
+    $tmp = (string) ($file['tmp_name'] ?? '');
+    $mime = '';
+    if ($tmp !== '' && function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo !== false) {
+            $mime = (string) finfo_file($finfo, $tmp);
+            finfo_close($finfo);
+        }
+    }
+    if ($mime !== 'application/pdf') {
+        return shipping_courier_result(false, 'Courier documents must be valid PDF files.');
+    }
+    $target = shipping_courier_bigship_document_path($orderId, $type);
+    $directory = dirname($target);
+    if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
+        return shipping_courier_result(false, 'Unable to create private courier document storage.');
+    }
+    if (!move_uploaded_file($tmp, $target)) {
+        return shipping_courier_result(false, 'Unable to save the courier document.');
+    }
+    return shipping_courier_result(true, ucfirst(str_replace('_', ' ', $type)) . ' uploaded.');
+}
+
+function shipping_courier_bigship_place_documents(int $orderId): array
+{
+    $settings = shipping_courier_settings();
+    $documents = [];
+    foreach ([
+        'invoice' => (string) ($settings['bigship_invoice_field'] ?? 'invoice_file'),
+        'eway_bill' => (string) ($settings['bigship_eway_bill_field'] ?? 'eway_bill_file'),
+    ] as $type => $field) {
+        $path = shipping_courier_bigship_document_path($orderId, $type);
+        if ($field !== '' && is_file($path)) {
+            $documents[$field] = $path;
+        }
+    }
+    return $documents;
 }
 
 function shipping_courier_http_json(string $method, string $path, array $payload = [], array $headers = []): array
@@ -661,20 +747,7 @@ function shipping_courier_http_json(string $method, string $path, array $payload
         return shipping_courier_result(false, 'Shipping courier provider is not configured.', ['status' => 0, 'body' => null]);
     }
 
-    $settings = shipping_courier_settings();
-    $baseUrl = (string) ($settings['api_base_url'] ?? '');
-    $url = preg_match('/^https?:\/\//i', $path) ? $path : ($baseUrl . '/' . ltrim($path, '/'));
-    $token = shipping_courier_bigship_access_token($settings);
-    if (empty($token['ok'])) {
-        return shipping_courier_result(false, (string) ($token['message'] ?? 'Unable to authenticate with Bigship Direct.'), ['status' => (int) ($token['status'] ?? 0), 'body' => null]);
-    }
-
-    $headers = array_values(array_filter($headers, static function ($header): bool {
-        return stripos((string) $header, 'Authorization:') !== 0;
-    }));
-    $headers[] = 'Authorization: Bearer ' . (string) $token['token'];
-
-    return shipping_courier_http_json_request($method, $url, $payload, $headers);
+    return shipping_courier_bigship_client()->request($method, $path, $payload, $headers);
 }
 
 function shipping_courier_http_post_multipart(string $path, array $payload): array
@@ -685,67 +758,7 @@ function shipping_courier_http_post_multipart(string $path, array $payload): arr
     if (!shipping_courier_provider_configured()) {
         return shipping_courier_result(false, 'Shipping courier provider is not configured.', ['status' => 0, 'body' => null]);
     }
-    if (!function_exists('curl_init')) {
-        return shipping_courier_result(false, 'cURL is unavailable.', ['status' => 0, 'body' => null]);
-    }
-
-    $settings = shipping_courier_settings();
-    $baseUrl = (string) ($settings['api_base_url'] ?? '');
-    $url = preg_match('/^https?:\/\//i', $path) ? $path : ($baseUrl . '/' . ltrim($path, '/'));
-    if (InventoryService::safe_external_url($url) === '') {
-        return shipping_courier_result(false, 'Shipping courier API URL is invalid.', ['status' => 0, 'body' => null]);
-    }
-
-    $token = shipping_courier_bigship_access_token($settings);
-    if (empty($token['ok'])) {
-        return shipping_courier_result(false, (string) ($token['message'] ?? 'Unable to authenticate with Bigship Direct.'), ['status' => (int) ($token['status'] ?? 0), 'body' => null]);
-    }
-
-    $fields = [];
-    foreach ($payload as $key => $value) {
-        if (is_scalar($value) || $value === null) {
-            $fields[(string) $key] = $value === null ? '' : (string) $value;
-        }
-    }
-
-    $ch = curl_init($url);
-    if ($ch === false) {
-        return shipping_courier_result(false, 'Unable to initialize courier API request.', ['status' => 0, 'body' => null]);
-    }
-
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CONNECTTIMEOUT => 5,
-        CURLOPT_TIMEOUT => 25,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $fields,
-        CURLOPT_HTTPHEADER => [
-            'Accept: application/json',
-            'Authorization: Bearer ' . (string) $token['token'],
-        ],
-    ]);
-
-    $raw = curl_exec($ch);
-    $errno = curl_errno($ch);
-    $error = curl_error($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
-
-    if ($errno !== 0) {
-        return shipping_courier_result(false, 'Courier API request failed: ' . $error, [
-            'status' => $status,
-            'body' => null,
-        ]);
-    }
-
-    $body = json_decode((string) $raw, true);
-    $decodedBody = is_array($body) ? $body : null;
-    $ok = $status >= 200 && $status < 300;
-    return shipping_courier_result($ok, $ok ? 'Courier API request successful.' : ('Courier API returned HTTP ' . $status), [
-        'status' => $status,
-        'body' => $decodedBody,
-        'raw_body' => is_string($raw) ? $raw : '',
-    ]);
+    return shipping_courier_bigship_client()->request('POST', $path, $payload, [], true, true);
 }
 
 function shipping_courier_order_ready_for_shipment(array $order): bool
@@ -952,11 +965,34 @@ function shipping_courier_metadata_from_response(array $body): array
 function shipping_courier_bigship_payment_mode_id(array $order): int
 {
     $paymentMethod = strtolower(trim((string) ($order['payment_method'] ?? '')));
-    if ($paymentMethod === 'cod') {
-        return 2;
+    $conn = $GLOBALS['conn'] ?? null;
+    if ($conn instanceof mysqli) {
+        $segment = shipping_courier_bigship_segment(shipping_courier_settings());
+        $cached = shipping_courier_reference_cache_get($conn, 'payment_modes', $segment);
+        $hints = $paymentMethod === 'cod' ? ['cod', 'cash on delivery'] : ['prepaid', 'online'];
+        $id = shipping_courier_bigship_reference_id($cached, $hints, ['id', 'paymentModeId', 'PaymentModeId', 'payment_mode_id']);
+        if ($id > 0) {
+            return $id;
+        }
     }
+    return $paymentMethod === 'cod' ? 2 : 1;
+}
 
-    return 1;
+function shipping_courier_bigship_risk_type_id(): int
+{
+    $settings = shipping_courier_settings();
+    $configured = max(0, (int) ($settings['bigship_risk_type_id'] ?? 0));
+    $conn = $GLOBALS['conn'] ?? null;
+    if ($conn instanceof mysqli) {
+        $segment = shipping_courier_bigship_segment($settings);
+        $cached = shipping_courier_reference_cache_get($conn, 'risk_types', $segment);
+        $hint = trim((string) ($settings['bigship_risk_type'] ?? 'owner'));
+        $id = shipping_courier_bigship_reference_id($cached, [$hint], ['id', 'riskTypeId', 'risk_type_id']);
+        if ($id > 0) {
+            return $id;
+        }
+    }
+    return $configured > 0 ? $configured : 2;
 }
 
 function shipping_courier_bigship_invoice_amount(array $order): float
@@ -988,7 +1024,8 @@ function shipping_courier_bigship_order_request(array $payload): array
     $settings = shipping_courier_settings();
     $segment = shipping_courier_bigship_segment($settings);
 
-    $warehouseId = (int) ($settings['bigship_warehouse_id'] ?? 0);
+    $warehouse = shipping_courier_bigship_warehouse();
+    $warehouseId = (int) ($warehouse['id'] ?? 0);
     $weight = max(0.0, (float) ($settings['bigship_parcel_weight_kg'] ?? 0));
     $length = max(1.0, (float) ($settings['bigship_parcel_length_cm'] ?? 0));
     $width = max(1.0, (float) ($settings['bigship_parcel_width_cm'] ?? 0));
@@ -1133,9 +1170,7 @@ function shipping_courier_bigship_download_document_url(string $customGlobalOrde
         return '';
     }
 
-    $path = '/api/outbound/download-shipment-documents?CustomGlobalOrderId=' . rawurlencode($customGlobalOrderId)
-        . '&document_type=' . rawurlencode($documentType);
-    $response = shipping_courier_http_json('GET', $path);
+    $response = shipping_courier_bigship_client()->downloadDocuments($customGlobalOrderId, $documentType);
     if (empty($response['ok']) || !is_array($response['body'] ?? null)) {
         return '';
     }
@@ -1220,6 +1255,30 @@ function shipping_courier_apply_bigship_order_status(mysqli $conn, int $orderId,
 
 function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
 {
+    $lockName = 'shipping_courier_create_' . $orderId;
+    $lock = $conn->prepare('SELECT GET_LOCK(?, 5) AS acquired');
+    $lock->bind_param('s', $lockName);
+    $lock->execute();
+    $acquired = (int) (($lock->get_result()->fetch_assoc()['acquired'] ?? 0));
+    if ($acquired !== 1) {
+        return shipping_courier_result(false, 'Another courier shipment request is already processing for this order.');
+    }
+
+    try {
+        return shipping_courier_create_shipment_unlocked($conn, $orderId);
+    } finally {
+        try {
+            $release = $conn->prepare('SELECT RELEASE_LOCK(?)');
+            $release->bind_param('s', $lockName);
+            $release->execute();
+        } catch (Throwable $e) {
+            error_log('[shipping-courier] unable to release shipment lock for order ' . $orderId . ': ' . $e->getMessage());
+        }
+    }
+}
+
+function shipping_courier_create_shipment_unlocked(mysqli $conn, int $orderId): array
+{
     if (!shipping_courier_enabled()) {
         return shipping_courier_result(false, 'Shipping courier plugin is disabled.');
     }
@@ -1276,7 +1335,7 @@ function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
         if (empty($createPayload['ok']) || !is_array($createPayload['body'] ?? null)) {
             return shipping_courier_result(false, (string) ($createPayload['message'] ?? 'Unable to prepare Bigship create-order payload.'));
         }
-        $createOrder = shipping_courier_http_json('POST', '/api/outbound/create-order', (array) $createPayload['body']);
+        $createOrder = shipping_courier_bigship_client()->createOrder((array) $createPayload['body']);
         if (empty($createOrder['ok']) || !is_array($createOrder['body'] ?? null)) {
             $message = shipping_courier_api_failure_message($createOrder, 'create order');
             error_log('[shipping-courier] ' . $message . ' order_id=' . $orderId);
@@ -1290,7 +1349,7 @@ function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
         $existingMetadata = shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, shipping_courier_bigship_lifecycle_metadata($responses, $customGlobalOrderId));
     }
 
-    $cost = shipping_courier_http_json('POST', '/api/outbound/courier-wise-shipment-cost', [
+    $cost = shipping_courier_bigship_client()->courierCosts([
         'MasterCustomOrderId' => $customGlobalOrderId,
     ]);
     if (empty($cost['ok']) || !is_array($cost['body'] ?? null)) {
@@ -1307,11 +1366,12 @@ function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
         'courierId' => $courierId,
     ];
     if (in_array($segment, ['domestic_b2b', 'domestic_b2c'], true)) {
-        $riskTypeId = max(1, (int) ($settings['bigship_risk_type_id'] ?? 2));
+        $riskTypeId = shipping_courier_bigship_risk_type_id();
         $placePayload['riskTypeId'] = $riskTypeId;
-        $placeOrder = shipping_courier_http_post_multipart('/api/outbound/place-order', $placePayload);
+        $placePayload = array_merge($placePayload, shipping_courier_bigship_place_documents($orderId));
+        $placeOrder = shipping_courier_bigship_client()->placeOrder($placePayload, true);
     } else {
-        $placeOrder = shipping_courier_http_json('POST', '/api/outbound/place-order', $placePayload);
+        $placeOrder = shipping_courier_bigship_client()->placeOrder($placePayload);
     }
     if (empty($placeOrder['ok']) || !is_array($placeOrder['body'] ?? null)) {
         $message = shipping_courier_api_failure_message($placeOrder, 'place order');
@@ -1373,13 +1433,20 @@ function shipping_courier_sync_tracking(mysqli $conn, int $orderId): array
         return shipping_courier_result(false, 'No Bigship CustomGlobalOrderId is available for tracking sync.');
     }
 
-    $response = shipping_courier_http_json('GET', '/api/outbound/track-order?CustomGlobalOrderId=' . rawurlencode($customGlobalOrderId));
+    $response = shipping_courier_bigship_client()->trackOrder($customGlobalOrderId);
     if (empty($response['ok'])) {
         error_log('[shipping-courier] tracking sync failed for order ' . $orderId . ': ' . (string) ($response['message'] ?? 'unknown'));
         return $response;
     }
 
     $body = is_array($response['body'] ?? null) ? $response['body'] : [];
+    $detailsResponse = shipping_courier_bigship_client()->shipmentDetails($customGlobalOrderId);
+    $detailsBody = !empty($detailsResponse['ok']) && is_array($detailsResponse['body'] ?? null)
+        ? (array) $detailsResponse['body']
+        : [];
+    if ($detailsBody !== []) {
+        $body = array_replace_recursive($detailsBody, $body);
+    }
     $shipmentData = shipping_courier_shipment_data_from_response($body);
     $shipmentData = shipping_courier_apply_tracking_milestones($shipmentData, $body, $shipment);
     if (!empty($shipmentData)) {
@@ -1395,6 +1462,9 @@ function shipping_courier_sync_tracking(mysqli $conn, int $orderId): array
         $rawResponses = [];
     }
     $rawResponses['track_order'] = $body;
+    if ($detailsBody !== []) {
+        $rawResponses['order_shipment_details'] = $detailsBody;
+    }
     $trackingMetadata['raw_response_json'] = $rawResponses;
     $metadata = shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, $trackingMetadata);
     $localOrderStatus = shipping_courier_apply_bigship_order_status(
@@ -1468,7 +1538,7 @@ function shipping_courier_cancel_shipment(mysqli $conn, int $orderId): array
         return shipping_courier_result(false, 'Courier shipment cannot be cancelled for this order state.');
     }
 
-    $response = shipping_courier_http_json('POST', '/api/outbound/cancel-order', [
+    $response = shipping_courier_bigship_client()->cancelOrder([
         'CustomGlobalOrderId' => $customGlobalOrderId,
     ]);
     if (empty($response['ok'])) {
@@ -1537,7 +1607,22 @@ function shipping_courier_can_cancel_from_order(array $order, ?array $metadata):
         return false;
     }
 
-    return !in_array($providerStatus, ['delivered', 'cancelled', 'canceled'], true);
+    $providerLockedStatuses = [
+        'rider_assigned',
+        'rider_accepted',
+        'pickup_assigned',
+        'picked_up',
+        'pickup_done',
+        'in_transit',
+        'out_for_delivery',
+        'shipped',
+        'delivered',
+        'cancelled',
+        'canceled',
+        'rto',
+        'returned',
+    ];
+    return !in_array($providerStatus, $providerLockedStatuses, true);
 }
 
 function shipping_courier_webhook_table_ready(mysqli $conn): bool
@@ -1571,16 +1656,16 @@ function shipping_courier_webhook_signature(): string
 function shipping_courier_validate_webhook_request(string $payload): bool
 {
     $settings = shipping_courier_settings();
-    if (in_array(shipping_courier_provider_name(), ['bigship', 'bigship-direct'], true)) {
-        // Bigship signature verification details have not been configured.
-        return false;
-    }
     $secret = trim((string) ($settings['webhook_secret'] ?? ''));
     $signature = shipping_courier_webhook_signature();
     if (!shipping_courier_enabled() || $secret === '' || $signature === '') {
         return false;
     }
 
+    $mode = strtolower(trim((string) ($settings['webhook_signature_mode'] ?? 'hmac_sha256')));
+    if ($mode === 'shared_secret') {
+        return hash_equals($secret, $signature);
+    }
     if (stripos($signature, 'sha256=') === 0) {
         $signature = substr($signature, 7);
     }
@@ -1983,6 +2068,9 @@ function shipping_courier_create_reverse_pickup(mysqli $conn, int $returnId): ar
     if (!shipping_courier_provider_configured()) {
         return shipping_courier_result(false, 'Shipping courier provider is not configured.');
     }
+    if (in_array(shipping_courier_provider_name(), ['bigship', 'bigship-direct'], true)) {
+        return shipping_courier_result(false, 'Bigship Unified Outbound API does not provide the legacy reverse-pickup endpoint. Process this return manually.');
+    }
     if (!shipping_courier_reverse_table_ready($conn)) {
         return shipping_courier_result(false, 'Reverse pickup metadata table is unavailable.');
     }
@@ -2041,6 +2129,7 @@ function shipping_courier_render_return_actions(array $context): void
     $labelUrl = InventoryService::safe_external_url((string) ($reversePickup['label_url'] ?? ''));
     $canCreate = shipping_courier_enabled()
         && shipping_courier_provider_configured()
+        && !in_array($provider, ['bigship', 'bigship-direct'], true)
         && strtolower((string) ($return['status'] ?? '')) === 'approved'
         && empty($reversePickup['provider_pickup_id']);
     ?>
@@ -2171,6 +2260,16 @@ function shipping_courier_render_admin_panel(array $context): void
             <?php if ($canCreate || $canSync || $canCancel): ?>
                 <div class="d-grid gap-2 mt-3">
                     <?php if ($canCreate): ?>
+                    <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" enctype="multipart/form-data" class="border rounded p-2">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="action" value="upload_courier_document">
+                        <select class="form-select form-select-sm mb-2" name="document_type" aria-label="Courier document type">
+                            <option value="invoice">Invoice PDF</option>
+                            <option value="eway_bill">E-way bill PDF</option>
+                        </select>
+                        <input class="form-control form-control-sm mb-2" type="file" name="courier_document" accept="application/pdf,.pdf" required>
+                        <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Upload Courier Document</button>
+                    </form>
                     <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="create_courier_shipment">
@@ -2190,6 +2289,16 @@ function shipping_courier_render_admin_panel(array $context): void
                         <input type="hidden" name="action" value="cancel_courier_shipment">
                         <button class="btn btn-sm btn-outline-danger w-100" type="submit">Cancel Shipment</button>
                     </form>
+                    <?php endif; ?>
+                    <?php if (shipping_courier_provider_shipment_exists($metadata)): ?>
+                        <?php foreach (['label' => 'Label', 'invoice' => 'Invoice', 'manifest' => 'Manifest'] as $documentType => $documentLabel): ?>
+                        <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" target="_blank">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="action" value="download_courier_document">
+                            <input type="hidden" name="document_type" value="<?php echo e($documentType); ?>">
+                            <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Open <?php echo e($documentLabel); ?></button>
+                        </form>
+                        <?php endforeach; ?>
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
@@ -2216,6 +2325,9 @@ function shipping_courier_render_shipping_rates_status(array $context): void
                     <div class="text-warning"><?php echo e((string) $issue); ?></div>
                 <?php endforeach; ?>
                 <div>Fallback: <strong>Manual shipping rules</strong></div>
+                <?php if (shipping_courier_provider_configured()): ?>
+                    <div class="mt-3"><a class="btn btn-sm btn-outline-primary" href="bigship-service.php">Manage Bigship Service</a></div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -2229,7 +2341,7 @@ function shipping_courier_handle_admin_action($handled, array $context)
     }
 
     $action = (string) ($context['action'] ?? '');
-    if (!in_array($action, ['create_courier_shipment', 'sync_courier_tracking', 'cancel_courier_shipment'], true)) {
+    if (!in_array($action, ['create_courier_shipment', 'sync_courier_tracking', 'cancel_courier_shipment', 'download_courier_document', 'upload_courier_document'], true)) {
         return false;
     }
 
@@ -2243,6 +2355,33 @@ function shipping_courier_handle_admin_action($handled, array $context)
     if (!shipping_courier_enabled()) {
         flash('error', 'Shipping courier plugin is disabled.');
         return true;
+    }
+
+    if ($action === 'upload_courier_document') {
+        $documentType = strtolower(trim((string) (($context['post']['document_type'] ?? ''))));
+        $result = shipping_courier_bigship_save_document_upload($orderId, $documentType, (array) ($_FILES['courier_document'] ?? []));
+        flash(!empty($result['ok']) ? 'success' : 'error', (string) ($result['message'] ?? 'Courier document upload failed.'));
+        return true;
+    }
+
+    if ($action === 'download_courier_document') {
+        $allowedTypes = ['label', 'invoice', 'manifest'];
+        $documentType = strtolower(trim((string) (($context['post']['document_type'] ?? 'label'))));
+        if (!in_array($documentType, $allowedTypes, true)) {
+            flash('error', 'Invalid courier document type.');
+            return true;
+        }
+        $shipment = shipping_courier_get_shipment($conn, $orderId);
+        $metadata = is_array($shipment)
+            ? shipping_courier_get_metadata($conn, (int) ($shipment['id'] ?? 0), shipping_courier_provider_name())
+            : null;
+        $customGlobalOrderId = trim((string) ($metadata['provider_order_id'] ?? ''));
+        $url = shipping_courier_bigship_download_document_url($customGlobalOrderId, $documentType);
+        if ($url === '') {
+            flash('error', 'Bigship did not return the requested document.');
+            return true;
+        }
+        redirect($url);
     }
 
     try {
@@ -2328,6 +2467,31 @@ function shipping_courier_after_payment_success(array $context): void
     }
 }
 
+function shipping_courier_after_status_change(array $context): void
+{
+    if (!shipping_courier_auto_create_enabled()) {
+        return;
+    }
+
+    $conn = $context['conn'] ?? null;
+    $orderId = (int) ($context['order_id'] ?? 0);
+    $targetStatus = strtolower(trim((string) ($context['target_status'] ?? '')));
+    if (!$conn instanceof mysqli || $orderId <= 0 || !in_array($targetStatus, ['confirmed', 'packed'], true)) {
+        return;
+    }
+
+    $payload = shipping_courier_order_payload($conn, $orderId);
+    $order = is_array($payload['order'] ?? null) ? $payload['order'] : [];
+    if (!shipping_courier_can_auto_create_after_commit($order)) {
+        return;
+    }
+
+    $result = shipping_courier_create_shipment($conn, $orderId);
+    if (empty($result['ok'])) {
+        error_log('[shipping-courier] auto-create after status change skipped for order ' . $orderId . ': ' . (string) ($result['message'] ?? 'unknown'));
+    }
+}
+
 function shipping_courier_cron_tracking_sync(array $context): void
 {
     if (!shipping_courier_enabled() || empty(shipping_courier_settings()['tracking_sync'])) {
@@ -2337,6 +2501,14 @@ function shipping_courier_cron_tracking_sync(array $context): void
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli || !shipping_courier_provider_configured() || !shipping_courier_metadata_table_ready($conn)) {
         return;
+    }
+
+    $segment = shipping_courier_bigship_segment(shipping_courier_settings());
+    if (shipping_courier_reference_cache_get($conn, 'payment_modes', $segment) === null) {
+        $referenceResult = shipping_courier_bigship_sync_reference_data($conn);
+        if (empty($referenceResult['ok'])) {
+            error_log('[shipping-courier] reference sync skipped: ' . (string) ($referenceResult['message'] ?? 'unknown'));
+        }
     }
 
     $provider = shipping_courier_provider_name();

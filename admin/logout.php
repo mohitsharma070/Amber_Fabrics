@@ -1,18 +1,13 @@
 <?php
-$metaTitle = SiteContext::title('Admin Logout');
-$metaDescription = 'Admin logout page for ' . SiteContext::name() . '. End your session securely.';
-$metaKeywords = 'admin, logout, secure, ' . SiteContext::name();
 require_once __DIR__ . '/../includes/init.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
     flash('error', 'Invalid logout request.');
-    redirect('dashboard.php');
+    redirect(!empty($_SESSION['admin_id']) ? 'dashboard.php' : 'login.php');
 }
 
-$_SESSION = [];
-if (ini_get('session.use_cookies')) {
-    $params = session_get_cookie_params();
-    setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], (bool) $params['secure'], (bool) $params['httponly']);
+if (!empty($_SESSION['admin_id'])) {
+    log_admin_activity($conn, (int) $_SESSION['admin_id'], 'admin_logout', 'session', 0, 'Admin logged out.', 'ok');
 }
-session_destroy();
-redirect('login.php');
+app_destroy_session(false);
+redirect('login.php?logged_out=1');

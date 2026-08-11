@@ -304,7 +304,7 @@ include __DIR__ . '/../includes/header.php';
                                         </div>
                                     </div>
                                     <div class="d-flex gap-2 mt-2">
-                                        <a href="/customer/profile.php?edit_address=<?php echo (int) $addr['id']; ?>" class="btn btn-sm btn-outline-primary">Edit</a>
+                                        <a href="/customer/profile?edit_address=<?php echo (int) $addr['id']; ?>" class="btn btn-sm btn-outline-primary">Edit</a>
                                         <?php if ((int) ($addr['is_default_shipping'] ?? 0) !== 1): ?>
                                             <form method="POST" action="/customer/profile.php" class="d-inline">
                                                 <?php echo csrf_field(); ?>
@@ -375,7 +375,7 @@ include __DIR__ . '/../includes/header.php';
                         <div class="d-flex gap-2 mt-3">
                             <button type="submit" class="btn btn-outline-primary">Save Address</button>
                             <?php if ((int) ($addressForm['id'] ?? 0) > 0): ?>
-                                <a href="/customer/profile.php" class="btn btn-outline-secondary">Cancel Edit</a>
+                                <a href="/customer/profile" class="btn btn-outline-secondary">Cancel Edit</a>
                             <?php endif; ?>
                         </div>
                     </form>
@@ -411,12 +411,12 @@ include __DIR__ . '/../includes/header.php';
                 </div>
 
                 <div class="mt-3 text-center">
-                    <a href="/customer/orders.php" class="app-back-link">&larr; Back to My Orders</a>
+                    <a href="/customer/orders" class="app-back-link">&larr; Back to My Orders</a>
                 </div>
                 <div class="mt-2 text-center">
-                    <form method="POST" action="/customer/logout.php" class="d-inline">
+                    <form method="POST" action="/customer/logout.php" class="d-inline" aria-label="Customer logout">
                         <?php echo csrf_field(); ?>
-                        <button type="submit" class="btn btn-sm btn-outline-danger">Logout</button>
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Log out</button>
                     </form>
                 </div>
             </div>

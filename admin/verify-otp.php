@@ -131,7 +131,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($mailSent) {
                 admin_otp_record_attempt($conn, $resendKey, true, ADMIN_OTP_RESEND_MAX_ATTEMPTS, ADMIN_OTP_RESEND_WINDOW_SECONDS);
                 log_admin_activity($conn, $pendingAdminId, 'admin_otp_resent', 'admin', $pendingAdminId, 'OTP resend successful.', 'ok');
-                flash('success', 'New OTP sent to your email.');
+                $localMailLog = strtolower((string) ($GLOBALS['_app_mode'] ?? '')) === 'local'
+                    && strtolower(trim(_cfg('MAIL_DRIVER', 'smtp'))) === 'log';
+                flash(
+                    'success',
+                    $localMailLog
+                        ? 'New local OTP created. Open tmp/local-mail.log to read it.'
+                        : 'New OTP sent to your email.'
+                );
             } else {
                 admin_otp_record_attempt($conn, $resendKey, false, ADMIN_OTP_RESEND_MAX_ATTEMPTS, ADMIN_OTP_RESEND_WINDOW_SECONDS);
                 flash('error', 'OTP resend failed. Check mail configuration.');
@@ -270,7 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['admin_role'] = $pendingRole !== '' ? $pendingRole : 'viewer';
             $_SESSION['admin_session_started_at'] = time();
             $_SESSION['admin_last_seen_at'] = time();
-            $_SESSION['admin_session_fingerprint'] = hash('sha256', trim((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0')) . '|' . trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? '')));
+            $_SESSION['admin_session_fingerprint'] = admin_session_fingerprint();
             admin_clear_pending_otp_session();
 
             $del = $conn->prepare("DELETE FROM admin_login_otps WHERE admin_id = ?");
@@ -342,24 +349,26 @@ if ($otpState) {
                     <p class="text-muted small mb-4">Enter the 6-digit OTP sent to <?php echo e($pendingEmail); ?>.</p>
 
                     <?php if ($msg = flash('success')): ?>
-                        <div class="alert alert-success"><?php echo e($msg); ?></div>
+                        <div class="alert alert-success" role="status"><?php echo e($msg); ?></div>
                     <?php endif; ?>
                     <?php if ($msg = flash('error')): ?>
-                        <div class="alert alert-danger"><?php echo e($msg); ?></div>
+                        <div class="alert alert-danger" role="alert"><?php echo e($msg); ?></div>
                     <?php endif; ?>
 
                     <form method="POST" action="verify-otp.php" novalidate class="mb-3">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="verify">
                         <div class="mb-3">
-                            <label class="form-label">OTP</label>
+                            <label class="form-label" for="admin-otp">OTP</label>
                             <input
+                                id="admin-otp"
                                 type="text"
                                 name="otp"
                                 class="<?php echo form_class($errors, 'otp'); ?>"
                                 inputmode="numeric"
                                 pattern="\d{6}"
                                 maxlength="6"
+                                autocomplete="one-time-code"
                                 required
                                 autofocus
                             >
@@ -367,8 +376,8 @@ if ($otpState) {
                         </div>
                         <?php if ($appMfaPassphrase !== ''): ?>
                         <div class="mb-3">
-                            <label class="form-label">Security Passphrase</label>
-                            <input type="password" name="passphrase" class="form-control" autocomplete="off" required>
+                            <label class="form-label" for="admin-passphrase">Security Passphrase</label>
+                            <input id="admin-passphrase" type="password" name="passphrase" class="form-control" autocomplete="current-password" required>
                         </div>
                         <?php endif; ?>
                         <button type="submit" class="btn btn-primary w-100">Verify and Login</button>
@@ -379,7 +388,9 @@ if ($otpState) {
                         <input type="hidden" name="action" value="resend">
                         <button
                             type="submit"
+                            id="admin-otp-resend"
                             class="btn btn-outline-secondary w-100"
+                            data-cooldown="<?php echo (int) $cooldownSeconds; ?>"
                             <?php echo $cooldownSeconds > 0 ? 'disabled' : ''; ?>
                         >
                             <?php echo $cooldownSeconds > 0 ? 'Resend OTP in ' . $cooldownSeconds . 's' : 'Resend OTP'; ?>
@@ -394,5 +405,24 @@ if ($otpState) {
         </div>
     </div>
 </div>
+<?php if ($cooldownSeconds > 0): ?>
+<script nonce="<?php echo e($cspNonce); ?>">
+(function () {
+    var button = document.getElementById('admin-otp-resend');
+    if (!button) return;
+    var remaining = Number(button.dataset.cooldown || 0);
+    var timer = window.setInterval(function () {
+        remaining -= 1;
+        if (remaining <= 0) {
+            window.clearInterval(timer);
+            button.disabled = false;
+            button.textContent = 'Resend OTP';
+            return;
+        }
+        button.textContent = 'Resend OTP in ' + remaining + 's';
+    }, 1000);
+})();
+</script>
+<?php endif; ?>
 </body>
 </html>

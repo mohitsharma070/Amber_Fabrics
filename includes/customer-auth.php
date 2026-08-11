@@ -16,10 +16,74 @@ function current_customer_id(): ?int
     return isset($_SESSION['customer_id']) ? (int) $_SESSION['customer_id'] : null;
 }
 
+function customer_session_fingerprint(?string $userAgent = null): string
+{
+    $ua = $userAgent ?? (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
+    return hash('sha256', 'v1|' . trim($ua));
+}
+
+function customer_session_valid(mysqli $conn, int $customerId): bool
+{
+    if ($customerId <= 0) {
+        return false;
+    }
+
+    $now = time();
+    $idleTimeout = max(3600, (int) _cfg('CUSTOMER_SESSION_IDLE_TIMEOUT_SEC', '604800'));
+    $absoluteTimeout = max($idleTimeout, (int) _cfg('CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_SEC', '2592000'));
+    $startedAt = (int) ($_SESSION['customer_session_started_at'] ?? 0);
+    $lastSeen = (int) ($_SESSION['customer_last_seen_at'] ?? 0);
+    $storedFingerprint = trim((string) ($_SESSION['customer_session_fingerprint'] ?? ''));
+
+    // Upgrade customer sessions created before these validation fields existed
+    // without dropping their cart or forcing an immediate logout at deployment.
+    if ($startedAt <= 0) {
+        $startedAt = $now;
+        $_SESSION['customer_session_started_at'] = $now;
+    }
+    if ($lastSeen <= 0) {
+        $lastSeen = $now;
+        $_SESSION['customer_last_seen_at'] = $now;
+    }
+    if ($storedFingerprint === '') {
+        $storedFingerprint = customer_session_fingerprint();
+        $_SESSION['customer_session_fingerprint'] = $storedFingerprint;
+    }
+    if (($now - $lastSeen) > $idleTimeout || ($now - $startedAt) > $absoluteTimeout) {
+        return false;
+    }
+    if (!hash_equals($storedFingerprint, customer_session_fingerprint())) {
+        return false;
+    }
+
+    try {
+        $stmt = $conn->prepare('SELECT is_active FROM customers WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $customerId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row || (isset($row['is_active']) && (int) $row['is_active'] !== 1)) {
+            return false;
+        }
+    } catch (Throwable $e) {
+        error_log('[customer-auth] Session validation unavailable: ' . $e->getMessage());
+        return false;
+    }
+
+    $_SESSION['customer_last_seen_at'] = $now;
+    return true;
+}
+
 function require_customer(): void
 {
-    if (!is_customer_logged_in()) {
-        flash('error', 'Please log in to continue.');
+    $customerId = (int) ($_SESSION['customer_id'] ?? 0);
+    $conn = (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
+    if ($customerId <= 0 || !$conn || !customer_session_valid($conn, $customerId)) {
+        if ($customerId > 0) {
+            app_destroy_session(true);
+            flash('error', 'Your session expired. Please log in again.');
+        } else {
+            flash('error', 'Please log in to continue.');
+        }
         $returnTo = urlencode($_SERVER['REQUEST_URI'] ?? '');
         redirect('/customer/login.php?return=' . $returnTo);
     }

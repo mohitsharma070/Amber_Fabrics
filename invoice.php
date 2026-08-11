@@ -258,7 +258,7 @@ a { color: inherit; text-decoration: none; }
 <body>
 
 <div class="no-print print-bar">
-    <a href="/customer/order-view.php?id=<?php echo (int) $order['id']; ?>" class="btn-back">&larr; Back to Order</a>
+    <a href="/customer/order-view?id=<?php echo (int) $order['id']; ?>" class="btn-back">&larr; Back to Order</a>
     <button class="btn-print" id="btn-print-invoice">&#128438; Print</button>
     <button class="btn-download" id="btn-download-invoice">&#11123; Download PDF</button>
 </div>

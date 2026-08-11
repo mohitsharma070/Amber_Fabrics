@@ -148,7 +148,7 @@ include __DIR__ . '/../includes/header.php';
                             <div>Payment: <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?></div>
                         </div>
                         <div class="d-flex gap-2 flex-wrap">
-                            <a href="/customer/order-view.php?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
+                            <a href="/customer/order-view?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
                             <?php if ($canRetry): ?>
                             <form method="POST" action="/retry-payment.php" class="d-inline">
                                 <?php echo csrf_field(); ?>
@@ -210,7 +210,7 @@ include __DIR__ . '/../includes/header.php';
                             </td>
                             <td><span class="badge bg-<?php echo e($s['class']); ?>"><?php echo e($s['label']); ?></span></td>
                             <td class="d-flex gap-2 flex-wrap">
-                                <a href="/customer/order-view.php?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
+                                <a href="/customer/order-view?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
                                 <?php if ($canRetry): ?>
                                 <form method="POST" action="/retry-payment.php" class="d-inline">
                                     <?php echo csrf_field(); ?>

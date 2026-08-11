@@ -24,12 +24,27 @@ function app_request_is_https(): bool
 if (session_status() === PHP_SESSION_NONE) {
     if (PHP_SAPI !== 'cli' && !headers_sent()) {
         $secure = app_request_is_https();
+        $requestPath = (string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?? '');
+        $scriptPath = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+        $isAdminRequest = strpos($requestPath, '/admin/') === 0 || strpos($scriptPath, '/admin/') === 0;
+        $cookiePath = $isAdminRequest ? '/admin' : '/';
+
+        // Isolate admin authentication from the storefront/customer session.
+        // The storefront retains PHP's existing session name so active carts
+        // and customer logins survive deployment of this change.
+        if ($isAdminRequest) {
+            session_name('AMBERADMINSESSID');
+        }
+
+        $adminAbsoluteTimeout = max(900, (int) ($GLOBALS['_app_config']['ADMIN_SESSION_ABSOLUTE_TIMEOUT_SEC'] ?? 28800));
+        $customerAbsoluteTimeout = max(3600, (int) ($GLOBALS['_app_config']['CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_SEC'] ?? 2592000));
+        ini_set('session.gc_maxlifetime', (string) max($adminAbsoluteTimeout, $customerAbsoluteTimeout));
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');
         ini_set('session.use_trans_sid', '0');
         session_set_cookie_params([
             'lifetime' => 0,
-            'path' => '/',
+            'path' => $cookiePath,
             'secure' => $secure,
             'httponly' => true,
             'samesite' => 'Lax',
@@ -37,6 +52,40 @@ if (session_status() === PHP_SESSION_NONE) {
         session_start();
     } elseif (!isset($_SESSION) || !is_array($_SESSION)) {
         $_SESSION = [];
+    }
+}
+
+/**
+ * Destroy the active session and its cookie. Optionally start a clean session
+ * so the caller can store a post-logout flash message.
+ */
+function app_destroy_session(bool $restart = false): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return;
+    }
+
+    $cookieName = session_name();
+    $params = session_get_cookie_params();
+    $_SESSION = [];
+    session_destroy();
+
+    if (!headers_sent() && ini_get('session.use_cookies')) {
+        setcookie($cookieName, '', [
+            'expires' => time() - 42000,
+            'path' => (string) ($params['path'] ?? '/'),
+            'domain' => (string) ($params['domain'] ?? ''),
+            'secure' => (bool) ($params['secure'] ?? false),
+            'httponly' => (bool) ($params['httponly'] ?? true),
+            'samesite' => (string) ($params['samesite'] ?? 'Lax'),
+        ]);
+        unset($_COOKIE[$cookieName]);
+    }
+
+    if ($restart && !headers_sent()) {
+        session_id('');
+        session_start();
+        session_regenerate_id(true);
     }
 }
 

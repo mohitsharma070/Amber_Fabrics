@@ -60,7 +60,7 @@ include __DIR__ . '/../includes/header.php';
         <div class="row justify-content-center">
             <div class="col-md-6 col-lg-4">
                 <?php if ($invalid): ?>
-                    <div class="alert alert-danger">This reset link is invalid or has expired. <a href="/customer/forgot-password.php">Request a new one</a>.</div>
+                    <div class="alert alert-danger" role="alert">This reset link is invalid or has expired. <a href="/customer/forgot-password">Request a new one</a>.</div>
                 <?php else: ?>
                     <div class="surface-panel p-4">
                         <form method="POST" action="/customer/reset-password.php?token=<?php echo urlencode($token); ?>">

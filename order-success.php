@@ -132,7 +132,7 @@ include __DIR__ . '/includes/header.php';
 
                     <div class="d-flex gap-2 justify-content-center">
                         <?php if ($customerId > 0): ?>
-                            <a href="/customer/order-view.php?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
+                            <a href="/customer/order-view?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
                         <?php endif; ?>
                         <a href="/catalog.php" class="btn btn-primary">Continue Shopping</a>
                         <a href="/contact.php" class="btn btn-outline-secondary">Need Help?</a>

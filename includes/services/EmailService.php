@@ -2,6 +2,45 @@
 
 final class EmailService
 {
+    private static function deliver(PHPMailer\PHPMailer\PHPMailer $mail): bool
+    {
+        $driver = strtolower(trim(_cfg('MAIL_DRIVER', 'smtp')));
+        if ($driver !== 'log') {
+            $mail->send();
+            return true;
+        }
+
+        $appMode = strtolower((string) ($GLOBALS['_app_mode'] ?? ''));
+        if ($appMode !== 'local') {
+            throw new RuntimeException('The log mail driver is allowed only in local mode.');
+        }
+
+        $mailDirectory = dirname(__DIR__, 2) . '/tmp';
+        if (!is_dir($mailDirectory) && !mkdir($mailDirectory, 0700, true) && !is_dir($mailDirectory)) {
+            throw new RuntimeException('Unable to create the local mail directory.');
+        }
+
+        $recipients = array_map(
+            static fn(array $address): string => (string) ($address[0] ?? ''),
+            $mail->getToAddresses()
+        );
+        $entry = implode(PHP_EOL, [
+            str_repeat('=', 72),
+            'Date: ' . date('Y-m-d H:i:s'),
+            'To: ' . implode(', ', array_filter($recipients)),
+            'Subject: ' . $mail->Subject,
+            '',
+            $mail->Body,
+            '',
+        ]);
+
+        $written = file_put_contents($mailDirectory . '/local-mail.log', $entry, FILE_APPEND | LOCK_EX);
+        if ($written === false) {
+            throw new RuntimeException('Unable to write the local mail log.');
+        }
+        return true;
+    }
+
     public static function _mailer_base(): PHPMailer\PHPMailer\PHPMailer
     {
         require_once __DIR__ . '/../../vendor/phpmailer/phpmailer/src/PHPMailer.php';
@@ -12,7 +51,9 @@ final class EmailService
 
         $driver = strtolower(trim(_cfg('MAIL_DRIVER', 'smtp')));
 
-        if ($driver === 'mail') {
+        if ($driver === 'log') {
+            // Local delivery is handled by deliver(); no transport is needed.
+        } elseif ($driver === 'mail') {
             // Use PHP's built-in mail() - required on hosts that block outbound SMTP
             // (e.g. InfinityFree). The host's sendmail handles delivery.
             $mail->isMail();
@@ -115,7 +156,7 @@ final class EmailService
             $mail->addAddress($order['cemail'], $order['cname']);
             $mail->Subject = $template['subject'];
             $mail->Body    = $template['body'];
-            $mail->send();
+            self::deliver($mail);
             return true;
         } catch (Throwable $e) {
             error_log('[app] order confirmation email failed: ' . $e->getMessage());
@@ -191,7 +232,7 @@ final class EmailService
             $mail->addAddress($order['cemail'], $order['cname']);
             $mail->Subject = $template['subject'];
             $mail->Body    = $template['body'];
-            $mail->send();
+            self::deliver($mail);
             return true;
         } catch (Throwable $e) {
             error_log('[app] order status email failed: ' . $e->getMessage());
@@ -213,7 +254,7 @@ final class EmailService
             $mail->addAddress($email);
             $mail->Subject = $template['subject'];
             $mail->Body    = $template['body'];
-            $mail->send();
+            self::deliver($mail);
             return true;
         } catch (Throwable $e) {
             error_log('[app] password reset email failed: ' . $e->getMessage());
@@ -238,7 +279,7 @@ final class EmailService
             $mail->addAddress($email, $name);
             $mail->Subject = $template['subject'];
             $mail->Body    = $template['body'];
-            $mail->send();
+            self::deliver($mail);
             return true;
         } catch (Throwable $e) {
             error_log('[app] verification email failed: ' . $e->getMessage());
@@ -262,7 +303,7 @@ final class EmailService
             $mail->addAddress($email, $name);
             $mail->Subject = $template['subject'];
             $mail->Body = $template['body'];
-            $mail->send();
+            self::deliver($mail);
             return true;
         } catch (Throwable $e) {
             error_log('[app] admin otp email send failed: ' . $e->getMessage());

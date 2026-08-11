@@ -124,6 +124,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('order-view.php?id=' . $id);
         }
 
+        try {
+            do_action('order.after_status_change', [
+                'conn' => $conn,
+                'order_id' => $id,
+                'previous_status' => $currentOrderStatus,
+                'target_status' => $targetStatus,
+                'payment_method' => $method,
+                'payment_status' => $currentPaymentStatus,
+            ]);
+        } catch (Throwable $e) {
+            error_log('[admin-order] post-status hook failed for order ' . $id . ': ' . $e->getMessage());
+        }
+
         EmailService::send_order_status_update_email($conn, $id, $targetStatus);
         flash('success', 'Order moved to ' . ucfirst($targetStatus) . '.');
         redirect('order-view.php?id=' . $id);

@@ -203,9 +203,9 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
                     </a>
                 <?php endforeach; ?>
 
-                <form method="POST" action="logout.php" class="d-inline">
+                <form method="POST" action="logout.php" class="d-inline" aria-label="Admin logout">
                     <?php echo csrf_field(); ?>
-                    <button type="submit" class="btn btn-link nav-link text-white d-inline p-0 align-baseline"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>Logout</button>
+                    <button type="submit" class="btn btn-link nav-link text-white" title="Log out of admin"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>Log out</button>
                 </form>
             </div>
         </div>
@@ -214,10 +214,10 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
 
 <?php if (function_exists('flash')): ?>
     <?php if ($msg = flash('success')): ?>
-        <div class="alert alert-success text-center mb-0 rounded-0"><?php echo e($msg); ?></div>
+        <div class="alert alert-success text-center mb-0 rounded-0" role="status"><?php echo e($msg); ?></div>
     <?php endif; ?>
     <?php if ($msg = flash('error')): ?>
-        <div class="alert alert-danger text-center mb-0 rounded-0"><?php echo e($msg); ?></div>
+        <div class="alert alert-danger text-center mb-0 rounded-0" role="alert"><?php echo e($msg); ?></div>
     <?php endif; ?>
 <?php endif; ?>
 

@@ -186,7 +186,7 @@ include __DIR__ . '/../includes/header.php';
 <section class="section-block">
     <div class="container">
         <div class="mb-3">
-            <a href="/customer/orders.php" class="app-back-link">&larr; Back to My Orders</a>
+            <a href="/customer/orders" class="app-back-link">&larr; Back to My Orders</a>
         </div>
 
         <div class="row g-4">

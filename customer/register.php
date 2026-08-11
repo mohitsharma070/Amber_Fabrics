@@ -126,7 +126,7 @@ include __DIR__ . '/../includes/header.php';
                 </div>
 
                 <p class="text-center mt-3 text-muted">
-                    Already have an account? <a href="/customer/login.php">Log in</a>
+                    Already have an account? <a href="/customer/login">Log in</a>
                 </p>
             </div>
         </div>

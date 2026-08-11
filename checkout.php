@@ -266,7 +266,7 @@ include __DIR__ . '/includes/header.php';
                         <div class="checkout-section-body" id="checkout_address_body">
                         <?php if ($customerId <= 0): ?>
                             <div class="alert alert-light border py-2 px-3 small mb-3">
-                                Have an account? <a href="/customer/login.php?return=%2Fcheckout.php">Log in</a> for faster checkout.
+                                Have an account? <a href="/customer/login?return=%2Fcheckout">Log in</a> for faster checkout.
                             </div>
                         <?php endif; ?>
                         <?php if (!empty($savedAddresses)): ?>

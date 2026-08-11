@@ -50,6 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_regenerate_id(true);
             $_SESSION['customer_id']   = $customer['id'];
             $_SESSION['customer_name'] = $customer['name'];
+            $_SESSION['customer_session_started_at'] = time();
+            $_SESSION['customer_last_seen_at'] = time();
+            $_SESSION['customer_session_fingerprint'] = customer_session_fingerprint();
 
             // Merge any guest session cart with the customer's saved DB cart.
             // Quantity normalization must respect each product's unit type.
@@ -233,7 +236,7 @@ include __DIR__ . '/../includes/header.php';
         <div class="row justify-content-center">
             <div class="col-md-6 col-lg-4">
                 <?php if (!empty($errors['_login'])): ?>
-                    <div class="alert alert-danger">
+                    <div class="alert alert-danger" role="alert">
                         <?php echo e($errors['_login']); ?>
                         <?php if (!empty($errors['_login_raw'])): ?>
                             <br><small><?php echo $errors['_login_raw']; ?></small>
@@ -246,15 +249,15 @@ include __DIR__ . '/../includes/header.php';
                         <?php echo csrf_field(); ?>
 
                         <div class="mb-3">
-                            <label class="form-label">Email Address</label>
-                            <input type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" value="<?php echo e($oldEmail); ?>" required autofocus>
+                            <label class="form-label" for="customer-email">Email Address</label>
+                            <input id="customer-email" type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" value="<?php echo e($oldEmail); ?>" autocomplete="email" required autofocus>
                             <?php echo form_error($errors, 'email'); ?>
                         </div>
                         <div class="mb-4">
-                            <label class="form-label">Password</label>
-                            <input type="password" name="password" class="form-control" required>
+                            <label class="form-label" for="customer-password">Password</label>
+                            <input id="customer-password" type="password" name="password" class="form-control" autocomplete="current-password" required>
                             <div class="mt-2 text-end">
-                                <a href="/customer/forgot-password.php" class="small">Forgot password?</a>
+                                <a href="/customer/forgot-password" class="small">Forgot password?</a>
                             </div>
                         </div>
 
@@ -263,7 +266,7 @@ include __DIR__ . '/../includes/header.php';
                 </div>
 
                 <p class="text-center mt-3 text-muted">
-                    Don't have an account? <a href="/customer/register.php">Register</a>
+                    Don't have an account? <a href="/customer/register">Register</a>
                 </p>
             </div>
         </div>
