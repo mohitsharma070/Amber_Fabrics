@@ -1698,10 +1698,7 @@ function shipping_courier_cancel_shipment(mysqli $conn, int $orderId): array
 function shipping_courier_provider_shipment_exists(?array $metadata): bool
 {
     return is_array($metadata)
-        && (
-            trim((string) ($metadata['provider_order_id'] ?? '')) !== ''
-            || trim((string) ($metadata['provider_shipment_id'] ?? '')) !== ''
-        );
+        && trim((string) ($metadata['provider_shipment_id'] ?? '')) !== '';
 }
 
 function shipping_courier_provider_status(?array $metadata): string
@@ -2655,7 +2652,7 @@ function shipping_courier_cron_tracking_sync(array $context): void
          JOIN orders o ON o.id = scs.order_id
          WHERE scs.provider = ?
            AND COALESCE(s.delivered_at, '') = ''
-           AND COALESCE(NULLIF(scs.provider_order_id, ''), NULLIF(scs.provider_shipment_id, ''), NULLIF(s.tracking_id, '')) IS NOT NULL
+           AND COALESCE(NULLIF(scs.provider_shipment_id, ''), NULLIF(s.tracking_id, '')) IS NOT NULL
            AND o.order_status NOT IN ('cancelled', 'returned', 'refunded')
            AND COALESCE(scs.provider_status, '') NOT IN ('delivered', 'cancelled', 'canceled')
          ORDER BY scs.updated_at ASC

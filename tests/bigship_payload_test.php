@@ -21,6 +21,14 @@ $shipment = shipping_courier_shipment_data_from_response([
 ]);
 $assert(($shipment['awb_code'] ?? '') === 'AWB-123456', 'awb_assigned was not mapped to awb_code.');
 $assert(($shipment['tracking_id'] ?? '') === 'AWB-123456', 'awb_assigned was not mapped to tracking_id.');
+$assert(
+    !shipping_courier_provider_shipment_exists(['provider_order_id' => '691843632']),
+    'A Bigship draft was incorrectly treated as a placed shipment.'
+);
+$assert(
+    shipping_courier_provider_shipment_exists(['provider_shipment_id' => 'AWB-123456']),
+    'A placed Bigship shipment was not recognized.'
+);
 
 $invoiceAmount = 127.49;
 $allocated = shipping_courier_bigship_allocate_product_totals([
