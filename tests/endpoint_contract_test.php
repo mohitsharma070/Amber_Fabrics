@@ -49,8 +49,14 @@ if (!str_contains($source, "'segment_type' =>")) {
 if (!str_contains($source, "['MasterCustomOrderId' => \$id]")) {
     $failures[] = 'Order Detail does not use MasterCustomOrderId.';
 }
-if (substr_count($source, 'getPayloadInBody: true') < 3) {
+if (substr_count($source, 'getPayloadInBody: true') < 2) {
     $failures[] = 'Bigship GET JSON-body contracts are incomplete.';
+}
+if (!str_contains($source, "return \$this->request('POST', '/api/outbound/download-shipment-documents'")) {
+    $failures[] = 'Document Download does not use the live POST contract.';
+}
+if (!str_contains($source, "\$payload['track_segment']") || !str_contains($source, "\$payload['courier_id']")) {
+    $failures[] = 'Track Order context fields are missing.';
 }
 
 $warehouseSegmentMethod = $reflection->getMethod('warehouseSegment');

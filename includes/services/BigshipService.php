@@ -30,12 +30,23 @@ final class BigshipService
     public function courierCosts(array $payload): array { return $this->request('POST', '/api/outbound/courier-wise-shipment-cost', $payload); }
     public function placeOrder(array $payload, bool $multipart = false): array { return $this->request('POST', '/api/outbound/place-order', $payload, [], true, $multipart); }
     public function cancelOrder(array $payload): array { return $this->request('POST', '/api/outbound/cancel-order', $payload); }
-    public function trackOrder(string $id): array
+    public function trackOrder(string $id, int $courierId = 0, string $trackSegment = ''): array
     {
+        $trackSegment = strtolower(trim($trackSegment));
+        if ($trackSegment === '') {
+            $trackSegment = strtolower(trim((string) ($this->settings['bigship_segment'] ?? '')));
+        }
+        $payload = ['CustomGlobalOrderId' => $id];
+        if ($trackSegment !== '') {
+            $payload['track_segment'] = $trackSegment;
+        }
+        if ($courierId > 0) {
+            $payload['courier_id'] = $courierId;
+        }
         return $this->request(
             'GET',
             '/api/outbound/track-order',
-            ['CustomGlobalOrderId' => $id],
+            $payload,
             getPayloadInBody: true
         );
     }
@@ -50,10 +61,10 @@ final class BigshipService
     }
     public function downloadDocuments(string $id, string $type = 'label'): array
     {
-        return $this->request('GET', '/api/outbound/download-shipment-documents', [
+        return $this->request('POST', '/api/outbound/download-shipment-documents', [
             'CustomGlobalOrderId' => $id,
             'document_type' => $type,
-        ], getPayloadInBody: true);
+        ]);
     }
 
     public function request(

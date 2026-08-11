@@ -1561,20 +1561,22 @@ function shipping_courier_sync_tracking(mysqli $conn, int $orderId): array
         return shipping_courier_result(false, 'No Bigship CustomGlobalOrderId is available for tracking sync.');
     }
 
-    $response = shipping_courier_bigship_client()->trackOrder($customGlobalOrderId);
-    if (empty($response['ok'])) {
-        error_log('[shipping-courier] tracking sync failed for order ' . $orderId . ': ' . (string) ($response['message'] ?? 'unknown'));
-        return $response;
-    }
-
-    $body = is_array($response['body'] ?? null) ? $response['body'] : [];
     $detailsResponse = shipping_courier_bigship_client()->shipmentDetails($customGlobalOrderId);
     $detailsBody = !empty($detailsResponse['ok']) && is_array($detailsResponse['body'] ?? null)
         ? (array) $detailsResponse['body']
         : [];
-    if ($detailsBody !== []) {
-        $body = array_replace_recursive($detailsBody, $body);
+    $trackSegment = shipping_courier_response_value($detailsBody, ['segment_type']);
+    $response = shipping_courier_bigship_client()->trackOrder($customGlobalOrderId, 0, $trackSegment);
+    $trackingBody = !empty($response['ok']) && is_array($response['body'] ?? null)
+        ? (array) $response['body']
+        : [];
+    if ($trackingBody === [] && $detailsBody === []) {
+        error_log('[shipping-courier] tracking sync failed for order ' . $orderId . ': ' . (string) ($response['message'] ?? 'unknown'));
+        return $response;
     }
+    $body = $trackingBody !== []
+        ? array_replace_recursive($detailsBody, $trackingBody)
+        : $detailsBody;
     $shipmentData = shipping_courier_shipment_data_from_response($body);
     $shipmentData = shipping_courier_apply_tracking_milestones($shipmentData, $body, $shipment);
     if (!empty($shipmentData)) {
@@ -1589,7 +1591,9 @@ function shipping_courier_sync_tracking(mysqli $conn, int $orderId): array
     if (!is_array($rawResponses)) {
         $rawResponses = [];
     }
-    $rawResponses['track_order'] = $body;
+    if ($trackingBody !== []) {
+        $rawResponses['track_order'] = $trackingBody;
+    }
     if ($detailsBody !== []) {
         $rawResponses['order_shipment_details'] = $detailsBody;
     }

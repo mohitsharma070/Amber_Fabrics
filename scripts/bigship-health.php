@@ -111,7 +111,7 @@ if ($orderId !== '') {
     $check('Track Order (GET JSON)', $client->trackOrder($orderId));
     $check('Order Detail (GET JSON)', $client->shipmentDetails($orderId));
     if ($checkDocuments) {
-        $check('Documents (GET JSON)', $client->downloadDocuments($orderId, 'label'));
+        $check('Documents (POST JSON)', $client->downloadDocuments($orderId, 'label'));
     }
 } elseif ($checkDocuments) {
     fwrite(STDERR, "--check-documents requires --order-id=<CustomGlobalOrderId>.\n");
