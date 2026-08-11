@@ -18,8 +18,19 @@ if (!in_array($mode, ['local', 'production'], true)) {
     fwrite(STDERR, "APP_MODE must be local or production.\n");
     exit(2);
 }
-$configPath = __DIR__ . '/../config/secure-config.' . $mode . '.php';
-if (!is_file($configPath)) {
+$configPaths = [
+    __DIR__ . '/../config/secure-config.' . $mode . '.php',
+    __DIR__ . '/../secure-config.' . $mode . '.php',
+    dirname(__DIR__, 2) . '/secure-config.' . $mode . '.php',
+];
+$configPath = '';
+foreach ($configPaths as $candidate) {
+    if (is_file($candidate)) {
+        $configPath = $candidate;
+        break;
+    }
+}
+if ($configPath === '') {
     fwrite(STDERR, "Secure config file is missing for APP_MODE={$mode}.\n");
     exit(2);
 }
@@ -70,7 +81,7 @@ $client = new BigshipService([
     'bigship_password' => $required['BIGSHIP_PASSWORD'],
     'bigship_access_key' => $required['BIGSHIP_ACCESS_KEY'],
     'bigship_segment' => trim((string) ($config['BIGSHIP_SEGMENT'] ?? 'domestic_b2c')),
-    'bigship_warehouse_segment' => trim((string) ($config['BIGSHIP_WAREHOUSE_SEGMENT'] ?? '')),
+    'bigship_warehouse_segment' => trim((string) ($config['BIGSHIP_WAREHOUSE_SEGMENT'] ?? 'local')),
     'bigship_http_skip_tls_verify' => (int) ($config['BIGSHIP_HTTP_SKIP_TLS_VERIFY'] ?? 0),
 ]);
 $failed = false;

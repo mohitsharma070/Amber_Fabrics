@@ -17,7 +17,7 @@ final class BigshipService
     {
         return $this->request('GET', '/api/outbound/get-warehouse-list', array_replace([
             'page' => 1,
-            'perPage' => 100,
+            'perPage' => 25,
             'segment_type' => $this->warehouseSegment(),
         ], $query));
     }
@@ -105,8 +105,8 @@ final class BigshipService
     }
 
     /**
-     * Bigship's warehouse API groups domestic B2B and B2C warehouses under
-     * "domestic", while order/rate APIs use the more specific segment names.
+     * The warehouse endpoint accepts only "local" or "hyperlocal" even though
+     * domestic order/rate endpoints use domestic_b2b and domestic_b2c.
      */
     private function warehouseSegment(): string
     {
@@ -116,7 +116,7 @@ final class BigshipService
         }
 
         $segment = strtolower(trim((string) ($this->settings['bigship_segment'] ?? 'domestic_b2c')));
-        return str_starts_with($segment, 'domestic_') ? 'domestic' : $segment;
+        return $segment === 'hyperlocal' ? 'hyperlocal' : 'local';
     }
 
     private function accessToken(): array

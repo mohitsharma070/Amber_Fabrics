@@ -32,7 +32,7 @@ function shipping_courier_settings(): array
         'bigship_warehouse_id' => trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_id', '')),
         'bigship_warehouse_pincode' => trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_pincode', '')),
         'bigship_segment' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_segment', 'domestic_b2c'))),
-        'bigship_warehouse_segment' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_segment', ''))),
+        'bigship_warehouse_segment' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_warehouse_segment', 'local'))),
         'bigship_risk_type_id' => (int) plugin_setting('shipping-courier', 'bigship_risk_type_id', 2),
         'bigship_risk_type' => strtolower(trim((string) plugin_setting('shipping-courier', 'bigship_risk_type', 'owner'))),
         'bigship_product_category_id' => (int) plugin_setting('shipping-courier', 'bigship_product_category_id', 1),
@@ -629,6 +629,7 @@ function shipping_courier_bigship_sync_reference_data(mysqli $conn): array
     }
 
     $failed = [];
+    $failureMessages = [];
     foreach ($calls as $type => $response) {
         if (!empty($response['ok']) && is_array($response['body'] ?? null)) {
             // Profile responses can contain account credentials and are only
@@ -638,12 +639,18 @@ function shipping_courier_bigship_sync_reference_data(mysqli $conn): array
             }
         } else {
             $failed[] = $type;
+            $failureMessages[] = shipping_courier_api_failure_message(
+                is_array($response) ? $response : [],
+                str_replace('_', ' ', $type)
+            );
         }
     }
     return shipping_courier_result(empty($failed), empty($failed)
         ? 'Bigship profile and reference data synchronized.'
-        : 'Bigship reference synchronization failed for: ' . implode(', ', $failed) . '.', [
+        : 'Bigship reference synchronization failed for: ' . implode(', ', $failed) . '. '
+            . implode(' ', $failureMessages), [
             'responses' => $calls,
+            'failed_references' => $failed,
         ]);
 }
 

@@ -86,9 +86,45 @@ $safeResult = is_array($result) ? bigship_admin_redact_response($result) : null;
         <div class="card mb-4">
             <div class="card-body">
                 <h5>Provider response</h5>
-                <pre class="small bg-light border rounded p-3 mb-0" style="max-height: 28rem; overflow:auto"><?php
-                    echo e((string) json_encode($safeResult['body'] ?? $safeResult['responses'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-                ?></pre>
+                <?php if (is_array($safeResult['responses'] ?? null)): ?>
+                    <?php
+                    $orderedResponses = [];
+                    foreach ([false, true] as $wantedOk) {
+                        foreach ((array) $safeResult['responses'] as $responseName => $responseData) {
+                            $responseOk = is_array($responseData) && !empty($responseData['ok']);
+                            if ($responseOk === $wantedOk) {
+                                $orderedResponses[(string) $responseName] = $responseData;
+                            }
+                        }
+                    }
+                    ?>
+                    <div class="d-flex flex-column gap-2">
+                        <?php foreach ($orderedResponses as $responseName => $responseData): ?>
+                            <?php
+                            $responseData = is_array($responseData) ? $responseData : [];
+                            $responseOk = !empty($responseData['ok']);
+                            $responseStatus = max(0, (int) ($responseData['status'] ?? 0));
+                            $responseBody = is_array($responseData['body'] ?? null) ? (array) $responseData['body'] : [];
+                            $responseMessage = trim((string) ($responseBody['message'] ?? $responseData['message'] ?? ''));
+                            ?>
+                            <details class="border rounded p-3"<?php echo $responseOk ? '' : ' open'; ?>>
+                                <summary class="d-flex flex-wrap align-items-center gap-2" style="cursor:pointer">
+                                    <strong><?php echo e(ucwords(str_replace('_', ' ', $responseName))); ?></strong>
+                                    <span class="badge <?php echo $responseOk ? 'bg-success' : 'bg-danger'; ?>"><?php echo $responseOk ? 'Success' : 'Failed'; ?></span>
+                                    <?php if ($responseStatus > 0): ?><span class="text-muted small">HTTP <?php echo $responseStatus; ?></span><?php endif; ?>
+                                    <?php if ($responseMessage !== ''): ?><span class="small"><?php echo e($responseMessage); ?></span><?php endif; ?>
+                                </summary>
+                                <pre class="small bg-light border rounded p-3 mt-3 mb-0" style="max-height: 22rem; overflow:auto"><?php
+                                    echo e((string) json_encode($responseData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                                ?></pre>
+                            </details>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <pre class="small bg-light border rounded p-3 mb-0" style="max-height: 28rem; overflow:auto"><?php
+                        echo e((string) json_encode($safeResult['body'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                    ?></pre>
+                <?php endif; ?>
             </div>
         </div>
     <?php endif; ?>

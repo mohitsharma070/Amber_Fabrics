@@ -286,7 +286,7 @@ function app_config_validate_production(array $config): void
             $invalid[] = 'BIGSHIP_SEGMENT';
         }
         $warehouseSegment = strtolower(trim((string) ($config['BIGSHIP_WAREHOUSE_SEGMENT'] ?? '')));
-        if ($warehouseSegment !== '' && !in_array($warehouseSegment, ['domestic', 'hyperlocal'], true)) {
+        if ($warehouseSegment !== '' && !in_array($warehouseSegment, ['local', 'hyperlocal'], true)) {
             $invalid[] = 'BIGSHIP_WAREHOUSE_SEGMENT';
         }
         foreach (['BIGSHIP_RISK_TYPE_ID', 'BIGSHIP_PARCEL_WEIGHT_KG', 'BIGSHIP_PARCEL_LENGTH_CM', 'BIGSHIP_PARCEL_WIDTH_CM', 'BIGSHIP_PARCEL_HEIGHT_CM'] as $numericKey) {

@@ -40,7 +40,7 @@ foreach ($requiredEndpoints as $endpoint) {
     }
 }
 
-if (!str_contains($source, "'perPage' => 100") || !str_contains($source, "'page' => 1")) {
+if (!str_contains($source, "'perPage' => 25") || !str_contains($source, "'page' => 1")) {
     $failures[] = 'Warehouse pagination defaults are missing.';
 }
 if (!str_contains($source, "'segment_type' =>")) {
@@ -49,7 +49,7 @@ if (!str_contains($source, "'segment_type' =>")) {
 
 $warehouseSegmentMethod = $reflection->getMethod('warehouseSegment');
 $domesticService = new BigshipService(['bigship_segment' => 'domestic_b2c']);
-if ($warehouseSegmentMethod->invoke($domesticService) !== 'domestic') {
+if ($warehouseSegmentMethod->invoke($domesticService) !== 'local') {
     $failures[] = 'Domestic B2C is not normalized for the warehouse endpoint.';
 }
 $overrideService = new BigshipService([
