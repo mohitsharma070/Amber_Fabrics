@@ -46,6 +46,12 @@ if (!str_contains($source, "'perPage' => 25") || !str_contains($source, "'page' 
 if (!str_contains($source, "'segment_type' =>")) {
     $failures[] = 'Warehouse segment_type default is missing.';
 }
+if (!str_contains($source, "['MasterCustomOrderId' => \$id]")) {
+    $failures[] = 'Order Detail does not use MasterCustomOrderId.';
+}
+if (substr_count($source, 'getPayloadInBody: true') < 3) {
+    $failures[] = 'Bigship GET JSON-body contracts are incomplete.';
+}
 
 $warehouseSegmentMethod = $reflection->getMethod('warehouseSegment');
 $domesticService = new BigshipService(['bigship_segment' => 'domestic_b2c']);

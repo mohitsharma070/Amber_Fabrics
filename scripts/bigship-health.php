@@ -108,10 +108,10 @@ $check('Authentication / profile', $client->profile());
 $check('Warehouse connectivity', $client->warehouses());
 
 if ($orderId !== '') {
-    $check('Track Order (GET query)', $client->trackOrder($orderId));
-    $check('Order Detail (GET query)', $client->shipmentDetails($orderId));
+    $check('Track Order (GET JSON)', $client->trackOrder($orderId));
+    $check('Order Detail (GET JSON)', $client->shipmentDetails($orderId));
     if ($checkDocuments) {
-        $check('Documents (GET query)', $client->downloadDocuments($orderId, 'label'));
+        $check('Documents (GET JSON)', $client->downloadDocuments($orderId, 'label'));
     }
 } elseif ($checkDocuments) {
     fwrite(STDERR, "--check-documents requires --order-id=<CustomGlobalOrderId>.\n");

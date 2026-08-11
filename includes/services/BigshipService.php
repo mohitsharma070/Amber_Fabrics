@@ -30,14 +30,30 @@ final class BigshipService
     public function courierCosts(array $payload): array { return $this->request('POST', '/api/outbound/courier-wise-shipment-cost', $payload); }
     public function placeOrder(array $payload, bool $multipart = false): array { return $this->request('POST', '/api/outbound/place-order', $payload, [], true, $multipart); }
     public function cancelOrder(array $payload): array { return $this->request('POST', '/api/outbound/cancel-order', $payload); }
-    public function trackOrder(string $id): array { return $this->request('GET', '/api/outbound/track-order', ['CustomGlobalOrderId' => $id]); }
-    public function shipmentDetails(string $id): array { return $this->request('GET', '/api/outbound/order-shipment-details', ['CustomGlobalOrderId' => $id]); }
+    public function trackOrder(string $id): array
+    {
+        return $this->request(
+            'GET',
+            '/api/outbound/track-order',
+            ['CustomGlobalOrderId' => $id],
+            getPayloadInBody: true
+        );
+    }
+    public function shipmentDetails(string $id): array
+    {
+        return $this->request(
+            'GET',
+            '/api/outbound/order-shipment-details',
+            ['MasterCustomOrderId' => $id],
+            getPayloadInBody: true
+        );
+    }
     public function downloadDocuments(string $id, string $type = 'label'): array
     {
         return $this->request('GET', '/api/outbound/download-shipment-documents', [
             'CustomGlobalOrderId' => $id,
             'document_type' => $type,
-        ]);
+        ], getPayloadInBody: true);
     }
 
     public function request(
@@ -46,7 +62,8 @@ final class BigshipService
         array $payload = [],
         array $headers = [],
         bool $authenticated = true,
-        bool $multipart = false
+        bool $multipart = false,
+        bool $getPayloadInBody = false
     ): array {
         if (!function_exists('curl_init')) {
             return self::result(false, 'cURL is unavailable.');
@@ -61,7 +78,7 @@ final class BigshipService
         if ($base === '' || (class_exists('InventoryService') && InventoryService::safe_external_url($url) === '')) {
             return self::result(false, 'Bigship API URL is invalid.');
         }
-        if ($method === 'GET' && $payload !== []) {
+        if ($method === 'GET' && $payload !== [] && !$getPayloadInBody) {
             $url .= (str_contains($url, '?') ? '&' : '?') . http_build_query($payload, '', '&', PHP_QUERY_RFC3986);
         }
 
@@ -85,7 +102,7 @@ final class BigshipService
         $last = self::result(false, 'Bigship request was not attempted.');
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             $this->throttle();
-            $last = $this->execute($method, $url, $payload, $requestHeaders, $multipart);
+            $last = $this->execute($method, $url, $payload, $requestHeaders, $multipart, $getPayloadInBody);
             $status = (int) ($last['status'] ?? 0);
             if (!in_array($status, [429, 500, 502, 503, 504], true) || $attempt === 3) {
                 return $last;
@@ -165,7 +182,14 @@ final class BigshipService
         return time() + (is_numeric($ttl) && (int) $ttl > 0 ? (int) $ttl : 600);
     }
 
-    private function execute(string $method, string $url, array $payload, array $headers, bool $multipart): array
+    private function execute(
+        string $method,
+        string $url,
+        array $payload,
+        array $headers,
+        bool $multipart,
+        bool $getPayloadInBody
+    ): array
     {
         $ch = curl_init($url);
         if ($ch === false) {
@@ -181,7 +205,7 @@ final class BigshipService
             CURLOPT_SSL_VERIFYPEER => !$skipTls,
             CURLOPT_SSL_VERIFYHOST => $skipTls ? 0 : 2,
         ];
-        if ($method !== 'GET') {
+        if ($method !== 'GET' || $getPayloadInBody) {
             if ($multipart) {
                 $options[CURLOPT_POSTFIELDS] = $this->multipart($payload);
             } else {
