@@ -447,7 +447,10 @@ $variantUnitType = in_array((string) ($fabric['unit_type'] ?? ''), ['meter', 'pi
     <div class="card-body p-0">
         <!-- Add / Edit inline form (hidden by default) -->
         <div id="variant-form-container" class="border-bottom p-3 d-none bg-light">
-            <h6 id="variant-form-title">Add Variant</h6>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <h6 id="variant-form-title" class="mb-0">Add Variant</h6>
+                <small id="vf_editing_note" class="text-muted d-none"></small>
+            </div>
             <input type="hidden" id="vf_variant_id" value="0">
             <div class="row g-2">
                 <div class="col-sm-3">
@@ -487,26 +490,31 @@ $variantUnitType = in_array((string) ($fabric['unit_type'] ?? ''), ['meter', 'pi
                     <label class="form-label form-label-sm">Variant Image 1</label>
                     <input type="hidden" id="vf_image" value="">
                     <input type="file" id="vf_image_file" class="form-control form-control-sm" accept="image/*">
+                    <small id="vf_image_current" class="text-muted d-none"></small>
                 </div>
                 <div class="col-sm-3">
                     <label class="form-label form-label-sm">Variant Image 2</label>
                     <input type="hidden" id="vf_image2" value="">
                     <input type="file" id="vf_image2_file" class="form-control form-control-sm" accept="image/*">
+                    <small id="vf_image2_current" class="text-muted d-none"></small>
                 </div>
                 <div class="col-sm-3">
                     <label class="form-label form-label-sm">Variant Image 3</label>
                     <input type="hidden" id="vf_image3" value="">
                     <input type="file" id="vf_image3_file" class="form-control form-control-sm" accept="image/*">
+                    <small id="vf_image3_current" class="text-muted d-none"></small>
                 </div>
                 <div class="col-sm-3">
                     <label class="form-label form-label-sm">Variant Image 4</label>
                     <input type="hidden" id="vf_image4" value="">
                     <input type="file" id="vf_image4_file" class="form-control form-control-sm" accept="image/*">
+                    <small id="vf_image4_current" class="text-muted d-none"></small>
                 </div>
                 <div class="col-sm-3">
                     <label class="form-label form-label-sm">Variant Video</label>
                     <input type="hidden" id="vf_video" value="">
                     <input type="file" id="vf_video_file" class="form-control form-control-sm" accept="video/mp4,video/webm,video/ogg">
+                    <small id="vf_video_current" class="text-muted d-none"></small>
                 </div>
                 <div class="col-sm-2">
                     <label class="form-label form-label-sm">Price Override <small class="text-muted">(optional)</small></label>
@@ -770,6 +778,14 @@ foreach ($variants as $vrow) {
             }
             variantUI.syncSizePolicyUI();
         },
+        setExistingMediaStatus: function (field, hasExistingMedia) {
+            var status = document.getElementById('vf_' + field + '_current');
+            if (!status) return;
+            status.textContent = hasExistingMedia
+                ? 'Current file is saved. Choose a file only to replace it.'
+                : '';
+            status.classList.toggle('d-none', !hasExistingMedia);
+        },
         showAddForm: function () {
             document.getElementById('vf_variant_id').value   = '0';
             document.getElementById('vf_color').value        = '';
@@ -792,6 +808,10 @@ foreach ($variants as $vrow) {
             document.getElementById('vf_stock_meters').value = '0';
             document.getElementById('vf_is_active').checked  = true;
             document.getElementById('variant-form-title').textContent = 'Add Variant';
+            document.getElementById('vf_editing_note').classList.add('d-none');
+            ['image', 'image2', 'image3', 'image4', 'video'].forEach(function (field) {
+                variantUI.setExistingMediaStatus(field, false);
+            });
             document.getElementById('vf_error_msg').textContent = '';
             document.getElementById('variant-form-container').classList.remove('d-none');
             document.getElementById('vf_color').focus();
@@ -830,6 +850,12 @@ foreach ($variants as $vrow) {
                     document.getElementById('vf_stock_meters').value    = v.stock_meters;
                     document.getElementById('vf_is_active').checked     = parseInt(v.is_active) === 1;
                     document.getElementById('variant-form-title').textContent = 'Edit Variant';
+                    var editingNote = document.getElementById('vf_editing_note');
+                    editingNote.textContent = 'Editing existing variant #' + v.id + '.';
+                    editingNote.classList.remove('d-none');
+                    ['image', 'image2', 'image3', 'image4', 'video'].forEach(function (field) {
+                        variantUI.setExistingMediaStatus(field, !!(v[field] && String(v[field]).trim()));
+                    });
                     document.getElementById('vf_error_msg').textContent = '';
                     document.getElementById('variant-form-container').classList.remove('d-none');
                     document.getElementById('vf_color').focus();

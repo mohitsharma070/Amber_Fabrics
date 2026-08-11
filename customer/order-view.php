@@ -30,6 +30,30 @@ if (!$order) {
     redirect('/customer/orders.php');
 }
 
+/**
+ * Order notes contain both a customer's optional instructions and internal
+ * checkout/payment audit entries. Only the former belongs on the customer
+ * order page; staff can still see the complete audit trail in admin.
+ */
+function customer_visible_order_notes(string $notes): string
+{
+    $lines = preg_split('/\R/', $notes) ?: [];
+    $visible = [];
+    foreach ($lines as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+        if (preg_match('/^(Shipping:|Coupon Applied:|Razorpay payment (?:failed|cancelled)|Razorpay refund)/i', $line)) {
+            continue;
+        }
+        $visible[] = $line;
+    }
+    return implode("\n", $visible);
+}
+
+$customerVisibleNotes = customer_visible_order_notes((string) ($order['notes'] ?? ''));
+
 $variantImageJoin = order_items_supports_variant($conn)
     ? "LEFT JOIN fabric_variants fv ON fv.id = oi.variant_id"
     : "LEFT JOIN fabric_variants fv ON fv.fabric_id = COALESCE(oi.fabric_id, oi.product_id)
@@ -225,10 +249,10 @@ include __DIR__ . '/../includes/header.php';
                     </div>
                 </div>
 
-                <?php if ($order['notes']): ?>
+                <?php if ($customerVisibleNotes !== ''): ?>
                 <div class="surface-panel p-4 mb-4">
                     <h6 class="mb-2">Your Notes</h6>
-                    <p class="mb-0 text-muted"><?php echo e($order['notes']); ?></p>
+                    <p class="mb-0 text-muted"><?php echo nl2br(e($customerVisibleNotes)); ?></p>
                 </div>
                 <?php endif; ?>
 

@@ -110,11 +110,11 @@ $announcementKey = md5(implode('|', $announcementMessages));
                 <h1 class="hero-home-title"><?php echo e((string) ($siteSettings['home_hero_title'] ?? 'Modern Home Textiles, Built for Everyday Living')); ?></h1>
                 <p class="hero-home-desc mb-4"><?php echo e($siteName); ?> <?php echo e((string) ($siteSettings['home_hero_desc'] ?? 'is a growing Indian startup focused on quality Bedsheets, Towels, and Table Covers for retail and bulk buyers.')); ?></p>
                 <div class="hero-actions">
-                    <a href="catalog.php" class="btn btn-light btn-hero">
+                    <a href="/catalog" class="btn btn-light btn-hero">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.97 1.35A1 1 0 0 1 3.73 1h8.54a1 1 0 0 1 .76.35l2.609 3.044A1.5 1.5 0 0 1 16 5.37v.255a2.375 2.375 0 0 1-4.25 1.458A2.371 2.371 0 0 1 9.875 8 2.37 2.37 0 0 1 8 7.083 2.37 2.37 0 0 1 6.125 8a2.37 2.37 0 0 1-1.875-.917A2.375 2.375 0 0 1 0 5.625V5.37a1.5 1.5 0 0 1 .361-.976zm1.78 4.275a1.375 1.375 0 0 0 2.75 0 .5.5 0 0 1 1 0 1.375 1.375 0 0 0 2.75 0 .5.5 0 0 1 1 0 1.375 1.375 0 1 0 2.75 0V5.37a.5.5 0 0 0-.12-.325L12.27 2H3.73L1.12 5.045A.5.5 0 0 0 1 5.37v.255a1.375 1.375 0 0 0 2.75 0 .5.5 0 0 1 1 0zM1.5 8.5A.5.5 0 0 1 2 8h1a.5.5 0 0 1 .5.5V14h8V8.5A.5.5 0 0 1 12 8h1a.5.5 0 0 1 .5.5V15a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>
                         <?php echo e((string) ($siteSettings['home_hero_shop_cta'] ?? 'Shop in India')); ?>
                     </a>
-                    <a href="international-buyers.php" class="btn btn-outline-light btn-hero">
+                    <a href="/international-buyers" class="btn btn-outline-light btn-hero">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/></svg>
                         <?php echo e((string) ($siteSettings['home_hero_inquiry_cta'] ?? 'International / Bulk Inquiry')); ?>
                     </a>
@@ -161,7 +161,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
                 $bgColor = $catColors[$ci % count($catColors)];
                 $ci++;
             ?>
-            <a href="catalog.php?category=<?php echo e($cat['slug']); ?>" class="category-card" style="--cat-color: <?php echo $bgColor; ?>">
+            <a href="/catalog?category=<?php echo e($cat['slug']); ?>" class="category-card" style="--cat-color: <?php echo $bgColor; ?>">
                 <div class="category-card-img">
                     <?php if (!empty($cat['image'])): ?>
                         <img src="<?php echo e($cat['image']); ?>" alt="<?php echo e($cat['name']); ?>" loading="lazy">
@@ -190,14 +190,14 @@ $announcementKey = md5(implode('|', $announcementMessages));
                 <h2 class="mb-1"><?php echo e((string) ($siteSettings['home_latest_title'] ?? 'Latest Drops')); ?></h2>
                 <p class="mb-0 text-muted"><?php echo e((string) ($siteSettings['home_latest_subtitle'] ?? 'Newly launched designs across our fast-growing range')); ?></p>
             </div>
-            <a href="catalog.php" class="btn btn-outline-primary btn-sm"><?php echo e((string) ($siteSettings['home_latest_view_all_cta'] ?? 'View All')); ?></a>
+            <a href="/catalog" class="btn btn-outline-primary btn-sm"><?php echo e((string) ($siteSettings['home_latest_view_all_cta'] ?? 'View All')); ?></a>
         </div>
 
         <div class="slider-wrap" id="prodSlider">
             <div class="slider-track prod-slider-track">
             <?php if (empty($homeProductRows)): ?>
                 <div class="surface-panel text-center text-muted py-5 px-4">
-                    <?php echo e((string) ($siteSettings['home_latest_empty_text'] ?? 'No products added yet.')); ?> <a href="catalog.php"><?php echo e((string) ($siteSettings['home_latest_empty_cta'] ?? 'Browse catalog')); ?></a>
+                    <?php echo e((string) ($siteSettings['home_latest_empty_text'] ?? 'No products added yet.')); ?> <a href="/catalog"><?php echo e((string) ($siteSettings['home_latest_empty_cta'] ?? 'Browse catalog')); ?></a>
                 </div>
             <?php endif; ?>
 
@@ -251,7 +251,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
                 $needsVariantSelection = $activeVariantCount > 1;
             ?>
             <div class="prod-slide">
-                <article class="card h-100 product-click-card" data-href="fabric.php?id=<?php echo (int)$row['id']; ?>">
+                <article class="card h-100 product-click-card" data-href="/fabric?id=<?php echo (int)$row['id']; ?>">
                     <div class="fabric-thumb-wrap">
                         <?php if ($cardImage !== ''): ?>
                             <picture>
@@ -289,11 +289,11 @@ $announcementKey = md5(implode('|', $announcementMessages));
                         <div class="d-flex gap-1 mt-auto">
                             <?php if ($cardIsInStock): ?>
                                 <?php if ($unitType === 'meter'): ?>
-                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
+                                    <a href="/fabric?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                 <?php elseif ($needsVariantSelection): ?>
-                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
+                                    <a href="/fabric?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                 <?php elseif ($hasSizeOptions): ?>
-                                    <a href="fabric.php?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
+                                    <a href="/fabric?id=<?php echo (int)$row['id']; ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
                                 <?php else: ?>
                                     <button class="btn btn-primary btn-sm flex-grow-1 add-to-cart-btn"
                                         data-fabric-id="<?php echo (int)$row['id']; ?>"
@@ -314,7 +314,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
         </div>
 
         <div class="text-center mt-4">
-            <a href="catalog.php" class="btn btn-primary btn-lg px-5">
+            <a href="/catalog" class="btn btn-primary btn-lg px-5">
                 <?php echo e((string) ($siteSettings['home_latest_browse_cta'] ?? 'Browse Full Collection')); ?>
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="ms-2" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/></svg>
             </a>
@@ -376,8 +376,8 @@ $announcementKey = md5(implode('|', $announcementMessages));
                 <p class="intl-cta-desc"><?php echo e((string) ($siteSettings['home_b2b_desc'] ?? 'Share your quantity, target price, and delivery timeline. Our team will get back with practical sourcing options.')); ?></p>
             </div>
             <div class="col-lg-4 d-flex flex-column flex-sm-row flex-lg-column gap-3">
-                <a href="international-buyers.php" class="btn btn-light btn-lg"><?php echo e((string) ($siteSettings['home_b2b_primary_cta'] ?? 'Bulk / Export Inquiry')); ?></a>
-                <a href="international-buyers.php" class="btn btn-outline-light btn-lg"><?php echo e((string) ($siteSettings['home_b2b_secondary_cta'] ?? 'Contact Our Team')); ?></a>
+                <a href="/international-buyers" class="btn btn-light btn-lg"><?php echo e((string) ($siteSettings['home_b2b_primary_cta'] ?? 'Bulk / Export Inquiry')); ?></a>
+                <a href="/international-buyers" class="btn btn-outline-light btn-lg"><?php echo e((string) ($siteSettings['home_b2b_secondary_cta'] ?? 'Contact Our Team')); ?></a>
             </div>
         </div>
     </div>

@@ -121,11 +121,45 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }());
 
-    // Avoid overlap with product sticky CTA on product detail pages
+    // Keep the mobile app bar on the visible viewport edge while mobile
+    // browser controls expand/collapse during scrolling.
     (function () {
-        if (document.getElementById("product-mobile-cta")) {
-            document.body.classList.add("has-product-mobile-cta");
+        var bottomNav = document.querySelector(".mobile-bottom-nav");
+        var viewport = window.visualViewport;
+        if (!bottomNav || !viewport) return;
+
+        var framePending = false;
+
+        function syncBottomNav() {
+            framePending = false;
+
+            if (window.innerWidth >= 768) {
+                document.documentElement.style.removeProperty("--mobile-viewport-bottom");
+                return;
+            }
+
+            var obscuredBottom = Math.max(
+                0,
+                window.innerHeight - viewport.height - viewport.offsetTop
+            );
+
+            document.documentElement.style.setProperty(
+                "--mobile-viewport-bottom",
+                obscuredBottom.toFixed(2) + "px"
+            );
         }
+
+        function requestBottomNavSync() {
+            if (framePending) return;
+            framePending = true;
+            window.requestAnimationFrame(syncBottomNav);
+        }
+
+        syncBottomNav();
+        viewport.addEventListener("resize", requestBottomNavSync, { passive: true });
+        viewport.addEventListener("scroll", requestBottomNavSync, { passive: true });
+        window.addEventListener("resize", requestBottomNavSync, { passive: true });
+        window.addEventListener("orientationchange", requestBottomNavSync, { passive: true });
     }());
 
     // Categories nav active state when on home #catSlider

@@ -864,7 +864,6 @@ do_action('product.view', [
                                 if (VARIANTS.length > 0) canAdd = v && (parseFloat(v.stock) > 0 || parseFloat(v.stock_meters) > 0);
                                 if (addBtn) addBtn.disabled = VARIANTS.length > 0 ? !canAdd : addBtn.disabled;
                                 if (buyBtn) buyBtn.disabled = VARIANTS.length > 0 ? !canAdd : buyBtn.disabled;
-                                syncMobileCtaState(v);
                             }
 
                             function activateColor(color, preferredSize) {
@@ -994,71 +993,6 @@ do_action('product.view', [
                                 });
                             }
 
-                            var mobileBar = document.getElementById('product-mobile-cta');
-                            var mobileAddBtn = document.getElementById('mobile_add_to_cart_btn');
-                            var mobileBuyBtn = document.getElementById('mobile_buy_now_btn');
-                            var mobilePrice = document.getElementById('mobile_cta_price');
-                            var mobileMeta = document.getElementById('mobile_cta_meta');
-                            var mobileStock = document.getElementById('mobile_cta_stock');
-                            var priceBlock = document.getElementById('product_price_block');
-
-                            function syncMobileCtaState(variantData) {
-                                if (!mobileBar) return;
-                                if (mobilePrice && priceBlock) {
-                                    mobilePrice.textContent = (priceBlock.textContent || '').replace(/\s+/g, ' ').trim();
-                                }
-                                if (mobileMeta) {
-                                    var metaParts = [];
-                                    if (variantData) {
-                                        var colorVal = String(variantData.color || '').trim();
-                                        var sizeVal = variantSizeLabel(variantData);
-                                        if (colorVal !== '' && colorVal.toLowerCase() !== 'default') {
-                                            metaParts.push('Color: ' + colorVal);
-                                        }
-                                        if (sizeVal !== '') {
-                                            metaParts.push('Size: ' + sizeVal);
-                                        }
-                                    }
-                                    mobileMeta.textContent = metaParts.join('  •  ');
-                                }
-                                if (mobileStock) {
-                                    mobileStock.classList.remove('is-oos');
-                                    var stockMsg = '';
-                                    if (variantData) {
-                                        var stockVal = parseFloat(variantData.stock_meters) > 0 ? parseFloat(variantData.stock_meters) : parseFloat(variantData.stock);
-                                        if (!Number.isFinite(stockVal) || stockVal <= 0) {
-                                            stockMsg = 'Out of stock';
-                                            mobileStock.classList.add('is-oos');
-                                        } else if (stockVal <= 5) {
-                                            stockMsg = 'Only ' + stockVal + ' left';
-                                        }
-                                    }
-                                    mobileStock.textContent = stockMsg;
-                                }
-                                if (mobileAddBtn && addBtn) {
-                                    mobileAddBtn.disabled = !!addBtn.disabled;
-                                }
-                                if (mobileBuyBtn && buyBtn) {
-                                    mobileBuyBtn.disabled = !!buyBtn.disabled;
-                                }
-                            }
-
-                            if (mobileAddBtn && addBtn) {
-                                mobileAddBtn.addEventListener('click', function () {
-                                    if (!addBtn.disabled) {
-                                        addBtn.click();
-                                    }
-                                });
-                            }
-                            if (mobileBuyBtn && buyBtn) {
-                                mobileBuyBtn.addEventListener('click', function () {
-                                    if (!buyBtn.disabled) {
-                                        buyBtn.click();
-                                    }
-                                });
-                            }
-
-                            syncMobileCtaState();
                         })();
                         </script>
                     <?php else: ?>
@@ -1119,19 +1053,6 @@ do_action('product.view', [
         </div>
     </div>
 </section>
-
-<?php if ($inStock): ?>
-<div class="product-mobile-cta d-md-none" id="product-mobile-cta">
-    <div class="product-mobile-cta-price" id="mobile_cta_price"></div>
-    <div class="product-mobile-cta-meta" id="mobile_cta_meta"></div>
-    <div class="product-mobile-cta-stock" id="mobile_cta_stock"></div>
-    <div class="product-mobile-cta-actions">
-        <button type="button" class="btn btn-primary btn-sm" id="mobile_add_to_cart_btn">Add to Cart</button>
-        <button type="button" class="btn btn-outline-dark btn-sm" id="mobile_buy_now_btn">Buy Now</button>
-    </div>
-</div>
-<div class="d-md-none" style="height:92px;"></div>
-<?php endif; ?>
 
 <section class="section-block pt-0">
     <div class="container">

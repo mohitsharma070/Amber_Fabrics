@@ -2,8 +2,6 @@
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
 
-require_customer();
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/checkout.php');
 }
@@ -17,6 +15,7 @@ if (empty($_SESSION['pending_order_id'])) {
 }
 
 $orderId = (int) ($_SESSION['pending_order_id'] ?? 0);
+$orderNumber = trim((string) ($_SESSION['pending_order_number'] ?? ''));
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 $eventType = trim((string) ($_POST['event_type'] ?? 'failed'));
 $paymentId = trim((string) ($_POST['razorpay_payment_id'] ?? ''));
@@ -31,13 +30,23 @@ if (!in_array($eventType, ['failed', 'cancelled'], true)) {
 try {
     $conn->begin_transaction();
 
-    $orderStmt = $conn->prepare(
-        "SELECT id, order_number, payment_status
-         FROM orders
-         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
-         FOR UPDATE"
-    );
-    $orderStmt->bind_param('ii', $orderId, $customerId);
+    if ($customerId > 0) {
+        $orderStmt = $conn->prepare(
+            "SELECT id, order_number, payment_status
+             FROM orders
+             WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('ii', $orderId, $customerId);
+    } else {
+        $orderStmt = $conn->prepare(
+            "SELECT id, order_number, payment_status
+             FROM orders
+             WHERE id = ? AND order_number = ? AND payment_method = 'razorpay'
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('is', $orderId, $orderNumber);
+    }
     $orderStmt->execute();
     $order = $orderStmt->get_result()->fetch_assoc();
 
@@ -126,9 +135,13 @@ try {
     $conn->commit();
 
     if ($eventType === 'cancelled') {
-        flash('error', 'Payment was cancelled. You can retry payment from your orders.');
+        flash('error', $customerId > 0
+            ? 'Payment was cancelled. You can retry payment from your orders.'
+            : 'Payment was cancelled. Your cart has been kept so you can try again.');
     } else {
-        $msg = 'Payment failed. You can retry payment from your orders.';
+        $msg = $customerId > 0
+            ? 'Payment failed. You can retry payment from your orders.'
+            : 'Payment failed. Your cart has been kept so you can try again.';
         if ($errorDescription !== '') {
             $msg .= ' Reason: ' . $errorDescription;
         } elseif ($errorCode !== '') {
@@ -136,7 +149,7 @@ try {
         }
         flash('error', $msg);
     }
-    redirect('/customer/orders.php');
+    redirect($customerId > 0 ? '/customer/orders.php' : '/checkout.php');
 } catch (Throwable $e) {
     try {
         $conn->rollback();
@@ -145,6 +158,8 @@ try {
     }
 
     error_log('[razorpay] failure callback failed: ' . $e->getMessage());
-    flash('error', 'Unable to process payment status. Please check your order in My Orders.');
-    redirect('/customer/orders.php');
+    flash('error', $customerId > 0
+        ? 'Unable to process payment status. Please check your order in My Orders.'
+        : 'Unable to process payment status. If money was debited, contact support with your order number.');
+    redirect($customerId > 0 ? '/customer/orders.php' : '/checkout.php');
 }

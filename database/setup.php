@@ -474,15 +474,7 @@ function ensure_tables(mysqli $conn): void
             last_error TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            active_subscription_key CHAR(64) GENERATED ALWAYS AS (
-                CASE
-                    WHEN status IN ('pending','processing')
-                    THEN SHA2(CONCAT(LOWER(TRIM(email)), ':', product_id, ':', COALESCE(variant_id, 0)), 256)
-                    ELSE NULL
-                END
-            ) STORED,
             UNIQUE KEY uq_bis_unsubscribe_token (unsubscribe_token),
-            UNIQUE KEY uq_bis_active_subscription (active_subscription_key),
             INDEX idx_bis_product_status (product_id, status),
             INDEX idx_bis_variant_status (variant_id, status),
             INDEX idx_bis_customer (customer_id),

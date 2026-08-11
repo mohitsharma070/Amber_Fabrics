@@ -3,8 +3,6 @@ require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
 require_once __DIR__ . '/../includes/coupon-functions.php';
 
-require_customer();
-
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/checkout.php');
 }
@@ -43,13 +41,23 @@ if (!hash_equals($expected, $signature)) {
 }
 
 try {
-    $orderStmt = $conn->prepare(
-        "SELECT id, payment_status, order_status, order_notes, total_amount
-         FROM orders
-         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
-         LIMIT 1"
-    );
-    $orderStmt->bind_param('ii', $orderId, $customerId);
+    if ($customerId > 0) {
+        $orderStmt = $conn->prepare(
+            "SELECT id, payment_status, order_status, order_notes, total_amount
+             FROM orders
+             WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
+             LIMIT 1"
+        );
+        $orderStmt->bind_param('ii', $orderId, $customerId);
+    } else {
+        $orderStmt = $conn->prepare(
+            "SELECT id, payment_status, order_status, order_notes, total_amount
+             FROM orders
+             WHERE id = ? AND order_number = ? AND payment_method = 'razorpay'
+             LIMIT 1"
+        );
+        $orderStmt->bind_param('is', $orderId, $orderNumber);
+    }
     $orderStmt->execute();
     $order = $orderStmt->get_result()->fetch_assoc();
 
@@ -125,13 +133,23 @@ try {
     }
 
     $conn->begin_transaction();
-    $orderLockStmt = $conn->prepare(
-        "SELECT id, payment_status, order_status, order_notes
-         FROM orders
-         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
-         LIMIT 1 FOR UPDATE"
-    );
-    $orderLockStmt->bind_param('ii', $orderId, $customerId);
+    if ($customerId > 0) {
+        $orderLockStmt = $conn->prepare(
+            "SELECT id, payment_status, order_status, order_notes
+             FROM orders
+             WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay'
+             LIMIT 1 FOR UPDATE"
+        );
+        $orderLockStmt->bind_param('ii', $orderId, $customerId);
+    } else {
+        $orderLockStmt = $conn->prepare(
+            "SELECT id, payment_status, order_status, order_notes
+             FROM orders
+             WHERE id = ? AND order_number = ? AND payment_method = 'razorpay'
+             LIMIT 1 FOR UPDATE"
+        );
+        $orderLockStmt->bind_param('is', $orderId, $orderNumber);
+    }
     $orderLockStmt->execute();
     $lockedOrder = $orderLockStmt->get_result()->fetch_assoc();
     if (!$lockedOrder) {
@@ -190,7 +208,7 @@ try {
 
         $conn->commit();
         flash('warning', 'Payment is being verified by the gateway. If money was debited, your order will update automatically after webhook confirmation.');
-        redirect('/customer/orders.php');
+        redirect($customerId > 0 ? '/customer/orders.php' : '/order-success.php?order=' . urlencode($orderNumber));
     }
 
     PaymentService::razorpay_mark_order_paid(

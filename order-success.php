@@ -2,8 +2,6 @@
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/customer-auth.php';
 
-require_customer();
-
 $orderNumber = trim($_GET['order'] ?? '');
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 
@@ -11,13 +9,33 @@ if ($orderNumber === '') {
     redirect('/index.php');
 }
 
-$stmt = $conn->prepare(
-    "SELECT id, order_number, customer_name, customer_email, total_amount, payment_method, payment_status, order_status, created_at
-     FROM orders
-     WHERE order_number = ? AND customer_id = ?
-     LIMIT 1"
-);
-$stmt->bind_param('si', $orderNumber, $customerId);
+$lastOrder = isset($_SESSION['last_order']) && is_array($_SESSION['last_order'])
+    ? $_SESSION['last_order']
+    : [];
+
+if ($customerId > 0) {
+    $stmt = $conn->prepare(
+        "SELECT id, order_number, customer_name, customer_email, total_amount, payment_method, payment_status, order_status, created_at
+         FROM orders
+         WHERE order_number = ? AND customer_id = ?
+         LIMIT 1"
+    );
+    $stmt->bind_param('si', $orderNumber, $customerId);
+} else {
+    $lastOrderId = (int) ($lastOrder['id'] ?? 0);
+    $lastOrderNumber = trim((string) ($lastOrder['order_number'] ?? ''));
+    if ($lastOrderId <= 0 || $lastOrderNumber === '' || !hash_equals($lastOrderNumber, $orderNumber)) {
+        flash('error', 'This order confirmation is no longer available in this browser session.');
+        redirect('/index.php');
+    }
+    $stmt = $conn->prepare(
+        "SELECT id, order_number, customer_name, customer_email, total_amount, payment_method, payment_status, order_status, created_at
+         FROM orders
+         WHERE id = ? AND order_number = ?
+         LIMIT 1"
+    );
+    $stmt->bind_param('is', $lastOrderId, $orderNumber);
+}
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
 
@@ -87,6 +105,16 @@ include __DIR__ . '/includes/header.php';
                     <div class="alert alert-success text-start mb-3">
                         Online payment received successfully.
                     </div>
+                    <?php elseif ($paymentMethod === 'razorpay'): ?>
+                    <div class="alert alert-warning text-start mb-3">
+                        Your payment is still being verified. We will email you when its status is updated.
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if ($customerId <= 0): ?>
+                    <div class="alert alert-light border text-start mb-3">
+                        Save your order number. Confirmation and future updates will be sent to <?php echo e((string) $order['customer_email']); ?>.
+                    </div>
                     <?php endif; ?>
 
                     <?php if (!empty($shipment)): ?>
@@ -103,7 +131,9 @@ include __DIR__ . '/includes/header.php';
                     <?php endif; ?>
 
                     <div class="d-flex gap-2 justify-content-center">
-                        <a href="/customer/order-view.php?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
+                        <?php if ($customerId > 0): ?>
+                            <a href="/customer/order-view.php?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
+                        <?php endif; ?>
                         <a href="/catalog.php" class="btn btn-primary">Continue Shopping</a>
                         <a href="/contact.php" class="btn btn-outline-secondary">Need Help?</a>
                     </div>

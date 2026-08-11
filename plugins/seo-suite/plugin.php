@@ -77,7 +77,7 @@ function seo_suite_on_page_head(array $context): void
         }
 
         if (seo_suite_robots_enabled()) {
-            echo '<meta name="robots" content="index,follow">' . "\n";
+            echo '<meta name="robots" content="' . seo_suite_current_robots_directive() . '">' . "\n";
         }
     }
 
@@ -86,6 +86,33 @@ function seo_suite_on_page_head(array $context): void
         seo_suite_render_breadcrumb_schema($context);
         seo_suite_render_faq_schema($context);
     }
+}
+
+/**
+ * Keep private account and transactional pages out of search results while
+ * allowing crawlers to follow their links to public content.
+ */
+function seo_suite_current_robots_directive(): string
+{
+    $uriPath = parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+    $uriPath = is_string($uriPath) ? strtolower(rtrim($uriPath, '/')) : '';
+    if ($uriPath === '') {
+        $uriPath = '/';
+    }
+
+    if (strpos($uriPath, '/customer/') === 0 || strpos($uriPath, '/admin/') === 0 || strpos($uriPath, '/payment/') === 0) {
+        return 'noindex,follow';
+    }
+
+    $transactionalPaths = [
+        '/cart', '/cart.php',
+        '/checkout', '/checkout.php',
+        '/order-success', '/order-success.php',
+        '/thank-you', '/thank-you.php',
+        '/invoice.php', '/retry-payment.php',
+    ];
+
+    return in_array($uriPath, $transactionalPaths, true) ? 'noindex,follow' : 'index,follow';
 }
 
 function seo_suite_html_escape(string $value): string
@@ -102,7 +129,7 @@ function seo_suite_current_canonical_url(): string
     }
 
     $query = [];
-    if (strtolower(basename($uriPath)) === 'fabric.php') {
+    if (in_array(strtolower(basename($uriPath)), ['fabric', 'fabric.php'], true)) {
         $productId = (int) ($_GET['id'] ?? 0);
         if ($productId > 0) {
             $query['id'] = $productId;
@@ -178,6 +205,7 @@ function seo_suite_serve_robots_txt(): void
     $lines = [
         'User-agent: *',
         'Allow: /',
+        'Sitemap: ' . SiteContext::url('/sitemap.xml'),
         'Sitemap: ' . SiteContext::url('/sitemap-products.xml'),
         'Sitemap: ' . SiteContext::url('/sitemap-categories.xml'),
     ];
@@ -224,7 +252,7 @@ function seo_suite_serve_products_sitemap(array $context): void
         }
         $lastmod = seo_suite_normalize_lastmod((string) ($row['created_at'] ?? ''));
         $urls[] = [
-            'loc' => SiteContext::url('/fabric.php?id=' . $id),
+            'loc' => SiteContext::url('/fabric?id=' . $id),
             'lastmod' => $lastmod,
         ];
     }
@@ -249,7 +277,7 @@ function seo_suite_serve_categories_sitemap(array $context): void
             continue;
         }
         $urls[] = [
-            'loc' => SiteContext::url('/catalog.php?category=' . rawurlencode($slug)),
+            'loc' => SiteContext::url('/catalog?category=' . rawurlencode($slug)),
             'lastmod' => '',
         ];
     }
@@ -385,7 +413,7 @@ function seo_suite_build_product_schema(mysqli $conn, array $product): array
     $description = trim((string) ($product['description'] ?? ''));
     $sku = trim((string) ($product['sku'] ?? ''));
     $price = seo_suite_schema_price($product);
-    $url = SiteContext::url('/fabric.php?id=' . $id);
+    $url = SiteContext::url('/fabric?id=' . $id);
 
     $schema = [
         '@context' => 'https://schema.org',
@@ -426,8 +454,8 @@ function seo_suite_render_breadcrumb_schema(array $context): void
 
     if ($page === 'catalog.php') {
         $items = [
-            ['name' => 'Home', 'url' => SiteContext::url('/index.php')],
-            ['name' => 'Shop', 'url' => SiteContext::url('/catalog.php')],
+            ['name' => 'Home', 'url' => SiteContext::url('/')],
+            ['name' => 'Shop', 'url' => SiteContext::url('/catalog')],
         ];
     } elseif ($page === 'fabric.php') {
         $productName = seo_suite_breadcrumb_product_name();
@@ -435,9 +463,9 @@ function seo_suite_render_breadcrumb_schema(array $context): void
             return;
         }
         $items = [
-            ['name' => 'Home', 'url' => SiteContext::url('/index.php')],
-            ['name' => 'Shop', 'url' => SiteContext::url('/catalog.php')],
-            ['name' => $productName, 'url' => SiteContext::url('/fabric.php?id=' . (int) ($_GET['id'] ?? 0))],
+            ['name' => 'Home', 'url' => SiteContext::url('/')],
+            ['name' => 'Shop', 'url' => SiteContext::url('/catalog')],
+            ['name' => $productName, 'url' => SiteContext::url('/fabric?id=' . (int) ($_GET['id'] ?? 0))],
         ];
     } else {
         return;

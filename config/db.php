@@ -177,7 +177,26 @@ function app_config_validate_production(array $config): void
             break;
         }
     }
-    if ($codGuardConfigured) {
+
+    // Meta validates a webhook endpoint before a WhatsApp phone number and
+    // permanent access token are available. A verify token on its own is a
+    // safe bootstrap state: it only permits Meta's GET challenge response.
+    // Do not require the full outbound WhatsApp configuration until one of
+    // the other WhatsApp credentials has been supplied.
+    $codGuardBootstrapVerifyOnly = trim((string) ($config['COD_GUARD_WEBHOOK_VERIFY_TOKEN'] ?? '')) !== '';
+    foreach ([
+        'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID',
+        'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
+        'COD_GUARD_WHATSAPP_APP_SECRET',
+        'COD_GUARD_WEBHOOK_TOKEN',
+    ] as $key) {
+        if (trim((string) ($config[$key] ?? '')) !== '') {
+            $codGuardBootstrapVerifyOnly = false;
+            break;
+        }
+    }
+
+    if ($codGuardConfigured && !$codGuardBootstrapVerifyOnly) {
         $required[] = 'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID';
         $required[] = 'COD_GUARD_WHATSAPP_ACCESS_TOKEN';
         $required[] = 'COD_GUARD_WEBHOOK_VERIFY_TOKEN';

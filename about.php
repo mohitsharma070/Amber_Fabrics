@@ -28,8 +28,8 @@ include 'includes/header.php'; ?>
             <h1 class="mb-3">Built for Reliable Quality, Fast Fulfillment, and Scalable Growth</h1>
             <p class="about-hero-desc"><?php echo e(SiteContext::name()); ?> helps growing brands and buyers source premium home textiles with practical MOQ, quality-first processes, and dependable dispatch.</p>
             <div class="about-hero-actions">
-                <a href="/catalog.php" class="btn btn-light btn-lg">Shop Collection</a>
-                <a href="/international-buyers.php" class="btn btn-outline-light btn-lg">Bulk Inquiry</a>
+                <a href="/catalog" class="btn btn-light btn-lg">Shop Collection</a>
+                <a href="/international-buyers" class="btn btn-outline-light btn-lg">Bulk Inquiry</a>
             </div>
             <div class="about-trust-points">
                 <span>Quality-Checked Batches</span>
@@ -182,8 +182,8 @@ include 'includes/header.php'; ?>
             <h2 class="mb-2">Ready to Explore the Collection?</h2>
             <p class="mb-0">Browse our latest range or connect with us for bulk and international requirements.</p>
             <div class="about-final-actions">
-                <a href="/catalog.php" class="btn btn-light btn-lg">Shop Collection</a>
-                <a href="/contact.php" class="btn btn-outline-light btn-lg">Talk to Our Team</a>
+                <a href="/catalog" class="btn btn-light btn-lg">Shop Collection</a>
+                <a href="/contact" class="btn btn-outline-light btn-lg">Talk to Our Team</a>
             </div>
         </div>
     </div>

@@ -15,6 +15,14 @@
  * - Allows APP_MODE=local and downgrades critical jobs to non-critical.
  */
 
+// Generic CLI scripts default to local mode for safety. This file is the
+// dedicated production cron entry point, so select production before config
+// bootstrap. Local smoke tests intentionally retain their local mode.
+if (PHP_SAPI === 'cli' && (empty($argv) || !in_array('--local-smoke', $argv, true))) {
+    putenv('APP_MODE=production');
+    $_SERVER['APP_MODE'] = 'production';
+}
+
 if (PHP_SAPI !== 'cli') {
     require_once __DIR__ . '/../includes/init.php';
     $expectedToken = trim((string) _cfg('CRON_RUN_TOKEN', ''));

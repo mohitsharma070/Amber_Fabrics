@@ -361,6 +361,26 @@ img {
     top: 94px;
 }
 
+/* On phones, let customers review the items and total before entering
+   delivery and payment details. Desktop keeps the existing side-by-side view. */
+@media (max-width: 991.98px) {
+    .checkout-layout {
+        flex-direction: column;
+    }
+
+    .checkout-form-column {
+        order: 0 !important;
+    }
+
+    .checkout-summary-column {
+        order: -1 !important;
+    }
+
+    .checkout-summary-sticky {
+        position: static;
+    }
+}
+
 .checkout-summary-note {
     background: #f8fbff;
     border-color: #d8e5f4 !important;
@@ -1583,60 +1603,6 @@ img {
     .section-head .btn {
         align-self: flex-start;
     }
-}
-
-/* Product mobile sticky CTA */
-.product-mobile-cta {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 1060;
-    background: #ffffff;
-    border-top: 1px solid #d8e0ea;
-    box-shadow: 0 -8px 20px rgba(15, 33, 55, 0.12);
-    padding: 0.55rem 0.8rem 0.65rem;
-}
-
-.product-mobile-cta-price {
-    font-size: 0.84rem;
-    font-weight: 700;
-    color: #18314d;
-    margin-bottom: 0.2rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.product-mobile-cta-meta {
-    font-size: 0.74rem;
-    color: #5f6f84;
-    min-height: 1em;
-    margin-bottom: 0.1rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.product-mobile-cta-stock {
-    font-size: 0.74rem;
-    color: #9a6400;
-    min-height: 1em;
-    margin-bottom: 0.35rem;
-}
-
-.product-mobile-cta-stock.is-oos {
-    color: #a81f2d;
-}
-
-.product-mobile-cta-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-}
-
-.product-mobile-cta-actions .btn {
-    min-height: 42px;
 }
 
 /* --- Page Hero: smaller padding on mobile --- */
@@ -3331,18 +3297,22 @@ img {
 /* Mobile app-style bottom nav */
 .mobile-bottom-nav {
     position: fixed;
+    top: auto;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--mobile-viewport-bottom, 0px);
     z-index: 1055;
+    box-sizing: border-box;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
-    min-height: calc(64px + env(safe-area-inset-bottom, 0px));
+    height: calc(72px + env(safe-area-inset-bottom, 0px));
+    min-height: calc(72px + env(safe-area-inset-bottom, 0px));
     padding: 0.35rem 0.2rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid #d9e0ea;
     background: #ffffff;
     box-shadow: 0 -8px 20px rgba(15, 33, 55, 0.12);
+    overflow: visible;
 }
 
 .mobile-bottom-nav__item {
@@ -3377,20 +3347,13 @@ img {
 
 @media (max-width: 767.98px) {
     body {
-        padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+        padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
     }
 
     .go-top-btn {
-        bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+        bottom: calc(80px + env(safe-area-inset-bottom, 0px));
     }
 
-    body.has-product-mobile-cta .mobile-bottom-nav {
-        display: none;
-    }
-
-    body.has-product-mobile-cta {
-        padding-bottom: 0;
-    }
 }
 
 /* Cart refresh */
@@ -3444,5 +3407,36 @@ img {
 
     .surface-panel .cart-line-actions .btn {
         width: auto;
+    }
+}
+
+/* Checkout mobile order: keep the product and total ahead of checkout fields.
+   This sits at the end of the stylesheet so no later component rule can
+   override it. */
+@media (max-width: 991.98px) {
+    .checkout-layout.row {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    .checkout-layout.row > .checkout-summary-column {
+        order: -1 !important;
+    }
+
+    .checkout-layout.row > .checkout-form-column {
+        order: 0 !important;
+    }
+}
+
+/* Keep navigation labels vertically stable without forcing a second height or
+   a transformed compositing layer on the fixed bar. */
+@media (max-width: 767.98px) {
+    .mobile-bottom-nav__item {
+        min-height: 0;
+        padding: 0;
+        justify-content: center;
+        gap: 0.25rem;
+        font-size: 0.72rem;
+        overflow: visible;
     }
 }

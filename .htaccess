@@ -19,14 +19,44 @@ RedirectMatch 403 ^/(images|css|js|feeds)/.*\.(php[0-9]?|phtml|phar|cgi|pl|asp|a
 
 RewriteEngine On
 
-RewriteRule ^sitemap\.xml$ sitemap.php [L]
-RewriteRule ^feeds/products\.(xml|json)$ index.php?url=feeds/products.$1 [L,QSA]
-
 # Force HTTPS (skips localhost and 127.0.0.1 for local development)
 RewriteCond %{HTTPS} off
 RewriteCond %{HTTP_HOST} !^localhost(:[0-9]+)?$ [NC]
 RewriteCond %{HTTP_HOST} !^127\.0\.0\.1(:[0-9]+)?$
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+RewriteRule ^sitemap\.xml$ sitemap.php [L]
+RewriteRule ^feeds/products\.(xml|json)$ index.php?url=feeds/products.$1 [L,QSA]
+
+# Public, extensionless URLs. Keep action endpoints, webhooks, payments, and
+# admin/customer application routes on their explicit .php URLs so POST
+# requests and third-party callbacks are never redirected.
+#
+# Redirect only direct browser GET/HEAD requests for the public page allowlist.
+# THE_REQUEST prevents a redirect loop after the internal rewrite below.
+RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$
+RewriteCond %{THE_REQUEST} \s/+index\.php(?:[?\s]|$) [NC]
+RewriteRule ^index\.php$ / [R=301,L]
+
+RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$
+RewriteCond %{THE_REQUEST} \s/+(?:about|catalog|cart|checkout|contact|fabric|faq|international-buyers|international-orders-policy|order-success|privacy-policy|return-policy|shipping-policy|size-guide|terms|thank-you)\.php(?:[?\s]|$) [NC]
+RewriteRule ^(.+)\.php$ /$1 [R=301,L,NE]
+
+RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$
+RewriteCond %{THE_REQUEST} \s/+customer/(?:forgot-password|login|order-view|orders|profile|register|reset-password|support-tickets|verify-email)\.php(?:[?\s]|$) [NC]
+RewriteRule ^customer/(forgot-password|login|order-view|orders|profile|register|reset-password|support-tickets|verify-email)\.php$ /customer/$1 [R=301,L,NE]
+
+# Serve the public allowlist without exposing the .php filename. Query strings
+# are retained, for example /fabric?id=123 and /catalog?category=cotton.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(about|catalog|cart|checkout|contact|fabric|faq|international-buyers|international-orders-policy|order-success|privacy-policy|return-policy|shipping-policy|size-guide|terms|thank-you)$ $1.php [L]
+
+# Customer screens use clean URLs too. POST submissions still target their
+# explicit PHP handlers and are deliberately excluded from the redirects above.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^customer/(forgot-password|login|order-view|orders|profile|register|reset-password|support-tickets|verify-email)$ customer/$1.php [L]
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

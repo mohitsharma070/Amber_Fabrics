@@ -2,8 +2,6 @@
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
 
-require_customer();
-
 $cancelInvalidRazorpayOrder = static function (mysqli $conn, int $orderId, string $reason): void {
     if ($orderId <= 0) {
         return;
@@ -67,17 +65,29 @@ if (empty($_SESSION['pending_order_id'])) {
 }
 
 $orderId = (int) $_SESSION['pending_order_id'];
+$pendingOrderNumber = trim((string) ($_SESSION['pending_order_number'] ?? ''));
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 $preferredOnlineMethod = InventoryService::sanitize_online_payment_method((string) ($_SESSION['pending_online_method'] ?? ''));
+$ordersFallback = $customerId > 0 ? '/customer/orders.php' : '/checkout.php';
 
-$stmt = $conn->prepare(
-    "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status, order_status, created_at
-     FROM orders
-     WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending','failed')
-     LIMIT 1"
-);
-$stmt->bind_param('ii', $orderId, $customerId);
+if ($customerId > 0) {
+    $stmt = $conn->prepare(
+        "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status, order_status, created_at
+         FROM orders
+         WHERE id = ? AND customer_id = ? AND payment_method = 'razorpay' AND payment_status IN ('pending','failed')
+         LIMIT 1"
+    );
+    $stmt->bind_param('ii', $orderId, $customerId);
+} else {
+    $stmt = $conn->prepare(
+        "SELECT id, order_number, customer_name, customer_email, customer_phone, total_amount, payment_method, payment_status, order_status, created_at
+         FROM orders
+         WHERE id = ? AND order_number = ? AND payment_method = 'razorpay' AND payment_status IN ('pending','failed')
+         LIMIT 1"
+    );
+    $stmt->bind_param('is', $orderId, $pendingOrderNumber);
+}
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
 
@@ -87,11 +97,11 @@ if (!$order) {
 }
 if (!in_array((string) ($order['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
     flash('error', 'Order is not in a payable state.');
-    redirect('/customer/orders.php');
+    redirect($ordersFallback);
 }
 if (strtotime((string) ($order['created_at'] ?? 'now')) < strtotime('-30 minutes')) {
     flash('error', 'This payment session has expired. Please place a new order.');
-    redirect('/customer/orders.php');
+    redirect($ordersFallback);
 }
 
 $keyId = _cfg('RAZORPAY_KEY_ID', '');

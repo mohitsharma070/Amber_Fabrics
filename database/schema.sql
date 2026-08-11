@@ -8,10 +8,10 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
-CREATE DATABASE IF NOT EXISTS fabric_export
+CREATE DATABASE IF NOT EXISTS u541103758_fabric_export
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
-USE fabric_export;
+USE u541103758_fabric_export;
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
     migration VARCHAR(191) PRIMARY KEY,
@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS fabrics (
     -- Catalog listing: name sorting for scoped category/status listings
     INDEX idx_fabrics_catalog_name (status, category, name, id),
     -- Catalog keyword search across storefront fields
+    INDEX idx_fabrics_created_id (created_at, id),
     FULLTEXT KEY ft_fabrics_catalog_search (name, sku, material, category, dispatch_time, color, size)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -118,36 +119,7 @@ CREATE TABLE IF NOT EXISTS categories (
     FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Seed storefront taxonomy with explicit IDs so parent_id references are correct.
--- FK checks are already disabled at the top of this file.
-INSERT INTO categories (id, name, slug, parent_id, status) VALUES
--- Fabric by Meter (id = 1)
-(1,  'Fabric by Meter',    'fabric-by-meter',    NULL, 'active'),
-(2,  'Floral Prints',      'floral-prints',       1,   'active'),
-(3,  'Geometrical Prints', 'geometrical-prints',  1,   'active'),
-(4,  'Traditional Prints', 'traditional-prints',  1,   'active'),
-(5,  'Ajrakh Prints',      'ajrakh-prints',        1,   'active'),
-(6,  'Bagru Prints',       'bagru-prints',         1,   'active'),
-(7,  'Indigo Prints',      'indigo-prints',        1,   'active'),
-(8,  'Cotton Fabric',      'cotton-fabric',        1,   'active'),
-(9,  'Dress Material',     'dress-material',       1,   'active'),
--- Home Furnishing (id = 10)
-(10, 'Home Furnishing',    'home-furnishing',     NULL, 'active'),
-(11, 'Bedsheets',          'bedsheets',            10,  'active'),
-(12, 'Table Covers',       'table-covers',         10,  'active'),
-(13, 'Towels',             'towels',               10,  'active'),
-(14, 'Cushion Covers',     'cushion-covers',       10,  'active'),
-(15, 'Curtains',           'curtains',             10,  'active'),
-(16, 'Napkins',            'napkins',              10,  'active'),
--- Ready Made (id = 17)
-(17, 'Ready Made',         'ready-made',          NULL, 'active'),
-(18, 'Kurtis',             'kurtis',               17,  'active'),
-(19, 'Dupattas',           'dupattas',             17,  'active'),
-(20, 'Sarees',             'sarees',               17,  'active')
-ON DUPLICATE KEY UPDATE
-    name      = VALUES(name),
-    parent_id = VALUES(parent_id),
-    status    = VALUES(status);
+
 
 -- Customers
 CREATE TABLE IF NOT EXISTS customers (
@@ -332,15 +304,7 @@ CREATE TABLE IF NOT EXISTS back_in_stock_subscriptions (
     last_error TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    active_subscription_key CHAR(64) GENERATED ALWAYS AS (
-        CASE
-            WHEN status IN ('pending','processing')
-            THEN SHA2(CONCAT(LOWER(TRIM(email)), ':', product_id, ':', COALESCE(variant_id, 0)), 256)
-            ELSE NULL
-        END
-    ) STORED,
     UNIQUE KEY uq_bis_unsubscribe_token (unsubscribe_token),
-    UNIQUE KEY uq_bis_active_subscription (active_subscription_key),
     INDEX idx_bis_product_status (product_id, status),
     INDEX idx_bis_variant_status (variant_id, status),
     INDEX idx_bis_customer (customer_id),
@@ -469,7 +433,8 @@ CREATE TABLE IF NOT EXISTS orders (
     INDEX idx_orders_customer_email (customer_email),
     INDEX idx_orders_coupon_id      (coupon_id),
     INDEX idx_orders_coupon_code    (coupon_code),
-    INDEX idx_orders_shipping_quote_token (shipping_quote_token)
+    INDEX idx_orders_shipping_quote_token (shipping_quote_token),
+    INDEX idx_orders_status_payment (order_status, payment_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Order line items
@@ -956,7 +921,76 @@ CREATE TABLE IF NOT EXISTS return_items (
     CONSTRAINT fk_return_items_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
     INDEX idx_return_items_return_id (return_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT DEFAULT NULL,
+    email VARCHAR(255) NOT NULL,
+    email_normalized VARCHAR(255) GENERATED ALWAYS AS (LOWER(TRIM(email))) STORED,
+    name VARCHAR(191) DEFAULT NULL,
+    status ENUM('pending','subscribed','unsubscribed','bounced') NOT NULL DEFAULT 'pending',
+    source VARCHAR(80) NOT NULL DEFAULT 'footer',
+    consent_ip VARCHAR(45) DEFAULT NULL,
+    consent_user_agent VARCHAR(255) DEFAULT NULL,
+    confirmed_at DATETIME DEFAULT NULL,
+    unsubscribed_at DATETIME DEFAULT NULL,
+    unsubscribe_token CHAR(64) NOT NULL,
+    verify_token CHAR(64) DEFAULT NULL,
+    subscribed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_sent_at DATETIME DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_newsletter_email_normalized (email_normalized),
+    UNIQUE KEY uq_newsletter_unsubscribe_token (unsubscribe_token),
+    UNIQUE KEY uq_newsletter_verify_token (verify_token),
+    INDEX idx_newsletter_customer (customer_id),
+    INDEX idx_newsletter_status (status, created_at),
+    CONSTRAINT fk_newsletter_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ticket_number    VARCHAR(32) NOT NULL,
+    customer_id      INT NOT NULL,
+    order_id         INT DEFAULT NULL,
+    subject          VARCHAR(160) NOT NULL,
+    category         ENUM('order','shipping','payment','product','account','other') NOT NULL DEFAULT 'other',
+    priority         ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+    status           ENUM('open','waiting_customer','waiting_admin','resolved','closed') NOT NULL DEFAULT 'open',
+    last_message_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at        DATETIME DEFAULT NULL,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_support_tickets_number (ticket_number),
+    INDEX idx_support_tickets_customer_status (customer_id, status, last_message_at),
+    INDEX idx_support_tickets_order (order_id),
+    INDEX idx_support_tickets_admin_queue (status, priority, last_message_at),
+    CONSTRAINT fk_support_tickets_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_support_tickets_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS support_ticket_messages (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ticket_id       BIGINT NOT NULL,
+    sender_type     ENUM('customer','admin','system') NOT NULL,
+    sender_id       INT DEFAULT NULL,
+    sender_name     VARCHAR(255) DEFAULT NULL,
+    message         TEXT NOT NULL,
+    is_internal     TINYINT(1) NOT NULL DEFAULT 0,
+    attachment_path VARCHAR(500) DEFAULT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_support_ticket_messages_ticket_created (ticket_id, created_at),
+    CONSTRAINT fk_support_ticket_messages_ticket FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- Pre-baseline all migrations so migrate.php skips them on fresh installs.
+INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
+('2026-05-23-p2-catalog-admin-indexes.sql',    '95b33d6c95ab616bb99ade5adf9359e62d9daf971f523b679c7784fd6c9d461a'),
+('2026-06-20-shipping-courier-plugin.sql',      '727d08882652ff03c15b5b5fc7a184b1a820bdbc4723d195ede71b5e63d57f58'),
+('2026-06-27-back-in-stock-subscriptions.sql',  '83ffb78e4982e128f305a5fde6478162292599d470e27d948069e1df9c1bfdb2'),
+('2026-06-27-newsletter-plugin.sql',            '04660f73a831007aaee4f8049161e14c3209a247b924a2d33151f4706e8b05be'),
+('2026-06-27-support-tickets-plugin.sql',       '12ed1674e131c72f45e111cf2f9c129c1ac476299fd6d0464892a5606c244560');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

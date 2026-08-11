@@ -23,8 +23,12 @@ final class EmailService
             $mail->SMTPAuth   = true;
             $mail->Username   = _cfg('MAIL_FROM');
             $mail->Password   = _cfg('SMTP_PASSWORD');
-            $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port       = (int) _cfg('SMTP_PORT', '587');
+            // Port 465 = implicit SSL; anything else = STARTTLS
+            $mail->SMTPSecure = $mail->Port === 465
+                ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+                : PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Timeout    = 10; // fail fast instead of hanging 60 s
         }
 
         $fromAddress = _cfg('MAIL_FROM', contact_email());
@@ -200,7 +204,7 @@ final class EmailService
      */
     public static function send_customer_password_reset_email(string $email, string $token): bool
     {
-        $resetUrl = app_url('/customer/reset-password.php?token=' . urlencode($token));
+        $resetUrl = app_url('/customer/reset-password?token=' . urlencode($token));
 
         $template = email_template_build('customer_password_reset', ['reset_url' => $resetUrl]);
 
@@ -222,7 +226,7 @@ final class EmailService
      */
     public static function send_customer_verification_email(string $email, string $name, string $token): bool
     {
-        $verifyUrl = app_url('/customer/verify-email.php?token=' . urlencode($token));
+        $verifyUrl = app_url('/customer/verify-email?token=' . urlencode($token));
 
         $template = email_template_build('customer_email_verification', [
             'name' => $name,

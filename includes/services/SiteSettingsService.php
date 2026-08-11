@@ -9,7 +9,7 @@ final class SiteSettingsService
     public static function defaults(): array
     {
         return [
-            'site_name' => 'Store',
+            'site_name' => 'Amber Fabrics',
             'site_description' => 'Premium woven and blended fabrics for global brands, importers, and distributors.',
             'contact_email' => '',
             'branding_logo' => 'images/logo-brand-light.svg',

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
 <?php
 $siteSettingsForHead = SiteSettingsService::get();
@@ -31,11 +31,11 @@ $siteUrlForHead = app_url();
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
-<link rel="stylesheet" href="/css/style.css?v=20260516c">
+<link rel="stylesheet" href="/css/style.css?v=20260809g">
 
 <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
 
-<script src="/js/script.js?v=20260627a" defer></script>
+<script src="/js/script.js?v=20260809c" defer></script>
 
 <?php do_action('page.head', [
     'page' => basename($_SERVER['PHP_SELF'] ?? ''),
@@ -63,7 +63,7 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
     <div class="container">
         <div class="site-header-main">
             <div class="site-header-left">
-                <a class="navbar-brand brand-mark text-white d-flex align-items-center m-0" href="/index.php">
+                <a class="navbar-brand brand-mark text-white d-flex align-items-center m-0" href="/">
                     <img src="<?php echo e($siteLogo); ?>" alt="<?php echo e($siteName); ?>" class="site-logo">
                 </a>
             </div>
@@ -80,7 +80,7 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
                         <?php if (!empty($headerCategories)): ?>
                             <?php foreach ($headerCategories as $cat): ?>
                                 <li>
-                                    <a class="dropdown-item" href="/catalog.php?category=<?php echo e($cat['slug']); ?>">
+                                    <a class="dropdown-item" href="/catalog?category=<?php echo e($cat['slug']); ?>">
                                         <?php echo e($cat['name']); ?>
                                     </a>
                                 </li>
@@ -90,29 +90,29 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
                         <?php endif; ?>
                     </ul>
                 </div>
-                <a class="header-icon-link position-relative d-none d-lg-inline-flex <?php echo $currentPage === 'cart.php' ? 'active' : ''; ?>" href="/cart.php" title="Cart" aria-label="Cart">
+                <a class="header-icon-link position-relative d-none d-lg-inline-flex <?php echo $currentPage === 'cart.php' ? 'active' : ''; ?>" href="/cart" title="Cart" aria-label="Cart">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM3.102 4l1.313 7h8.17l1.313-7H3.102zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
                     <?php if ($cartCount > 0): ?><span class="cart-badge"><?php echo $cartCount; ?></span><?php endif; ?>
                 </a>
                 <?php if ($isLoggedIn): ?>
-                    <a class="header-icon-link d-none d-lg-inline-flex <?php echo $currentPage === 'profile.php' ? 'active' : ''; ?>" href="/customer/profile.php" title="Account" aria-label="Account">
+                    <a class="header-icon-link d-none d-lg-inline-flex <?php echo $currentPage === 'profile.php' ? 'active' : ''; ?>" href="/customer/profile" title="Account" aria-label="Account">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M14 14s-1-4-6-4-6 4-6 4 1 1 6 1 6-1 6-1Z"/></svg>
                     </a>
                 <?php else: ?>
-                    <a class="header-chip d-none d-lg-inline-flex" href="/customer/login.php">Login</a>
+                    <a class="header-chip d-none d-lg-inline-flex" href="/customer/login">Login</a>
                 <?php endif; ?>
             </div>
         </div>
 
         <div class="site-header-nav d-none d-lg-flex">
-            <a class="nav-link <?php echo $currentPage === 'index.php' ? 'active' : ''; ?>" href="/index.php">Home</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['catalog.php','fabric.php'], true) ? 'active' : ''; ?>" href="/catalog.php">Shop</a>
-            <a class="nav-link <?php echo $currentPage === 'about.php' ? 'active' : ''; ?>" href="/about.php">About</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['contact.php','thank-you.php'], true) ? 'active' : ''; ?>" href="/contact.php">Contact</a>
+            <a class="nav-link <?php echo $currentPage === 'index.php' ? 'active' : ''; ?>" href="/">Home</a>
+            <a class="nav-link <?php echo in_array($currentPage, ['catalog.php','fabric.php'], true) ? 'active' : ''; ?>" href="/catalog">Shop</a>
+            <a class="nav-link <?php echo $currentPage === 'about.php' ? 'active' : ''; ?>" href="/about">About</a>
+            <a class="nav-link <?php echo in_array($currentPage, ['contact.php','thank-you.php'], true) ? 'active' : ''; ?>" href="/contact">Contact</a>
             <?php if ($isLoggedIn): ?>
-                <a class="nav-link <?php echo in_array($currentPage, ['orders.php','order-view.php'], true) ? 'active' : ''; ?>" href="/customer/orders.php">Orders</a>
+                <a class="nav-link <?php echo in_array($currentPage, ['orders.php','order-view.php'], true) ? 'active' : ''; ?>" href="/customer/orders">Orders</a>
             <?php else: ?>
-                <a class="nav-link <?php echo $currentPage === 'register.php' ? 'active' : ''; ?>" href="/customer/register.php">Register</a>
+                <a class="nav-link <?php echo $currentPage === 'register.php' ? 'active' : ''; ?>" href="/customer/register">Register</a>
             <?php endif; ?>
         </div>
     </div>
@@ -125,19 +125,19 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
     </div>
     <div class="offcanvas-body">
         <div class="mobile-drawer-links">
-            <a class="nav-link <?php echo $currentPage === 'index.php' ? 'active' : ''; ?>" href="/index.php">Home</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['catalog.php','fabric.php'], true) ? 'active' : ''; ?>" href="/catalog.php">Shop</a>
-            <a class="nav-link <?php echo $currentPage === 'about.php' ? 'active' : ''; ?>" href="/about.php">About</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['contact.php','thank-you.php'], true) ? 'active' : ''; ?>" href="/contact.php">Contact</a>
+            <a class="nav-link <?php echo $currentPage === 'index.php' ? 'active' : ''; ?>" href="/">Home</a>
+            <a class="nav-link <?php echo in_array($currentPage, ['catalog.php','fabric.php'], true) ? 'active' : ''; ?>" href="/catalog">Shop</a>
+            <a class="nav-link <?php echo $currentPage === 'about.php' ? 'active' : ''; ?>" href="/about">About</a>
+            <a class="nav-link <?php echo in_array($currentPage, ['contact.php','thank-you.php'], true) ? 'active' : ''; ?>" href="/contact">Contact</a>
         </div>
         <div class="mobile-drawer-utility">
-            <a class="drawer-utility-link position-relative" href="/cart.php">Cart <?php if ($cartCount > 0): ?><span class="cart-badge"><?php echo $cartCount; ?></span><?php endif; ?></a>
+            <a class="drawer-utility-link position-relative" href="/cart">Cart <?php if ($cartCount > 0): ?><span class="cart-badge"><?php echo $cartCount; ?></span><?php endif; ?></a>
             <?php if ($isLoggedIn): ?>
-                <a class="drawer-utility-link" href="/customer/orders.php">My Orders</a>
-                <a class="drawer-utility-link" href="/customer/profile.php">Account</a>
+                <a class="drawer-utility-link" href="/customer/orders">My Orders</a>
+                <a class="drawer-utility-link" href="/customer/profile">Account</a>
             <?php else: ?>
-                <a class="drawer-utility-link" href="/customer/login.php">Login</a>
-                <a class="drawer-utility-link" href="/customer/register.php">Register</a>
+                <a class="drawer-utility-link" href="/customer/login">Login</a>
+                <a class="drawer-utility-link" href="/customer/register">Register</a>
             <?php endif; ?>
         </div>
     </div>

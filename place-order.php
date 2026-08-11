@@ -77,14 +77,6 @@ $_SESSION['checkout_old'] = [
     'create_account' => $wantsCreateAccount ? 1 : 0,
 ];
 
-// Razorpay callbacks are bound to the authenticated customer session. Stop a
-// guest before account creation, inventory reservation, or order persistence so
-// the payment flow can never strand an ownerless pending order.
-if ($paymentMethod === 'razorpay' && $customerId <= 0) {
-    flash('error', 'Please log in before paying online. Your checkout details and cart have been kept.');
-    redirect('/customer/login.php?return=%2Fcheckout.php');
-}
-
 PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
 $errors = [];
@@ -487,6 +479,11 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
         $shippingAddressJson = null;
     }
 
+    // A real guest order has no customer owner. Keep customer_id NULL rather
+    // than using 0; payment ownership is held by the server-side checkout
+    // session until payment completes.
+    $orderCustomerId = $customerId > 0 ? $customerId : null;
+
     if (PaymentService::orders_structured_financial_columns_ready($conn)) {
         $insertOrder = $conn->prepare(
             "INSERT INTO orders (
@@ -517,7 +514,7 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
             $paymentMethod,
             $orderNotesWithCoupon,
             $shippingAddressJson,
-            $customerId,
+            $orderCustomerId,
             $shippingAmount,
             $totalAmount,
             $orderNotesWithCoupon,
@@ -559,7 +556,7 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
             $paymentMethod,
             $orderNotesWithCoupon,
             $shippingAddressJson,
-            $customerId,
+            $orderCustomerId,
             $shippingAmount,
             $totalAmount,
             $orderNotesWithCoupon

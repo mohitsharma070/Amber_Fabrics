@@ -62,6 +62,32 @@ function shipping_courier_provider_configured(): bool
         && (string) ($settings['bigship_access_key'] ?? '') !== '';
 }
 
+function shipping_courier_live_rate_readiness(): array
+{
+    $settings = shipping_courier_settings();
+    $issues = [];
+    if (!shipping_courier_enabled()) {
+        $issues[] = 'Courier plugin is disabled.';
+    }
+    if (!shipping_courier_provider_configured()) {
+        $issues[] = 'Bigship API credentials are incomplete.';
+    }
+    if (!preg_match('/^[1-9][0-9]{5}$/', (string) ($settings['bigship_warehouse_pincode'] ?? ''))) {
+        $issues[] = 'A valid 6-digit warehouse pincode is required.';
+    }
+    $dimensions = [
+        (float) ($settings['bigship_parcel_weight_kg'] ?? 0),
+        (float) ($settings['bigship_parcel_length_cm'] ?? 0),
+        (float) ($settings['bigship_parcel_width_cm'] ?? 0),
+        (float) ($settings['bigship_parcel_height_cm'] ?? 0),
+    ];
+    if (min($dimensions) <= 0) {
+        $issues[] = 'Parcel weight and dimensions are required.';
+    }
+
+    return ['ready' => empty($issues), 'issues' => $issues];
+}
+
 function shipping_courier_result(bool $ok, string $message = '', array $data = []): array
 {
     return array_merge([
@@ -70,13 +96,46 @@ function shipping_courier_result(bool $ok, string $message = '', array $data = [
     ], $data);
 }
 
+/**
+ * Return a provider validation message suitable for an authenticated admin.
+ * The raw API response is intentionally never sent to the browser.
+ */
+function shipping_courier_api_failure_message(array $response, string $operation): string
+{
+    $status = max(0, (int) ($response['status'] ?? 0));
+    $body = is_array($response['body'] ?? null) ? (array) $response['body'] : [];
+    $detail = shipping_courier_response_value($body, ['message', 'error', 'detail', 'description']);
+
+    if ($detail === '' && !empty($body['errors']) && is_array($body['errors'])) {
+        foreach ((array) $body['errors'] as $field => $errors) {
+            $first = is_array($errors) ? reset($errors) : $errors;
+            if (is_scalar($first) && trim((string) $first) !== '') {
+                $detail = trim((string) $field) . ': ' . trim((string) $first);
+                break;
+            }
+        }
+    }
+    if ($detail === '') {
+        $detail = trim((string) ($response['message'] ?? ''));
+    }
+
+    $message = 'Bigship ' . $operation . ' failed';
+    if ($status > 0) {
+        $message .= ' (HTTP ' . $status . ')';
+    }
+    if ($detail !== '' && !preg_match('/^Courier API returned HTTP \d+$/i', $detail)) {
+        $message .= ': ' . substr($detail, 0, 500);
+    }
+    return $message . '.';
+}
+
 function shipping_courier_filter_shipping_quote($quote, array $context)
 {
     if (!is_array($quote)) {
         return $quote;
     }
 
-    $debugEnabled = (($GLOBALS['_app_mode'] ?? '') === 'local');
+    $debugEnabled = (($GLOBALS['_app_mode'] ?? '') === 'local') || !empty($context['admin_debug']);
     $fallback = static function (array $base, string $reason, string $message = '') use ($debugEnabled): array {
         if (!$debugEnabled) {
             return $base;
@@ -912,6 +971,16 @@ function shipping_courier_bigship_invoice_amount(array $order): float
     return $invoiceAmount;
 }
 
+function shipping_courier_bigship_mobile_number(string $value): string
+{
+    $digits = preg_replace('/\D+/', '', $value) ?: '';
+    $digits = ltrim($digits, '0');
+    if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+        $digits = substr($digits, 2);
+    }
+    return preg_match('/^[6-9][0-9]{9}$/', $digits) ? $digits : '';
+}
+
 function shipping_courier_bigship_order_request(array $payload): array
 {
     $order = (array) ($payload['order'] ?? []);
@@ -934,15 +1003,18 @@ function shipping_courier_bigship_order_request(array $payload): array
     $paymentModeId = shipping_courier_bigship_payment_mode_id($order);
     $invoiceAmount = shipping_courier_bigship_invoice_amount($order);
     $shippingName = trim((string) ($order['customer_name'] ?? ''));
-    $shippingMobile = trim((string) ($order['customer_phone'] ?? ''));
+    $shippingMobile = shipping_courier_bigship_mobile_number((string) ($order['customer_phone'] ?? ''));
     $shippingAddress = trim((string) ($order['address'] ?? ''));
     $shippingZip = trim((string) ($order['pincode'] ?? ''));
     $shippingCity = trim((string) ($order['city'] ?? ''));
     $shippingState = trim((string) ($order['state'] ?? ''));
     $shippingCountry = trim((string) ($order['country'] ?? 'India'));
 
-    if ($shippingName === '' || $shippingMobile === '' || $shippingAddress === '' || $shippingZip === '' || $shippingCity === '' || $shippingState === '') {
+    if ($shippingName === '' || $shippingAddress === '' || $shippingZip === '' || $shippingCity === '' || $shippingState === '') {
         return shipping_courier_result(false, 'Order shipping address is incomplete for Bigship order creation.');
+    }
+    if ($shippingMobile === '') {
+        return shipping_courier_result(false, 'Order shipping phone must be a valid 10-digit Indian mobile number.');
     }
 
     $basePayload = [
@@ -1206,8 +1278,9 @@ function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
         }
         $createOrder = shipping_courier_http_json('POST', '/api/outbound/create-order', (array) $createPayload['body']);
         if (empty($createOrder['ok']) || !is_array($createOrder['body'] ?? null)) {
-            error_log('[shipping-courier] Bigship create-order failed for order ' . $orderId . ': ' . (string) ($createOrder['message'] ?? 'unknown'));
-            return $createOrder;
+            $message = shipping_courier_api_failure_message($createOrder, 'create order');
+            error_log('[shipping-courier] ' . $message . ' order_id=' . $orderId);
+            return shipping_courier_result(false, $message, ['status' => (int) ($createOrder['status'] ?? 0)]);
         }
         $responses['create_order'] = $createOrder['body'];
         $customGlobalOrderId = shipping_courier_response_value($createOrder['body'], ['CustomGlobalOrderId', 'custom_global_order_id']);
@@ -1221,8 +1294,9 @@ function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
         'MasterCustomOrderId' => $customGlobalOrderId,
     ]);
     if (empty($cost['ok']) || !is_array($cost['body'] ?? null)) {
-        error_log('[shipping-courier] Bigship courier-wise-shipment-cost failed for order ' . $orderId . ': ' . (string) ($cost['message'] ?? 'unknown'));
-        return $cost;
+        $message = shipping_courier_api_failure_message($cost, 'courier rate selection');
+        error_log('[shipping-courier] ' . $message . ' order_id=' . $orderId);
+        return shipping_courier_result(false, $message, ['status' => (int) ($cost['status'] ?? 0)]);
     }
     $responses['courier_wise_shipment_cost'] = $cost['body'];
 
@@ -1240,8 +1314,9 @@ function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
         $placeOrder = shipping_courier_http_json('POST', '/api/outbound/place-order', $placePayload);
     }
     if (empty($placeOrder['ok']) || !is_array($placeOrder['body'] ?? null)) {
-        error_log('[shipping-courier] Bigship place-order failed for order ' . $orderId . ': ' . (string) ($placeOrder['message'] ?? 'unknown'));
-        return $placeOrder;
+        $message = shipping_courier_api_failure_message($placeOrder, 'place order');
+        error_log('[shipping-courier] ' . $message . ' order_id=' . $orderId);
+        return shipping_courier_result(false, $message, ['status' => (int) ($placeOrder['status'] ?? 0)]);
     }
     $responses['place_order'] = $placeOrder['body'];
 
@@ -2127,6 +2202,7 @@ function shipping_courier_render_shipping_rates_status(array $context): void
 {
     $settings = shipping_courier_settings();
     $provider = (string) ($settings['provider'] ?? '');
+    $readiness = shipping_courier_live_rate_readiness();
     ?>
     <div class="card mb-4">
         <div class="card-body">
@@ -2134,7 +2210,11 @@ function shipping_courier_render_shipping_rates_status(array $context): void
             <div class="small text-muted">
                 <div>Status: <strong><?php echo shipping_courier_enabled() ? 'Enabled' : 'Disabled'; ?></strong></div>
                 <div>Provider: <strong><?php echo e($provider !== '' ? $provider : '-'); ?></strong></div>
-                <div>API: <strong><?php echo shipping_courier_provider_configured() ? 'Configured' : 'Not configured'; ?></strong></div>
+                <div>API credentials: <strong><?php echo shipping_courier_provider_configured() ? 'Configured' : 'Not configured'; ?></strong></div>
+                <div>Live quote readiness: <strong class="<?php echo !empty($readiness['ready']) ? 'text-success' : 'text-warning'; ?>"><?php echo !empty($readiness['ready']) ? 'Ready' : 'Needs setup'; ?></strong></div>
+                <?php foreach ((array) ($readiness['issues'] ?? []) as $issue): ?>
+                    <div class="text-warning"><?php echo e((string) $issue); ?></div>
+                <?php endforeach; ?>
                 <div>Fallback: <strong>Manual shipping rules</strong></div>
             </div>
         </div>

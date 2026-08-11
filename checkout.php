@@ -245,8 +245,8 @@ include __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
 
-        <div class="row g-4">
-            <div class="col-lg-7">
+        <div class="row g-4 checkout-layout">
+            <div class="col-lg-7 order-0 checkout-form-column">
                 <form id="checkout_form" method="POST" action="/place-order.php" novalidate>
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="order_nonce" value="<?php echo e($_SESSION['order_nonce']); ?>">
@@ -479,7 +479,7 @@ include __DIR__ . '/includes/header.php';
                 </form>
             </div>
 
-            <div class="col-lg-5">
+            <div class="col-lg-5 checkout-summary-column">
                 <div class="surface-panel p-4 checkout-summary-sticky">
                     <h5 class="mb-3">Order Summary</h5>
                     <?php foreach ($items as $item): ?>
@@ -565,17 +565,6 @@ include __DIR__ . '/includes/header.php';
         </div>
     </div>
 </section>
-<?php if ($isIndia): ?>
-<div class="d-lg-none position-fixed bottom-0 start-0 end-0 bg-white border-top p-3" style="z-index:1050;">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="small text-muted">Total</span>
-        <strong id="mobile_summary_total"><?php echo e(money($totalAmount)); ?></strong>
-    </div>
-    <button type="button" id="mobile_place_order_btn" class="btn btn-primary w-100">Place Order</button>
-</div>
-<div class="d-lg-none" style="height:88px;"></div>
-<?php endif; ?>
-
 <script nonce="<?php echo $cspNonce; ?>">
 (function () {
     var csrfToken = <?php echo json_encode(csrf_token()); ?>;

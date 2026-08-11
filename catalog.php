@@ -378,7 +378,7 @@ if ($dispatchFilter !== '') {
 
 function catalog_query(array $params): string {
     $query = http_build_query($params);
-    return $query !== '' ? 'catalog.php?' . $query : 'catalog.php';
+    return $query !== '' ? '/catalog?' . $query : '/catalog';
 }
 ?>
 
@@ -402,11 +402,11 @@ function catalog_query(array $params): string {
                                 <span aria-hidden="true">&times;</span>
                             </a>
                         <?php endforeach; ?>
-                        <a class="catalog-clear-all" href="catalog.php">Clear all</a>
+                        <a class="catalog-clear-all" href="/catalog">Clear all</a>
                     </div>
                 <?php endif; ?>
             </div>
-            <form class="catalog-search-strip" method="GET" action="catalog.php" role="search">
+            <form class="catalog-search-strip" method="GET" action="/catalog" role="search">
                 <input type="hidden" name="category" value="<?php echo e($category); ?>">
                 <input type="hidden" name="min_price" value="<?php echo (int) $minPrice; ?>">
                 <input type="hidden" name="max_price" value="<?php echo (int) $maxPrice; ?>">
@@ -427,7 +427,7 @@ function catalog_query(array $params): string {
             <aside class="catalog-filters">
                 <div class="surface-panel catalog-filter-panel">
                     <h2 class="h5 mb-3">Filters</h2>
-                    <form class="row g-2" method="GET" action="catalog.php">
+                    <form class="row g-2" method="GET" action="/catalog">
                             <input type="hidden" name="q" value="<?php echo e($search); ?>">
                             <div class="col-12">
                                 <label class="form-label">Category</label>
@@ -490,7 +490,7 @@ function catalog_query(array $params): string {
                                 <button class="btn btn-primary w-100" type="submit">Apply Filters</button>
                             </div>
                             <div class="col-12">
-                                <a href="catalog.php" class="btn btn-outline-primary w-100">Reset All</a>
+                                <a href="/catalog" class="btn btn-outline-primary w-100">Reset All</a>
                             </div>
                         </form>
                 </div>
@@ -601,7 +601,7 @@ function catalog_query(array $params): string {
         <div class="surface-panel text-center">
             <h5 class="mb-2">Need International Shipping or Bulk Quantities?</h5>
             <p class="text-muted mb-3">For overseas buyers and large-volume orders, contact us through International Inquiry.</p>
-            <a href="international-buyers.php" class="btn btn-outline-primary">International Inquiry</a>
+            <a href="/international-buyers" class="btn btn-outline-primary">International Inquiry</a>
         </div>
     </div>
 </section>
@@ -613,7 +613,7 @@ function catalog_query(array $params): string {
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
     </div>
     <div class="offcanvas-body">
-        <form class="row g-3" method="GET" action="catalog.php">
+        <form class="row g-3" method="GET" action="/catalog">
             <input type="hidden" name="q" value="<?php echo e($search); ?>">
             <div class="col-12">
                 <label class="form-label fw-semibold">Category</label>
@@ -691,7 +691,7 @@ function catalog_query(array $params): string {
             </div>
             <div class="col-12 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1" data-bs-dismiss="offcanvas">Apply Filters</button>
-                <a href="catalog.php" class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Reset</a>
+                <a href="/catalog" class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Reset</a>
             </div>
         </form>
     </div>
