@@ -56,12 +56,6 @@ RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$
 RewriteCond %{THE_REQUEST} \s/+admin/[A-Za-z0-9-]+\.php(?:[?\s]|$) [NC]
 RewriteRule ^admin/([A-Za-z0-9-]+)\.php$ /admin/$1 [R=301,L,NE]
 
-# Preserve POST bodies and multipart uploads while canonicalizing legacy admin
-# form actions. A temporary 307 avoids caching a method-preserving redirect.
-RewriteCond %{REQUEST_METHOD} !^(?:GET|HEAD)$
-RewriteCond %{THE_REQUEST} \s/+admin/[A-Za-z0-9-]+\.php(?:[?\s]|$) [NC]
-RewriteRule ^admin/([A-Za-z0-9-]+)\.php$ /admin/$1 [R=307,L,NE]
-
 # Serve the public allowlist without exposing the .php filename. Query strings
 # are retained, for example /fabric?id=123 and /catalog?category=cotton.
 RewriteCond %{REQUEST_FILENAME} !-f

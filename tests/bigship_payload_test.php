@@ -95,6 +95,27 @@ $largeParcel = shipping_courier_bigship_parcel([['unit_type' => 'meter', 'quanti
 $assert($largeParcel['weight'] > $smallParcel['weight'], 'Parcel weight does not grow with order quantity.');
 $assert($largeParcel['height'] > $smallParcel['height'], 'Parcel height does not grow with order quantity.');
 
+$selectedRate = shipping_courier_bigship_selected_rate([
+    'data' => [[
+        'courier_partner_id' => 12,
+        'courier_name' => 'Test Courier',
+        'totalCharge' => 120,
+        'chargeBreakup' => ['codCharge' => 35],
+    ]],
+]);
+$assert(($selectedRate['cod_charge'] ?? null) === 35.0, 'Nested Bigship COD charge was not extracted.');
+$splitRate = shipping_courier_bigship_split_rate_charges((array) $selectedRate, 50, true);
+$assert(($splitRate['base_shipping'] ?? -1) === 85.0, 'Bigship shipping charge still includes the COD fee.');
+$assert(($splitRate['cod_fee'] ?? -1) === 35.0, 'Bigship COD fee was not shown separately.');
+$assert(($splitRate['shipping_total'] ?? -1) === 120.0, 'Splitting COD changed the provider total.');
+
+$fallbackSplit = shipping_courier_bigship_split_rate_charges([
+    'total_charge' => 120,
+    'cod_charge' => null,
+], 50, true);
+$assert(($fallbackSplit['base_shipping'] ?? -1) === 70.0, 'Configured COD fallback was not removed from shipping.');
+$assert(($fallbackSplit['cod_fee'] ?? -1) === 50.0, 'Configured COD fallback was not displayed separately.');
+
 if ($failures !== []) {
     fwrite(STDERR, implode(PHP_EOL, $failures) . PHP_EOL);
     exit(1);

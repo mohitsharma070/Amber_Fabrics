@@ -45,7 +45,7 @@ if ($isReadRequest && $route === 'index.php') {
 } elseif ($isReadRequest && preg_match('#^customer/([A-Za-z0-9-]+)\.php$#', $route, $customerMatch)
     && in_array($customerMatch[1], $customerRoutes, true)) {
     $canonicalPath = '/customer/' . $customerMatch[1];
-} elseif (preg_match('#^admin/([A-Za-z0-9-]+)\.php$#', $route, $adminPhpMatch)) {
+} elseif ($isReadRequest && preg_match('#^admin/([A-Za-z0-9-]+)\.php$#', $route, $adminPhpMatch)) {
     $canonicalPath = $adminPhpMatch[1] === 'index' ? '/admin/' : '/admin/' . $adminPhpMatch[1];
 }
 
@@ -54,7 +54,7 @@ if ($canonicalPath !== '') {
     if ($query !== '') {
         $canonicalPath .= '?' . $query;
     }
-    http_response_code($isReadRequest ? 301 : 307);
+    http_response_code(301);
     header('Location: ' . $canonicalPath);
     exit;
 }

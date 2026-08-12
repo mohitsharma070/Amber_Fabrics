@@ -166,15 +166,41 @@ if ($selectedOnlineMethod === '') {
 }
 $codFeeApply = ($selectedPayment === 'cod') ? 1 : 0;
 $countryForCalc = trim((string) ($old['country'] ?? ''));
+$couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
+$couponInfo = get_active_coupon_discount_for_customer($conn, $couponCode, (float) $subtotal, $customerId);
+if (!$couponInfo['valid'] && $couponCode !== '') {
+    unset($_SESSION['applied_coupon_code']);
+}
+$discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
+$discountAmount = min($discountAmount, $subtotal); // discount applies to product subtotal only - shipping is never discounted
+$taxableAmount = max(0.0, $subtotal - $discountAmount);
+
 $shipping = CartService::checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
 $isIndia = (bool) $shipping['is_india'];
-$baseShippingAmount = (float) $shipping['base_shipping'];
-$codFeeAmount = (float) $shipping['cod_fee'];
-$shippingAmount = (float) $shipping['shipping_total'];
-$shippingRateSource = 'manual';
-$selectedCourierName = '';
+$shippingQuote = apply_filters('shipping.quote', [
+    'base_shipping' => (float) $shipping['base_shipping'],
+    'cod_fee' => (float) $shipping['cod_fee'],
+    'shipping_total' => (float) $shipping['shipping_total'],
+    'source' => 'manual',
+    'courier_name' => '',
+    'courier_id' => 0,
+], [
+    'conn' => $conn,
+    'subtotal' => (float) $subtotal,
+    'invoice_value' => (float) $taxableAmount,
+    'country' => $countryForCalc,
+    'pincode' => (string) ($old['pincode'] ?? ''),
+    'payment_method' => $selectedPayment,
+    'items' => $items,
+]);
+$baseShippingAmount = max(0.0, round((float) ($shippingQuote['base_shipping'] ?? $shipping['base_shipping']), 2));
+$codFeeAmount = max(0.0, round((float) ($shippingQuote['cod_fee'] ?? $shipping['cod_fee']), 2));
+$shippingAmount = round($baseShippingAmount + $codFeeAmount, 2);
+$shippingRateSource = trim((string) ($shippingQuote['source'] ?? 'manual')) ?: 'manual';
+$selectedCourierName = trim((string) ($shippingQuote['courier_name'] ?? ''));
+$selectedCourierId = max(0, (int) ($shippingQuote['courier_id'] ?? 0));
 $shippingQuoteToken = InventoryService::shipping_quote_store(
-    (float) $subtotal,
+    (float) $taxableAmount,
     (string) $countryForCalc,
     (string) ($old['pincode'] ?? ''),
     (string) $selectedPayment,
@@ -182,16 +208,9 @@ $shippingQuoteToken = InventoryService::shipping_quote_store(
     (float) $codFeeAmount,
     (float) $shippingAmount,
     (string) $shippingRateSource,
-    $selectedCourierName
+    $selectedCourierName,
+    $selectedCourierId
 );
-$couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
-$couponInfo = get_active_coupon_discount($conn, $couponCode, (float) $subtotal);
-if (!$couponInfo['valid'] && $couponCode !== '') {
-    unset($_SESSION['applied_coupon_code']);
-}
-$discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
-$discountAmount = min($discountAmount, $subtotal); // discount applies to product subtotal only - shipping is never discounted
-$taxableAmount  = max(0.0, $subtotal - $discountAmount);
 // Tax-inclusive pricing: GST is already embedded in product prices.
 // Total = (subtotal - discount) + shipping. No extra GST added.
 $totalAmount    = round($taxableAmount + $shippingAmount, 2);
@@ -502,7 +521,7 @@ include __DIR__ . '/includes/header.php';
                         </div>
                     <?php endforeach; ?>
 
-                    <form method="POST" action="/apply-coupon.php" class="mb-3">
+                    <form method="POST" action="/apply-coupon.php" class="mb-3" data-preserve-checkout-state>
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="redirect_to" value="checkout">
                         <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
@@ -514,7 +533,7 @@ include __DIR__ . '/includes/header.php';
                     </form>
 
                     <?php if ($couponInfo['valid']): ?>
-                    <form method="POST" action="/remove-coupon.php" class="mb-2">
+                    <form method="POST" action="/remove-coupon.php" class="mb-2" data-preserve-checkout-state>
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="redirect_to" value="checkout">
                         <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
@@ -555,7 +574,7 @@ include __DIR__ . '/includes/header.php';
                     </div>
                     <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note" id="summary_shipping_note">
                         <?php if (strtolower((string) $shippingRateSource) !== 'manual'): ?>
-                            Live courier rate active<?php echo !empty($old['courier_name']) ? ': ' . e((string) $old['courier_name']) : '.'; ?>
+                            Live courier rate active<?php echo $selectedCourierName !== '' ? ': ' . e($selectedCourierName) : '.'; ?>
                         <?php else: ?>
                             Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
                         <?php endif; ?>
@@ -590,8 +609,10 @@ include __DIR__ . '/includes/header.php';
     var shippingNoteEl = document.getElementById('summary_shipping_note');
     var shippingSource = <?php echo json_encode((string) $shippingRateSource); ?>;
     var shippingCourierName = <?php echo json_encode((string) $selectedCourierName); ?>;
-    var shippingDebugReason = '';
-    var shippingDebugMessage = '';
+    var shippingDebugReason = <?php echo json_encode((string) ($shippingQuote['debug_reason'] ?? '')); ?>;
+    var shippingDebugMessage = <?php echo json_encode((($GLOBALS['_app_mode'] ?? '') === 'local') ? (string) ($shippingQuote['debug_message'] ?? '') : ''); ?>;
+    var shippingRateTimer = null;
+    var shippingRateRequestId = 0;
 
     var payOptionCards = document.querySelectorAll('[data-pay-option]');
     var codPanel = document.getElementById('cod-panel');
@@ -615,6 +636,7 @@ include __DIR__ . '/includes/header.php';
     var createAccountFields = document.getElementById('create_account_fields');
     var createAccountPassword = document.getElementById('create_account_password');
     var createAccountConfirmPassword = document.getElementById('create_account_confirm_password');
+    var couponStateForms = document.querySelectorAll('[data-preserve-checkout-state]');
 
     if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
         return;
@@ -642,6 +664,40 @@ include __DIR__ . '/includes/header.php';
         return 'Rs ' + Number(v).toFixed(2);
     }
 
+    function setCouponStateField(form, name, value) {
+        var input = form.querySelector('input[type="hidden"][name="' + name + '"]');
+        if (!input) {
+            input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            form.appendChild(input);
+        }
+        input.value = String(value == null ? '' : value);
+    }
+
+    function preserveCheckoutState(form) {
+        var emailInput = document.getElementById('checkout_email');
+        var notesInput = document.querySelector('[name="order_notes"]');
+        var checkedPayment = document.querySelector('[name="payment_method"]:checked');
+        var state = {
+            full_name: fullNameInput ? fullNameInput.value : '',
+            phone: phoneInput ? phoneInput.value : '',
+            email: emailInput ? emailInput.value : '',
+            address: addressInput ? addressInput.value : '',
+            city: cityInput ? cityInput.value : '',
+            state: stateInput ? stateInput.value : '',
+            pincode: pincodeInput ? pincodeInput.value : '',
+            country: 'India',
+            order_notes: notesInput ? notesInput.value : '',
+            payment_method: checkedPayment ? checkedPayment.value : 'cod',
+            online_method: onlineMethodInput ? onlineMethodInput.value : '',
+            shipping_address_id: shippingAddressIdInput ? shippingAddressIdInput.value : '0'
+        };
+        Object.keys(state).forEach(function (name) {
+            setCouponStateField(form, name, state[name]);
+        });
+    }
+
     function setShippingNote(source, courierName, debugReason, debugMessage) {
         if (!shippingNoteEl) {
             return;
@@ -657,7 +713,17 @@ include __DIR__ . '/includes/header.php';
             return;
         }
         if (reason !== '') {
-            shippingNoteEl.textContent = 'Manual shipping fallback (' + reason + ')' + (message !== '' ? (': ' + message) : '.');
+            var fallbackMessages = {
+                shipping_quote_refreshing: 'Updating live shipping rate...',
+                shipping_courier_disabled: 'Manual shipping is active because live courier rates are disabled.',
+                shipping_courier_not_configured: 'Manual shipping is active because the courier service is not configured.',
+                shipping_quote_context_invalid: 'Enter a valid delivery pincode to calculate live shipping.',
+                bigship_origin_or_parcel_invalid: 'Manual shipping is active because parcel details need attention.',
+                bigship_rate_api_failed: 'Live courier pricing is temporarily unavailable; manual shipping is being used.',
+                bigship_rate_unavailable: 'No live courier rate is available for this order; manual shipping is being used.'
+            };
+            shippingNoteEl.textContent = fallbackMessages[reason]
+                || ('Manual shipping fallback' + (message !== '' ? (': ' + message) : '.'));
             return;
         }
         shippingNoteEl.textContent = 'Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.';
@@ -685,6 +751,10 @@ include __DIR__ . '/includes/header.php';
         if (mobileTotalEl) {
             mobileTotalEl.textContent = toMoney(total);
         }
+        shippingSource = 'manual';
+        shippingCourierName = '';
+        shippingDebugReason = 'shipping_quote_refreshing';
+        shippingDebugMessage = '';
         setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
     }
 
@@ -760,13 +830,17 @@ include __DIR__ . '/includes/header.php';
         var country = String(countryInput.value || '').trim().toLowerCase();
         var pincode = pincodeInput ? String(pincodeInput.value || '').trim() : '';
         if (country !== 'india' || !/^[1-9][0-9]{5}$/.test(pincode)) {
+            if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
+            shippingDebugReason = 'shipping_quote_context_invalid';
+            setShippingNote('manual', '', shippingDebugReason, '');
             return;
         }
+        var requestId = ++shippingRateRequestId;
+        if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
         var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
         var body = new URLSearchParams();
         body.set('csrf_token', csrfToken);
         body.set('pincode', pincode);
-        body.set('subtotal', String(subtotal));
         body.set('payment_method', paymentMethod);
         fetch('/shipping-rate.php', {
             method: 'POST',
@@ -778,7 +852,12 @@ include __DIR__ . '/includes/header.php';
         }).then(function (res) {
             return res.ok ? res.json() : null;
         }).then(function (data) {
+            if (requestId !== shippingRateRequestId) {
+                return;
+            }
             if (!data || !data.ok) {
+                shippingDebugReason = 'bigship_rate_api_failed';
+                setShippingNote('manual', '', shippingDebugReason, '');
                 return;
             }
             var liveShipping = Number(data.base_shipping || 0);
@@ -799,7 +878,19 @@ include __DIR__ . '/includes/header.php';
                 mobileTotalEl.textContent = toMoney(total);
             }
             setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
-        }).catch(function () {});
+        }).catch(function () {
+            if (requestId === shippingRateRequestId) {
+                shippingDebugReason = 'bigship_rate_api_failed';
+                setShippingNote('manual', '', shippingDebugReason, '');
+            }
+        });
+    }
+
+    function scheduleLiveRate(delay) {
+        if (shippingRateTimer) {
+            window.clearTimeout(shippingRateTimer);
+        }
+        shippingRateTimer = window.setTimeout(maybeFetchLiveRate, Number(delay || 0));
     }
 
     function syncPaymentPanels() {
@@ -838,25 +929,26 @@ include __DIR__ . '/includes/header.php';
     if (pincodeInput) {
         pincodeInput.addEventListener('input', function () {
             syncSummary();
-            maybeFetchLiveRate();
+            scheduleLiveRate(350);
         });
     }
-    countryInput.addEventListener('change', maybeFetchLiveRate);
-    codRadio.addEventListener('change', maybeFetchLiveRate);
-    razorpayRadio.addEventListener('change', maybeFetchLiveRate);
+    countryInput.addEventListener('change', function () { scheduleLiveRate(0); });
+    codRadio.addEventListener('change', function () { scheduleLiveRate(0); });
+    razorpayRadio.addEventListener('change', function () { scheduleLiveRate(0); });
     onlineMethodButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             activateOnlineMethod(btn.getAttribute('data-online-method'));
             razorpayRadio.checked = true;
             syncPaymentPanels();
             syncSummary();
+            scheduleLiveRate(0);
         });
     });
     if (savedAddressSelect) {
         savedAddressSelect.addEventListener('change', function () {
             applySavedAddressOption(savedAddressSelect.options[savedAddressSelect.selectedIndex] || null);
             syncSummary();
-            maybeFetchLiveRate();
+            scheduleLiveRate(0);
         });
     }
     [fullNameInput, phoneInput, addressInput, cityInput, stateInput, pincodeInput, countryFieldInput].forEach(function (field) {
@@ -870,12 +962,10 @@ include __DIR__ . '/includes/header.php';
             }
         });
     });
-    syncSummary();
     if (savedAddressSelect && savedAddressSelect.value !== '') {
         applySavedAddressOption(savedAddressSelect.options[savedAddressSelect.selectedIndex] || null);
-        syncSummary();
     }
-    maybeFetchLiveRate();
+    setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
     if (mobileSubmitBtn && checkoutForm) {
         mobileSubmitBtn.addEventListener('click', function () {
             checkoutForm.requestSubmit();
@@ -885,6 +975,11 @@ include __DIR__ . '/includes/header.php';
         createAccountCheckbox.addEventListener('change', syncCreateAccountFields);
         syncCreateAccountFields();
     }
+    couponStateForms.forEach(function (form) {
+        form.addEventListener('submit', function () {
+            preserveCheckoutState(form);
+        });
+    });
     if (editAddressBtn) {
         editAddressBtn.addEventListener('click', function () {
             setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, false);

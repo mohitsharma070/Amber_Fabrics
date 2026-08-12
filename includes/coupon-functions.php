@@ -5,6 +5,30 @@ function normalize_coupon_code(string $code): string
     return strtoupper(trim($code));
 }
 
+/** Preserve the in-progress checkout form when applying/removing a coupon. */
+function preserve_checkout_state_from_coupon_request(): void
+{
+    if ((string) ($_POST['redirect_to'] ?? '') !== 'checkout') {
+        return;
+    }
+
+    $state = is_array($_SESSION['checkout_old'] ?? null) ? $_SESSION['checkout_old'] : [];
+    foreach (['full_name', 'phone', 'email', 'address', 'city', 'state', 'pincode', 'order_notes'] as $key) {
+        if (array_key_exists($key, $_POST)) {
+            $state[$key] = substr(trim((string) $_POST[$key]), 0, $key === 'order_notes' ? 2000 : 255);
+        }
+    }
+    $state['country'] = 'India';
+    $paymentMethod = strtolower(trim((string) ($_POST['payment_method'] ?? 'cod')));
+    $state['payment_method'] = in_array($paymentMethod, ['cod', 'razorpay'], true) ? $paymentMethod : 'cod';
+    $onlineMethod = strtolower(trim((string) ($_POST['online_method'] ?? '')));
+    $state['online_method'] = in_array($onlineMethod, ['upi', 'card', 'netbanking', 'wallet', 'emi'], true)
+        ? $onlineMethod
+        : '';
+    $state['shipping_address_id'] = max(0, (int) ($_POST['shipping_address_id'] ?? 0));
+    $_SESSION['checkout_old'] = $state;
+}
+
 function get_coupon_by_code(mysqli $conn, string $code): ?array
 {
     $normalized = normalize_coupon_code($code);

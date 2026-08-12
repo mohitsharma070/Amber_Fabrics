@@ -156,11 +156,8 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
 
     $debugEnabled = (($GLOBALS['_app_mode'] ?? '') === 'local') || !empty($context['admin_debug']);
     $fallback = static function (array $base, string $reason, string $message = '') use ($debugEnabled): array {
-        if (!$debugEnabled) {
-            return $base;
-        }
         $base['debug_reason'] = $reason;
-        if ($message !== '') {
+        if ($debugEnabled && $message !== '') {
             $base['debug_message'] = $message;
         }
         return $base;
@@ -194,7 +191,7 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
     }
 
     $paymentModeId = shipping_courier_bigship_payment_mode_id(['payment_method' => $paymentMethod]);
-    $invoiceValue = round($subtotal, 2);
+    $invoiceValue = round(max(0.0, (float) ($context['invoice_value'] ?? $subtotal)), 2);
     $riskTypeId = (int) ($context['risk_type_id'] ?? shipping_courier_bigship_risk_type_id());
 
     $ratePayload = [
@@ -255,19 +252,72 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
         return $fallback($quote, 'bigship_rate_unavailable', 'Bigship returned no valid courier rate for this shipment.');
     }
 
-    $totalCharge = round((float) $rate['total_charge'], 2);
+    $charges = shipping_courier_bigship_split_rate_charges(
+        $rate,
+        (float) ($quote['cod_fee'] ?? 0),
+        $paymentMethod === 'cod'
+    );
+    $totalCharge = $charges['shipping_total'];
     $courierName = (string) $rate['courier_name'];
     $courierId = (int) $rate['courier_id'];
     $provider = shipping_courier_provider_name();
 
     return [
-        // Bigship's totalCharge already includes the applicable COD charge.
-        'base_shipping' => $totalCharge,
-        'cod_fee' => 0.0,
+        // Bigship totalCharge includes COD. Split the component for checkout display
+        // while keeping shipping_total exactly equal to the provider's quoted total.
+        'base_shipping' => $charges['base_shipping'],
+        'cod_fee' => $charges['cod_fee'],
         'shipping_total' => $totalCharge,
         'source' => substr($provider !== '' ? $provider : 'courier', 0, 32),
         'courier_name' => $courierName !== '' ? $courierName : $provider,
         'courier_id' => $courierId,
+    ];
+}
+
+function shipping_courier_bigship_rate_component(array $candidate, array $keys): ?float
+{
+    $normalizedKeys = array_map(
+        static fn(string $key): string => strtolower(preg_replace('/[^a-z0-9]/i', '', $key) ?: ''),
+        $keys
+    );
+
+    foreach ($candidate as $key => $value) {
+        $normalizedKey = strtolower(preg_replace('/[^a-z0-9]/i', '', (string) $key) ?: '');
+        if (in_array($normalizedKey, $normalizedKeys, true) && is_numeric($value)) {
+            return (float) $value;
+        }
+    }
+
+    foreach ($candidate as $value) {
+        if (!is_array($value)) {
+            continue;
+        }
+        $component = shipping_courier_bigship_rate_component($value, $keys);
+        if ($component !== null) {
+            return $component;
+        }
+    }
+
+    return null;
+}
+
+function shipping_courier_bigship_split_rate_charges(array $rate, float $fallbackCodFee, bool $isCod): array
+{
+    $totalCharge = max(0.0, round((float) ($rate['total_charge'] ?? 0), 2));
+    $codFee = 0.0;
+
+    if ($isCod) {
+        $providerCodFee = $rate['cod_charge'] ?? null;
+        $codFee = $providerCodFee !== null && is_numeric($providerCodFee)
+            ? (float) $providerCodFee
+            : $fallbackCodFee;
+        $codFee = min($totalCharge, max(0.0, round($codFee, 2)));
+    }
+
+    return [
+        'base_shipping' => round(max(0.0, $totalCharge - $codFee), 2),
+        'cod_fee' => $codFee,
+        'shipping_total' => $totalCharge,
     ];
 }
 
@@ -301,6 +351,14 @@ function shipping_courier_bigship_selected_rate(array $body): ?array
             'courier_id' => (int) $courierId,
             'courier_name' => shipping_courier_response_value($candidate, ['courier_name', 'courierName', 'courier_partner_name', 'courierPartnerName', 'name']),
             'total_charge' => (float) $totalCharge,
+            'cod_charge' => shipping_courier_bigship_rate_component($candidate, [
+                'codCharge',
+                'cod_charge',
+                'codCharges',
+                'cod_charges',
+                'codFee',
+                'cod_fee',
+            ]),
         ];
         if ($selected === null || $rate['total_charge'] < $selected['total_charge']) {
             $selected = $rate;

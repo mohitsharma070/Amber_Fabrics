@@ -22,6 +22,7 @@ if (!verify_csrf()) {
     flash('error', 'Invalid session token. Please try again.');
     redirect(coupon_redirect_target('/cart.php'));
 }
+preserve_checkout_state_from_coupon_request();
 if (!public_form_rate_limit_allow('coupon_apply', 15, 300)) {
     flash('error', 'Too many coupon attempts. Please wait a few minutes and try again.');
     redirect(coupon_redirect_target('/cart.php'));
@@ -63,26 +64,6 @@ if (empty($hydrated['items'])) {
     redirect(coupon_redirect_target('/cart.php'));
 }
 $subtotal = CartService::cart_items_subtotal($hydrated['items']);
-
-$selectedPayment = in_array((string) ($_SESSION['checkout_old']['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
-    ? (string) $_SESSION['checkout_old']['payment_method']
-    : 'cod';
-$codFeeApply = ($selectedPayment === 'cod') ? 1 : 0;
-
-$countryForCalc = trim((string) ($_SESSION['checkout_old']['country'] ?? ''));
-if ($countryForCalc === '' && !empty($_SESSION['customer_id'])) {
-    $customerId = (int) $_SESSION['customer_id'];
-    if ($customerId > 0) {
-        $countryStmt = $conn->prepare("SELECT country FROM customers WHERE id = ? LIMIT 1");
-        $countryStmt->bind_param('i', $customerId);
-        $countryStmt->execute();
-        $countryRow = $countryStmt->get_result()->fetch_assoc();
-        $countryForCalc = trim((string) ($countryRow['country'] ?? ''));
-    }
-}
-$isIndia = strcasecmp($countryForCalc, 'india') === 0;
-
-$shipping = CartService::checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
 
 $customerIdForCoupon = (int) ($_SESSION['customer_id'] ?? 0);
 $discountInfo = get_active_coupon_discount_for_customer($conn, $code, (float) $subtotal, $customerIdForCoupon);

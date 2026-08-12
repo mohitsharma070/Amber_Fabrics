@@ -198,7 +198,7 @@ include 'partials/header.php';
             <?php if (!empty($couponErrors)): ?>
                 <div class="alert alert-warning py-2 small">Please fix the errors below.</div>
             <?php endif; ?>
-            <form method="POST" action="coupons.php">
+            <form method="POST" action="/admin/coupons">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="create">
                 <div class="mb-2">
@@ -294,7 +294,7 @@ include 'partials/header.php';
                             </td>
                             <td class="text-nowrap admin-row-actions" data-label="Action">
                                 <div class="d-flex flex-wrap gap-1 align-items-center">
-                                <form method="POST" action="coupons.php" class="m-0">
+                                <form method="POST" action="/admin/coupons" class="m-0">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="toggle_status">
                                     <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">
@@ -317,7 +317,7 @@ include 'partials/header.php';
                                         data-status="<?php echo e($coupon['status']); ?>">
                                     Edit
                                 </button>
-                                <form method="POST" action="coupons.php" class="m-0" data-confirm-modal data-confirm-title="Delete Coupon" data-confirm-message="Delete this coupon?" data-confirm-ok="Delete">
+                                <form method="POST" action="/admin/coupons" class="m-0" data-confirm-modal data-confirm-title="Delete Coupon" data-confirm-message="Delete this coupon?" data-confirm-ok="Delete">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">
@@ -340,7 +340,7 @@ include 'partials/header.php';
                 <h5 class="modal-title" id="editCouponModalLabel">Edit Coupon</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="coupons.php">
+            <form method="POST" action="/admin/coupons">
                 <div class="modal-body">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="update">

@@ -344,31 +344,6 @@ try {
     $codFeeAmount = (float) $shipping['cod_fee'];
     $shippingAmount = (float) $shipping['shipping_total'];
 
-    if (strcasecmp($country, 'india') === 0) {
-        $quote = InventoryService::shipping_quote_get($shippingQuoteToken);
-        if (!$quote) {
-            throw new RuntimeException('Shipping quote expired. Please review checkout and place order again.');
-        }
-        $quoteSubtotal = round((float) ($quote['subtotal'] ?? -1), 2);
-        $quotePincode = trim((string) ($quote['pincode'] ?? ''));
-        $quoteCountry = strtolower(trim((string) ($quote['country'] ?? '')));
-        $quotePayment = strtolower(trim((string) ($quote['payment_method'] ?? '')));
-        if (
-            abs($quoteSubtotal - round((float) $subtotal, 2)) > 0.001 ||
-            strtolower(trim((string) $country)) !== $quoteCountry ||
-            trim((string) $pincode) !== $quotePincode ||
-            strtolower((string) $paymentMethod) !== $quotePayment
-        ) {
-            throw new RuntimeException('Shipping quote changed. Please review checkout totals and try again.');
-        }
-        $baseShippingAmount = round((float) ($quote['base_shipping'] ?? $baseShippingAmount), 2);
-        $codFeeAmount = round((float) ($quote['cod_fee'] ?? $codFeeAmount), 2);
-        $shippingAmount = round((float) ($quote['shipping_total'] ?? $shippingAmount), 2);
-        $selectedCourierName = trim((string) ($quote['courier_name'] ?? ''));
-        $selectedCourierId = (int) ($quote['courier_id'] ?? 0);
-        $shippingRateSource = trim((string) ($quote['source'] ?? '')) ?: 'manual';
-    }
-
     $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
     $discountAmount = 0.00;
     $couponId = 0;
@@ -405,6 +380,33 @@ try {
     }
 
     $discountAmount     = min($discountAmount, $subtotal); // discount applies to product subtotal only — shipping is never discounted
+    $quotedInvoiceValue = round(max(0.0, $subtotal - $discountAmount), 2);
+
+    if (strcasecmp($country, 'india') === 0) {
+        $quote = InventoryService::shipping_quote_get($shippingQuoteToken);
+        if (!$quote) {
+            throw new RuntimeException('Shipping quote expired. Please review checkout and place order again.');
+        }
+        $quoteSubtotal = round((float) ($quote['subtotal'] ?? -1), 2);
+        $quotePincode = trim((string) ($quote['pincode'] ?? ''));
+        $quoteCountry = strtolower(trim((string) ($quote['country'] ?? '')));
+        $quotePayment = strtolower(trim((string) ($quote['payment_method'] ?? '')));
+        if (
+            abs($quoteSubtotal - $quotedInvoiceValue) > 0.001 ||
+            strtolower(trim((string) $country)) !== $quoteCountry ||
+            trim((string) $pincode) !== $quotePincode ||
+            strtolower((string) $paymentMethod) !== $quotePayment
+        ) {
+            throw new RuntimeException('Shipping quote changed. Please review checkout totals and try again.');
+        }
+        $baseShippingAmount = round((float) ($quote['base_shipping'] ?? $baseShippingAmount), 2);
+        $codFeeAmount = round((float) ($quote['cod_fee'] ?? $codFeeAmount), 2);
+        $shippingAmount = round((float) ($quote['shipping_total'] ?? $shippingAmount), 2);
+        $selectedCourierName = trim((string) ($quote['courier_name'] ?? ''));
+        $selectedCourierId = (int) ($quote['courier_id'] ?? 0);
+        $shippingRateSource = trim((string) ($quote['source'] ?? '')) ?: 'manual';
+    }
+
     $remainingDiscount  = $discountAmount;
     $itemsCount         = count($orderItems);
     foreach ($orderItems as $idx => &$item) {

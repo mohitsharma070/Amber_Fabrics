@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/coupon-functions.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     api_json(['ok' => false, 'message' => 'Method not allowed.'], 405);
@@ -12,7 +13,6 @@ if (!public_form_rate_limit_allow('shipping_quote', 30, 300)) {
 }
 
 $pincode = trim((string) ($_POST['pincode'] ?? ''));
-$subtotal = (float) ($_POST['subtotal'] ?? 0);
 $paymentMethod = strtolower(trim((string) ($_POST['payment_method'] ?? 'cod')));
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) {
     $paymentMethod = 'cod';
@@ -23,6 +23,18 @@ $cartSizes = isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size']) ?
 $cartMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length']) ? $_SESSION['cart_meter_length'] : [];
 $hydratedCart = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
 $quoteItems = is_array($hydratedCart['items'] ?? null) ? $hydratedCart['items'] : [];
+$subtotal = CartService::cart_items_subtotal($quoteItems);
+if ($subtotal <= 0 || $quoteItems === []) {
+    api_json(['ok' => false, 'message' => 'Your cart is empty.'], 422);
+}
+$couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
+$customerId = (int) ($_SESSION['customer_id'] ?? 0);
+$couponInfo = get_active_coupon_discount_for_customer($conn, $couponCode, $subtotal, $customerId);
+if (!$couponInfo['valid'] && $couponCode !== '') {
+    unset($_SESSION['applied_coupon_code']);
+}
+$discountAmount = $couponInfo['valid'] ? min((float) $couponInfo['discount'], $subtotal) : 0.0;
+$invoiceValue = max(0.0, round($subtotal - $discountAmount, 2));
 
 $manual = CartService::checkout_shipping_breakdown($subtotal, 'India', $paymentMethod, $paymentMethod === 'cod');
 $quote = apply_filters('shipping.quote', [
@@ -35,6 +47,7 @@ $quote = apply_filters('shipping.quote', [
 ], [
     'conn' => $conn,
     'subtotal' => $subtotal,
+    'invoice_value' => $invoiceValue,
     'country' => 'India',
     'pincode' => $pincode,
     'payment_method' => $paymentMethod,
@@ -52,7 +65,7 @@ $debugReason = trim((string) ($quote['debug_reason'] ?? ''));
 $debugMessage = trim((string) ($quote['debug_message'] ?? ''));
 
 $token = InventoryService::shipping_quote_store(
-    (float) $subtotal,
+    (float) $invoiceValue,
     'India',
     $pincode,
     $paymentMethod,
@@ -75,9 +88,9 @@ $response = [
     'shipping_total' => $shippingTotal,
 ];
 
-if (($GLOBALS['_app_mode'] ?? '') === 'local' && $debugReason !== '') {
+if ($debugReason !== '') {
     $response['debug_reason'] = $debugReason;
-    if ($debugMessage !== '') {
+    if (($GLOBALS['_app_mode'] ?? '') === 'local' && $debugMessage !== '') {
         $response['debug_message'] = $debugMessage;
     }
 }

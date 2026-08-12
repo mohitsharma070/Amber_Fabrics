@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/coupon-functions.php';
 
 function coupon_remove_redirect_target(string $fallback = '/cart.php'): string
 {
@@ -21,6 +22,8 @@ if (!verify_csrf()) {
     flash('error', 'Invalid session token. Please try again.');
     redirect(coupon_remove_redirect_target('/cart.php'));
 }
+
+preserve_checkout_state_from_coupon_request();
 
 unset($_SESSION['applied_coupon_code']);
 flash('success', 'Coupon removed.');
