@@ -35,6 +35,7 @@ $assert(($state['country'] ?? '') === 'India', 'Coupon redirect did not enforce 
 $rateSource = (string) file_get_contents(__DIR__ . '/../shipping-rate.php');
 $checkoutSource = (string) file_get_contents(__DIR__ . '/../checkout.php');
 $pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/plugin.php');
+$emailServiceSource = (string) file_get_contents(__DIR__ . '/../includes/services/EmailService.php');
 $placeOrderSource = (string) file_get_contents(__DIR__ . '/../place-order.php');
 $applySource = (string) file_get_contents(__DIR__ . '/../apply-coupon.php');
 $removeSource = (string) file_get_contents(__DIR__ . '/../remove-coupon.php');
@@ -48,6 +49,8 @@ $assert(str_contains($rateSource, "shipping_quote_store(\n    (float) \$invoiceV
 $assert(str_contains($placeOrderSource, 'abs($quoteSubtotal - $quotedInvoiceValue)'), 'Order placement does not validate the coupon-adjusted quote value.');
 $assert(substr_count($checkoutSource, 'data-preserve-checkout-state') >= 2, 'Coupon forms are not both preserving checkout state.');
 $assert(str_contains($pluginSource, "\$context['invoice_value'] ?? \$subtotal"), 'Bigship rate payload ignores the discounted invoice value.');
+$assert(str_contains($emailServiceSource, 'LEFT JOIN customers c ON c.id = o.customer_id'), 'Guest order confirmation still requires a customer account.');
+$assert(str_contains($emailServiceSource, "\$order['customer_email']"), 'Guest order confirmation does not use the email stored on the order.');
 $assert(str_contains($applySource, 'preserve_checkout_state_from_coupon_request();'), 'Coupon apply does not persist checkout state.');
 $assert(str_contains($removeSource, 'preserve_checkout_state_from_coupon_request();'), 'Coupon remove does not persist checkout state.');
 

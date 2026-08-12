@@ -39,6 +39,8 @@ $old = [
     'moq' => '',
     'lead_time' => '',
     'dispatch_time' => '',
+    'dispatch_min_days' => '',
+    'dispatch_max_days' => '',
     'wash_care' => '',
     'description' => '',
     'status' => 'active',
@@ -73,6 +75,7 @@ if(isset($_POST['submit'])){
     $moq           = trim($_POST['moq']           ?? '');
     $lead          = trim($_POST['lead_time']     ?? '');
     $dispatchTime  = trim($_POST['dispatch_time'] ?? '');
+    $dispatchMinDays = max(0,(int)($_POST['dispatch_min_days']??0));$dispatchMaxDays=max($dispatchMinDays,(int)($_POST['dispatch_max_days']??0));
     $washCare      = trim($_POST['wash_care']     ?? '');
     $description   = trim($_POST['description']   ?? '');
     $status        = trim($_POST['status']        ?? 'active');
@@ -276,6 +279,7 @@ if(isset($_POST['submit'])){
         );
         $stmt->execute();
         $newId = (int) $conn->insert_id;
+        $range=$conn->prepare("UPDATE fabrics SET dispatch_min_days=NULLIF(?,0),dispatch_max_days=NULLIF(?,0) WHERE id=?");$range->bind_param('iii',$dispatchMinDays,$dispatchMaxDays,$newId);$range->execute();
         flash('success', 'Product created. Now add colour &amp; size variants below.');
         redirect('edit-fabric.php?id=' . $newId . '&new_product=1');
     }

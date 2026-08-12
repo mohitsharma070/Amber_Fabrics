@@ -6,8 +6,17 @@
  * 'enabled' => ['utm-attribution', 'meta-pixel'],
  */
 return [
-    'enabled' => ['cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'google-analytics', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'back-in-stock-alert', 'newsletter', 'shipping-rto-risk', 'shipping-courier', 'review-rating', 'order-timeline', 'seo-suite', 'recommendations', 'support-tickets'],
+    'enabled' => ['conversion-mvp', 'cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'google-analytics', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'back-in-stock-alert', 'newsletter', 'shipping-rto-risk', 'shipping-courier', 'review-rating', 'order-timeline', 'seo-suite', 'recommendations', 'support-tickets'],
     'settings' => [
+        'conversion-mvp' => [
+            'guest_order_access_enabled' => (int) (function_exists('_cfg') ? _cfg('GUEST_ORDER_ACCESS_ENABLED', '1') : '1'),
+            'account_activation_enabled' => (int) (function_exists('_cfg') ? _cfg('ACCOUNT_ACTIVATION_ENABLED', '1') : '1'),
+            'delivery_estimates_enabled' => (int) (function_exists('_cfg') ? _cfg('DELIVERY_ESTIMATES_ENABLED', '1') : '1'),
+            'default_dispatch_min_days' => (int) (function_exists('_cfg') ? _cfg('DEFAULT_DISPATCH_MIN_DAYS', '2') : '2'),
+            'default_dispatch_max_days' => (int) (function_exists('_cfg') ? _cfg('DEFAULT_DISPATCH_MAX_DAYS', '5') : '5'),
+            'transit_min_days' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_TRANSIT_MIN_DAYS', '3') : '3'),
+            'transit_max_days' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_TRANSIT_MAX_DAYS', '7') : '7'),
+        ],
         'cod-guard' => [
             'whatsapp_threshold' => (float) (function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_THRESHOLD', '1000') : '1000'),
             'call_threshold' => (float) (function_exists('_cfg') ? _cfg('COD_GUARD_CALL_THRESHOLD', '2000') : '2000'),

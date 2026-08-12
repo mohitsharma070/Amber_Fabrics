@@ -6,8 +6,6 @@
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/customer-auth.php';
 
-require_customer();
-
 $customerId  = (int) $_SESSION['customer_id'];
 $orderNumber = trim((string) ($_GET['order'] ?? ''));
 
@@ -17,22 +15,23 @@ if ($orderNumber === '') {
 }
 
 // ── Fetch order (customer must own it) ──────────────────────────────────────
+$ownerSql = $customerId > 0 ? 'AND o.customer_id = ?' : '';
 $stmt = $conn->prepare(
     "SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.customer_email,
             o.address, o.city, o.state, o.pincode, o.country, o.currency,
             o.subtotal, o.shipping_amount, o.discount_amount, o.total_amount,
             o.payment_method, o.payment_status, o.order_status, o.created_at
      FROM orders o
-     WHERE o.order_number = ? AND o.customer_id = ?
+     WHERE o.order_number = ? {$ownerSql}
      LIMIT 1"
 );
-$stmt->bind_param('si', $orderNumber, $customerId);
+if($customerId>0){$stmt->bind_param('si',$orderNumber,$customerId);}else{$stmt->bind_param('s',$orderNumber);}
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
 
-if (!$order) {
+if (!$order || !OrderAccessService::canAccess((int)$order['id'])) {
     flash('error', 'Order not found.');
-    redirect('/customer/orders.php');
+    redirect('/guest/order-access');
 }
 
 // Only show invoice for actionable/paid orders (COD always allowed — payment on delivery)

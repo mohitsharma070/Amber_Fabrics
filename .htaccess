@@ -68,6 +68,13 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^customer/(forgot-password|login|order-view|orders|profile|register|reset-password|support-tickets|verify-email)$ customer/$1.php [L]
 
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^guest/(order-access|order-auth|order|account-activate|support)$ guest/$1.php [L,QSA]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^delivery-estimate$ delivery-estimate.php [L]
+
 # Resolve a clean top-level admin route only when the corresponding PHP screen
 # exists. Nested private includes such as admin/partials are not exposed.
 RewriteCond %{REQUEST_FILENAME} !-f

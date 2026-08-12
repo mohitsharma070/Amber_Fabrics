@@ -128,6 +128,8 @@ $cancelLabel = isset($cancelLabel) ? (string) $cancelLabel : ($isEdit ? 'Back' :
         <label class="form-label">Dispatch Time (India Orders)</label>
         <input type="text" name="dispatch_time" class="form-control" value="<?php echo e($old['dispatch_time']); ?>">
     </div>
+    <div class="col-sm-2"><label class="form-label">Dispatch Min Days</label><input type="number" min="0" name="dispatch_min_days" class="form-control" value="<?php echo e((string)($old['dispatch_min_days']??'')); ?>"></div>
+    <div class="col-sm-2"><label class="form-label">Dispatch Max Days</label><input type="number" min="0" name="dispatch_max_days" class="form-control" value="<?php echo e((string)($old['dispatch_max_days']??'')); ?>"></div>
     <div class="col-12 col-md-4">
         <label class="form-label">Status *</label>
         <select name="status" class="<?php echo form_class($errors, 'status', 'form-select'); ?>" required>

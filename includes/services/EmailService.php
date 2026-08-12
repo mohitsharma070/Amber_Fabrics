@@ -2,6 +2,24 @@
 
 final class EmailService
 {
+    private static function applyTemplate(PHPMailer\PHPMailer\PHPMailer $mail, array $template): void
+    {
+        $mail->Subject=(string)($template['subject']??'');$html=(string)($template['html_body']??'');$text=(string)($template['text_body']??$template['body']??'');
+        if($html!==''){$mail->isHTML(true);$mail->Body=$html;$mail->AltBody=$text;}else{$mail->Body=$text;}
+    }
+
+    public static function send_guest_manage_link(mysqli $conn, int $orderId): bool
+    {
+        $stmt=$conn->prepare("SELECT order_number,customer_name,customer_email FROM orders WHERE id=? LIMIT 1");$stmt->bind_param('i',$orderId);$stmt->execute();$o=$stmt->get_result()->fetch_assoc();if(!$o||!filter_var($o['customer_email']??'',FILTER_VALIDATE_EMAIL)){return false;}
+        try{$token=OrderAccessService::createToken($conn,$orderId,'manage');$t=email_template_build('guest_order_manage',['name'=>$o['customer_name'],'order_number'=>$o['order_number'],'manage_url'=>app_url('/guest/order-auth?token='.urlencode($token))]);$mail=self::_mailer_base();$mail->addAddress($o['customer_email'],$o['customer_name']);self::applyTemplate($mail,$t);return self::deliver($mail);}catch(Throwable $e){error_log('[email] guest manage link failed: '.$e->getMessage());return false;}
+    }
+
+    public static function send_account_activation_email(mysqli $conn, int $orderId): bool
+    {
+        $stmt=$conn->prepare("SELECT customer_name,customer_email FROM orders WHERE id=? LIMIT 1");$stmt->bind_param('i',$orderId);$stmt->execute();$o=$stmt->get_result()->fetch_assoc();if(!$o||!filter_var($o['customer_email']??'',FILTER_VALIDATE_EMAIL)){return false;}
+        $exists=$conn->prepare("SELECT id FROM customers WHERE LOWER(TRIM(email))=LOWER(TRIM(?)) LIMIT 1");$exists->bind_param('s',$o['customer_email']);$exists->execute();$customer=$exists->get_result()->fetch_assoc();if($customer){$raw=bin2hex(random_bytes(32));$hash=hash('sha256',$raw);$expires=gmdate('Y-m-d H:i:s',time()+3600);$upd=$conn->prepare("UPDATE customers SET reset_token=?,reset_token_expires=? WHERE id=?");$cid=(int)$customer['id'];$upd->bind_param('ssi',$hash,$expires,$cid);$upd->execute();return self::send_customer_password_reset_email($o['customer_email'],$raw);}
+        try{$token=OrderAccessService::createToken($conn,$orderId,'activate',86400);$t=email_template_build('account_activation',['name'=>$o['customer_name'],'activation_url'=>app_url('/guest/account-activate?token='.urlencode($token))]);$mail=self::_mailer_base();$mail->addAddress($o['customer_email'],$o['customer_name']);self::applyTemplate($mail,$t);return self::deliver($mail);}catch(Throwable $e){error_log('[email] account activation failed: '.$e->getMessage());return false;}
+    }
     private static function deliver(PHPMailer\PHPMailer\PHPMailer $mail): bool
     {
         $driver = strtolower(trim(_cfg('MAIL_DRIVER', 'smtp')));
@@ -84,14 +102,31 @@ final class EmailService
     public static function send_order_confirmation_email(mysqli $conn, int $orderId): bool
     {
         $row = $conn->prepare(
-            "SELECT o.*, c.name AS cname, c.email AS cemail
-             FROM orders o JOIN customers c ON c.id = o.customer_id
+            "SELECT o.*, c.name AS account_name, c.email AS account_email
+             FROM orders o
+             LEFT JOIN customers c ON c.id = o.customer_id
              WHERE o.id = ?"
         );
         $row->bind_param('i', $orderId);
         $row->execute();
         $order = $row->get_result()->fetch_assoc();
         if (!$order) { return false; }
+
+        // Guest orders intentionally have customer_id = NULL. Their checkout
+        // identity is stored on the order and must remain sufficient for
+        // transactional emails. Account details are only a legacy fallback.
+        $recipientName = trim((string) ($order['customer_name'] ?? ''));
+        if ($recipientName === '') {
+            $recipientName = trim((string) ($order['account_name'] ?? ''));
+        }
+        $recipientEmail = trim((string) ($order['customer_email'] ?? ''));
+        if ($recipientEmail === '') {
+            $recipientEmail = trim((string) ($order['account_email'] ?? ''));
+        }
+        if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+            error_log('[app] order confirmation email skipped: order has no valid recipient email.');
+            return false;
+        }
 
         $iStmt = $conn->prepare(
             "SELECT unit_type, fabric_name_snapshot, quantity, quantity_meters, price, price_per_meter, total, line_total
@@ -109,7 +144,7 @@ final class EmailService
         $isPaid = strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
         $paymentMethodLabel = strtoupper((string) ($order['payment_method'] ?? ''));
         $lines = [
-            'Dear ' . $order['cname'] . ',',
+            'Dear ' . ($recipientName !== '' ? $recipientName : 'Customer') . ',',
             '',
             'Thank you for your order. Your order has been received and is being processed.',
             $isPaid ? 'Payment Status: Paid' : ('Payment Status: Pending (' . $paymentMethodLabel . ')'),
@@ -146,16 +181,18 @@ final class EmailService
         $lines[] = '';
         $lines[] = 'Regards,';
         $lines[] = site_name();
+        $manageUrl=(int)($order['customer_id']??0)>0?app_url('/customer/orders'):app_url('/guest/order-access');
+        if((int)($order['customer_id']??0)<=0){try{$manageUrl=app_url('/guest/order-auth?token='.urlencode(OrderAccessService::createToken($conn,$orderId,'manage')));}catch(Throwable $ignored){}}
         $template = email_template_build('order_confirmation', [
             'order_number' => (string) $order['order_number'],
             'lines' => $lines,
+            'manage_url' => $manageUrl,
         ]);
 
         try {
             $mail = EmailService::_mailer_base();
-            $mail->addAddress($order['cemail'], $order['cname']);
-            $mail->Subject = $template['subject'];
-            $mail->Body    = $template['body'];
+            $mail->addAddress($recipientEmail, $recipientName);
+            self::applyTemplate($mail, $template);
             self::deliver($mail);
             return true;
         } catch (Throwable $e) {
@@ -170,8 +207,8 @@ final class EmailService
     public static function send_order_status_update_email(mysqli $conn, int $orderId, string $newStatus): bool
     {
         $row = $conn->prepare(
-            "SELECT o.order_number, o.created_at, c.name AS cname, c.email AS cemail
-             FROM orders o JOIN customers c ON c.id = o.customer_id
+            "SELECT o.order_number, o.created_at, COALESCE(NULLIF(o.customer_name,''),c.name) AS cname, COALESCE(NULLIF(o.customer_email,''),c.email) AS cemail, o.customer_id
+             FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
              WHERE o.id = ?"
         );
         $row->bind_param('i', $orderId);
@@ -217,7 +254,8 @@ final class EmailService
             }
         }
 
-        $lines[] = 'Log in to your account to view full order details.';
+        if ((int)($order['customer_id']??0)>0) { $lines[]='Manage your order: '.app_url('/customer/orders'); }
+        else { try { $lines[]='Manage your order: '.app_url('/guest/order-auth?token='.urlencode(OrderAccessService::createToken($conn,$orderId,'manage'))); } catch(Throwable $ignored) { $lines[]='Visit our website for order support.'; } }
         $lines[] = '';
         $lines[] = 'Regards,';
         $lines[] = site_name();
@@ -230,8 +268,7 @@ final class EmailService
         try {
             $mail = EmailService::_mailer_base();
             $mail->addAddress($order['cemail'], $order['cname']);
-            $mail->Subject = $template['subject'];
-            $mail->Body    = $template['body'];
+            self::applyTemplate($mail, $template);
             self::deliver($mail);
             return true;
         } catch (Throwable $e) {

@@ -132,6 +132,7 @@ include __DIR__ . '/includes/header.php';
                         <div class="d-flex justify-content-between mb-2"><span>Shipping <small class="text-muted">(est.)</small></span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
                         <div class="d-flex justify-content-between mb-2"><span>Total</span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
                         <div class="small text-muted mb-3">Coupon can be applied at checkout.</div>
+                        <form id="cart_delivery_form" class="mb-3"><input type="hidden" name="csrf_token" value="<?php echo e(csrf_token()); ?>"><input type="hidden" name="payment_method" value="cod"><div class="input-group"><input class="form-control" name="pincode" inputmode="numeric" maxlength="6" placeholder="Delivery pincode" value="<?php echo e((string)($_SESSION['delivery_pincode']??'')); ?>"><button class="btn btn-outline-primary">Check</button></div><div id="cart_delivery_result" class="small mt-2" aria-live="polite"></div></form>
                         <hr>
                         <button type="button" class="btn btn-primary w-100 btn-lg" disabled aria-disabled="true">Proceed to Checkout</button>
                         <div class="trust-badge-block mt-3" aria-label="Checkout trust badges">
@@ -304,6 +305,7 @@ include __DIR__ . '/includes/header.php';
         <?php endif; ?>
     </div>
 </section>
+<script nonce="<?php echo e($GLOBALS['cspNonce']??''); ?>">document.getElementById('cart_delivery_form')?.addEventListener('submit',async function(e){e.preventDefault();var o=document.getElementById('cart_delivery_result');o.textContent='Checking…';try{var r=await fetch('/shipping-rate.php',{method:'POST',body:new URLSearchParams(new FormData(this))}),d=await r.json();o.textContent=d.ok?('Estimated delivery '+d.estimated_delivery_label+' · '+(d.shipping_total>0?'Shipping ₹'+Number(d.shipping_total).toFixed(2):'Free shipping')):d.message;}catch(_){o.textContent='Unable to check delivery right now.';}});</script>
 
 <script nonce="<?php echo $cspNonce; ?>">
 (function () {

@@ -1034,6 +1034,64 @@ do_action('product.view', [
                 <?php endif; ?>
 
                 <div class="mb-3">
+                    <h6 class="fw-semibold">Check Delivery</h6>
+                    <form id="pdp_delivery_form" class="row g-2 mb-2">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="product_id" value="<?php echo (int) $product['id']; ?>">
+                        <input type="hidden" name="variant_id" id="delivery_variant_id" value="<?php echo (int) ($defaultVariantId ?? 0); ?>">
+                        <input type="hidden" name="quantity" id="delivery_quantity" value="1">
+                        <div class="col-sm-7">
+                            <input class="form-control" name="pincode" inputmode="numeric" maxlength="6" pattern="[1-9][0-9]{5}" placeholder="6-digit pincode" value="<?php echo e((string) ($_SESSION['delivery_pincode'] ?? '')); ?>" required>
+                        </div>
+                        <div class="col-sm-3">
+                            <select class="form-select" name="payment_method" aria-label="Payment method">
+                                <option value="cod">Cash on delivery</option>
+                                <option value="razorpay">Prepaid</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-2 d-grid">
+                            <button class="btn btn-outline-primary" type="submit">Check</button>
+                        </div>
+                    </form>
+                    <div id="pdp_delivery_result" class="small mb-2" aria-live="polite"></div>
+                    <script nonce="<?php echo e($GLOBALS['cspNonce'] ?? ''); ?>">
+                    (function () {
+                        var form = document.getElementById('pdp_delivery_form');
+                        if (!form) return;
+                        form.addEventListener('submit', async function (event) {
+                            event.preventDefault();
+                            var output = document.getElementById('pdp_delivery_result');
+                            var selectedVariant = document.getElementById('selected_variant_id_add');
+                            var quantity = document.getElementById('meter_total_quantity') || document.getElementById('product_quantity');
+                            var deliveryVariant = document.getElementById('delivery_variant_id');
+                            var deliveryQuantity = document.getElementById('delivery_quantity');
+                            if (deliveryVariant) deliveryVariant.value = selectedVariant ? selectedVariant.value : '0';
+                            if (deliveryQuantity) deliveryQuantity.value = quantity ? quantity.value : '1';
+                            output.textContent = 'Checking…';
+                            try {
+                                var response = await fetch('/delivery-estimate', {method: 'POST', body: new FormData(form)});
+                                var data = await response.json();
+                                if (!data.ok) {
+                                    output.textContent = data.message || 'Delivery estimate is unavailable.';
+                                    return;
+                                }
+                                var parts = [
+                                    (data.serviceability_status === 'live' ? 'Live courier rate' : 'Estimated shipping'),
+                                    'Dispatch ' + data.estimated_dispatch_label,
+                                    'Delivery ' + data.estimated_delivery_label,
+                                    data.shipping_total > 0 ? 'Shipping ₹' + Number(data.shipping_total).toFixed(2) : 'Free shipping'
+                                ];
+                                if (data.payment_method === 'cod' && Number(data.cod_fee) > 0) {
+                                    parts.push('includes COD fee ₹' + Number(data.cod_fee).toFixed(2));
+                                }
+                                if (data.courier_name) parts.push(data.courier_name);
+                                output.textContent = parts.join(' · ');
+                            } catch (error) {
+                                output.textContent = 'Unable to check delivery right now.';
+                            }
+                        });
+                    }());
+                    </script>
                     <h6 class="fw-semibold">Shipping Note</h6>
                     <p class="mb-0 text-muted">Shipping timelines vary by destination and order volume. Final timeline is shared at confirmation.</p>
                 </div>

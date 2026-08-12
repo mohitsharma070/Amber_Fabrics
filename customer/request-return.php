@@ -1,46 +1,44 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/customer-auth.php';
-
-require_customer();
+$customerId=(int)($_SESSION['customer_id']??0);$orderId=(int)($_POST['order_id']??0);$returnUrl=$customerId>0?'/customer/order-view.php?id='.$orderId:'/guest/order?id='.$orderId;
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect('/customer/orders.php');
+    redirect($customerId>0?'/customer/orders.php':'/guest/order-access');
 }
 if (!verify_csrf()) {
     flash('error', 'Invalid session token. Please try again.');
-    redirect('/customer/orders.php');
+    redirect($returnUrl);
 }
 
-$customerId = (int) ($_SESSION['customer_id'] ?? 0);
-$orderId = (int) ($_POST['order_id'] ?? 0);
 $reason = trim((string) ($_POST['reason'] ?? ''));
 $customerNote = trim((string) ($_POST['customer_note'] ?? ''));
 $returnQtyMap = (isset($_POST['return_qty']) && is_array($_POST['return_qty'])) ? $_POST['return_qty'] : [];
 $saved = [];
 
-if ($customerId <= 0 || $orderId <= 0 || $reason === '') {
+if ($orderId <= 0 || $reason === '' || !OrderAccessService::canAccess($orderId)) {
     flash('error', 'Please provide required return details.');
-    redirect('/customer/order-view.php?id=' . $orderId);
+    redirect($returnUrl);
 }
 
 $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 if (!public_form_rate_limit_allow('return_request_' . $ip, 5, 900)) {
     flash('error', 'Too many return requests. Please wait a few minutes and try again.');
-    redirect('/customer/order-view.php?id=' . $orderId);
+        redirect($returnUrl);
 }
 
 try {
     $conn->begin_transaction();
 
+    $ownerSql = $customerId > 0 ? 'AND o.customer_id = ?' : '';
     $orderStmt = $conn->prepare(
         "SELECT o.id, o.order_number, o.order_status, o.pincode, s.delivered_at
          FROM orders o
          LEFT JOIN shipments s ON s.order_id = o.id
-         WHERE o.id = ? AND o.customer_id = ?
+         WHERE o.id = ? {$ownerSql}
          FOR UPDATE"
     );
-    $orderStmt->bind_param('ii', $orderId, $customerId);
+    if($customerId>0){$orderStmt->bind_param('ii',$orderId,$customerId);}else{$orderStmt->bind_param('i',$orderId);}
     $orderStmt->execute();
     $order = $orderStmt->get_result()->fetch_assoc();
     if (!$order) {
@@ -141,7 +139,8 @@ try {
     );
     $img1 = (string) ($saved['image_1'] ?? '');
     $img2 = (string) ($saved['image_2'] ?? '');
-    $insertReturn->bind_param('siissss', $returnNumber, $orderId, $customerId, $reason, $customerNote, $img1, $img2);
+    $returnCustomerId=$customerId>0?$customerId:null;
+    $insertReturn->bind_param('siissss', $returnNumber, $orderId, $returnCustomerId, $reason, $customerNote, $img1, $img2);
     $insertReturn->execute();
     $returnId = (int) $conn->insert_id;
     $reverseNote = 'Manual reverse pickup required. Assign courier from admin based on location and package details.';
@@ -215,4 +214,4 @@ try {
     flash('error', 'Unable to submit return request right now. Please check your details and try again.');
 }
 
-redirect('/customer/order-view.php?id=' . $orderId);
+redirect($returnUrl);

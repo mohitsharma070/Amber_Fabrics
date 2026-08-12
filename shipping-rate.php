@@ -63,6 +63,8 @@ $courierName = trim((string) ($quote['courier_name'] ?? ''));
 $courierId = max(0, (int) ($quote['courier_id'] ?? 0));
 $debugReason = trim((string) ($quote['debug_reason'] ?? ''));
 $debugMessage = trim((string) ($quote['debug_message'] ?? ''));
+$estimate = DeliveryEstimateService::calculate($quoteItems, $source);
+log_ecommerce_event($conn,'add_shipping_info',$customerId>0?$customerId:null,null,null,null,null,$shippingTotal,['session_type'=>$customerId>0?'customer':'guest','source'=>$source,'payment_method'=>$paymentMethod]);
 
 $token = InventoryService::shipping_quote_store(
     (float) $invoiceValue,
@@ -74,7 +76,8 @@ $token = InventoryService::shipping_quote_store(
     $shippingTotal,
     $source,
     $courierName,
-    $courierId
+    $courierId,
+    $estimate
 );
 
 $response = [
@@ -86,6 +89,12 @@ $response = [
     'base_shipping' => $baseShipping,
     'cod_fee' => $codFee,
     'shipping_total' => $shippingTotal,
+    'serviceability_status' => $estimate['serviceability_status'],
+    'estimated_dispatch_start' => $estimate['estimated_dispatch_start'],
+    'estimated_dispatch_end' => $estimate['estimated_dispatch_end'],
+    'estimated_delivery_start' => $estimate['estimated_delivery_start'],
+    'estimated_delivery_end' => $estimate['estimated_delivery_end'],
+    'estimated_delivery_label' => DeliveryEstimateService::formatRange($estimate['estimated_delivery_start'], $estimate['estimated_delivery_end']),
 ];
 
 if ($debugReason !== '') {

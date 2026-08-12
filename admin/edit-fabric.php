@@ -133,6 +133,8 @@ $old = [
     'moq' => (string) ($fabric['moq'] ?? ''),
     'lead_time' => (string) ($fabric['lead_time'] ?? ''),
     'dispatch_time' => (string) ($fabric['dispatch_time'] ?? ''),
+    'dispatch_min_days' => (string) ($fabric['dispatch_min_days'] ?? ''),
+    'dispatch_max_days' => (string) ($fabric['dispatch_max_days'] ?? ''),
     'wash_care' => (string) ($fabric['wash_care'] ?? ''),
     'description' => (string) ($fabric['description'] ?? ''),
     'status' => (string) ($fabric['status'] ?? 'active'),
@@ -170,6 +172,7 @@ if (isset($_POST['submit'])) {
     $moq           = trim($_POST['moq']           ?? '');
     $lead          = trim($_POST['lead_time']     ?? '');
     $dispatchTime  = trim($_POST['dispatch_time'] ?? '');
+    $dispatchMinDays=max(0,(int)($_POST['dispatch_min_days']??0));$dispatchMaxDays=max($dispatchMinDays,(int)($_POST['dispatch_max_days']??0));
     $washCare      = trim($_POST['wash_care']     ?? '');
     $description   = trim($_POST['description']   ?? '');
     $status        = trim($_POST['status']        ?? 'active');
@@ -382,6 +385,7 @@ if (isset($_POST['submit'])) {
             $id
         );
         $upd->execute();
+        $range=$conn->prepare("UPDATE fabrics SET dispatch_min_days=NULLIF(?,0),dispatch_max_days=NULLIF(?,0) WHERE id=?");$range->bind_param('iii',$dispatchMinDays,$dispatchMaxDays,$id);$range->execute();
 
         flash('success', 'Product updated.');
         redirect('fabrics.php');

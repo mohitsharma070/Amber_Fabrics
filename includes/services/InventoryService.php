@@ -167,7 +167,8 @@ final class InventoryService
         float $shippingTotal,
         string $source = 'manual',
         string $courierName = '',
-        int $courierId = 0
+        int $courierId = 0,
+        array $estimate = []
     ): string {
         if (!isset($_SESSION['shipping_quotes']) || !is_array($_SESSION['shipping_quotes'])) {
             $_SESSION['shipping_quotes'] = [];
@@ -191,6 +192,11 @@ final class InventoryService
             'source' => $source,
             'courier_name' => $courierName,
             'courier_id' => max(0, (int) $courierId),
+            'serviceability_status' => (string) ($estimate['serviceability_status'] ?? 'estimated'),
+            'estimated_dispatch_start' => $estimate['estimated_dispatch_start'] ?? null,
+            'estimated_dispatch_end' => $estimate['estimated_dispatch_end'] ?? null,
+            'estimated_delivery_start' => $estimate['estimated_delivery_start'] ?? null,
+            'estimated_delivery_end' => $estimate['estimated_delivery_end'] ?? null,
             'created_at' => $now,
         ];
         try {
@@ -201,8 +207,9 @@ final class InventoryService
                 $ins = $stmt->prepare(
                     "INSERT INTO shipping_quotes (
                         quote_token, customer_id, subtotal, country, pincode, payment_method,
-                        base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at
-                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at,
+                        serviceability_status, estimated_dispatch_start, estimated_dispatch_end, estimated_delivery_start, estimated_delivery_end
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE
                         customer_id = VALUES(customer_id),
                         subtotal = VALUES(subtotal),
@@ -215,7 +222,9 @@ final class InventoryService
                         source = VALUES(source),
                         courier_name = VALUES(courier_name),
                         courier_id = VALUES(courier_id),
-                        expires_at = VALUES(expires_at)"
+                        expires_at = VALUES(expires_at), serviceability_status=VALUES(serviceability_status),
+                        estimated_dispatch_start=VALUES(estimated_dispatch_start),estimated_dispatch_end=VALUES(estimated_dispatch_end),
+                        estimated_delivery_start=VALUES(estimated_delivery_start),estimated_delivery_end=VALUES(estimated_delivery_end)"
                 );
                 $countryNorm = strtolower(trim($country));
                 $pincodeNorm = trim($pincode);
@@ -224,8 +233,11 @@ final class InventoryService
                 $codFee = round($codFee, 2);
                 $shippingTotal = round($shippingTotal, 2);
                 $courierId = max(0, (int) $courierId);
+                $serviceability=(string)($estimate['serviceability_status']??'estimated');
+                $dispatchStart=$estimate['estimated_dispatch_start']??null;$dispatchEnd=$estimate['estimated_dispatch_end']??null;
+                $deliveryStart=$estimate['estimated_delivery_start']??null;$deliveryEnd=$estimate['estimated_delivery_end']??null;
                 $ins->bind_param(
-                    'sidsssdddssis',
+                    'sidsssdddssissssss',
                     $token,
                     $customerId,
                     $subtotal,
@@ -238,7 +250,8 @@ final class InventoryService
                     $source,
                     $courierName,
                     $courierId,
-                    $expiresAt
+                    $expiresAt,
+                    $serviceability, $dispatchStart, $dispatchEnd, $deliveryStart, $deliveryEnd
                 );
                 $ins->execute();
             }
@@ -263,7 +276,7 @@ final class InventoryService
                 $conn = $GLOBALS['conn'] ?? null;
                 if ($conn instanceof mysqli) {
                     $stmt = $conn->prepare(
-                        "SELECT subtotal, country, pincode, payment_method, base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at
+                        "SELECT subtotal, country, pincode, payment_method, base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at, serviceability_status, estimated_dispatch_start, estimated_dispatch_end, estimated_delivery_start, estimated_delivery_end
                          FROM shipping_quotes
                          WHERE quote_token = ?
                          LIMIT 1"
@@ -285,6 +298,11 @@ final class InventoryService
                                 'source' => (string) ($dbRow['source'] ?? 'manual'),
                                 'courier_name' => (string) ($dbRow['courier_name'] ?? ''),
                                 'courier_id' => (int) ($dbRow['courier_id'] ?? 0),
+                                'serviceability_status' => (string) ($dbRow['serviceability_status'] ?? 'estimated'),
+                                'estimated_dispatch_start' => $dbRow['estimated_dispatch_start'] ?? null,
+                                'estimated_dispatch_end' => $dbRow['estimated_dispatch_end'] ?? null,
+                                'estimated_delivery_start' => $dbRow['estimated_delivery_start'] ?? null,
+                                'estimated_delivery_end' => $dbRow['estimated_delivery_end'] ?? null,
                                 'created_at' => time(),
                             ];
                         }
@@ -594,7 +612,7 @@ final class InventoryService
 
     public static function customer_cancel_order(mysqli $conn, int $orderId, int $customerId, bool $manageTransaction = true): array
     {
-        if ($orderId <= 0 || $customerId <= 0) {
+        if ($orderId <= 0 || ($customerId <= 0 && !OrderAccessService::canAccess($orderId))) {
             throw new RuntimeException('Invalid order request.');
         }
 
@@ -602,13 +620,9 @@ final class InventoryService
             $conn->begin_transaction();
         }
         try {
-            $orderStmt = $conn->prepare(
-                "SELECT id, order_number, order_status, status, payment_status, payment_method, notes
-                 FROM orders
-                 WHERE id = ? AND customer_id = ?
-                 FOR UPDATE"
-            );
-            $orderStmt->bind_param('ii', $orderId, $customerId);
+            $ownerSql = $customerId > 0 ? 'AND customer_id = ?' : '';
+            $orderStmt = $conn->prepare("SELECT id, order_number, order_status, status, payment_status, payment_method, notes FROM orders WHERE id = ? {$ownerSql} FOR UPDATE");
+            if ($customerId > 0) { $orderStmt->bind_param('ii', $orderId, $customerId); } else { $orderStmt->bind_param('i', $orderId); }
             $orderStmt->execute();
             $order = $orderStmt->get_result()->fetch_assoc();
 
@@ -656,13 +670,14 @@ final class InventoryService
             $updateStmt->execute();
             release_coupon_usage_for_order($conn, $orderId);
 
+            $actor = OrderAccessService::actor();
             log_order_activity(
                 $conn,
                 $orderId,
                 'order_cancelled',
-                'customer',
-                $customerId,
-                'customer',
+                (string) $actor['type'],
+                (int) $actor['id'],
+                (string) $actor['name'],
                 'Payment status at cancel: ' . $paymentStatus
             );
             if ($paymentStatus === 'paid' && $paymentRowId > 0 && $paymentAmount > 0) {

@@ -40,11 +40,10 @@ $codFeeApply = ($paymentMethod === 'cod') ? 1 : 0;
 $selectedCourierName = '';
 $selectedCourierId = 0;
 $shippingRateSource = 'manual';
+$acceptedEstimate = [];
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 $wantsCreateAccount = ($customerId <= 0 && (int) ($_POST['create_account'] ?? 0) === 1);
-$createAccountPassword = (string) ($_POST['create_account_password'] ?? '');
-$createAccountConfirmPassword = (string) ($_POST['create_account_confirm_password'] ?? '');
-$createdGuestAccount = false;
+$sendAccountActivation = $wantsCreateAccount;
 
 if ($customerId > 0 && $shippingAddressId > 0 && customer_addresses_table_ready($conn)) {
     $savedAddress = customer_address_get($conn, $customerId, $shippingAddressId);
@@ -101,16 +100,8 @@ if ($country !== '' && strcasecmp($country, 'india') !== 0) {
     $errors['country'] = 'International checkout is inquiry-only for now. Please use Request International Quote.';
 }
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) { $errors['payment_method'] = 'Invalid payment method.'; }
+if(empty($errors)){log_ecommerce_event($conn,'add_payment_info',$customerId>0?$customerId:null,null,null,null,null,null,['session_type'=>$customerId>0?'customer':'guest','payment_method'=>$paymentMethod]);}
 if (strlen($orderNotes) > 500) { $errors['order_notes'] = 'Notes must be 500 characters or fewer.'; }
-if ($wantsCreateAccount) {
-    $passwordError = password_strength_error($createAccountPassword);
-    if ($passwordError !== null) {
-        $errors['create_account_password'] = $passwordError;
-    }
-    if ($createAccountPassword !== $createAccountConfirmPassword) {
-        $errors['create_account_confirm_password'] = 'Passwords do not match.';
-    }
-}
 
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart']) || empty($_SESSION['cart'])) {
     $errors['_cart'] = 'Your cart is empty.';
@@ -121,34 +112,6 @@ if (!empty($errors)) {
     redirect('/checkout.php');
 }
 
-if ($wantsCreateAccount && $customerId <= 0) {
-    $existingStmt = $conn->prepare("SELECT id FROM customers WHERE email = ? LIMIT 1");
-    $existingStmt->bind_param('s', $email);
-    $existingStmt->execute();
-    $existingCustomer = $existingStmt->get_result()->fetch_assoc();
-    if ($existingCustomer) {
-        $_SESSION['checkout_errors'] = [
-            'email' => 'An account with this email already exists. Please log in or continue without account creation.'
-        ];
-        redirect('/checkout.php');
-    }
-
-    $passwordHash = password_hash($createAccountPassword, PASSWORD_DEFAULT);
-    $verifyTokenRaw = bin2hex(random_bytes(32));
-    $verifyTokenHash = hash('sha256', $verifyTokenRaw);
-    $verifyExpires = (new DateTime('now', new DateTimeZone('UTC')))->modify('+24 hours')->format('Y-m-d H:i:s');
-    $createStmt = $conn->prepare(
-        "INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token, email_verify_expires)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?)"
-    );
-    $createStmt->bind_param('sssssss', $fullName, $email, $passwordHash, $phone, $country, $verifyTokenHash, $verifyExpires);
-    $createStmt->execute();
-    $customerId = (int) $conn->insert_id;
-    if ($customerId > 0) {
-        $createdGuestAccount = true;
-        EmailService::send_customer_verification_email($email, $fullName, $verifyTokenRaw);
-    }
-}
 
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
@@ -404,6 +367,7 @@ try {
         $shippingAmount = round((float) ($quote['shipping_total'] ?? $shippingAmount), 2);
         $selectedCourierName = trim((string) ($quote['courier_name'] ?? ''));
         $selectedCourierId = (int) ($quote['courier_id'] ?? 0);
+        $acceptedEstimate = $quote;
         $shippingRateSource = trim((string) ($quote['source'] ?? '')) ?: 'manual';
     }
 
@@ -932,10 +896,13 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
         }
     }
 
-    CartService::checkout_session_clear_after_order($conn, $customerId);
-    if ($createdGuestAccount) {
-        flash('success', 'Your account was created. Please verify your email to log in and track orders.');
+    if ($orderId > 0 && $acceptedEstimate) {
+        $estimateUpdate=$conn->prepare("UPDATE orders SET serviceability_status=?,estimated_dispatch_start=?,estimated_dispatch_end=?,estimated_delivery_start=?,estimated_delivery_end=? WHERE id=?");
+        $serviceability=(string)($acceptedEstimate['serviceability_status']??'estimated');$eds=$acceptedEstimate['estimated_dispatch_start']??null;$ede=$acceptedEstimate['estimated_dispatch_end']??null;$els=$acceptedEstimate['estimated_delivery_start']??null;$ele=$acceptedEstimate['estimated_delivery_end']??null;
+        $estimateUpdate->bind_param('sssssi',$serviceability,$eds,$ede,$els,$ele,$orderId);$estimateUpdate->execute();
     }
+    CartService::checkout_session_clear_after_order($conn, $customerId);
+    if ($sendAccountActivation && $customerId <= 0 && (int) plugin_setting('conversion-mvp', 'account_activation_enabled', 1) === 1) { EmailService::send_account_activation_email($conn, $orderId); }
     EmailService::send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {

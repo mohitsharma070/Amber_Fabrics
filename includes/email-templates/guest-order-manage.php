@@ -1,0 +1,5 @@
+<?php
+$name=htmlspecialchars((string)($data['name']??'Customer'),ENT_QUOTES,'UTF-8');$number=htmlspecialchars((string)($data['order_number']??''),ENT_QUOTES,'UTF-8');$url=htmlspecialchars((string)($data['manage_url']??''),ENT_QUOTES,'UTF-8');
+$text="Hello {$name},\n\nManage order {$number}: ".($data['manage_url']??'')."\n\nThis secure link can be used once.";
+$html='<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#17263d"><h2>'.htmlspecialchars(site_name(),ENT_QUOTES,'UTF-8').'</h2><p>Hello '.$name.',</p><p>View tracking, invoice and available self-service options for order <strong>'.$number.'</strong>.</p><p><a style="display:inline-block;background:#0f766e;color:white;padding:12px 20px;text-decoration:none;border-radius:6px" href="'.$url.'">Manage Order</a></p><p style="color:#6c757d;font-size:13px">This secure link can be used once. If it expires, request another from the website.</p></div>';
+return ['subject'=>'Manage order '.$number,'text_body'=>$text,'html_body'=>$html];

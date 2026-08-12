@@ -20,6 +20,8 @@ function email_template_build(string $key, array $data = []): array
         'support_ticket_created' => 'support-ticket-created.php',
         'support_ticket_reply_customer' => 'support-ticket-reply-customer.php',
         'support_ticket_reply_admin' => 'support-ticket-reply-admin.php',
+        'guest_order_manage' => 'guest-order-manage.php',
+        'account_activation' => 'account-activation.php',
     ];
 
     $file = $map[$key] ?? '';
@@ -37,8 +39,6 @@ function email_template_build(string $key, array $data = []): array
         return ['subject' => '', 'body' => ''];
     }
 
-    return [
-        'subject' => (string) ($result['subject'] ?? ''),
-        'body' => (string) ($result['body'] ?? ''),
-    ];
+    $text = (string) ($result['text_body'] ?? $result['body'] ?? '');
+    return ['subject'=>(string)($result['subject']??''),'body'=>$text,'text_body'=>$text,'html_body'=>(string)($result['html_body']??'')];
 }

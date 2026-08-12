@@ -14,13 +14,14 @@ $publicRoutes = [
     'about', 'catalog', 'cart', 'checkout', 'contact', 'fabric', 'faq',
     'international-buyers', 'international-orders-policy', 'order-success',
     'privacy-policy', 'return-policy', 'shipping-policy', 'size-guide',
-    'terms', 'thank-you',
+    'terms', 'thank-you', 'delivery-estimate',
 ];
 
 $customerRoutes = [
     'forgot-password', 'login', 'order-view', 'orders', 'profile',
     'register', 'reset-password', 'support-tickets', 'verify-email',
 ];
+$guestRoutes = ['order-access', 'order-auth', 'order', 'account-activate', 'support'];
 
 // Mirror the private-directory protection from .htaccess. This is especially
 // important for tmp/local-mail.log because local messages can contain OTPs.
@@ -84,6 +85,9 @@ if ($route === '') {
     if (in_array($customerRoute, $customerRoutes, true)) {
         $relativeFile = 'customer/' . $customerRoute . '.php';
     }
+} elseif (strpos($route, 'guest/') === 0) {
+    $guestRoute = substr($route, strlen('guest/'));
+    if (in_array($guestRoute, $guestRoutes, true)) { $relativeFile = 'guest/' . $guestRoute . '.php'; }
 }
 
 if ($relativeFile === '') {

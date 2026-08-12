@@ -199,6 +199,7 @@ $shippingAmount = round($baseShippingAmount + $codFeeAmount, 2);
 $shippingRateSource = trim((string) ($shippingQuote['source'] ?? 'manual')) ?: 'manual';
 $selectedCourierName = trim((string) ($shippingQuote['courier_name'] ?? ''));
 $selectedCourierId = max(0, (int) ($shippingQuote['courier_id'] ?? 0));
+$deliveryEstimate = DeliveryEstimateService::calculate($items, $shippingRateSource);
 $shippingQuoteToken = InventoryService::shipping_quote_store(
     (float) $taxableAmount,
     (string) $countryForCalc,
@@ -209,7 +210,8 @@ $shippingQuoteToken = InventoryService::shipping_quote_store(
     (float) $shippingAmount,
     (string) $shippingRateSource,
     $selectedCourierName,
-    $selectedCourierId
+    $selectedCourierId,
+    $deliveryEstimate
 );
 // Tax-inclusive pricing: GST is already embedded in product prices.
 // Total = (subtotal - discount) + shipping. No extra GST added.
@@ -276,7 +278,7 @@ include __DIR__ . '/includes/header.php';
                     <div class="surface-panel p-4 mb-4 checkout-section" id="checkout_section_address">
                         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                             <div>
-                                <div class="small text-muted">Step 1 of 4: Delivery Address</div>
+                                <div class="small text-muted">Step 1 of 3: Delivery</div>
                                 <h5 class="mb-0">Delivery Details</h5>
                             </div>
                             <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="checkout_edit_address">Edit</button>
@@ -341,24 +343,10 @@ include __DIR__ . '/includes/header.php';
                                     <div class="form-check mb-2">
                                         <input class="form-check-input" type="checkbox" value="1" id="create_account" name="create_account" <?php echo !empty($old['create_account']) ? 'checked' : ''; ?>>
                                         <label class="form-check-label" for="create_account">
-                                            Create account after order (track orders faster)
+                                            Email me an account activation link after ordering
                                         </label>
                                     </div>
-                                    <div id="create_account_fields" style="<?php echo !empty($old['create_account']) ? '' : 'display:none;'; ?>">
-                                        <div class="row g-3">
-                                            <div class="col-sm-6">
-                                                <label class="form-label">Password</label>
-                                                <input type="password" id="create_account_password" name="create_account_password" class="<?php echo form_class($errors, 'create_account_password'); ?>" autocomplete="new-password">
-                                                <?php echo form_error($errors, 'create_account_password'); ?>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <label class="form-label">Confirm Password</label>
-                                                <input type="password" id="create_account_confirm_password" name="create_account_confirm_password" class="<?php echo form_class($errors, 'create_account_confirm_password'); ?>" autocomplete="new-password">
-                                                <?php echo form_error($errors, 'create_account_confirm_password'); ?>
-                                            </div>
-                                        </div>
-                                        <div class="small text-muted mt-2">We will send email verification before first login.</div>
-                                    </div>
+                                    <div class="small text-muted">You will choose a password from a secure email link after checkout.</div>
                                 </div>
                             <?php endif; ?>
                             <div class="col-12">
@@ -399,7 +387,7 @@ include __DIR__ . '/includes/header.php';
                     <div class="surface-panel p-4 mb-4 checkout-section" id="checkout_section_payment">
                         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                             <div>
-                                <div class="small text-muted">Step 2 of 4: Payment</div>
+                                <div class="small text-muted">Step 2 of 3: Payment</div>
                                 <h5 class="mb-0">Payment Method</h5>
                             </div>
                             <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="checkout_edit_payment">Edit</button>
@@ -485,7 +473,7 @@ include __DIR__ . '/includes/header.php';
                     </div>
 
                     <?php if ($isIndia): ?>
-                        <button type="submit" class="btn btn-primary btn-lg w-100">Place Order</button>
+                        <div class="small text-muted mb-2">Step 3 of 3: Review</div><button type="submit" id="checkout_submit" class="btn btn-primary btn-lg w-100"><?php echo $selectedPayment === 'cod' ? 'Place COD Order — ' : 'Pay Securely — '; ?><?php echo e(money($totalAmount, 'INR', true)); ?></button>
                         <div class="trust-badge-block mt-3 mb-2" aria-label="Checkout trust badges">
                             <span class="trust-badge-pill">COD Available</span>
                             <span class="trust-badge-pill">Secure Payment</span>
@@ -578,7 +566,8 @@ include __DIR__ . '/includes/header.php';
                         <?php else: ?>
                             Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
                         <?php endif; ?>
-                    </div>
+                        </div>
+                        <div id="checkout_delivery_estimate" class="small text-muted mb-2">Estimated delivery: <?php echo e(DeliveryEstimateService::formatRange($deliveryEstimate['estimated_delivery_start'],$deliveryEstimate['estimated_delivery_end'])); ?></div>
                 </div>
             </div>
         </div>
@@ -634,6 +623,8 @@ include __DIR__ . '/includes/header.php';
     var editPaymentBtn = document.getElementById('checkout_edit_payment');
     var createAccountCheckbox = document.getElementById('create_account');
     var createAccountFields = document.getElementById('create_account_fields');
+    var checkoutSubmit = document.getElementById('checkout_submit');
+    var checkoutDeliveryEstimate = document.getElementById('checkout_delivery_estimate');
     var createAccountPassword = document.getElementById('create_account_password');
     var createAccountConfirmPassword = document.getElementById('create_account_confirm_password');
     var couponStateForms = document.querySelectorAll('[data-preserve-checkout-state]');
@@ -751,6 +742,7 @@ include __DIR__ . '/includes/header.php';
         if (mobileTotalEl) {
             mobileTotalEl.textContent = toMoney(total);
         }
+        if (checkoutSubmit) { checkoutSubmit.textContent = (paymentMethod === 'cod' ? 'Place COD Order — ' : 'Pay Securely — ') + toMoney(total); }
         shippingSource = 'manual';
         shippingCourierName = '';
         shippingDebugReason = 'shipping_quote_refreshing';
@@ -877,6 +869,9 @@ include __DIR__ . '/includes/header.php';
             if (mobileTotalEl) {
                 mobileTotalEl.textContent = toMoney(total);
             }
+            if(checkoutSubmit){checkoutSubmit.textContent=(paymentMethod==='cod'?'Place COD Order — ':'Pay Securely — ')+toMoney(total);}
+            if(checkoutDeliveryEstimate&&data.estimated_delivery_label){checkoutDeliveryEstimate.textContent='Estimated delivery: '+String(data.estimated_delivery_label);}
+            if(typeof window.gtag==='function'){window.gtag('event','add_shipping_info',{currency:'INR',value:total,shipping_tier:shippingSource});}
             setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
         }).catch(function () {
             if (requestId === shippingRateRequestId) {
@@ -923,6 +918,7 @@ include __DIR__ . '/includes/header.php';
 
     codRadio.addEventListener('change', syncSummary);
     razorpayRadio.addEventListener('change', syncSummary);
+    [codRadio,razorpayRadio].forEach(function(radio){radio.addEventListener('change',function(){if(this.checked&&typeof window.gtag==='function'){window.gtag('event','add_payment_info',{currency:'INR',value:Number(totalEl.textContent.replace(/[^0-9.]/g,''))||0,payment_type:this.value});}});});
     codRadio.addEventListener('change', syncPaymentPanels);
     razorpayRadio.addEventListener('change', syncPaymentPanels);
     countryInput.addEventListener('input', syncSummary);

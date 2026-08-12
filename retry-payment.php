@@ -61,6 +61,7 @@ try {
     $resetPayment->bind_param('i', $orderId);
     $resetPayment->execute();
     log_order_activity($conn, $orderId, 'payment_retry_started', 'customer', $customerId, 'customer', 'Customer retried Razorpay payment.');
+    log_ecommerce_event($conn,'payment_retry',$customerId,$orderId,null,null,null,null,['payment_method'=>'razorpay']);
     $conn->commit();
 } catch (Throwable $e) {
     $conn->rollback();
