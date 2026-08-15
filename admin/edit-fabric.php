@@ -91,7 +91,9 @@ if (isset($_POST['submit'])) {
     $sku           = ProductAdminService::normalizeSku((string)($_POST['sku'] ?? ($fabric['sku']??'')));
     $dispatchMinDays=max(0,(int)($fabric['dispatch_min_days']??0));$dispatchMaxDays=max($dispatchMinDays,(int)($fabric['dispatch_max_days']??0));
     $description   = trim($_POST['description']   ?? '');
-    $status        = trim($_POST['visibility'] ?? 'draft');
+    $status        = (string)($_POST['submit'] ?? '') === 'publish'
+        ? 'active'
+        : trim($_POST['visibility'] ?? 'draft');
     $productType   = in_array(($_POST['product_type']??''),['simple','variable'],true)?(string)$_POST['product_type']:'simple';
     $isAvailInput  = $status==='active'?1:0;
     $minOrderInput = (string)($fabric['min_order_meters']??'1');
@@ -215,8 +217,6 @@ if (isset($_POST['submit'])) {
         $costPriceVal  = (float) $costPrice;
         $stockVal = $unitType === 'meter' ? 0.0 : max(0.0,(float)$stock);
         $stockMeters = $unitType === 'meter' ? max(0.0,(float)$stock) : 0.0;
-        $size = (string) ($fabric['size'] ?? '');
-        $color = (string) ($fabric['color'] ?? '');
         $minOrderVal = ($unitType === 'meter')
             ? round($minOrder, 2)
             : (float) max(1, (int) round($minOrder));
@@ -282,14 +282,17 @@ include 'partials/header.php'; ?>
     <div><h1 class="mb-1">Product Editor</h1><div class="text-muted">Draft-first editing with publish-readiness checks.</div></div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" target="_blank" rel="noopener" href="product-preview.php?id=<?php echo (int)$id; ?>">Preview</a>
-        <button type="button" class="btn btn-outline-primary" id="check-readiness-btn">Check readiness</button>
-        <button type="button" class="btn btn-success" id="publish-product-btn">Publish</button>
+        <button type="button" class="btn btn-outline-primary" id="check-readiness-btn">Check saved draft</button>
+        <button type="submit" form="product-editor-form" data-submit-intent="publish" class="btn btn-success" id="publish-product-btn">Save &amp; Publish</button>
     </div>
 </div>
 <div id="product-action-message" class="alert d-none" role="status"></div>
 
 <?php if (!empty($errors)): ?>
-    <div class="alert alert-warning">Please fix the errors below.</div>
+    <div class="alert alert-warning">
+        <?php if (!empty($errors['save'])): ?><?php echo e((string)$errors['save']); ?>
+        <?php else: ?>Please fix the highlighted fields below.<?php endif; ?>
+    </div>
 <?php endif; ?>
 <?php if ($isVariableInventory): ?>
     <div class="alert alert-info">
@@ -326,13 +329,13 @@ var pid=<?php echo (int)$id; ?>,token=<?php echo json_encode(csrf_token()); ?>,l
 function call(data){data.set('product_id',pid);data.set('csrf_token',token);return fetch('product-media.php',{method:'POST',body:data,credentials:'same-origin'}).then(function(r){return r.json().then(function(j){if(!r.ok||!j.ok)throw new Error(j.message||'Request failed.');return j;});});}
 function esc(v){var d=document.createElement('div');d.textContent=String(v||'');return d.innerHTML;}
 function render(items){list.innerHTML='';items.forEach(function(m){var c=document.createElement('div');c.className='col-md-4 col-xl-3';c.dataset.mediaId=m.id;c.draggable=m.media_type==='image';var src='../images/fabrics/'+encodeURIComponent(m.filename),preview=m.media_type==='image'?'<img src="'+src+'" class="img-fluid rounded mb-2" alt="">':'<video src="'+src+'" class="w-100 rounded mb-2" controls></video>';c.innerHTML='<div class="border rounded p-2 h-100">'+preview+'<input class="form-control form-control-sm media-alt" maxlength="255" value="'+esc(m.alt_text)+'" placeholder="Alt text"><div class="d-flex gap-1 mt-2">'+(m.media_type==='image'?'<button type="button" class="btn btn-sm '+(Number(m.is_primary)?'btn-success':'btn-outline-secondary')+' media-primary">'+(Number(m.is_primary)?'Primary':'Make primary')+'</button>':'')+'<button type="button" class="btn btn-sm btn-outline-danger ms-auto media-delete">Remove</button></div></div>';list.appendChild(c);});}
-function load(){fetch('product-media.php?product_id='+pid,{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){if(j.ok)render(j.media);});}
+function load(){fetch('product-media.php?product_id='+pid,{credentials:'same-origin'}).then(function(r){return r.json().catch(function(){throw new Error('Invalid server response.');}).then(function(j){if(!r.ok||!j.ok)throw new Error(j.message||'Unable to load media.');return j;});}).then(function(j){render(j.media);}).catch(function(x){msg.textContent=x.message||'Unable to load media.';});}
 document.getElementById('product-media-upload').addEventListener('submit',function(e){e.preventDefault();var f=this,b=f.querySelector('button'),d=new FormData(f);b.disabled=true;d.set('action','upload');call(d).then(function(j){render(j.media);f.reset();msg.textContent='Media uploaded.';}).catch(function(x){msg.textContent=x.message;}).finally(function(){b.disabled=false;});});
 list.addEventListener('change',function(e){if(!e.target.classList.contains('media-alt'))return;var d=new FormData();d.set('action','update');d.set('media_id',e.target.closest('[data-media-id]').dataset.mediaId);d.set('alt_text',e.target.value);call(d).then(function(j){render(j.media);}).catch(function(x){msg.textContent=x.message;});});
 list.addEventListener('click',function(e){var c=e.target.closest('[data-media-id]');if(!c)return;var run=function(action){var d=new FormData();d.set('action',action);if(action==='update'){d.set('set_primary','1');d.set('alt_text',c.querySelector('.media-alt').value);}d.set('media_id',c.dataset.mediaId);call(d).then(function(j){render(j.media);}).catch(function(x){msg.textContent=x.message;});};if(e.target.classList.contains('media-primary')){run('update');}else if(e.target.classList.contains('media-delete')){window.adminConfirm({title:'Remove Product Media',message:'Permanently remove this media file?',okText:'Remove Media'}).then(function(ok){if(ok)run('delete');});}});
 var dragged;list.addEventListener('dragstart',function(e){dragged=e.target.closest('[data-media-id]');});list.addEventListener('dragover',function(e){e.preventDefault();var over=e.target.closest('[data-media-id]');if(dragged&&over&&dragged!==over)list.insertBefore(dragged,over);});list.addEventListener('drop',function(e){e.preventDefault();var d=new FormData();d.set('action','reorder');list.querySelectorAll('[data-media-id]').forEach(function(el){d.append('media_ids[]',el.dataset.mediaId);});call(d).then(function(j){render(j.media);}).catch(function(x){msg.textContent=x.message;});});
-function action(name){var d=new FormData(),box=document.getElementById('product-action-message');d.set('product_id',pid);d.set('action',name);d.set('csrf_token',token);fetch('product-actions.php',{method:'POST',body:d,credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){box.className='alert '+(j.ok?'alert-success':'alert-warning');var checks=j.checks||{};box.innerHTML=esc(j.message||(j.ready?'Ready to publish.':'Publishing checklist incomplete.'))+(Object.keys(checks).length?'<ul class="mb-0 mt-2">'+Object.keys(checks).map(function(k){return '<li>'+esc(checks[k])+'</li>';}).join('')+'</ul>':'');});}
-document.getElementById('check-readiness-btn').addEventListener('click',function(){action('readiness');});document.getElementById('publish-product-btn').addEventListener('click',function(){action('publish');});load();
+function action(name){var d=new FormData(),box=document.getElementById('product-action-message'),button=document.getElementById('check-readiness-btn'),form=document.getElementById('product-editor-form');if(form&&form.dataset.dirty==='1'){box.className='alert alert-warning';box.textContent='Save your changes before checking the saved draft.';return;}d.set('product_id',pid);d.set('action',name);d.set('csrf_token',token);if(button)button.disabled=true;fetch('product-actions.php',{method:'POST',body:d,credentials:'same-origin'}).then(function(r){return r.json().catch(function(){throw new Error('Invalid server response.');}).then(function(j){if(!r.ok||!j.ok)throw new Error(j.message||'Request failed.');return j;});}).then(function(j){box.className='alert '+(j.ready?'alert-success':'alert-warning');var checks=j.checks||{};box.innerHTML=esc(j.message||(j.ready?'Saved draft is ready to publish.':'Publishing checklist incomplete.'))+(Object.keys(checks).length?'<ul class="mb-0 mt-2">'+Object.keys(checks).map(function(k){return '<li>'+esc(checks[k])+'</li>';}).join('')+'</ul>':'');}).catch(function(error){box.className='alert alert-danger';box.textContent=error.message||'Unable to check the saved draft.';}).finally(function(){if(button)button.disabled=false;});}
+document.getElementById('check-readiness-btn').addEventListener('click',function(){action('readiness');});load();
 })();
 </script>
 
@@ -673,12 +676,16 @@ $displayVariants = $variants;
         if (modal) modal.show();
     }
 
-    function showVariantPageError(message) {
+    function showVariantPageMessage(message, alertType) {
         var box = document.getElementById('product-action-message');
         if (!box) return;
-        box.className = 'alert alert-danger';
+        box.className = 'alert alert-' + (alertType || 'info');
         box.textContent = message;
         box.scrollIntoView({behavior: 'smooth', block: 'center'});
+    }
+
+    function showVariantPageError(message) {
+        showVariantPageMessage(message, 'danger');
     }
 
     var variantUI = window.variantUI = {
@@ -859,7 +866,9 @@ $displayVariants = $variants;
             if (errorElement) errorElement.textContent = 'Loading all variant details…';
             showVariantModal();
             fetch(ENDPOINT + '?action=list&fabric_id=' + FABRIC_ID)
-                .then(function (response) { return response.json(); })
+                .then(function (response) {
+                    return response.json().catch(function () { throw new Error('Invalid server response.'); });
+                })
                 .then(function (data) {
                     if (!data.success) throw new Error(data.message || 'Could not load variant details.');
                     var v = data.variants.find(function (x) { return x.id == vid; });
@@ -969,7 +978,6 @@ $displayVariants = $variants;
                     }
                     variantUI.hideForm();
                     variantUI.reloadTable();
-                    loadVariants();
                 })
                 .catch(function () {
                     errEl.textContent = 'Network error. Please try again.';
@@ -982,9 +990,9 @@ $displayVariants = $variants;
 
         deleteVariant: function (vid, btn) {
             var confirmer = window.adminConfirm({
-                title: 'Delete Variant',
-                message: 'Permanently delete this variant and its media? This cannot be undone.',
-                okText: 'Delete Variant'
+                title: 'Remove Variant',
+                message: 'Remove this variant? Variants used in business records will be archived so history remains intact.',
+                okText: 'Remove Variant'
             });
             confirmer.then(function (confirmed) {
                 if (!confirmed) { return; }
@@ -995,24 +1003,35 @@ $displayVariants = $variants;
                 fd.append('variant_id', vid);
                 btn.disabled = true;
                 fetch(ENDPOINT, {method: 'POST', body: fd})
-                    .then(r => r.json())
+                    .then(function (response) {
+                        return response.json().catch(function () { throw new Error('Invalid server response.'); });
+                    })
                     .then(function (data) {
                         if (!data.success) {
-                            showVariantPageError(data.message || 'Could not delete variant.');
-                            btn.disabled = false;
-                            return;
+                            throw new Error(data.message || 'Could not remove variant.');
                         }
+                        showVariantPageMessage(
+                            data.message || (data.archived ? 'Variant archived.' : 'Variant permanently removed.'),
+                            data.archived ? 'info' : 'success'
+                        );
                         variantUI.reloadTable();
-                        loadVariants();
+                    })
+                    .catch(function (error) {
+                        showVariantPageError(error.message || 'Could not remove variant.');
+                    })
+                    .finally(function () {
+                        btn.disabled = false;
                     });
             });
         },
 
         reloadTable: function () {
             fetch(ENDPOINT + '?action=list&fabric_id=' + FABRIC_ID)
-                .then(r => r.json())
+                .then(function (response) {
+                    return response.json().catch(function () { throw new Error('Invalid server response.'); });
+                })
                 .then(function (data) {
-                    if (!data.success) { return; }
+                    if (!data.success) throw new Error(data.message || 'Could not reload variants.');
                     var tbody = document.getElementById('variants-tbody');
                     var rows = Array.isArray(data.variants) ? data.variants.slice() : [];
 
@@ -1043,8 +1062,8 @@ $displayVariants = $variants;
                             ? '<span class="badge bg-success">Yes</span>'
                             : '<span class="badge bg-secondary">No</span>';
                         return '<tr data-vid="' + v.id + '">'
-                            + '<td>' + esc(v.color || '&mdash;') + '</td>'
-                            + '<td>' + esc(v.size  || '&mdash;') + '</td>'
+                            + '<td>' + esc(v.color || '\u2014') + '</td>'
+                            + '<td>' + esc(v.size  || '\u2014') + '</td>'
                             + '<td>' + packCell + '</td>'
                             + '<td><code>' + esc(v.sku || '') + '</code></td>'
                             + '<td>' + imageCell + '</td>'
@@ -1058,6 +1077,9 @@ $displayVariants = $variants;
                             + '</tr>';
                     }).join('');
                     tbody.innerHTML = html;
+                })
+                .catch(function (error) {
+                    showVariantPageError(error.message || 'Could not reload variants.');
                 });
         }
     };

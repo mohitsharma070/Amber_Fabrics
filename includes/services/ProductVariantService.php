@@ -172,4 +172,18 @@ final class ProductVariantService
         $update->bind_param('ii', $available, $productId);
         $update->execute();
     }
+
+    public static function hasBusinessReferences(mysqli $conn, int $variantId): bool
+    {
+        if ($variantId <= 0) return false;
+        $stmt = $conn->prepare(
+            'SELECT
+                EXISTS(SELECT 1 FROM order_items WHERE variant_id=? LIMIT 1)
+                OR EXISTS(SELECT 1 FROM return_items WHERE variant_id=? LIMIT 1)
+                OR EXISTS(SELECT 1 FROM stock_ledger WHERE variant_id=? LIMIT 1) AS referenced'
+        );
+        $stmt->bind_param('iii', $variantId, $variantId, $variantId);
+        $stmt->execute();
+        return (int) ($stmt->get_result()->fetch_assoc()['referenced'] ?? 0) === 1;
+    }
 }

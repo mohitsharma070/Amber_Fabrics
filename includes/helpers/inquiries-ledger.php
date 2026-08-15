@@ -21,7 +21,7 @@ function build_fabric_sku_base(string $category, string $material, string $color
 }
 
 /**
- * Generate a unique fabrics.sku value by appending -2, -3... when needed.
+ * Generate a globally unique product SKU by appending -2, -3... when needed.
  */
 function generate_unique_fabric_sku(mysqli $conn, string $category, string $material, string $color, string $gsm, int $excludeId = 0): string
 {
@@ -30,13 +30,13 @@ function generate_unique_fabric_sku(mysqli $conn, string $category, string $mate
     $n = 1;
 
     while (true) {
-        if ($excludeId > 0) {
-            $stmt = $conn->prepare("SELECT id FROM fabrics WHERE sku = ? AND id <> ? LIMIT 1");
-            $stmt->bind_param('si', $candidate, $excludeId);
-        } else {
-            $stmt = $conn->prepare("SELECT id FROM fabrics WHERE sku = ? LIMIT 1");
-            $stmt->bind_param('s', $candidate);
-        }
+        $stmt = $conn->prepare(
+            "SELECT sku FROM fabrics WHERE sku = ? AND id <> ?
+             UNION ALL
+             SELECT sku FROM fabric_variants WHERE sku = ?
+             LIMIT 1"
+        );
+        $stmt->bind_param('sis', $candidate, $excludeId, $candidate);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         if (!$row) {
@@ -177,4 +177,3 @@ function order_coupon_code_from_activity(mysqli $conn, int $orderId): string
     }
     return '';
 }
-

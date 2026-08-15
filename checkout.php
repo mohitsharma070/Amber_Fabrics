@@ -623,6 +623,7 @@ include __DIR__ . '/includes/header.php';
     var shippingDebugMessage = <?php echo json_encode((($GLOBALS['_app_mode'] ?? '') === 'local') ? (string) ($shippingQuote['debug_message'] ?? '') : ''); ?>;
     var shippingRateTimer = null;
     var shippingRateRequestId = 0;
+    var shippingRateAbortController = null;
 
     var payOptionCards = document.querySelectorAll('[data-pay-option]');
     var codPanel = document.getElementById('cod-panel');
@@ -786,7 +787,16 @@ include __DIR__ . '/includes/header.php';
     }
 
     function invalidateDeliveryQuote() {
-        if (!deliveryUnlocked && !shippingQuoteTokenInput.value) return;
+        if (shippingRateTimer) {
+            window.clearTimeout(shippingRateTimer);
+            shippingRateTimer = null;
+        }
+        shippingRateRequestId++;
+        if (shippingRateAbortController) {
+            shippingRateAbortController.abort();
+            shippingRateAbortController = null;
+        }
+        setDeliveryRequestPending(false);
         setCheckoutUnlocked(false);
         if (deliveryStatusEl) deliveryStatusEl.textContent = 'Delivery details changed. Continue again to refresh shipping.';
     }
@@ -868,9 +878,13 @@ include __DIR__ . '/includes/header.php';
             setShippingNote('manual', '', shippingDebugReason, '');
             return false;
         }
+        if (shippingRateAbortController) shippingRateAbortController.abort();
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        shippingRateAbortController = controller;
         var requestId = ++shippingRateRequestId;
         if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
         var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
+        var requestContext = country + '|' + pincode + '|' + paymentMethod;
         var body = new URLSearchParams();
         body.set('csrf_token', csrfToken);
         body.set('pincode', pincode);
@@ -884,10 +898,14 @@ include __DIR__ . '/includes/header.php';
                     'Accept': 'application/json',
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
                 },
-                body: body.toString()
+                body: body.toString(),
+                signal: controller ? controller.signal : undefined
             });
             var data = res.ok ? await res.json() : null;
-            if (requestId !== shippingRateRequestId) {
+            var currentContext = String(countryInput.value || '').trim().toLowerCase()
+                + '|' + String(pincodeInput ? pincodeInput.value : '').trim()
+                + '|' + (codRadio.checked ? 'cod' : 'razorpay');
+            if (requestId !== shippingRateRequestId || requestContext !== currentContext) {
                 return false;
             }
             if (!data || !data.ok) {
@@ -922,13 +940,17 @@ include __DIR__ . '/includes/header.php';
                 : 'Delivery address verified with an estimated shipping rate.';
             return true;
         } catch (error) {
+            if (error && error.name === 'AbortError') return false;
             if (requestId === shippingRateRequestId) {
                 shippingDebugReason = 'bigship_rate_api_failed';
                 setShippingNote('manual', '', shippingDebugReason, '');
             }
             return false;
         } finally {
-            setDeliveryRequestPending(false);
+            if (requestId === shippingRateRequestId) {
+                shippingRateAbortController = null;
+                setDeliveryRequestPending(false);
+            }
         }
     }
 
@@ -979,15 +1001,19 @@ include __DIR__ . '/includes/header.php';
         });
     }
     countryInput.addEventListener('change', invalidateDeliveryQuote);
-    codRadio.addEventListener('change', function () { if (deliveryUnlocked) scheduleLiveRate(0); });
-    razorpayRadio.addEventListener('change', function () { if (deliveryUnlocked) scheduleLiveRate(0); });
+    function refreshQuoteForPaymentChange() {
+        invalidateDeliveryQuote();
+        if (validateAddressSection()) scheduleLiveRate(0);
+    }
+    codRadio.addEventListener('change', refreshQuoteForPaymentChange);
+    razorpayRadio.addEventListener('change', refreshQuoteForPaymentChange);
     onlineMethodButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             activateOnlineMethod(btn.getAttribute('data-online-method'));
             razorpayRadio.checked = true;
             syncPaymentPanels();
             syncSummary();
-            if (deliveryUnlocked) scheduleLiveRate(0);
+            refreshQuoteForPaymentChange();
         });
     });
     if (savedAddressSelect) {

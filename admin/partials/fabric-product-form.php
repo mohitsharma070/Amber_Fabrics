@@ -8,6 +8,18 @@ $catalogLabels=[
  'attr_printing_type'=>'Printing Type','attr_shape'=>'Shape','attr_pattern'=>'Pattern','attr_origin'=>'Origin','attr_thickness_ply'=>'Thickness / Ply',
  'attr_disposable_folded'=>'Disposable Folded','attr_stain_resistant'=>'Stain-Resistant','attr_eco_friendly'=>'Eco-Friendly','attr_fabric'=>'Fabric',
 ];
+$initialEditorSection='';
+if(!empty($errors)){
+ $pricingErrorFields=['sale_price','price','cost_price','stock','quantity','gst_rate','hsn_code','shipping_weight_kg','parcel_length_cm','parcel_width_cm','parcel_height_cm'];
+ $contentErrorFields=['description'];
+ $shippingErrorFields=array_keys(array_slice($catalogLabels,6,null,true));
+ foreach(array_keys($errors) as $errorField){
+  if(in_array($errorField,$pricingErrorFields,true)){$initialEditorSection='pricing';break;}
+  if(in_array($errorField,$contentErrorFields,true)){$initialEditorSection='content';break;}
+  if(in_array($errorField,$shippingErrorFields,true)){$initialEditorSection='shipping';break;}
+  $initialEditorSection='details';
+ }
+}
 ?>
 <div class="card mb-3"><div class="card-body py-2"><ul class="nav nav-pills product-editor-tabs">
  <li class="nav-item"><button type="button" class="nav-link active product-editor-tab" data-editor-tab="details">Catalogue Details</button></li>
@@ -17,11 +29,14 @@ $catalogLabels=[
  <?php if($isEdit):?><li class="nav-item"><a class="nav-link" href="#variants-card" id="variants-tab-link">Variants</a></li><?php endif;?>
 </ul></div></div>
 
-<form method="POST" class="row g-3" id="product-editor-form">
+<form method="POST" class="row g-3" id="product-editor-form" data-initial-editor-section="<?php echo e($initialEditorSection); ?>">
  <?php echo csrf_field(); ?>
+ <input type="hidden" name="submit" id="product_submit_intent" value="save">
  <input type="hidden" name="product_type" value="<?php echo e((string)($old['product_type']??'simple'));?>">
  <input type="hidden" name="unit_type" value="<?php echo e((string)($old['unit_type']??'piece'));?>">
  <input type="hidden" name="slug" value="<?php echo e((string)($old['slug']??''));?>">
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Selling Unit</label><input class="form-control" value="<?php echo e(ucfirst((string)($old['unit_type']??'piece')));?>" disabled><div class="form-text">Choose the selling unit when creating a product draft.</div></div>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Inventory Mode</label><input class="form-control" value="<?php echo e(ucfirst((string)($old['product_type']??'simple')));?>" disabled><div class="form-text">Use the Variants tab to change inventory mode safely.</div></div>
  <div class="col-md-4" data-editor-section="details"><label class="form-label">Product Code</label><input name="product_code" maxlength="100" class="<?php echo form_class($errors,'product_code');?> text-uppercase" value="<?php echo e((string)($old['product_code']??''));?>"><?php echo form_error($errors,'product_code');?></div>
  <div class="col-md-4" data-editor-section="details"><label class="form-label">Amazon ASIN</label><input name="amazon_asin" maxlength="10" class="<?php echo form_class($errors,'amazon_asin');?> text-uppercase" value="<?php echo e((string)($old['amazon_asin']??''));?>"><?php echo form_error($errors,'amazon_asin');?></div>
  <div class="col-md-4" data-editor-section="details"><label class="form-label">Sku Id *</label><input name="sku" id="sku_hidden" maxlength="100" required class="<?php echo form_class($errors,'sku');?> text-uppercase" value="<?php echo e((string)$old['sku']);?>"><input type="hidden" id="sku_preview" value="<?php echo e((string)$old['sku']);?>"><?php echo form_error($errors,'sku');?></div>
@@ -50,5 +65,5 @@ $catalogLabels=[
  <?php foreach(array_slice($catalogLabels,6,null,true) as $field=>$label):?>
  <div class="col-md-4" data-editor-section="shipping"><label class="form-label"><?php echo e($label);?></label><input name="<?php echo e($field);?>" maxlength="1000" class="form-control" value="<?php echo e((string)($old[$field]??''));?>"></div>
  <?php endforeach;?>
- <div class="col-12" data-editor-section="actions"><button type="button" class="btn btn-outline-secondary" id="product-prev-tab-btn" data-cancel-href="<?php echo e((string)$cancelHref);?>">Back</button> <button type="button" class="btn btn-outline-primary" id="product-next-tab-btn">Next</button> <button name="submit" class="btn btn-primary"><?php echo e($submitLabel);?></button></div>
+ <div class="col-12" data-editor-section="actions"><button type="button" class="btn btn-outline-secondary" id="product-prev-tab-btn" data-cancel-href="<?php echo e((string)$cancelHref);?>">Back</button> <button type="button" class="btn btn-outline-primary" id="product-next-tab-btn">Next</button> <button type="submit" data-submit-intent="save" class="btn btn-primary"><?php echo e($submitLabel);?></button></div>
 </form>

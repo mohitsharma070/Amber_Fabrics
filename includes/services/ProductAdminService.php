@@ -53,8 +53,13 @@ final class ProductAdminService
 
     public static function skuAvailable(mysqli $conn, string $sku, int $excludeId = 0): bool
     {
-        $stmt = $conn->prepare('SELECT id FROM fabrics WHERE sku = ? AND id <> ? LIMIT 1');
-        $stmt->bind_param('si', $sku, $excludeId);
+        $stmt = $conn->prepare(
+            'SELECT sku FROM fabrics WHERE sku = ? AND id <> ?
+             UNION ALL
+             SELECT sku FROM fabric_variants WHERE sku = ?
+             LIMIT 1'
+        );
+        $stmt->bind_param('sis', $sku, $excludeId, $sku);
         $stmt->execute();
         return !$stmt->get_result()->fetch_assoc();
     }

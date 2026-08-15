@@ -6,7 +6,7 @@ final class ProductImportService
     public const MAX_ROWS = 5000;
 
     public const HEADERS = [
-        'Product Code','Amazon ASIN','Name','Sku Id','Selling Price','MRP','Cost Price','Quantity',
+        'Product Code','Amazon ASIN','Name','Sku Id','Selling Price','MRP','Cost Price','Quantity','Selling Unit',
         'Packaging Length (in cm)','Packaging Breadth (in cm)','Packaging Height (in cm)','Packaging Weight (in kg)','GST %',
         'Image 1','Image 2','Image 3','Image 4','Image 5','Image 6','Image 7','Image 8','Image 9','Image 10','Video 1','Video 2',
         'Product Type','Size Type','Size','Colour','Description','Return/Exchange Condition','Visibility','Size Chart','Pickup Address Code',
@@ -17,7 +17,7 @@ final class ProductImportService
 
     private const MAP = [
         'productcode'=>'product_code','amazonasin'=>'amazon_asin','name'=>'name','skuid'=>'sku','sellingprice'=>'sale_price','mrp'=>'price',
-        'costprice'=>'cost_price','quantity'=>'quantity','packaginglengthincm'=>'parcel_length_cm','packagingbreadthincm'=>'parcel_width_cm',
+        'costprice'=>'cost_price','quantity'=>'quantity','sellingunit'=>'unit_type','packaginglengthincm'=>'parcel_length_cm','packagingbreadthincm'=>'parcel_width_cm',
         'packagingheightincm'=>'parcel_height_cm','packagingweightinkg'=>'shipping_weight_kg','gst'=>'gst_rate','producttype'=>'category',
         'sizetype'=>'size_type','size'=>'size','colour'=>'color','color'=>'color','description'=>'description',
         'returnexchangecondition'=>'return_exchange_condition','visibility'=>'visibility','sizechart'=>'size_chart',
@@ -67,6 +67,9 @@ final class ProductImportService
             }
             if (!$errors && $existing && ($existing['product_type'] ?? 'simple') !== 'simple') {
                 $errors[]='Variable products cannot be overwritten by this simple-product catalogue import.';
+            }
+            if (!$errors && !ProductAdminService::skuAvailable($conn, $data['sku'], (int) ($existing['id'] ?? 0))) {
+                $errors[]='Sku Id is already used by a product variant.';
             }
             if ($errors) {
                 $failed++;
@@ -135,6 +138,17 @@ final class ProductImportService
         return strtolower(preg_replace('/[^a-zA-Z0-9]+/','',$value)??'');
     }
 
+    private static function sellingUnit(string $value): ?string
+    {
+        $key=self::headerKey($value);
+        $aliases=[
+            'piece'=>'piece','pieces'=>'piece','pc'=>'piece','pcs'=>'piece','unit'=>'piece','units'=>'piece','each'=>'piece',
+            'meter'=>'meter','meters'=>'meter','metre'=>'meter','metres'=>'meter','m'=>'meter',
+            'set'=>'set','sets'=>'set',
+        ];
+        return $aliases[$key]??null;
+    }
+
     private static function normalizeRow(array $raw): array
     {
         $row=[];foreach(self::MAP as $csv=>$field)$row[$field]=trim((string)($raw[$csv]??''));
@@ -159,7 +173,16 @@ final class ProductImportService
         $price=self::number($row['price'],'MRP',$errors,true);$sale=self::number($row['sale_price'],'Selling Price',$errors,false,true);$cost=self::number($row['cost_price'],'Cost Price',$errors,false,true)??0.0;
         if($sale!==null&&$price!==null&&$sale>=$price)$errors[]='Selling Price must be below MRP.';
         $qty=self::number($row['quantity'],'Quantity',$errors,false)??0.0;
-        $sizeType=mb_strtolower($row['size_type']);$unit=str_contains($sizeType,'meter')?'meter':(str_contains($sizeType,'set')?'set':$defaultUnit);
+        $sellingUnit=trim((string)($row['unit_type']??''));
+        if($sellingUnit!==''){
+            $unit=self::sellingUnit($sellingUnit);
+            if($unit===null){$errors[]='Selling Unit must be Piece, Meter, or Set.';$unit=$defaultUnit;}
+        }else{
+            // Backward compatibility for templates created before Selling Unit
+            // became an explicit column. New imports should use Selling Unit.
+            $sizeType=mb_strtolower((string)$row['size_type']);
+            $unit=(str_contains($sizeType,'meter')||str_contains($sizeType,'metre'))?'meter':(str_contains($sizeType,'set')?'set':$defaultUnit);
+        }
         if(in_array($unit,['piece','set'],true)&&floor($qty)!=$qty)$errors[]='Quantity must be a whole number for piece/set products.';
         $gst=self::number($row['gst_rate'],'GST %',$errors,false,true);if($gst!==null&&$gst>100)$errors[]='GST % must be between 0 and 100.';
         $hsn=trim($row['hsn_code']);if($hsn!==''&&!preg_match('/^[0-9]{4,8}$/',$hsn))$errors[]='HSN Code must contain 4 to 8 digits.';

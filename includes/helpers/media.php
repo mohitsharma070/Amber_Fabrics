@@ -284,6 +284,38 @@ function image_pipeline_delete_files(string $directory, string $filename): void
     }
 }
 
+/**
+ * Delete a catalogue media file only after its final database reference is gone.
+ * CSV imports may intentionally attach one existing file to multiple products.
+ */
+function fabric_media_delete_if_unreferenced(mysqli $conn, string $filename): bool
+{
+    $filename = basename(trim(str_replace('\\', '/', $filename)));
+    if ($filename === '') {
+        return false;
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT
+            (SELECT COUNT(*) FROM fabric_media WHERE filename = ?) +
+            (SELECT COUNT(*) FROM fabric_variants
+             WHERE image = ? OR image2 = ? OR image3 = ? OR image4 = ? OR video = ?) AS references_total"
+    );
+    $stmt->bind_param('ssssss', $filename, $filename, $filename, $filename, $filename, $filename);
+    $stmt->execute();
+    $references = (int) ($stmt->get_result()->fetch_assoc()['references_total'] ?? 0);
+    if ($references > 0) {
+        return false;
+    }
+
+    if (preg_match('/\.(mp4|webm|ogg|mov)$/i', $filename)) {
+        $path = fabric_upload_path($filename);
+        return !is_file($path) || @unlink($path);
+    }
+    image_pipeline_delete_files(fabric_upload_directory(), $filename);
+    return true;
+}
+
 function save_fabric_image_upload(array $file, string $label = 'Image'): string
 {
     $allowedImageExt = ['jpg', 'jpeg', 'png', 'webp'];

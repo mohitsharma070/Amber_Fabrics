@@ -14,7 +14,6 @@
     var skuPreview = document.getElementById('sku_preview');
     var skuHidden = document.getElementById('sku_hidden');
     var variantsTabLink = document.getElementById('variants-tab-link');
-    var productTypeSelect = document.querySelector('select[name="product_type"]');
     var prevTabBtn = document.getElementById('product-prev-tab-btn');
     var nextTabBtn = document.getElementById('product-next-tab-btn');
     var currentSection = 'details';
@@ -166,7 +165,6 @@
     }
 
     unitSelect.addEventListener('change', applyUnitRules);
-    if(productTypeSelect){var originalProductType=productTypeSelect.value;productTypeSelect.addEventListener('change',function(){if(productTypeSelect.value===originalProductType)return;var message=productTypeSelect.value==='variable'?'Switching to variable product will clear base stock and keep the product as draft until a sellable variant exists. Continue?':'Switching to simple product will deactivate variants and requires explicit base stock. Continue?';if(!window.confirm(message))productTypeSelect.value=originalProductType;});}
     [categoryInput, materialInput, gsmInput].forEach(function (el) {
         if (!el) return;
         el.addEventListener('input', updateSkuPreview);
@@ -213,11 +211,45 @@
     }
 
     assignSections();
+    var errorSection = String(formEl ? formEl.getAttribute('data-initial-editor-section') || '' : '');
     var savedSection = sessionStorage.getItem('amberProductEditorSection') || 'details';
-    setSection(sectionOrder.indexOf(savedSection) >= 0 ? savedSection : 'details');
+    setSection(sectionOrder.indexOf(errorSection) >= 0 ? errorSection : (sectionOrder.indexOf(savedSection) >= 0 ? savedSection : 'details'));
     tabButtons.forEach(function(btn){btn.addEventListener('click',function(){sessionStorage.setItem('amberProductEditorSection',btn.getAttribute('data-editor-tab')||'details');});});
     applyUnitRules();
     updateSkuPreview();
-    if(formEl){var dirty=false;formEl.addEventListener('input',function(){dirty=true;});formEl.addEventListener('submit',function(){dirty=false;var submit=formEl.querySelector('button[name="submit"]');if(submit){submit.disabled=true;submit.textContent='Saving...';}});window.addEventListener('beforeunload',function(event){if(!dirty)return;event.preventDefault();event.returnValue='';});}
+    if(formEl){
+        var dirty=false;
+        var validationNavigationPending=false;
+        function setDirty(next){
+            dirty=!!next;
+            formEl.dataset.dirty=dirty?'1':'0';
+            document.dispatchEvent(new CustomEvent('product-editor-dirty-change',{detail:{dirty:dirty}}));
+        }
+        formEl.addEventListener('input',function(){setDirty(true);});
+        formEl.addEventListener('change',function(){setDirty(true);});
+        Array.prototype.forEach.call(document.querySelectorAll('[data-submit-intent]'),function(button){
+            button.addEventListener('click',function(){
+                var intent=document.getElementById('product_submit_intent');
+                if(intent)intent.value=String(button.getAttribute('data-submit-intent')||'save');
+            });
+        });
+        formEl.addEventListener('invalid',function(event){
+            if(validationNavigationPending)return;
+            validationNavigationPending=true;
+            window.setTimeout(function(){validationNavigationPending=false;},0);
+            var holder=event.target&&event.target.closest?event.target.closest('[data-editor-section]'):null;
+            var section=holder?String(holder.getAttribute('data-editor-section')||'details'):'details';
+            if(sectionOrder.indexOf(section)>=0){setSection(section);sessionStorage.setItem('amberProductEditorSection',section);}
+        },true);
+        formEl.addEventListener('submit',function(){
+            setDirty(false);
+            Array.prototype.forEach.call(document.querySelectorAll('button[type="submit"][form="product-editor-form"],#product-editor-form button[type="submit"]'),function(submit){
+                submit.disabled=true;
+                if(submit.id==='publish-product-btn')submit.textContent='Saving & Publishing...';else submit.textContent='Saving...';
+            });
+        });
+        setDirty(false);
+        window.addEventListener('beforeunload',function(event){if(!dirty)return;event.preventDefault();event.returnValue='';});
+    }
 })();
 </script>

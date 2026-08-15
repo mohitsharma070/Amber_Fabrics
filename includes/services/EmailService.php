@@ -9,7 +9,12 @@ final class EmailService
         }
         $stmt = $conn->prepare(
             "UPDATE orders
-             SET account_activation_requested = 1, account_activation_sent_at = NULL
+             SET account_activation_requested = 1,
+                 account_activation_sent_at = NULL,
+                 activation_email_status = 'pending',
+                 activation_email_claimed_at = NULL,
+                 activation_email_claim_token = NULL,
+                 activation_email_last_error = NULL
              WHERE id = ? AND customer_id IS NULL"
         );
         $stmt->bind_param('i', $orderId);
@@ -22,31 +27,47 @@ final class EmailService
             return false;
         }
 
-        // Claim the side effect atomically. Both the browser verification route
-        // and Razorpay webhook may finalize the same order at nearly the same time.
+        // Claim the side effect atomically. A stale processing lease can be
+        // reclaimed after a crashed PHP request or transport timeout.
+        $claimToken = bin2hex(random_bytes(16));
         $claim = $conn->prepare(
             "UPDATE orders
-             SET account_activation_sent_at = NOW()
+             SET activation_email_status = 'processing',
+                 activation_email_claimed_at = NOW(),
+                 activation_email_claim_token = ?,
+                 activation_email_attempts = activation_email_attempts + 1,
+                 activation_email_last_error = NULL
              WHERE id = ? AND customer_id IS NULL
                AND account_activation_requested = 1
-               AND account_activation_sent_at IS NULL"
+               AND account_activation_sent_at IS NULL
+               AND (
+                    activation_email_status IN ('pending','failed')
+                    OR (activation_email_status = 'processing'
+                        AND activation_email_claimed_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
+               )"
         );
-        $claim->bind_param('i', $orderId);
+        $claim->bind_param('si', $claimToken, $orderId);
         $claim->execute();
         if ($claim->affected_rows !== 1) {
             return false;
         }
 
         $sent = self::send_account_activation_email($conn, $orderId);
-        if (!$sent) {
-            // Permit a later webhook/verification retry when delivery failed.
-            $release = $conn->prepare(
-                "UPDATE orders SET account_activation_sent_at = NULL
-                 WHERE id = ? AND customer_id IS NULL AND account_activation_requested = 1"
-            );
-            $release->bind_param('i', $orderId);
-            $release->execute();
-        }
+        $status = $sent ? 'sent' : 'failed';
+        $error = $sent ? null : 'Activation email delivery failed.';
+        $complete = $conn->prepare(
+            "UPDATE orders
+             SET activation_email_status = ?,
+                 activation_email_claimed_at = NULL,
+                 activation_email_claim_token = NULL,
+                 activation_email_last_error = ?,
+                 account_activation_sent_at = CASE WHEN ? = 'sent' THEN NOW() ELSE NULL END
+             WHERE id = ? AND customer_id IS NULL
+               AND activation_email_status = 'processing'
+               AND activation_email_claim_token = ?"
+        );
+        $complete->bind_param('sssis', $status, $error, $status, $orderId, $claimToken);
+        $complete->execute();
         return $sent;
     }
 

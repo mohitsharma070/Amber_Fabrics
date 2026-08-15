@@ -59,14 +59,27 @@ CREATE TABLE IF NOT EXISTS admin_login_otps (
 -- Fabrics (Products)
 CREATE TABLE IF NOT EXISTS fabrics (
     id               INT           AUTO_INCREMENT PRIMARY KEY,
+    product_code     VARCHAR(100)  DEFAULT NULL,
+    amazon_asin      VARCHAR(20)   DEFAULT NULL,
     name             VARCHAR(255)  NOT NULL,
-    sku              VARCHAR(100)  UNIQUE DEFAULT NULL,
+    sku              VARCHAR(100)  DEFAULT NULL,
+    slug             VARCHAR(191)  NOT NULL,
     category         VARCHAR(100)  DEFAULT NULL,
+    product_type     ENUM('simple','variable') NOT NULL DEFAULT 'simple',
     unit_type        ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
     meter_options    VARCHAR(100)  DEFAULT NULL,
     size             VARCHAR(100)  DEFAULT NULL,
     color            VARCHAR(100)  DEFAULT NULL,
     description      TEXT,
+    catalog_data     LONGTEXT      DEFAULT NULL,
+    hsn_code         VARCHAR(8)    DEFAULT NULL,
+    gst_rate         DECIMAL(5,2)  DEFAULT NULL,
+    shipping_weight_kg DECIMAL(10,3) DEFAULT NULL,
+    parcel_length_cm DECIMAL(10,2) DEFAULT NULL,
+    parcel_width_cm  DECIMAL(10,2) DEFAULT NULL,
+    parcel_height_cm DECIMAL(10,2) DEFAULT NULL,
+    dispatch_min_days SMALLINT UNSIGNED DEFAULT NULL,
+    dispatch_max_days SMALLINT UNSIGNED DEFAULT NULL,
     price            DECIMAL(10,2) DEFAULT 0.00,
     sale_price       DECIMAL(10,2) DEFAULT NULL,
     cost_price       DECIMAL(10,2) DEFAULT 0.00,
@@ -76,9 +89,15 @@ CREATE TABLE IF NOT EXISTS fabrics (
     low_stock_threshold_meters DECIMAL(10,2) DEFAULT NULL,
     min_order_meters DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     qty_step         DECIMAL(10,4) DEFAULT 0.0000,
-    status           ENUM('active','inactive') DEFAULT 'active',
+    status           ENUM('draft','active','inactive') NOT NULL DEFAULT 'draft',
     is_available     TINYINT(1)    DEFAULT 1,
     created_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    published_at     DATETIME      DEFAULT NULL,
+    published_by     INT           DEFAULT NULL,
+    updated_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_fabrics_product_code (product_code),
+    UNIQUE KEY uq_fabrics_sku (sku),
+    UNIQUE KEY uq_fabrics_slug (slug),
     INDEX idx_fabrics_storefront (status, category, is_available, created_at),
     -- Catalog listing: status/category + sort by created_at/id (newest/oldest)
     INDEX idx_fabrics_catalog_created (status, category, created_at, id),
@@ -150,6 +169,20 @@ CREATE TABLE IF NOT EXISTS fabric_variants (
     -- Catalog keyword search on variant attributes
     FULLTEXT KEY ft_fv_catalog_search (color, size, sku, pack_label),
     UNIQUE KEY uq_fabric_color_size (fabric_id, color, size)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fabric_media (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    fabric_id INT NOT NULL,
+    media_type ENUM('image','video') NOT NULL DEFAULT 'image',
+    filename VARCHAR(255) NOT NULL,
+    alt_text VARCHAR(255) NOT NULL DEFAULT '',
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    sort_order SMALLINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_fabric_media_product_sort (fabric_id, media_type, sort_order),
+    CONSTRAINT fk_fabric_media_fabric FOREIGN KEY (fabric_id) REFERENCES fabrics(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS customer_addresses (
@@ -388,10 +421,22 @@ CREATE TABLE IF NOT EXISTS orders (
     coupon_discount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     shipping_quote_token VARCHAR(64) DEFAULT NULL,
     shipping_source VARCHAR(40)   DEFAULT NULL,
+    serviceability_status ENUM('live','estimated','unavailable') NOT NULL DEFAULT 'estimated',
+    estimated_dispatch_start DATE DEFAULT NULL,
+    estimated_dispatch_end DATE DEFAULT NULL,
+    estimated_delivery_start DATE DEFAULT NULL,
+    estimated_delivery_end DATE DEFAULT NULL,
     courier_id      INT           DEFAULT NULL,
     courier_name    VARCHAR(255)  DEFAULT NULL,
     cod_fee         DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     base_shipping   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    account_activation_requested TINYINT(1) NOT NULL DEFAULT 0,
+    account_activation_sent_at DATETIME DEFAULT NULL,
+    activation_email_status ENUM('pending','processing','sent','failed') NOT NULL DEFAULT 'pending',
+    activation_email_claimed_at DATETIME DEFAULT NULL,
+    activation_email_claim_token CHAR(32) DEFAULT NULL,
+    activation_email_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    activation_email_last_error VARCHAR(500) DEFAULT NULL,
     -- Legacy / compatibility columns
     customer_id     INT           DEFAULT NULL,
     payment_id      VARCHAR(255)  DEFAULT NULL,
@@ -417,7 +462,8 @@ CREATE TABLE IF NOT EXISTS orders (
     INDEX idx_orders_coupon_id      (coupon_id),
     INDEX idx_orders_coupon_code    (coupon_code),
     INDEX idx_orders_shipping_quote_token (shipping_quote_token),
-    INDEX idx_orders_status_payment (order_status, payment_status)
+    INDEX idx_orders_status_payment (order_status, payment_status),
+    INDEX idx_orders_activation_email_delivery (account_activation_requested, activation_email_status, activation_email_claimed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Order line items
@@ -637,7 +683,7 @@ CREATE TABLE IF NOT EXISTS returns (
     id               INT AUTO_INCREMENT PRIMARY KEY,
     return_number    VARCHAR(32) NOT NULL UNIQUE,
     order_id         INT NOT NULL,
-    customer_id      INT NOT NULL,
+    customer_id      INT DEFAULT NULL,
     status           ENUM('requested','approved','rejected','pickup_scheduled','in_transit','received','refund_initiated','refund_completed','cancelled') NOT NULL DEFAULT 'requested',
     reason           VARCHAR(255) NOT NULL,
     customer_note    TEXT DEFAULT NULL,
@@ -814,11 +860,32 @@ CREATE TABLE IF NOT EXISTS shipping_quotes (
     source         VARCHAR(32) NOT NULL DEFAULT 'manual',
     courier_name   VARCHAR(255) DEFAULT NULL,
     courier_id     INT DEFAULT NULL,
+    serviceability_status ENUM('live','estimated','unavailable') NOT NULL DEFAULT 'estimated',
+    estimated_dispatch_start DATE DEFAULT NULL,
+    estimated_dispatch_end DATE DEFAULT NULL,
+    estimated_delivery_start DATE DEFAULT NULL,
+    estimated_delivery_end DATE DEFAULT NULL,
     expires_at     DATETIME NOT NULL,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_shipping_quotes_customer_expires (customer_id, expires_at),
     INDEX idx_shipping_quotes_expires_at (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS guest_order_access_tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    purpose ENUM('manage','activate') NOT NULL DEFAULT 'manage',
+    expires_at DATETIME NOT NULL,
+    consumed_at DATETIME DEFAULT NULL,
+    created_ip VARCHAR(45) DEFAULT NULL,
+    created_user_agent VARCHAR(255) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_guest_order_access_token_hash (token_hash),
+    INDEX idx_guest_order_access_order_purpose (order_id, purpose, expires_at),
+    INDEX idx_guest_order_access_expiry (expires_at),
+    CONSTRAINT fk_guest_order_access_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET @fk_exists := (
@@ -947,7 +1014,9 @@ CREATE TABLE IF NOT EXISTS newsletter_subscribers (
 CREATE TABLE IF NOT EXISTS support_tickets (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY,
     ticket_number    VARCHAR(32) NOT NULL,
-    customer_id      INT NOT NULL,
+    customer_id      INT DEFAULT NULL,
+    requester_name   VARCHAR(255) DEFAULT NULL,
+    requester_email  VARCHAR(255) DEFAULT NULL,
     order_id         INT DEFAULT NULL,
     subject          VARCHAR(160) NOT NULL,
     category         ENUM('order','shipping','payment','product','account','other') NOT NULL DEFAULT 'other',
@@ -985,9 +1054,18 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-05-23-p2-catalog-admin-indexes.sql',    '95b33d6c95ab616bb99ade5adf9359e62d9daf971f523b679c7784fd6c9d461a'),
 ('2026-06-20-shipping-courier-plugin.sql',      '727d08882652ff03c15b5b5fc7a184b1a820bdbc4723d195ede71b5e63d57f58'),
+('2026-06-21-shipping-courier-reference-cache.sql', '1463cd07894b1f311a48b306322bf445404e6bea0e74d005862f26865221f015'),
 ('2026-06-27-back-in-stock-subscriptions.sql',  '83ffb78e4982e128f305a5fde6478162292599d470e27d948069e1df9c1bfdb2'),
 ('2026-06-27-newsletter-plugin.sql',            '04660f73a831007aaee4f8049161e14c3209a247b924a2d33151f4706e8b05be'),
-('2026-06-27-support-tickets-plugin.sql',       '12ed1674e131c72f45e111cf2f9c129c1ac476299fd6d0464892a5606c244560');
+('2026-06-27-support-tickets-plugin.sql',       '12ed1674e131c72f45e111cf2f9c129c1ac476299fd6d0464892a5606c244560'),
+('2026-08-12-conversion-mvp.sql',               '0d17116ec5de063c8d88d7e36661378cf031178e593cc3a006a8dc0a908da58e'),
+('2026-08-13-conversion-mvp-backend-fixes.sql', 'bd3dcfb2b95f7f7a551a7fe154b9ac023eae03511f330f529d93b6b4b83e1491'),
+('2026-08-14-admin-product-editor-v2.sql',      '902a784ec97339b6a125f157d81738ee12404e5e650638c822cbb13fe874acc5'),
+('2026-08-15-catalog-product-fields.sql',       '351ed8d1883dbb31adb7dcf0c921b01d6c88f8528f7f07e26e231e2ba232e625'),
+('2026-08-16-remove-obsolete-product-fields.sql','c2ca92e4f7fea6433df41578dfc79124da7cf7333403871cd7e5970edc25a175'),
+('2026-08-17-remove-legacy-placeholder-variants.sql','1c036a6635e64ffe2f191616630bfb08c9ed5389d7a556e20916e45845a1d3d0'),
+('2026-08-18-purge-legacy-placeholder-variants.sql','7ff11fa4a42abc61052ac8b54a6614cbc06622c7b753599c7314d5bfadc46d6a'),
+('2026-08-19-backend-integrity-hardening.sql',  'fedb5362871f1be607d033ebbb42346dcbde3f2e920bc1f4156a55cee1b1a75d');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

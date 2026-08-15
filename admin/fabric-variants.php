@@ -162,7 +162,7 @@ if ($action === 'save') {
         json_error((int)$e->getCode()===1062?'This colour, size, or SKU already exists.':'Unable to save the variant.',422);
     }
     $currentMedia=[$image,$image2,$image3,$image4,$video];
-    foreach($previousMedia as $oldFile){if($oldFile===''||in_array($oldFile,$currentMedia,true))continue;if(preg_match('/\.(mp4|webm|ogg)$/i',$oldFile))@unlink(fabric_upload_path($oldFile));else image_pipeline_delete_files(dirname(fabric_upload_path($oldFile)),$oldFile);}
+    foreach($previousMedia as $oldFile){if($oldFile===''||in_array($oldFile,$currentMedia,true))continue;fabric_media_delete_if_unreferenced($conn,$oldFile);}
     $variant=ProductVariantService::enrich([InventoryService::get_variant_by_id($conn,$variantId)],$product)[0]??null;
     if(function_exists('product_feed_refresh_files'))product_feed_refresh_files(['conn'=>$conn]);
     json_ok(['variant'=>$variant,'product'=>ProductVariantService::productContext($conn,$fabricId)]);
@@ -189,26 +189,29 @@ if ($action === 'delete') {
 
     $conn->begin_transaction();
     try {
-        $detach = $conn->prepare("UPDATE order_items SET variant_id = NULL WHERE variant_id = ?");
-        $detach->bind_param('i', $variantId);
-        $detach->execute();
-        $stmt = $conn->prepare("DELETE FROM fabric_variants WHERE id = ? AND fabric_id = ?");
+        $hardDelete = !ProductVariantService::hasBusinessReferences($conn, $variantId);
+        $stmt = $hardDelete
+            ? $conn->prepare("DELETE FROM fabric_variants WHERE id = ? AND fabric_id = ?")
+            : $conn->prepare("UPDATE fabric_variants SET is_active = 0 WHERE id = ? AND fabric_id = ?");
         $stmt->bind_param('ii', $variantId, $fabricId);
         $stmt->execute();
         ProductVariantService::syncAvailability($conn, $fabricId);
-        log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_variant_removed','product',$fabricId,'Product variant permanently deleted.','ok');
+        log_admin_activity($conn,(int)$_SESSION['admin_id'],$hardDelete?'product_variant_removed':'product_variant_archived','product',$fabricId,$hardDelete?'Unreferenced product variant permanently deleted.':'Referenced product variant archived to preserve business history.','ok');
         $conn->commit();
     } catch (Throwable $e) {
         $conn->rollback();
         error_log('[variant-delete] ' . $e->getMessage());
         json_error('Unable to remove the variant.', 500);
     }
-    foreach ($variantMedia as $filename) {
-        if (preg_match('/\.(mp4|webm|ogg)$/i', $filename)) @unlink(fabric_upload_path($filename));
-        else image_pipeline_delete_files(dirname(fabric_upload_path($filename)), $filename);
-    }
+    if ($hardDelete) foreach ($variantMedia as $filename) fabric_media_delete_if_unreferenced($conn, $filename);
     if(function_exists('product_feed_refresh_files'))product_feed_refresh_files(['conn'=>$conn]);
-    json_ok(['deleted' => true]);
+    json_ok([
+        'deleted' => $hardDelete,
+        'archived' => !$hardDelete,
+        'message' => $hardDelete
+            ? 'Variant permanently removed.'
+            : 'Variant archived because business history references it.',
+    ]);
 }
 
 // ── reorder ──────────────────────────────────────────────────────────────────

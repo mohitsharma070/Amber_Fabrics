@@ -44,13 +44,15 @@ function ensure_tables(mysqli $conn): void
     $conn->query(
         "CREATE TABLE IF NOT EXISTS fabrics (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            product_code VARCHAR(100) UNIQUE DEFAULT NULL,
+            product_code VARCHAR(100) DEFAULT NULL,
             amazon_asin VARCHAR(20) DEFAULT NULL,
             name VARCHAR(255) NOT NULL,
-            sku VARCHAR(100) UNIQUE DEFAULT NULL,
+            sku VARCHAR(100) DEFAULT NULL,
             category VARCHAR(100) DEFAULT NULL,
             product_type ENUM('simple','variable') NOT NULL DEFAULT 'simple',
             slug VARCHAR(191) DEFAULT NULL,
+            UNIQUE KEY uq_fabrics_product_code (product_code),
+            UNIQUE KEY uq_fabrics_sku (sku),
             UNIQUE KEY uq_fabrics_slug (slug),
             unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
             meter_options VARCHAR(100) DEFAULT NULL,
@@ -90,6 +92,8 @@ function ensure_tables(mysqli $conn): void
         'cost_price' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
         'stock' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
         'stock_meters' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+        'low_stock_threshold_units' => "INT NULL DEFAULT NULL",
+        'low_stock_threshold_meters' => "DECIMAL(10,2) NULL DEFAULT NULL",
         'min_order_meters' => "DECIMAL(10,2) NOT NULL DEFAULT 1.00",
         'qty_step' => "DECIMAL(10,4) NOT NULL DEFAULT 0.0000",
         'is_available' => "TINYINT(1) NOT NULL DEFAULT 1",
@@ -109,6 +113,8 @@ function ensure_tables(mysqli $conn): void
         'parcel_length_cm' => "DECIMAL(10,2) NULL DEFAULT NULL",
         'parcel_width_cm' => "DECIMAL(10,2) NULL DEFAULT NULL",
         'parcel_height_cm' => "DECIMAL(10,2) NULL DEFAULT NULL",
+        'dispatch_min_days' => "SMALLINT UNSIGNED NULL DEFAULT NULL",
+        'dispatch_max_days' => "SMALLINT UNSIGNED NULL DEFAULT NULL",
         'status' => "ENUM('draft','active','inactive') NOT NULL DEFAULT 'draft'",
         'created_at' => "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP",
         'published_at' => "DATETIME NULL DEFAULT NULL",
@@ -117,6 +123,16 @@ function ensure_tables(mysqli $conn): void
     ];
 
     $ensureColumns($conn, 'fabrics', $fabricColumnDefinitions);
+
+    $conn->query(
+        "UPDATE fabrics
+         SET slug = CONCAT(
+             TRIM(BOTH '-' FROM LOWER(REPLACE(REPLACE(REPLACE(TRIM(name), ' ', '-'), '/', '-'), '_', '-'))),
+             '-', id
+         )
+         WHERE slug IS NULL OR TRIM(slug) = ''"
+    );
+    $conn->query("ALTER TABLE fabrics MODIFY COLUMN slug VARCHAR(191) NOT NULL");
 
     if ($columnExists($conn, 'fabrics', 'status')) {
         $conn->query("ALTER TABLE fabrics MODIFY COLUMN status ENUM('draft','active','inactive') NOT NULL DEFAULT 'draft'");
@@ -216,6 +232,10 @@ function ensure_tables(mysqli $conn): void
     if ($columnExists($conn, 'fabrics', 'product_code')) {
         $productCodeIndexCheck=$conn->query("SELECT COUNT(*) AS total FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='fabrics' AND INDEX_NAME='uq_fabrics_product_code'");
         if((int)(($productCodeIndexCheck->fetch_assoc()['total']??0))===0)$conn->query("CREATE UNIQUE INDEX uq_fabrics_product_code ON fabrics (product_code)");
+    }
+    if ($columnExists($conn, 'fabrics', 'slug')) {
+        $slugIndexCheck=$conn->query("SELECT COUNT(*) AS total FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='fabrics' AND INDEX_NAME='uq_fabrics_slug'");
+        if((int)(($slugIndexCheck->fetch_assoc()['total']??0))===0)$conn->query("CREATE UNIQUE INDEX uq_fabrics_slug ON fabrics (slug)");
     }
 
     // Product categories
@@ -628,7 +648,19 @@ function ensure_tables(mysqli $conn): void
         'base_shipping' => "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
         'account_activation_requested' => "TINYINT(1) NOT NULL DEFAULT 0",
         'account_activation_sent_at' => "DATETIME NULL DEFAULT NULL",
+        'activation_email_status' => "ENUM('pending','processing','sent','failed') NOT NULL DEFAULT 'pending'",
+        'activation_email_claimed_at' => "DATETIME NULL DEFAULT NULL",
+        'activation_email_claim_token' => "CHAR(32) NULL DEFAULT NULL",
+        'activation_email_attempts' => "INT UNSIGNED NOT NULL DEFAULT 0",
+        'activation_email_last_error' => "VARCHAR(500) NULL DEFAULT NULL",
+        'serviceability_status' => "ENUM('live','estimated','unavailable') NOT NULL DEFAULT 'estimated'",
+        'estimated_dispatch_start' => "DATE NULL DEFAULT NULL",
+        'estimated_dispatch_end' => "DATE NULL DEFAULT NULL",
+        'estimated_delivery_start' => "DATE NULL DEFAULT NULL",
+        'estimated_delivery_end' => "DATE NULL DEFAULT NULL",
     ]);
+    $activationIndexCheck=$conn->query("SELECT COUNT(*) AS total FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='orders' AND INDEX_NAME='idx_orders_activation_email_delivery'");
+    if((int)(($activationIndexCheck->fetch_assoc()['total']??0))===0)$conn->query("CREATE INDEX idx_orders_activation_email_delivery ON orders (account_activation_requested,activation_email_status,activation_email_claimed_at)");
     if ($columnExists($conn, 'orders', 'coupon_id')) {
         $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND INDEX_NAME = 'idx_orders_coupon_id'");
         if (($indexCheck->num_rows ?? 0) === 0) {
@@ -1287,6 +1319,30 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_shipping_quotes_expires_at (expires_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    $ensureColumns($conn, 'shipping_quotes', [
+        'serviceability_status' => "ENUM('live','estimated','unavailable') NOT NULL DEFAULT 'estimated'",
+        'estimated_dispatch_start' => "DATE NULL DEFAULT NULL",
+        'estimated_dispatch_end' => "DATE NULL DEFAULT NULL",
+        'estimated_delivery_start' => "DATE NULL DEFAULT NULL",
+        'estimated_delivery_end' => "DATE NULL DEFAULT NULL",
+    ]);
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS guest_order_access_tokens (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_id INT NOT NULL,
+            token_hash CHAR(64) NOT NULL,
+            purpose ENUM('manage','activate') NOT NULL DEFAULT 'manage',
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME DEFAULT NULL,
+            created_ip VARCHAR(45) DEFAULT NULL,
+            created_user_agent VARCHAR(255) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_guest_order_access_token_hash (token_hash),
+            INDEX idx_guest_order_access_order_purpose (order_id, purpose, expires_at),
+            INDEX idx_guest_order_access_expiry (expires_at),
+            CONSTRAINT fk_guest_order_access_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
     $ensureColumns($conn, 'orders', [
         'inventory_reserved_at' => "DATETIME NULL DEFAULT NULL",
         'inventory_restored_at' => "DATETIME NULL DEFAULT NULL",
@@ -1566,6 +1622,7 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_returns_requested_at (requested_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    $conn->query("ALTER TABLE returns MODIFY COLUMN customer_id INT NULL");
 
     // Keep one active return request row per order to prevent duplicate return submissions.
     $conn->query(
@@ -1616,6 +1673,14 @@ function ensure_tables(mysqli $conn): void
         'image_1' => "VARCHAR(255) NULL DEFAULT NULL",
         'image_2' => "VARCHAR(255) NULL DEFAULT NULL",
     ]);
+
+    if ($tableExists($conn, 'support_tickets')) {
+        $conn->query("ALTER TABLE support_tickets MODIFY COLUMN customer_id INT NULL");
+        $ensureColumns($conn, 'support_tickets', [
+            'requester_name' => "VARCHAR(255) NULL DEFAULT NULL",
+            'requester_email' => "VARCHAR(255) NULL DEFAULT NULL",
+        ]);
+    }
 
     $returnsOrderFkCheck = $conn->query(
         "SELECT COUNT(*) AS total

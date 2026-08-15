@@ -678,6 +678,13 @@ do_action('product.view', [
                             var buyNowBundleQty = document.getElementById('buy_now_bundle_quantity');
                             var meterPurchaseSummary = document.getElementById('meter_purchase_summary');
                             var basePricePerUnit = <?php echo json_encode((float) $effectiveBasePrice); ?>;
+                            var currentPricePerUnit = basePricePerUnit;
+                            var regularPricePerUnit = <?php echo json_encode((float) $regularPrice); ?>;
+                            var unitSingleLabel = <?php echo json_encode((string) $unitSingleLabel); ?>;
+                            var productPriceBlock = document.getElementById('product_price_block');
+                            var basePriceMarkup = productPriceBlock ? productPriceBlock.innerHTML : '';
+                            var minimumOrderQty = <?php echo json_encode((float) $minOrderQty); ?>;
+                            var quantityStep = <?php echo json_encode((float) $qtyStepUi); ?>;
                             if (!qtyInput || !buyNowQty) return;
 
                             function syncQty() {
@@ -703,8 +710,8 @@ do_action('product.view', [
                                     }
                                     if (meterPurchaseSummary) {
                                         var line = String(qty) + ' x ' + meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') + 'm = ' + normalized + 'm';
-                                        if (Number.isFinite(basePricePerUnit) && basePricePerUnit > 0) {
-                                            line += ' | Total: Rs ' + (basePricePerUnit * totalMeters).toFixed(2);
+                                        if (Number.isFinite(currentPricePerUnit) && currentPricePerUnit > 0) {
+                                            line += ' | Total: Rs ' + (currentPricePerUnit * totalMeters).toFixed(2);
                                         }
                                         meterPurchaseSummary.textContent = line;
                                     }
@@ -767,6 +774,7 @@ do_action('product.view', [
 
                             var addBtn = document.getElementById('add_to_cart_submit');
                             var buyBtn = document.getElementById('buy_now_submit');
+                            var currentVariant = null;
                             var isSetUnit = <?php echo $unitType === 'set' ? 'true' : 'false'; ?>;
                             var isPackLikeSize = function (val) {
                                 return /^pack\s+of\s+\d+$/i.test(String(val || '').trim());
@@ -821,8 +829,114 @@ do_action('product.view', [
                                 return sizeAdd ? sizeAdd.value : '';
                             }
 
+                            function formatInr(value) {
+                                return new Intl.NumberFormat('en-IN', {
+                                    style: 'currency',
+                                    currency: 'INR',
+                                    minimumFractionDigits: 2
+                                }).format(value);
+                            }
+
+                            function updateVariantPrice(v) {
+                                var override = v && v.price_override !== null && String(v.price_override).trim() !== ''
+                                    ? parseFloat(v.price_override)
+                                    : 0;
+                                currentPricePerUnit = Number.isFinite(override) && override > 0 ? override : basePricePerUnit;
+                                if (!productPriceBlock) return;
+                                if (!(Number.isFinite(override) && override > 0)) {
+                                    productPriceBlock.innerHTML = basePriceMarkup;
+                                    return;
+                                }
+                                var price = document.createElement('span');
+                                price.className = 'fs-4 fw-bold text-primary';
+                                price.textContent = formatInr(override) + ' / ' + unitSingleLabel;
+                                productPriceBlock.replaceChildren(price);
+                                if (regularPricePerUnit > override) {
+                                    var mrp = document.createElement('span');
+                                    mrp.className = 'ms-3 text-muted';
+                                    var deleted = document.createElement('del');
+                                    deleted.textContent = formatInr(regularPricePerUnit) + ' / ' + unitSingleLabel;
+                                    mrp.appendChild(deleted);
+                                    productPriceBlock.appendChild(mrp);
+                                }
+                            }
+
+                            function selectedVariantStock(v) {
+                                if (!v) return 0;
+                                var stock = parseFloat(isMeterUnit ? v.stock_meters : v.stock);
+                                return Number.isFinite(stock) ? Math.max(0, stock) : 0;
+                            }
+
+                            function updateVariantQuantity(v) {
+                                if (VARIANTS.length === 0) return true;
+                                if (!v) {
+                                    qtyInput.disabled = true;
+                                    if (qtyDec) qtyDec.disabled = true;
+                                    if (qtyInc) qtyInc.disabled = true;
+                                    document.querySelectorAll('.meter-option-btn').forEach(function (button) { button.disabled = true; });
+                                    return false;
+                                }
+                                var stock = selectedVariantStock(v);
+                                var canBuy = false;
+                                if (isMeterUnit) {
+                                    var enabledMeterButton = null;
+                                    document.querySelectorAll('.meter-option-btn').forEach(function (button) {
+                                        var length = parseFloat(button.getAttribute('data-meters') || '0');
+                                        var enabled = Number.isFinite(length) && length > 0 && length <= stock;
+                                        button.disabled = !enabled;
+                                        if (enabled && !enabledMeterButton) enabledMeterButton = button;
+                                    });
+                                    var meterLength = parseFloat(meterLengthInput ? meterLengthInput.value : '0');
+                                    if ((!Number.isFinite(meterLength) || meterLength <= 0 || meterLength > stock) && enabledMeterButton) {
+                                        meterLength = parseFloat(enabledMeterButton.getAttribute('data-meters') || '0');
+                                        document.querySelectorAll('.meter-option-btn').forEach(function (button) {
+                                            var selected = button === enabledMeterButton;
+                                            button.classList.toggle('btn-primary', selected);
+                                            button.classList.toggle('btn-outline-primary', !selected);
+                                        });
+                                        var meterValue = String(meterLength).replace(/\.0+$/, '');
+                                        if (meterLengthInput) meterLengthInput.value = meterValue;
+                                        if (buyNowMeterLength) buyNowMeterLength.value = meterValue;
+                                    }
+                                    var maxBundles = Number.isFinite(meterLength) && meterLength > 0
+                                        ? Math.floor((stock + 0.000001) / meterLength)
+                                        : 0;
+                                    qtyInput.max = String(Math.max(0, maxBundles));
+                                    var bundles = parseInt(qtyInput.value || '1', 10);
+                                    if (!Number.isFinite(bundles) || bundles < 1) bundles = 1;
+                                    if (maxBundles > 0 && bundles > maxBundles) bundles = maxBundles;
+                                    qtyInput.value = String(bundles);
+                                    canBuy = maxBundles >= 1;
+                                } else if (qtyInput.tagName === 'SELECT') {
+                                    var previous = parseFloat(qtyInput.value || '0');
+                                    qtyInput.innerHTML = '';
+                                    var start = Math.max(1, Math.ceil(minimumOrderQty));
+                                    var step = Math.max(1, Math.round(quantityStep));
+                                    var limit = Math.min(Math.floor(stock), 20);
+                                    for (var quantity = start; quantity <= limit; quantity += step) {
+                                        var option = document.createElement('option');
+                                        option.value = String(quantity);
+                                        option.textContent = String(quantity);
+                                        qtyInput.appendChild(option);
+                                    }
+                                    canBuy = qtyInput.options.length > 0;
+                                    if (canBuy) {
+                                        var previousValue = String(Math.round(previous));
+                                        if (Array.prototype.some.call(qtyInput.options, function (option) { return option.value === previousValue; })) {
+                                            qtyInput.value = previousValue;
+                                        }
+                                    }
+                                }
+                                qtyInput.disabled = !canBuy;
+                                if (qtyDec) qtyDec.disabled = !canBuy;
+                                if (qtyInc) qtyInc.disabled = !canBuy;
+                                syncQty();
+                                return canBuy;
+                            }
+
                             function updateVariantState(color, size) {
                                 var v = (VARIANTS.length > 0) ? findVariant(color, size) : null;
+                                currentVariant = v;
                                 var vid = v ? v.id : 0;
                                 if (colorAdd) colorAdd.value = color;
                                 if (colorBuy) colorBuy.value = color;
@@ -830,6 +944,7 @@ do_action('product.view', [
                                 if (sizeBuy)  sizeBuy.value  = size;
                                 if (vidAdd)   vidAdd.value   = vid;
                                 if (vidBuy)   vidBuy.value   = vid;
+                                updateVariantPrice(v);
 
                                 if (isSetUnit && packInfoSection && packInfoLabel) {
                                     var packText = packLabelForVariant(v);
@@ -880,8 +995,7 @@ do_action('product.view', [
                                 }
 
                                 // Disable add/buy if no variant or no stock
-                                var canAdd = !v || parseFloat(v.stock) > 0 || parseFloat(v.stock_meters) > 0;
-                                if (VARIANTS.length > 0) canAdd = v && (parseFloat(v.stock) > 0 || parseFloat(v.stock_meters) > 0);
+                                var canAdd = VARIANTS.length > 0 ? updateVariantQuantity(v) : true;
                                 if (addBtn) addBtn.disabled = VARIANTS.length > 0 ? !canAdd : addBtn.disabled;
                                 if (buyBtn) buyBtn.disabled = VARIANTS.length > 0 ? !canAdd : buyBtn.disabled;
                             }
@@ -1008,7 +1122,11 @@ do_action('product.view', [
                                         } else {
                                             qtyInput.value = normalized;
                                         }
-                                        syncQty();
+                                        if (currentVariant) {
+                                            updateVariantQuantity(currentVariant);
+                                        } else {
+                                            syncQty();
+                                        }
                                     });
                                 });
                             }
