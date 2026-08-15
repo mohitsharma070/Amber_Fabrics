@@ -2,12 +2,15 @@
 require_once __DIR__ . '/includes/init.php';
 
 $id = (int) ($_GET['id'] ?? 0);
-if ($id <= 0) {
+$slug = trim((string) ($_GET['slug'] ?? ''));
+if ($id <= 0 && $slug === '') {
     redirect('catalog.php');
 }
 
-$stmt = $conn->prepare("SELECT * FROM fabrics WHERE id = ? AND status = 'active'");
-$stmt->bind_param('i', $id);
+$stmt = $slug !== ''
+    ? $conn->prepare("SELECT * FROM fabrics WHERE slug = ? AND status = 'active'")
+    : $conn->prepare("SELECT * FROM fabrics WHERE id = ? AND status = 'active'");
+if ($slug !== '') $stmt->bind_param('s', $slug); else $stmt->bind_param('i', $id);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
 
@@ -20,7 +23,14 @@ if (!$product) {
     exit;
 }
 
-$regularPrice = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
+if ($slug === '' && trim((string)($product['slug'] ?? '')) !== '') {
+    $target = ProductAdminService::publicPath($product);
+    if ((int)($_GET['variant'] ?? 0) > 0) $target .= '?variant=' . (int)$_GET['variant'];
+    header('Location: ' . $target, true, 301);
+    exit;
+}
+
+$regularPrice = (float) ($product['price'] ?? 0);
 $salePrice = (float) ($product['sale_price'] ?? 0);
 $effectiveBasePrice = 0.0;
 if ($salePrice > 0 && ($regularPrice <= 0 || $salePrice < $regularPrice)) {
@@ -50,15 +60,24 @@ $unitLabel = $unitType === 'piece' ? 'pieces' : ($unitType === 'set' ? 'sets' : 
 $unitSingleLabel = $unitType === 'piece' ? 'piece' : ($unitType === 'set' ? 'set' : 'meter');
 $displayStock = $isWholeUnit ? (float) ($product['stock'] ?? 0) : (float) ($product['stock_meters'] ?? 0);
 $inStock = !empty($product['is_available']) && $displayStock > 0;
-$galleryImages = array_values(array_filter([
-    (string) ($product['image'] ?? ''),
-    (string) ($product['image2'] ?? ''),
-    (string) ($product['image3'] ?? ''),
-    (string) ($product['image4'] ?? ''),
-]));
-$videoFile = (string) ($product['video'] ?? '');
+$galleryImages = [];
+$videoFile = '';
+try {
+    $managedMedia = ProductAdminService::media($conn, (int)$product['id']);
+    $managedImages = [];
+    foreach ($managedMedia as $mediaItem) {
+        if (($mediaItem['media_type'] ?? '') === 'image') $managedImages[] = (string)$mediaItem['filename'];
+        if (($mediaItem['media_type'] ?? '') === 'video' && $videoFile === '') $videoFile = (string)$mediaItem['filename'];
+    }
+    $galleryImages = $managedImages;
+} catch (Throwable $ignored) {
+    // The storefront renders its normal empty-media state.
+}
+$catalogData = ProductAdminService::catalogData($product);
 // --- Variant-level data ---
-$variants = InventoryService::get_fabric_variants($conn, (int) $product['id']);
+$variants = (($product['product_type'] ?? 'simple') === 'variable')
+    ? InventoryService::get_fabric_variants($conn, (int) $product['id'])
+    : [];
 $firstVariantWithMedia = null;
 foreach ($variants as $vv) {
     if ((int) ($vv['is_active'] ?? 0) !== 1) {
@@ -280,7 +299,8 @@ if ($metaDescriptionRaw !== '') {
 } else {
     $metaDescription = 'Product details from ' . SiteContext::name() . '.';
 }
-$metaImage = !empty($product['image']) ? 'images/fabrics/' . (string) $product['image'] : '';
+$metaImage = !empty($galleryImages[0]) ? 'images/fabrics/' . (string) $galleryImages[0] : '';
+$metaUrl = SiteContext::url(ProductAdminService::publicPath($product));
 include 'includes/header.php';
 do_action('product.view', [
     'conn' => $conn,
@@ -1011,31 +1031,19 @@ do_action('product.view', [
 
                 <div class="mb-3">
                     <h6 class="fw-semibold">Fabric / Material</h6>
-                    <p class="mb-0"><?php echo e((string) ($product['material'] ?? 'Not specified')); ?></p>
+                    <p class="mb-0"><?php echo e($catalogData['attr_material'] !== '' ? $catalogData['attr_material'] : ($catalogData['attr_fabric'] !== '' ? $catalogData['attr_fabric'] : 'Not specified')); ?></p>
                 </div>
 
-                <div class="mb-3">
-                    <h6 class="fw-semibold">Fabric Width</h6>
-                    <p class="mb-0"><?php echo e((string) ($product['width'] ?? 'Not specified')); ?></p>
-                </div>
-
-                <?php if (!empty($product['wash_care'])): ?>
+                <?php if ($catalogData['attr_printing_type'] !== ''): ?>
                     <div class="mb-3">
-                        <h6 class="fw-semibold">Wash Care</h6>
-                        <p class="mb-0"><?php echo nl2br(e((string) $product['wash_care'])); ?></p>
-                    </div>
-                <?php endif; ?>
-
-                <?php if (!empty($product['dispatch_time'])): ?>
-                    <div class="mb-3">
-                        <h6 class="fw-semibold">Dispatch Time (India Orders)</h6>
-                        <p class="mb-0"><?php echo e((string) $product['dispatch_time']); ?></p>
+                        <h6 class="fw-semibold">Printing Type</h6>
+                        <p class="mb-0"><?php echo e($catalogData['attr_printing_type']); ?></p>
                     </div>
                 <?php endif; ?>
 
                 <div class="mb-3">
                     <h6 class="fw-semibold">Check Delivery</h6>
-                    <form id="pdp_delivery_form" class="row g-2 mb-2">
+                    <form id="pdp_delivery_form" class="row g-2 mb-2 js-no-loading">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="product_id" value="<?php echo (int) $product['id']; ?>">
                         <input type="hidden" name="variant_id" id="delivery_variant_id" value="<?php echo (int) ($defaultVariantId ?? 0); ?>">
@@ -1061,6 +1069,8 @@ do_action('product.view', [
                         form.addEventListener('submit', async function (event) {
                             event.preventDefault();
                             var output = document.getElementById('pdp_delivery_result');
+                            var submitButton = form.querySelector('[type="submit"]');
+                            if (submitButton && submitButton.disabled) return;
                             var selectedVariant = document.getElementById('selected_variant_id_add');
                             var quantity = document.getElementById('meter_total_quantity') || document.getElementById('product_quantity');
                             var deliveryVariant = document.getElementById('delivery_variant_id');
@@ -1068,6 +1078,10 @@ do_action('product.view', [
                             if (deliveryVariant) deliveryVariant.value = selectedVariant ? selectedVariant.value : '0';
                             if (deliveryQuantity) deliveryQuantity.value = quantity ? quantity.value : '1';
                             output.textContent = 'Checking…';
+                            if (submitButton) {
+                                submitButton.classList.add('is-loading');
+                                submitButton.disabled = true;
+                            }
                             try {
                                 var response = await fetch('/delivery-estimate', {method: 'POST', body: new FormData(form)});
                                 var data = await response.json();
@@ -1088,6 +1102,11 @@ do_action('product.view', [
                                 output.textContent = parts.join(' · ');
                             } catch (error) {
                                 output.textContent = 'Unable to check delivery right now.';
+                            } finally {
+                                if (submitButton) {
+                                    submitButton.classList.remove('is-loading');
+                                    submitButton.disabled = false;
+                                }
                             }
                         });
                     }());
@@ -1107,35 +1126,6 @@ do_action('product.view', [
                     'product' => $product,
                     'customer_id' => (int) ($_SESSION['customer_id'] ?? 0),
                 ]); ?>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section class="section-block pt-0">
-    <div class="container">
-        <div class="surface-panel">
-            <h4 class="mb-3">International / Bulk Inquiry</h4>
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <div class="text-muted small">MOQ</div>
-                    <div class="fw-semibold"><?php echo e((string) ($product['moq'] ?? '-')); ?></div>
-                </div>
-                <div class="col-md-3">
-                    <div class="text-muted small">Lead Time</div>
-                    <div class="fw-semibold"><?php echo e((string) ($product['lead_time'] ?? '-')); ?></div>
-                </div>
-                <div class="col-md-3">
-                    <div class="text-muted small">GSM</div>
-                    <div class="fw-semibold"><?php echo e((string) ($product['gsm'] ?? '-')); ?></div>
-                </div>
-                <div class="col-md-3">
-                    <div class="text-muted small">Width</div>
-                    <div class="fw-semibold"><?php echo e((string) ($product['width'] ?? '-')); ?></div>
-                </div>
-            </div>
-            <div class="mt-4">
-                <a href="international-buyers.php" class="btn btn-outline-primary">Request International Quote</a>
             </div>
         </div>
     </div>

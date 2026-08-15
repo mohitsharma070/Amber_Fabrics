@@ -6,7 +6,7 @@ $siteSettings = SiteSettingsService::get();
 $siteName = $siteSettings['site_name'];
 $siteLogo = $siteSettings['branding_logo'];
 $isRefundQueue = $currentPage === 'orders.php' && (string) ($_GET['refund_queue'] ?? '') === '1';
-$isCatalogNav = in_array($currentPage, ['fabrics.php', 'add-fabric.php', 'edit-fabric.php', 'categories.php', 'about-media.php'], true);
+$isCatalogNav = in_array($currentPage, ['fabrics.php', 'add-fabric.php', 'edit-fabric.php', 'product-import.php', 'categories.php', 'about-media.php'], true);
 $isOrdersNav = in_array($currentPage, ['orders.php', 'order-view.php', 'returns.php'], true) || $isRefundQueue;
 $isCustomersNav = $currentPage === 'customers.php';
 $isMarketingNav = in_array($currentPage, ['coupons.php', 'reviews.php', 'export-inquiries.php'], true);

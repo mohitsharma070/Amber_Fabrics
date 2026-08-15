@@ -63,7 +63,7 @@ function abandoned_cart_snapshot(mysqli $conn, array $cart): array
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
     $stmt = $conn->prepare(
-        "SELECT id, name, unit_type, price, sale_price, price_inr
+        "SELECT id, name, unit_type, price, sale_price
          FROM fabrics
          WHERE status = 'active' AND id IN ($placeholders)"
     );
@@ -87,7 +87,7 @@ function abandoned_cart_snapshot(mysqli $conn, array $cart): array
             ? (string) $row['unit_type']
             : 'meter';
         $qty = normalize_quantity_by_unit($qtyRaw ?? 1, $unitType);
-        $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
+        $regular = (float) ($row['price'] ?? 0);
         $sale = (float) ($row['sale_price'] ?? 0);
         $unitPrice = ($sale > 0 && $sale < $regular) ? $sale : $regular;
         $lineTotal = round($unitPrice * $qty, 2);

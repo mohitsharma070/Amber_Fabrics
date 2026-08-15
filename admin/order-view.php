@@ -346,7 +346,7 @@ $variantImageJoin = order_items_supports_variant($conn)
         AND fv.is_active = 1";
 $itemStmt = $conn->prepare(
     "SELECT oi.*,
-            COALESCE(NULLIF(fv.image, ''), NULLIF(f.image, '')) AS product_image
+            COALESCE(NULLIF(fv.image, ''), (SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1)) AS product_image
      FROM order_items oi
      LEFT JOIN fabrics f ON f.id = COALESCE(oi.fabric_id, oi.product_id)
      {$variantImageJoin}

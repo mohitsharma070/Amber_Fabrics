@@ -196,14 +196,14 @@ function meta_capi_product_payload(mysqli $conn, int $productId): ?array
     if ($productId <= 0) {
         return null;
     }
-    $stmt = $conn->prepare("SELECT id, name, price, sale_price, price_inr FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
+    $stmt = $conn->prepare("SELECT id, name, price, sale_price FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
     $stmt->bind_param('i', $productId);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     if (!$row) {
         return null;
     }
-    $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
+    $regular = (float) ($row['price'] ?? 0);
     $sale = (float) ($row['sale_price'] ?? 0);
     $price = ($sale > 0 && $sale < $regular) ? $sale : $regular;
     return [

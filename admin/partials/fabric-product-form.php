@@ -1,170 +1,54 @@
 <?php
-$isEdit = !empty($isEdit);
-$hasRealVariants = !empty($hasRealVariants);
-$submitLabel = isset($submitLabel) ? (string) $submitLabel : ($isEdit ? 'Update Product' : 'Save Product');
-$cancelHref = isset($cancelHref) ? (string) $cancelHref : 'fabrics.php';
-$cancelLabel = isset($cancelLabel) ? (string) $cancelLabel : ($isEdit ? 'Back' : 'Cancel');
+$isEdit=!empty($isEdit);
+$submitLabel=isset($submitLabel)?(string)$submitLabel:'Save Changes';$cancelHref=$cancelHref??'fabrics.php';
+$catalogLabels=[
+ 'size_type'=>'Size Type','return_exchange_condition'=>'Return/Exchange Condition','size_chart'=>'Size Chart','pickup_address_code'=>'Pickup Address Code',
+ 'customisation_id'=>'Customisation Id','associated_pixel'=>'Associated Pixel','attr_attribute_name'=>'Attribute Name','attr_brand_name'=>'Brand Name',
+ 'attr_type'=>'Type','attr_material'=>'Material','attr_product_type'=>'Product Type','attr_style_name'=>'Style Name','attr_design'=>'Design',
+ 'attr_printing_type'=>'Printing Type','attr_shape'=>'Shape','attr_pattern'=>'Pattern','attr_origin'=>'Origin','attr_thickness_ply'=>'Thickness / Ply',
+ 'attr_disposable_folded'=>'Disposable Folded','attr_stain_resistant'=>'Stain-Resistant','attr_eco_friendly'=>'Eco-Friendly','attr_fabric'=>'Fabric',
+];
 ?>
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <ul class="nav nav-pills product-editor-tabs" id="productEditorTabs">
-            <li class="nav-item"><button type="button" class="nav-link active product-editor-tab" data-editor-tab="details">Details</button></li>
-            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="pricing">Pricing & Inventory</button></li>
-            <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="content">Content</button></li>
-            <?php if ($isEdit): ?>
-                <li class="nav-item"><a class="nav-link" href="#variants-card" id="variants-tab-link">Variants</a></li>
-            <?php else: ?>
-                <li class="nav-item"><button type="button" class="nav-link disabled" title="Save product first to manage variants" disabled>Variants</button></li>
-            <?php endif; ?>
-        </ul>
-    </div>
-</div>
+<div class="card mb-3"><div class="card-body py-2"><ul class="nav nav-pills product-editor-tabs">
+ <li class="nav-item"><button type="button" class="nav-link active product-editor-tab" data-editor-tab="details">Catalogue Details</button></li>
+ <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="pricing">Pricing &amp; Quantity</button></li>
+ <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="content">Description</button></li>
+ <li class="nav-item"><button type="button" class="nav-link product-editor-tab" data-editor-tab="shipping">Attributes</button></li>
+ <?php if($isEdit):?><li class="nav-item"><a class="nav-link" href="#variants-card" id="variants-tab-link">Variants</a></li><?php endif;?>
+</ul></div></div>
 
-<form method="POST" enctype="multipart/form-data" class="row g-3" id="product-editor-form">
-    <?php echo csrf_field(); ?>
-    <div class="col-sm-6">
-        <label class="form-label">Product Name *</label>
-        <input type="text" name="name" class="<?php echo form_class($errors, 'name'); ?>" required value="<?php echo e($old['name']); ?>">
-        <?php echo form_error($errors, 'name'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Category *</label>
-        <select name="category" class="<?php echo form_class($errors, 'category', 'form-select'); ?>" required>
-            <option value="">Select Category</option>
-            <?php foreach ($categories as $cat): ?>
-                <option value="<?php echo e($cat['slug']); ?>" <?php echo $old['category'] === $cat['slug'] ? 'selected' : ''; ?>>
-                    <?php echo e($cat['name']); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <?php echo form_error($errors, 'category'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Unit Type *</label>
-        <select name="unit_type" class="<?php echo form_class($errors, 'unit_type', 'form-select'); ?>" required>
-            <option value="meter" <?php echo $old['unit_type'] === 'meter' ? 'selected' : ''; ?>>Meter (decimal qty, e.g. 1.5m)</option>
-            <option value="piece" <?php echo $old['unit_type'] === 'piece' ? 'selected' : ''; ?>>Piece (whole numbers)</option>
-            <option value="set" <?php echo $old['unit_type'] === 'set' ? 'selected' : ''; ?>>Set (whole numbers)</option>
-        </select>
-        <?php echo form_error($errors, 'unit_type'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">SKU <small class="text-muted">(auto-generated)</small></label>
-        <input type="text" id="sku_preview" class="form-control" value="<?php echo e($old['sku']); ?>" readonly>
-        <input type="hidden" name="sku" id="sku_hidden" value="<?php echo e($old['sku']); ?>">
-        <small class="text-muted">Generated from Category + Material + GSM.</small>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Regular Price *</label>
-        <input type="number" step="0.01" min="0" name="price" class="<?php echo form_class($errors, 'price'); ?>" required value="<?php echo e($old['price']); ?>">
-        <?php echo form_error($errors, 'price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Sale Price</label>
-        <input type="number" step="0.01" min="0" name="sale_price" class="<?php echo form_class($errors, 'sale_price'); ?>" value="<?php echo e($old['sale_price']); ?>">
-        <?php echo form_error($errors, 'sale_price'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Cost Price *</label>
-        <input type="number" step="0.01" min="0" name="cost_price" class="<?php echo form_class($errors, 'cost_price'); ?>" required value="<?php echo e($old['cost_price']); ?>">
-        <?php echo form_error($errors, 'cost_price'); ?>
-    </div>
-    <?php if (!$isEdit): ?>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Initial Stock</label>
-        <input type="number" step="0.01" min="0" name="stock" class="<?php echo form_class($errors, 'stock'); ?>" value="<?php echo e($old['stock']); ?>" placeholder="0">
-        <?php echo form_error($errors, 'stock'); ?>
-    </div>
-    <?php endif; ?>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Min. Order Qty</label>
-        <input type="number" step="0.01" min="0" name="min_order_meters" class="form-control" value="<?php echo e($old['min_order_meters']); ?>" placeholder="1 for piece/set, decimals for meter">
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Quantity Step <small class="text-muted">(optional)</small></label>
-        <input type="number" step="0.0001" min="0" name="qty_step" class="form-control" value="<?php echo e($old['qty_step']); ?>" placeholder="e.g. 0.5">
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Low Stock Threshold (Units)</label>
-        <input type="number" step="1" min="0" name="low_stock_threshold_units" class="<?php echo form_class($errors, 'low_stock_threshold_units'); ?>" value="<?php echo e((string) ($old['low_stock_threshold_units'] ?? '')); ?>" placeholder="e.g. 5">
-        <?php echo form_error($errors, 'low_stock_threshold_units'); ?>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label">Low Stock Threshold (Meters)</label>
-        <input type="number" step="0.01" min="0" name="low_stock_threshold_meters" class="<?php echo form_class($errors, 'low_stock_threshold_meters'); ?>" value="<?php echo e((string) ($old['low_stock_threshold_meters'] ?? '')); ?>" placeholder="e.g. 10">
-        <?php echo form_error($errors, 'low_stock_threshold_meters'); ?>
-    </div>
-    <div class="col-6 col-md-4" id="meter_options_row">
-        <label class="form-label">Meter Options <small class="text-muted">(comma separated)</small></label>
-        <input type="text" name="meter_options" class="<?php echo form_class($errors, 'meter_options'); ?>" placeholder="e.g. 1, 2, 2.5" value="<?php echo e($old['meter_options']); ?>">
-        <small class="text-muted">Required for meter products. Use allowed cut lengths only.</small>
-        <?php echo form_error($errors, 'meter_options'); ?>
-    </div>
-    <div class="col-sm-6">
-        <label class="form-label">Material / Fabric</label>
-        <input type="text" name="material" class="form-control" value="<?php echo e($old['material']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">Print Style</label>
-        <input type="text" name="print_style" class="form-control" placeholder="e.g. Floral, Solid, Block Print" value="<?php echo e($old['print_style']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">GSM</label>
-        <input type="text" name="gsm" class="form-control" value="<?php echo e($old['gsm']); ?>">
-    </div>
-    <div class="col-6 col-md-4">
-        <label class="form-label">Width</label>
-        <input type="text" name="width" class="form-control" value="<?php echo e($old['width']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">MOQ (International Buyers)</label>
-        <input type="text" name="moq" class="form-control" value="<?php echo e($old['moq']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">Lead Time (International Buyers)</label>
-        <input type="text" name="lead_time" class="form-control" value="<?php echo e($old['lead_time']); ?>">
-    </div>
-    <div class="col-sm-4">
-        <label class="form-label">Dispatch Time (India Orders)</label>
-        <input type="text" name="dispatch_time" class="form-control" value="<?php echo e($old['dispatch_time']); ?>">
-    </div>
-    <div class="col-sm-2"><label class="form-label">Dispatch Min Days</label><input type="number" min="0" name="dispatch_min_days" class="form-control" value="<?php echo e((string)($old['dispatch_min_days']??'')); ?>"></div>
-    <div class="col-sm-2"><label class="form-label">Dispatch Max Days</label><input type="number" min="0" name="dispatch_max_days" class="form-control" value="<?php echo e((string)($old['dispatch_max_days']??'')); ?>"></div>
-    <div class="col-12 col-md-4">
-        <label class="form-label">Status *</label>
-        <select name="status" class="<?php echo form_class($errors, 'status', 'form-select'); ?>" required>
-            <option value="active" <?php echo $old['status'] === 'active' ? 'selected' : ''; ?>>Active</option>
-            <option value="inactive" <?php echo $old['status'] === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
-        </select>
-        <?php echo form_error($errors, 'status'); ?>
-    </div>
-    <div class="col-12">
-        <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" name="is_featured" id="is_featured" <?php echo $old['is_featured'] ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="is_featured">Featured Product</label>
-        </div>
-        <?php if ($isEdit && !$hasRealVariants): ?>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" name="is_available" id="is_available" <?php echo $old['is_available'] ? 'checked' : ''; ?>>
-                <label class="form-check-label" for="is_available">Available for purchase</label>
-            </div>
-        <?php else: ?>
-            <span class="text-muted small ms-2">Availability is auto-derived from active variants with stock.</span>
-        <?php endif; ?>
-    </div>
-    <div class="col-12">
-        <label class="form-label">Wash Care</label>
-        <textarea name="wash_care" rows="3" class="form-control"><?php echo e($old['wash_care']); ?></textarea>
-    </div>
-    <div class="col-12">
-        <label class="form-label">Description</label>
-        <textarea name="description" rows="4" class="form-control"><?php echo e($old['description']); ?></textarea>
-    </div>
-    <div class="col-12" data-editor-section="actions">
-        <button type="button" class="btn btn-outline-secondary" id="product-prev-tab-btn" data-cancel-href="<?php echo e($cancelHref); ?>">Back</button>
-        <button type="button" class="btn btn-outline-primary" id="product-next-tab-btn">Next</button>
-        <!-- Next button will be hidden only in Content tab by JS -->
-        <button name="submit" class="btn btn-primary js-content-only"><?php echo e($submitLabel); ?></button>
-        <!-- Removed Cancel and Next buttons from Content tab -->
-    </div>
+<form method="POST" class="row g-3" id="product-editor-form">
+ <?php echo csrf_field(); ?>
+ <input type="hidden" name="product_type" value="<?php echo e((string)($old['product_type']??'simple'));?>">
+ <input type="hidden" name="unit_type" value="<?php echo e((string)($old['unit_type']??'piece'));?>">
+ <input type="hidden" name="slug" value="<?php echo e((string)($old['slug']??''));?>">
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Product Code</label><input name="product_code" maxlength="100" class="<?php echo form_class($errors,'product_code');?> text-uppercase" value="<?php echo e((string)($old['product_code']??''));?>"><?php echo form_error($errors,'product_code');?></div>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Amazon ASIN</label><input name="amazon_asin" maxlength="10" class="<?php echo form_class($errors,'amazon_asin');?> text-uppercase" value="<?php echo e((string)($old['amazon_asin']??''));?>"><?php echo form_error($errors,'amazon_asin');?></div>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Sku Id *</label><input name="sku" id="sku_hidden" maxlength="100" required class="<?php echo form_class($errors,'sku');?> text-uppercase" value="<?php echo e((string)$old['sku']);?>"><input type="hidden" id="sku_preview" value="<?php echo e((string)$old['sku']);?>"><?php echo form_error($errors,'sku');?></div>
+ <div class="col-md-8" data-editor-section="details"><label class="form-label">Name *</label><input name="name" maxlength="255" required class="<?php echo form_class($errors,'name');?>" value="<?php echo e((string)$old['name']);?>"><?php echo form_error($errors,'name');?></div>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Product Type *</label><select name="category" required class="<?php echo form_class($errors,'category','form-select');?>"><option value="">Select product type</option><?php foreach($categories as $cat):?><option value="<?php echo e((string)$cat['slug']);?>" <?php echo ($old['category']??'')===$cat['slug']?'selected':'';?>><?php echo e((string)$cat['name']);?></option><?php endforeach;?></select><?php echo form_error($errors,'category');?></div>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Size Type</label><input name="size_type" class="form-control" value="<?php echo e((string)($old['size_type']??''));?>"></div>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Size</label><input name="size" maxlength="100" class="form-control" value="<?php echo e((string)($old['size']??''));?>"></div>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Colour</label><input name="color" maxlength="100" class="form-control" value="<?php echo e((string)($old['color']??''));?>"></div>
+ <?php foreach(['return_exchange_condition','size_chart','pickup_address_code','customisation_id','associated_pixel'] as $field):?>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label"><?php echo e($catalogLabels[$field]);?></label><input name="<?php echo e($field);?>" class="form-control" value="<?php echo e((string)($old[$field]??''));?>"></div>
+ <?php endforeach;?>
+ <div class="col-md-4" data-editor-section="details"><label class="form-label">Visibility</label><select name="visibility" class="form-select"><option value="draft" <?php echo ($old['visibility']??'draft')==='draft'?'selected':'';?>>Draft</option><option value="active" <?php echo ($old['visibility']??'')==='active'?'selected':'';?>>Visible</option><option value="inactive" <?php echo ($old['visibility']??'')==='inactive'?'selected':'';?>>Hidden</option></select></div>
+
+ <div class="col-md-3" data-editor-section="pricing"><label class="form-label">Selling Price *</label><input type="number" name="selling_price" min="0.01" step="0.01" required class="<?php echo form_class($errors,'sale_price');?>" value="<?php echo e((string)($old['selling_price']??''));?>"><?php echo form_error($errors,'sale_price');?></div>
+ <div class="col-md-3" data-editor-section="pricing"><label class="form-label">MRP *</label><input type="number" name="mrp" min="0.01" step="0.01" required class="<?php echo form_class($errors,'price');?>" value="<?php echo e((string)($old['mrp']??''));?>"><?php echo form_error($errors,'price');?></div>
+ <div class="col-md-3" data-editor-section="pricing"><label class="form-label">Cost Price</label><input type="number" name="cost_price" min="0" step="0.01" class="<?php echo form_class($errors,'cost_price');?>" value="<?php echo e((string)$old['cost_price']);?>"></div>
+ <div class="col-md-3" data-editor-section="pricing"><label class="form-label">Quantity *</label><input type="number" name="quantity" min="0" step="0.01" required class="<?php echo form_class($errors,'stock');?>" value="<?php echo e((string)($old['quantity']??0));?>"><?php echo form_error($errors,'stock');?></div>
+ <?php foreach([['parcel_length_cm','Packaging Length (in cm)','0.01'],['parcel_width_cm','Packaging Breadth (in cm)','0.01'],['parcel_height_cm','Packaging Height (in cm)','0.01'],['shipping_weight_kg','Packaging Weight (in kg)','0.001']] as $metric):?>
+ <div class="col-md-3" data-editor-section="pricing"><label class="form-label"><?php echo e($metric[1]);?></label><input type="number" name="<?php echo e($metric[0]);?>" min="<?php echo e($metric[2]);?>" step="<?php echo e($metric[2]);?>" class="<?php echo form_class($errors,$metric[0]);?>" value="<?php echo e((string)($old[$metric[0]]??''));?>"></div>
+ <?php endforeach;?>
+ <div class="col-md-3" data-editor-section="pricing"><label class="form-label">GST %</label><input type="number" name="gst_rate" min="0" max="100" step="0.01" class="<?php echo form_class($errors,'gst_rate');?>" value="<?php echo e((string)($old['gst_rate']??''));?>"><?php echo form_error($errors,'gst_rate');?></div>
+ <div class="col-md-3" data-editor-section="pricing"><label class="form-label">HSN Code</label><input name="hsn_code" maxlength="8" inputmode="numeric" class="<?php echo form_class($errors,'hsn_code');?>" value="<?php echo e((string)($old['hsn_code']??''));?>"><?php echo form_error($errors,'hsn_code');?></div>
+
+ <div class="col-12" data-editor-section="content"><label class="form-label">Description *</label><textarea name="description" rows="8" minlength="20" maxlength="5000" required class="<?php echo form_class($errors,'description');?>"><?php echo e((string)$old['description']);?></textarea><?php echo form_error($errors,'description');?></div>
+
+ <?php foreach(array_slice($catalogLabels,6,null,true) as $field=>$label):?>
+ <div class="col-md-4" data-editor-section="shipping"><label class="form-label"><?php echo e($label);?></label><input name="<?php echo e($field);?>" maxlength="1000" class="form-control" value="<?php echo e((string)($old[$field]??''));?>"></div>
+ <?php endforeach;?>
+ <div class="col-12" data-editor-section="actions"><button type="button" class="btn btn-outline-secondary" id="product-prev-tab-btn" data-cancel-href="<?php echo e((string)$cancelHref);?>">Back</button> <button type="button" class="btn btn-outline-primary" id="product-next-tab-btn">Next</button> <button name="submit" class="btn btn-primary"><?php echo e($submitLabel);?></button></div>
 </form>

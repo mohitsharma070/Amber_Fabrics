@@ -1,0 +1,27 @@
+<?php
+$root=dirname(__DIR__);$fail=[];$assert=static function(bool $ok,string $message)use(&$fail){if(!$ok)$fail[]=$message;};
+$migration=(string)file_get_contents($root.'/database/migrations/2026-08-14-admin-product-editor-v2.sql');
+$catalogMigration=(string)file_get_contents($root.'/database/migrations/2026-08-15-catalog-product-fields.sql');
+$cleanupMigration=(string)file_get_contents($root.'/database/migrations/2026-08-16-remove-obsolete-product-fields.sql');
+$service=(string)file_get_contents($root.'/includes/services/ProductAdminService.php');
+$editor=(string)file_get_contents($root.'/admin/edit-fabric.php');
+$editorScript=(string)file_get_contents($root.'/admin/partials/fabric-product-form-script.php');
+$editorForm=(string)file_get_contents($root.'/admin/partials/fabric-product-form.php');
+$media=(string)file_get_contents($root.'/admin/product-media.php');
+$fabric=(string)file_get_contents($root.'/fabric.php');
+$order=(string)file_get_contents($root.'/place-order.php');
+$parcel=(string)file_get_contents($root.'/plugins/shipping-courier/plugin.php');
+$assert(str_contains($migration,"ENUM('draft','active','inactive')")&&str_contains($migration,'fabric_media'),'Draft status or gallery migration missing.');
+$assert(str_contains($migration,'CREATE UNIQUE INDEX uq_fabrics_slug')&&str_contains($migration,'product_type'),'Slug uniqueness or product type migration missing.');
+$assert(str_contains($service,'function readiness')&&str_contains($service,'function publish')&&str_contains($service,'function createDraft'),'Shared draft/readiness/publish service contract missing.');
+$assert(str_contains($service,'skuAvailable')&&str_contains($service,'uniqueSlug'),'Stable unique SKU/slug validation missing.');
+$assert(str_contains($editor,'check-readiness-btn')&&str_contains($editor,'product-media-upload')&&str_contains($editorScript,'beforeunload'),'Editor readiness, media, or unsaved warning missing.');
+$assert(str_contains($media,"\$action==='reorder'")&&str_contains($media,"\$action==='delete'")&&str_contains($media,'syncLegacyMedia'),'Transactional gallery compatibility actions missing.');
+$assert(str_contains($fabric,"\$_GET['slug']")&&str_contains($fabric,"header('Location: ' . \$target, true, 301)")&&str_contains($fabric,'$metaTitle'),'Clean storefront slug/redirect/SEO behavior missing.');
+$assert(str_contains($order,'effective_gst_rate')&&str_contains($order,'effective_hsn_code'),'Per-product tax snapshots missing.');
+$assert(str_contains($parcel,"\$item['shipping_weight_kg']")&&str_contains($parcel,"\$item['parcel_length_cm']"),'Per-product parcel overrides missing.');
+$assert(str_contains($catalogMigration,'product_code')&&str_contains($catalogMigration,'amazon_asin')&&str_contains($catalogMigration,'catalog_data'),'Catalogue field migration missing.');
+$assert(str_contains($cleanupMigration,'DROP COLUMN material')&&str_contains($cleanupMigration,'DROP COLUMN price_inr')&&str_contains($cleanupMigration,'INSERT INTO fabric_media'),'Obsolete product field cleanup migration missing or unsafe.');
+foreach(['product_code','amazon_asin','selling_price','mrp','quantity','size_type','return_exchange_condition','pickup_address_code','customisation_id','associated_pixel','attr_brand_name','attr_printing_type','attr_eco_friendly','attr_fabric'] as $catalogField)$assert(str_contains($editorForm,$catalogField),'Catalogue editor field missing: '.$catalogField);
+foreach(['meter_options','low_stock_threshold_units','wash_care','seo_title','seo_description','dispatch_time','moq','lead_time'] as $legacyField)$assert(!str_contains($editorForm,'name="'.$legacyField.'"'),'Legacy editor field is still visible: '.$legacyField);
+if($fail){foreach($fail as $message)fwrite(STDERR,"FAIL: $message\n");exit(1);}echo "admin_product_editor_v2_contract_test: OK\n";

@@ -222,18 +222,16 @@ function recommendations_effective_price_sql(): string
     return "CASE
         WHEN COALESCE(v.price_override, 0) > 0 THEN COALESCE(v.price_override, 0)
         WHEN COALESCE(f.sale_price, 0) > 0
-             AND COALESCE(NULLIF(f.price, 0), f.price_inr, 0) > 0
-             AND f.sale_price < COALESCE(NULLIF(f.price, 0), f.price_inr, 0)
+             AND COALESCE(NULLIF(f.price, 0), 0) > 0
+             AND f.sale_price < COALESCE(NULLIF(f.price, 0), 0)
             THEN f.sale_price
-        ELSE COALESCE(NULLIF(f.price, 0), f.price_inr, 0)
+        ELSE COALESCE(NULLIF(f.price, 0), 0)
     END";
 }
 
 function recommendations_product_price(array $product): float
 {
-    $regular = (float) (($product['price'] ?? null) !== null && ($product['price'] ?? '') !== ''
-        ? $product['price']
-        : ($product['price_inr'] ?? 0));
+    $regular = (float) ($product['price'] ?? 0);
     $sale = (float) ($product['sale_price'] ?? 0);
     return ($sale > 0 && $regular > 0 && $sale < $regular) ? $sale : $regular;
 }
@@ -282,7 +280,8 @@ function recommendations_fetch_related_products(mysqli $conn, array $product, in
     $params = [];
     $whereSql = recommendations_base_where_sql($types, $params, $excludeProductIds);
     $category = trim((string) ($product['category'] ?? ''));
-    $material = trim((string) ($product['material'] ?? ''));
+    $productCatalog = ProductAdminService::catalogData($product);
+    $material = trim((string) ($productCatalog['attr_material'] ?: $productCatalog['attr_fabric']));
     $color = trim((string) ($product['color'] ?? ''));
     $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $product['unit_type'] : '';
     $price = recommendations_product_price($product);
@@ -296,7 +295,7 @@ function recommendations_fetch_related_products(mysqli $conn, array $product, in
         $params[] = $category;
     }
     if ($material !== '') {
-        $orderParts[] = 'CASE WHEN f.material LIKE ? THEN 0 ELSE 1 END';
+        $orderParts[] = "CASE WHEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_material')), JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_fabric')), '') LIKE ? THEN 0 ELSE 1 END";
         $types[] = 's';
         $params[] = '%' . $material . '%';
     }
@@ -416,7 +415,7 @@ function recommendations_fetch_product_signals(mysqli $conn, array $productIds):
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
         $types = str_repeat('i', count($productIds));
         $stmt = $conn->prepare(
-            "SELECT category, material, color, unit_type, price, sale_price, price_inr
+            "SELECT category, COALESCE(JSON_UNQUOTE(JSON_EXTRACT(catalog_data, '$.attr_material')), JSON_UNQUOTE(JSON_EXTRACT(catalog_data, '$.attr_fabric')), '') AS material, color, unit_type, price, sale_price
              FROM fabrics
              WHERE status = 'active' AND id IN ($placeholders)"
         );
@@ -499,7 +498,7 @@ function recommendations_fetch_signal_products(mysqli $conn, array $signalProduc
     if (!empty($materials)) {
         $materialChecks = [];
         foreach ($materials as $material) {
-            $materialChecks[] = 'f.material LIKE ?';
+            $materialChecks[] = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_material')), JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_fabric')), '') LIKE ?";
             $types[] = 's';
             $params[] = '%' . $material . '%';
         }

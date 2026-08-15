@@ -160,7 +160,8 @@ try {
 
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $types = str_repeat('i', count($ids));
-    $sql = "SELECT id, name, sku, unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price, price_inr, cost_price, size, color
+    $sql = "SELECT id, name, sku, product_type, unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price, cost_price, size, color,
+                   gst_rate, hsn_code, shipping_weight_kg, parcel_length_cm, parcel_width_cm, parcel_height_cm
             FROM fabrics
             WHERE id IN ($placeholders)
             FOR UPDATE";
@@ -182,7 +183,7 @@ try {
     $companyState = strtolower(trim((string) ($siteSettings['company_state'] ?? '')));
     $buyerState = strtolower(trim((string) $state));
     $isIndiaOrder = strcasecmp(trim((string) $country), 'india') === 0;
-    if (!$isIndiaOrder || $gstRateSnapshot <= 0) {
+    if (!$isIndiaOrder) {
         $orderTaxType = 'none';
     } elseif ($companyState !== '' && $buyerState !== '' && $companyState !== $buyerState) {
         $orderTaxType = 'igst';
@@ -202,6 +203,10 @@ try {
 
         $product = $productMap[$productId];
         $variant = ($variantId > 0 && isset($variantMap[$variantId])) ? $variantMap[$variantId] : null;
+        $requiresVariant = (($product['product_type'] ?? 'simple') === 'variable');
+        if (($requiresVariant && $variantId <= 0) || (!$requiresVariant && $variantId > 0)) {
+            throw new RuntimeException('Your product selection changed. Please review ' . ($product['name'] ?? 'the product') . ' in your cart.');
+        }
         if ($variantId > 0 && (!$variant || (int) ($variant['fabric_id'] ?? 0) !== $productId || (int) ($variant['is_active'] ?? 0) !== 1)) {
             throw new RuntimeException('Selected variant is unavailable for ' . ($product['name'] ?? 'product'));
         }
@@ -225,7 +230,7 @@ try {
             throw new RuntimeException('Product unavailable: ' . ($product['name'] ?? 'Unknown'));
         }
 
-        // Color + size: prefer variant data; fall back to fabric fields / legacy session size.
+        // Variable products snapshot the variant; simple products snapshot base fields.
         if ($variant) {
             $selectedColor = (string) ($variant['color'] ?? '');
             $selectedSize  = CartService::variant_size_display($variant, $unitType);
@@ -252,7 +257,7 @@ try {
             throw new RuntimeException('Insufficient stock for ' . ($product['name'] ?? 'product'));
         }
 
-        $regular = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
+        $regular = (float) ($product['price'] ?? 0);
         $sale    = (float) ($product['sale_price'] ?? 0);
         if ($variant && $variant['price_override'] !== null && (float) $variant['price_override'] > 0) {
             $unitPrice = (float) $variant['price_override'];
@@ -299,6 +304,12 @@ try {
             'pack_label'      => $packLabel,
             'units_per_set'   => $unitsPerSet,
             'cost_price_snapshot' => max(0.0, (float) ($product['cost_price'] ?? 0.0)),
+            'effective_gst_rate' => ($product['gst_rate'] !== null && $product['gst_rate'] !== '') ? max(0.0,(float)$product['gst_rate']) : $gstRateSnapshot,
+            'effective_hsn_code' => trim((string)($product['hsn_code'] ?? '')) ?: $hsnCodeSnapshot,
+            'shipping_weight_kg' => $product['shipping_weight_kg'] ?? null,
+            'parcel_length_cm' => $product['parcel_length_cm'] ?? null,
+            'parcel_width_cm' => $product['parcel_width_cm'] ?? null,
+            'parcel_height_cm' => $product['parcel_height_cm'] ?? null,
         ];
     }
 
@@ -387,7 +398,7 @@ try {
         $remainingDiscount = round(max(0.0, $remainingDiscount - $itemDiscount), 2);
 
         $taxableAmount = round(max(0.0, $lineTotal - $itemDiscount), 2);
-        $itemGstRate = ($orderTaxType === 'none') ? 0.0 : $gstRateSnapshot;
+        $itemGstRate = ($orderTaxType === 'none') ? 0.0 : max(0.0,(float)($item['effective_gst_rate'] ?? $gstRateSnapshot));
         $gstAmount = ($itemGstRate > 0 && $taxableAmount > 0)
             ? round($taxableAmount * $itemGstRate / (100 + $itemGstRate), 2)
             : 0.0;
@@ -409,7 +420,7 @@ try {
         $item['sgst_amount'] = $sgstAmount;
         $item['igst_amount'] = $igstAmount;
         $item['tax_type'] = $orderTaxType;
-        $item['hsn_code_snapshot'] = $hsnCodeSnapshot;
+        $item['hsn_code_snapshot'] = (string)($item['effective_hsn_code'] ?? $hsnCodeSnapshot);
     }
     unset($item);
 
@@ -530,6 +541,36 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
     }
     $insertOrder->execute();
     $orderId = (int) $conn->insert_id;
+
+    // Persist the delivery promise while the order transaction is still open.
+    // Razorpay redirects below, so doing this after the redirect leaves online
+    // orders without the immutable estimate shown during checkout.
+    if ($acceptedEstimate) {
+        $estimateUpdate = $conn->prepare(
+            "UPDATE orders
+             SET serviceability_status = ?, estimated_dispatch_start = ?, estimated_dispatch_end = ?,
+                 estimated_delivery_start = ?, estimated_delivery_end = ?
+             WHERE id = ?"
+        );
+        $serviceability = (string) ($acceptedEstimate['serviceability_status'] ?? 'estimated');
+        $estimatedDispatchStart = $acceptedEstimate['estimated_dispatch_start'] ?? null;
+        $estimatedDispatchEnd = $acceptedEstimate['estimated_dispatch_end'] ?? null;
+        $estimatedDeliveryStart = $acceptedEstimate['estimated_delivery_start'] ?? null;
+        $estimatedDeliveryEnd = $acceptedEstimate['estimated_delivery_end'] ?? null;
+        $estimateUpdate->bind_param(
+            'sssssi',
+            $serviceability,
+            $estimatedDispatchStart,
+            $estimatedDispatchEnd,
+            $estimatedDeliveryStart,
+            $estimatedDeliveryEnd,
+            $orderId
+        );
+        $estimateUpdate->execute();
+    }
+    if ($sendAccountActivation && (int) plugin_setting('conversion-mvp', 'account_activation_enabled', 1) === 1) {
+        EmailService::mark_account_activation_requested($conn, $orderId);
+    }
 
     $supportsVariantCol = order_items_supports_variant($conn);
     $supportsTaxSnapshot = order_items_supports_tax_snapshot($conn);
@@ -751,11 +792,12 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
         $insShipment->execute();
     }
 
+    $orderActorType = $customerId > 0 ? 'customer' : 'guest';
     log_order_activity(
         $conn,
         $orderId,
         'order_placed',
-        'customer',
+        $orderActorType,
         $customerId,
         $fullName,
         'Payment: ' . $paymentMethod . ' | Total: ' . number_format($totalAmount, 2, '.', '')
@@ -896,13 +938,8 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
         }
     }
 
-    if ($orderId > 0 && $acceptedEstimate) {
-        $estimateUpdate=$conn->prepare("UPDATE orders SET serviceability_status=?,estimated_dispatch_start=?,estimated_dispatch_end=?,estimated_delivery_start=?,estimated_delivery_end=? WHERE id=?");
-        $serviceability=(string)($acceptedEstimate['serviceability_status']??'estimated');$eds=$acceptedEstimate['estimated_dispatch_start']??null;$ede=$acceptedEstimate['estimated_dispatch_end']??null;$els=$acceptedEstimate['estimated_delivery_start']??null;$ele=$acceptedEstimate['estimated_delivery_end']??null;
-        $estimateUpdate->bind_param('sssssi',$serviceability,$eds,$ede,$els,$ele,$orderId);$estimateUpdate->execute();
-    }
     CartService::checkout_session_clear_after_order($conn, $customerId);
-    if ($sendAccountActivation && $customerId <= 0 && (int) plugin_setting('conversion-mvp', 'account_activation_enabled', 1) === 1) { EmailService::send_account_activation_email($conn, $orderId); }
+    EmailService::send_requested_account_activation_email($conn, $orderId);
     EmailService::send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {

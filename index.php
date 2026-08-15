@@ -12,7 +12,8 @@ $siteName = SiteContext::name();
 // Latest 8 active fabrics — no filter/pagination on home page
 $stmt = $conn->prepare(
     "SELECT
-        f.id, f.name, f.image, f.material, f.size, f.unit_type, f.price, f.sale_price, f.price_inr,
+        f.id, f.name, f.catalog_data, f.size, f.unit_type, f.price, f.sale_price,
+        COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image,
         f.min_order_meters, f.stock, f.stock_meters, f.is_available,
         COALESCE(vs.active_variant_count, 0) AS active_variant_count
      FROM fabrics f
@@ -268,12 +269,12 @@ $announcementKey = md5(implode('|', $announcementMessages));
                         <?php endif; ?>
                     </div>
                     <div class="card-body d-flex flex-column">
-                        <?php if (!empty($row['material'])): ?>
-                            <p class="fabric-card-category"><?php echo e($row['material']); ?></p>
+                        <?php $homeCatalogData = ProductAdminService::catalogData($row); if ($homeCatalogData['attr_material'] !== '' || $homeCatalogData['attr_fabric'] !== ''): ?>
+                            <p class="fabric-card-category"><?php echo e((string) ($homeCatalogData['attr_material'] ?: $homeCatalogData['attr_fabric'])); ?></p>
                         <?php endif; ?>
                         <p class="fabric-card-title"><?php echo e($row['name']); ?></p>
                         <?php
-                            $cardRegular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
+                            $cardRegular = (float) ($row['price'] ?? 0);
                             $cardSale    = (float) ($row['sale_price'] ?? 0);
                         ?>
                         <?php if ($cardRegular > 0 || $cardSale > 0): ?>

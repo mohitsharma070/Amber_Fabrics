@@ -215,7 +215,7 @@ function seo_suite_serve_robots_txt(): void
 function seo_suite_fetch_active_products(mysqli $conn): array
 {
     $stmt = $conn->prepare(
-        "SELECT id, created_at
+        "SELECT id, slug, COALESCE(updated_at, created_at) AS last_modified
          FROM fabrics
          WHERE status = 'active' AND is_available = 1
          ORDER BY id DESC"
@@ -250,9 +250,9 @@ function seo_suite_serve_products_sitemap(array $context): void
         if ($id <= 0) {
             continue;
         }
-        $lastmod = seo_suite_normalize_lastmod((string) ($row['created_at'] ?? ''));
+        $lastmod = seo_suite_normalize_lastmod((string) ($row['last_modified'] ?? ''));
         $urls[] = [
-            'loc' => SiteContext::url('/fabric?id=' . $id),
+            'loc' => SiteContext::url(trim((string)($row['slug'] ?? '')) !== '' ? '/fabric/' . rawurlencode((string)$row['slug']) : '/fabric?id=' . $id),
             'lastmod' => $lastmod,
         ];
     }
@@ -327,9 +327,10 @@ function seo_suite_fetch_schema_product(mysqli $conn, int $productId): array
     }
 
     $stmt = $conn->prepare(
-        "SELECT id, name, sku, description, image, price, sale_price, price_inr, stock, stock_meters, unit_type, is_available, status
-         FROM fabrics
-         WHERE id = ? AND status = 'active'
+        "SELECT f.id, f.name, f.sku, f.description, f.price, f.sale_price, f.stock, f.stock_meters, f.unit_type, f.is_available, f.status,
+                COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image
+         FROM fabrics f
+         WHERE f.id = ? AND f.status = 'active'
          LIMIT 1"
     );
     if (!$stmt) {
@@ -344,7 +345,7 @@ function seo_suite_fetch_schema_product(mysqli $conn, int $productId): array
 
 function seo_suite_schema_price(array $product): float
 {
-    $regularPrice = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
+    $regularPrice = (float) ($product['price'] ?? 0);
     $salePrice = (float) ($product['sale_price'] ?? 0);
     if ($salePrice > 0 && ($regularPrice <= 0 || $salePrice < $regularPrice)) {
         return round($salePrice, 2);

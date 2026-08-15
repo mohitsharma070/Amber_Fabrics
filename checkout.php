@@ -174,48 +174,60 @@ if (!$couponInfo['valid'] && $couponCode !== '') {
 $discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
 $discountAmount = min($discountAmount, $subtotal); // discount applies to product subtotal only - shipping is never discounted
 $taxableAmount = max(0.0, $subtotal - $discountAmount);
+$hasCompleteDelivery = trim((string) ($old['full_name'] ?? '')) !== ''
+    && trim((string) ($old['phone'] ?? '')) !== ''
+    && filter_var(trim((string) ($old['email'] ?? '')), FILTER_VALIDATE_EMAIL)
+    && trim((string) ($old['address'] ?? '')) !== ''
+    && trim((string) ($old['city'] ?? '')) !== ''
+    && trim((string) ($old['state'] ?? '')) !== ''
+    && preg_match('/^[1-9][0-9]{5}$/', trim((string) ($old['pincode'] ?? '')));
 
 $shipping = CartService::checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
 $isIndia = (bool) $shipping['is_india'];
-$shippingQuote = apply_filters('shipping.quote', [
+$shippingQuote = [
     'base_shipping' => (float) $shipping['base_shipping'],
     'cod_fee' => (float) $shipping['cod_fee'],
     'shipping_total' => (float) $shipping['shipping_total'],
     'source' => 'manual',
     'courier_name' => '',
     'courier_id' => 0,
-], [
-    'conn' => $conn,
-    'subtotal' => (float) $subtotal,
-    'invoice_value' => (float) $taxableAmount,
-    'country' => $countryForCalc,
-    'pincode' => (string) ($old['pincode'] ?? ''),
-    'payment_method' => $selectedPayment,
-    'items' => $items,
-]);
+];
+if ($hasCompleteDelivery) {
+    $shippingQuote = apply_filters('shipping.quote', $shippingQuote, [
+        'conn' => $conn,
+        'subtotal' => (float) $subtotal,
+        'invoice_value' => (float) $taxableAmount,
+        'country' => $countryForCalc,
+        'pincode' => (string) ($old['pincode'] ?? ''),
+        'payment_method' => $selectedPayment,
+        'items' => $items,
+    ]);
+}
 $baseShippingAmount = max(0.0, round((float) ($shippingQuote['base_shipping'] ?? $shipping['base_shipping']), 2));
 $codFeeAmount = max(0.0, round((float) ($shippingQuote['cod_fee'] ?? $shipping['cod_fee']), 2));
 $shippingAmount = round($baseShippingAmount + $codFeeAmount, 2);
 $shippingRateSource = trim((string) ($shippingQuote['source'] ?? 'manual')) ?: 'manual';
 $selectedCourierName = trim((string) ($shippingQuote['courier_name'] ?? ''));
 $selectedCourierId = max(0, (int) ($shippingQuote['courier_id'] ?? 0));
-$deliveryEstimate = DeliveryEstimateService::calculate($items, $shippingRateSource);
-$shippingQuoteToken = InventoryService::shipping_quote_store(
-    (float) $taxableAmount,
-    (string) $countryForCalc,
-    (string) ($old['pincode'] ?? ''),
-    (string) $selectedPayment,
-    (float) $baseShippingAmount,
-    (float) $codFeeAmount,
-    (float) $shippingAmount,
-    (string) $shippingRateSource,
-    $selectedCourierName,
-    $selectedCourierId,
-    $deliveryEstimate
-);
+$deliveryEstimate = $hasCompleteDelivery ? DeliveryEstimateService::calculate($items, $shippingRateSource) : [];
+$shippingQuoteToken = $hasCompleteDelivery
+    ? InventoryService::shipping_quote_store(
+        (float) $taxableAmount,
+        (string) $countryForCalc,
+        (string) ($old['pincode'] ?? ''),
+        (string) $selectedPayment,
+        (float) $baseShippingAmount,
+        (float) $codFeeAmount,
+        (float) $shippingAmount,
+        (string) $shippingRateSource,
+        $selectedCourierName,
+        $selectedCourierId,
+        $deliveryEstimate
+    )
+    : '';
 // Tax-inclusive pricing: GST is already embedded in product prices.
 // Total = (subtotal - discount) + shipping. No extra GST added.
-$totalAmount    = round($taxableAmount + $shippingAmount, 2);
+$totalAmount    = round($taxableAmount + ($hasCompleteDelivery ? $shippingAmount : 0), 2);
 // Back-calculate GST included in price (for display info only)
 $gstRate        = (float) configured_gst_rate();
 $gstInclAmount  = ($isIndia && $gstRate > 0) ? round($taxableAmount * $gstRate / (100 + $gstRate), 2) : 0.0;
@@ -380,11 +392,17 @@ include __DIR__ . '/includes/header.php';
                                 <label class="form-label">Order Notes</label>
                                 <textarea name="order_notes" class="form-control" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
+                            <div class="col-12">
+                                <button type="button" class="btn btn-primary w-100" id="checkout_continue_payment">Continue to Payment</button>
+                                <div class="small mt-2" id="checkout_delivery_status" aria-live="polite">
+                                    <?php echo $hasCompleteDelivery ? 'Delivery details verified. You can continue to payment.' : 'Complete your delivery address to calculate shipping.'; ?>
+                                </div>
+                            </div>
                         </div>
                         </div>
                     </div>
 
-                    <div class="surface-panel p-4 mb-4 checkout-section" id="checkout_section_payment">
+                    <div class="surface-panel p-4 mb-4 checkout-section<?php echo $hasCompleteDelivery ? '' : ' d-none'; ?>" id="checkout_section_payment" aria-hidden="<?php echo $hasCompleteDelivery ? 'false' : 'true'; ?>">
                         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                             <div>
                                 <div class="small text-muted">Step 2 of 3: Payment</div>
@@ -417,7 +435,6 @@ include __DIR__ . '/includes/header.php';
                                         <strong>Pay Online (Razorpay)</strong>
                                         <small class="d-block text-muted">
                                             Choose UPI, Card, Netbanking or EMI in secure checkout.
-                                            <?php if ($customerId <= 0): ?> Login is required before the order is created.<?php endif; ?>
                                         </small>
                                     </span>
                                 </span>
@@ -473,12 +490,14 @@ include __DIR__ . '/includes/header.php';
                     </div>
 
                     <?php if ($isIndia): ?>
+                        <div id="checkout_review_section" class="<?php echo $hasCompleteDelivery ? '' : 'd-none'; ?>" aria-hidden="<?php echo $hasCompleteDelivery ? 'false' : 'true'; ?>">
                         <div class="small text-muted mb-2">Step 3 of 3: Review</div><button type="submit" id="checkout_submit" class="btn btn-primary btn-lg w-100"><?php echo $selectedPayment === 'cod' ? 'Place COD Order — ' : 'Pay Securely — '; ?><?php echo e(money($totalAmount, 'INR', true)); ?></button>
                         <div class="trust-badge-block mt-3 mb-2" aria-label="Checkout trust badges">
                             <span class="trust-badge-pill">COD Available</span>
                             <span class="trust-badge-pill">Secure Payment</span>
                             <span class="trust-badge-pill">Fast Dispatch</span>
                             <span class="trust-badge-pill">Easy Returns</span>
+                        </div>
                         </div>
                     <?php else: ?>
                         <a href="<?php echo e($internationalQuoteUrl); ?>" class="btn btn-primary btn-lg w-100">Request International Quote</a>
@@ -550,24 +569,26 @@ include __DIR__ . '/includes/header.php';
 
                     <div class="d-flex justify-content-between mb-1">
                         <span>Shipping</span>
-                        <span id="summary_shipping"><?php echo e(money($baseShippingAmount)); ?></span>
+                        <span id="summary_shipping"><?php echo $hasCompleteDelivery ? e(money($baseShippingAmount)) : '—'; ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span>COD Fee</span>
-                        <span id="summary_cod_fee"><?php echo e(money($codFeeAmount)); ?></span>
+                        <span id="summary_cod_fee"><?php echo $hasCompleteDelivery ? e(money($codFeeAmount)) : '—'; ?></span>
                     </div>
                     <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
                         <span>Total</span>
                         <span id="summary_total"><?php echo e(money($totalAmount)); ?></span>
                     </div>
                     <div class="alert alert-light border small mt-3 mb-0 checkout-summary-note" id="summary_shipping_note">
-                        <?php if (strtolower((string) $shippingRateSource) !== 'manual'): ?>
+                        <?php if (!$hasCompleteDelivery): ?>
+                            Enter your delivery address and pincode to calculate shipping.
+                        <?php elseif (strtolower((string) $shippingRateSource) !== 'manual'): ?>
                             Live courier rate active<?php echo $selectedCourierName !== '' ? ': ' . e($selectedCourierName) : '.'; ?>
                         <?php else: ?>
                             Manual shipping active. Free shipping above Rs 999; otherwise Rs 70. COD adds Rs 50 handling fee.
                         <?php endif; ?>
                         </div>
-                        <div id="checkout_delivery_estimate" class="small text-muted mb-2">Estimated delivery: <?php echo e(DeliveryEstimateService::formatRange($deliveryEstimate['estimated_delivery_start'],$deliveryEstimate['estimated_delivery_end'])); ?></div>
+                        <div id="checkout_delivery_estimate" class="small text-muted mb-2"><?php if ($hasCompleteDelivery): ?>Estimated delivery: <?php echo e(DeliveryEstimateService::formatRange($deliveryEstimate['estimated_delivery_start'] ?? null,$deliveryEstimate['estimated_delivery_end'] ?? null)); ?><?php endif; ?></div>
                 </div>
             </div>
         </div>
@@ -628,6 +649,11 @@ include __DIR__ . '/includes/header.php';
     var createAccountPassword = document.getElementById('create_account_password');
     var createAccountConfirmPassword = document.getElementById('create_account_confirm_password');
     var couponStateForms = document.querySelectorAll('[data-preserve-checkout-state]');
+    var continuePaymentBtn = document.getElementById('checkout_continue_payment');
+    var deliveryStatusEl = document.getElementById('checkout_delivery_status');
+    var checkoutReviewSection = document.getElementById('checkout_review_section');
+    var deliveryUnlocked = <?php echo ($hasCompleteDelivery && $shippingQuoteToken !== '') ? 'true' : 'false'; ?>;
+    var deliveryRequestPending = false;
 
     if (!codRadio || !razorpayRadio || !shippingEl || !codFeeEl || !totalEl || !countryInput) {
         return;
@@ -721,33 +747,48 @@ include __DIR__ . '/includes/header.php';
     }
 
     function syncSummary() {
-        var country = String(countryInput.value || '').trim().toLowerCase();
-        var isIndia = country === 'india';
         var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
-
-        var shipping = 0;
-        var codFee = 0;
-        if (isIndia) {
-            shipping = (subtotal >= 999) ? 0 : 70;
-            codFee = (paymentMethod === 'cod') ? 50 : 0;
-        }
-
-        // Tax-inclusive: total does NOT add extra GST
         var taxable = Math.max(0, subtotal - discount);
-        var total = taxable + shipping + codFee;
-
-        shippingEl.textContent = toMoney(shipping);
-        codFeeEl.textContent = toMoney(codFee);
-        totalEl.textContent = toMoney(total);
-        if (mobileTotalEl) {
-            mobileTotalEl.textContent = toMoney(total);
+        if (!deliveryUnlocked) {
+            shippingEl.textContent = '—';
+            codFeeEl.textContent = '—';
+            totalEl.textContent = toMoney(taxable);
+            if (mobileTotalEl) mobileTotalEl.textContent = toMoney(taxable);
+            if (checkoutDeliveryEstimate) checkoutDeliveryEstimate.textContent = '';
+            if (shippingNoteEl) shippingNoteEl.textContent = 'Enter your delivery address and pincode to calculate shipping.';
+            return;
         }
-        if (checkoutSubmit) { checkoutSubmit.textContent = (paymentMethod === 'cod' ? 'Place COD Order — ' : 'Pay Securely — ') + toMoney(total); }
-        shippingSource = 'manual';
-        shippingCourierName = '';
-        shippingDebugReason = 'shipping_quote_refreshing';
-        shippingDebugMessage = '';
-        setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
+        var currentTotal = Number(String(totalEl.textContent || '').replace(/[^0-9.]/g, '')) || taxable;
+        if (checkoutSubmit) checkoutSubmit.textContent = (paymentMethod === 'cod' ? 'Place COD Order — ' : 'Pay Securely — ') + toMoney(currentTotal);
+    }
+
+    function setCheckoutUnlocked(unlocked) {
+        deliveryUnlocked = !!unlocked;
+        if (sectionPayment) {
+            sectionPayment.classList.toggle('d-none', !deliveryUnlocked);
+            sectionPayment.setAttribute('aria-hidden', deliveryUnlocked ? 'false' : 'true');
+        }
+        if (checkoutReviewSection) {
+            checkoutReviewSection.classList.toggle('d-none', !deliveryUnlocked);
+            checkoutReviewSection.setAttribute('aria-hidden', deliveryUnlocked ? 'false' : 'true');
+        }
+        if (!deliveryUnlocked && shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
+        syncSummary();
+    }
+
+    function setDeliveryRequestPending(pending) {
+        deliveryRequestPending = !!pending;
+        if (continuePaymentBtn) {
+            continuePaymentBtn.disabled = deliveryRequestPending;
+            continuePaymentBtn.classList.toggle('is-loading', deliveryRequestPending);
+        }
+        if (checkoutSubmit) checkoutSubmit.disabled = deliveryRequestPending;
+    }
+
+    function invalidateDeliveryQuote() {
+        if (!deliveryUnlocked && !shippingQuoteTokenInput.value) return;
+        setCheckoutUnlocked(false);
+        if (deliveryStatusEl) deliveryStatusEl.textContent = 'Delivery details changed. Continue again to refresh shipping.';
     }
 
     function syncCreateAccountFields() {
@@ -818,14 +859,14 @@ include __DIR__ . '/includes/header.php';
         return true;
     }
 
-    function maybeFetchLiveRate() {
+    async function maybeFetchLiveRate() {
         var country = String(countryInput.value || '').trim().toLowerCase();
         var pincode = pincodeInput ? String(pincodeInput.value || '').trim() : '';
         if (country !== 'india' || !/^[1-9][0-9]{5}$/.test(pincode)) {
             if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
             shippingDebugReason = 'shipping_quote_context_invalid';
             setShippingNote('manual', '', shippingDebugReason, '');
-            return;
+            return false;
         }
         var requestId = ++shippingRateRequestId;
         if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
@@ -834,23 +875,25 @@ include __DIR__ . '/includes/header.php';
         body.set('csrf_token', csrfToken);
         body.set('pincode', pincode);
         body.set('payment_method', paymentMethod);
-        fetch('/shipping-rate.php', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-            },
-            body: body.toString()
-        }).then(function (res) {
-            return res.ok ? res.json() : null;
-        }).then(function (data) {
+        setDeliveryRequestPending(true);
+        if (shippingNoteEl) shippingNoteEl.textContent = 'Checking delivery service and shipping…';
+        try {
+            var res = await fetch('/shipping-rate.php', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                },
+                body: body.toString()
+            });
+            var data = res.ok ? await res.json() : null;
             if (requestId !== shippingRateRequestId) {
-                return;
+                return false;
             }
             if (!data || !data.ok) {
                 shippingDebugReason = 'bigship_rate_api_failed';
                 setShippingNote('manual', '', shippingDebugReason, '');
-                return;
+                return false;
             }
             var liveShipping = Number(data.base_shipping || 0);
             var liveCodFee = Number(data.cod_fee || 0);
@@ -873,19 +916,27 @@ include __DIR__ . '/includes/header.php';
             if(checkoutDeliveryEstimate&&data.estimated_delivery_label){checkoutDeliveryEstimate.textContent='Estimated delivery: '+String(data.estimated_delivery_label);}
             if(typeof window.gtag==='function'){window.gtag('event','add_shipping_info',{currency:'INR',value:total,shipping_tier:shippingSource});}
             setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
-        }).catch(function () {
+            setCheckoutUnlocked(true);
+            if (deliveryStatusEl) deliveryStatusEl.textContent = data.serviceability_status === 'live'
+                ? 'Delivery address verified with a live courier rate.'
+                : 'Delivery address verified with an estimated shipping rate.';
+            return true;
+        } catch (error) {
             if (requestId === shippingRateRequestId) {
                 shippingDebugReason = 'bigship_rate_api_failed';
                 setShippingNote('manual', '', shippingDebugReason, '');
             }
-        });
+            return false;
+        } finally {
+            setDeliveryRequestPending(false);
+        }
     }
 
     function scheduleLiveRate(delay) {
         if (shippingRateTimer) {
             window.clearTimeout(shippingRateTimer);
         }
-        shippingRateTimer = window.setTimeout(maybeFetchLiveRate, Number(delay || 0));
+        shippingRateTimer = window.setTimeout(function () { maybeFetchLiveRate(); }, Number(delay || 0));
     }
 
     function syncPaymentPanels() {
@@ -924,27 +975,25 @@ include __DIR__ . '/includes/header.php';
     countryInput.addEventListener('input', syncSummary);
     if (pincodeInput) {
         pincodeInput.addEventListener('input', function () {
-            syncSummary();
-            scheduleLiveRate(350);
+            invalidateDeliveryQuote();
         });
     }
-    countryInput.addEventListener('change', function () { scheduleLiveRate(0); });
-    codRadio.addEventListener('change', function () { scheduleLiveRate(0); });
-    razorpayRadio.addEventListener('change', function () { scheduleLiveRate(0); });
+    countryInput.addEventListener('change', invalidateDeliveryQuote);
+    codRadio.addEventListener('change', function () { if (deliveryUnlocked) scheduleLiveRate(0); });
+    razorpayRadio.addEventListener('change', function () { if (deliveryUnlocked) scheduleLiveRate(0); });
     onlineMethodButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             activateOnlineMethod(btn.getAttribute('data-online-method'));
             razorpayRadio.checked = true;
             syncPaymentPanels();
             syncSummary();
-            scheduleLiveRate(0);
+            if (deliveryUnlocked) scheduleLiveRate(0);
         });
     });
     if (savedAddressSelect) {
         savedAddressSelect.addEventListener('change', function () {
             applySavedAddressOption(savedAddressSelect.options[savedAddressSelect.selectedIndex] || null);
-            syncSummary();
-            scheduleLiveRate(0);
+            invalidateDeliveryQuote();
         });
     }
     [fullNameInput, phoneInput, addressInput, cityInput, stateInput, pincodeInput, countryFieldInput].forEach(function (field) {
@@ -956,12 +1005,33 @@ include __DIR__ . '/includes/header.php';
             if (savedAddressSelect && savedAddressSelect.value !== '') {
                 savedAddressSelect.value = '';
             }
+            if (field !== pincodeInput) invalidateDeliveryQuote();
         });
     });
     if (savedAddressSelect && savedAddressSelect.value !== '') {
         applySavedAddressOption(savedAddressSelect.options[savedAddressSelect.selectedIndex] || null);
     }
     setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
+    setCheckoutUnlocked(deliveryUnlocked);
+    if (continuePaymentBtn) {
+        continuePaymentBtn.addEventListener('click', async function () {
+            if (!validateAddressSection()) {
+                setCheckoutUnlocked(false);
+                if (deliveryStatusEl) deliveryStatusEl.textContent = 'Please complete the highlighted delivery fields.';
+                focusFirstError();
+                return;
+            }
+            var quoted = await maybeFetchLiveRate();
+            if (!quoted) {
+                setCheckoutUnlocked(false);
+                if (deliveryStatusEl) deliveryStatusEl.textContent = 'We could not calculate shipping. Please check the pincode and try again.';
+                return;
+            }
+            updateSectionSummaries();
+            setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, true);
+            if (sectionPayment) sectionPayment.scrollIntoView({behavior: 'smooth', block: 'start'});
+        });
+    }
     if (mobileSubmitBtn && checkoutForm) {
         mobileSubmitBtn.addEventListener('click', function () {
             checkoutForm.requestSubmit();
@@ -1000,11 +1070,15 @@ include __DIR__ . '/includes/header.php';
         checkoutForm.addEventListener('submit', function (ev) {
             updateSectionSummaries();
             var okAddress = validateAddressSection();
-            if (!okAddress) {
+            if (!okAddress || !deliveryUnlocked || !shippingQuoteTokenInput || shippingQuoteTokenInput.value === '') {
                 ev.preventDefault();
                 setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, false);
                 setSectionCollapsed(sectionPayment, sectionPaymentBody, sectionPaymentSummary, editPaymentBtn, false);
-                focusFirstError();
+                if (!okAddress) {
+                    focusFirstError();
+                } else if (deliveryStatusEl) {
+                    deliveryStatusEl.textContent = 'Continue to payment again so we can confirm shipping.';
+                }
                 return;
             }
             setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, true);

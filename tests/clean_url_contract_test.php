@@ -7,6 +7,7 @@ $router = (string) file_get_contents(__DIR__ . '/../router.php');
 foreach ([
     'RewriteRule ^admin/([A-Za-z0-9-]+)\\.php$ /admin/$1 [R=301,L,NE]' => 'Admin GET canonical redirect is missing.',
     'RewriteRule ^admin/([A-Za-z0-9-]+)$ admin/$1.php [L,QSA]' => 'Admin clean-route rewrite is missing.',
+    'RewriteRule ^fabric/([^/]+)$ fabric.php?slug=$1 [L,QSA]' => 'Product slug route is missing.',
 ] as $rule => $message) {
     if (!str_contains($htaccess, $rule)) {
         $failures[] = $message;
@@ -19,6 +20,9 @@ if (str_contains($htaccess, '[R=307,L,NE]')) {
 
 if (!str_contains($router, "preg_match('#^admin/([A-Za-z0-9-]+)$#'")) {
     $failures[] = 'Local router does not support clean admin routes.';
+}
+if (!str_contains($router, "preg_match('#^fabric/([^/]+)$#'")) {
+    $failures[] = 'Local router does not support product slugs.';
 }
 if (!str_contains($router, "\$isReadRequest && preg_match('#^admin/([A-Za-z0-9-]+)\\.php$#'")
     || str_contains($router, 'http_response_code($isReadRequest ? 301 : 307)')) {

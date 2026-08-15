@@ -244,7 +244,7 @@ function list_build_query(array $params, bool $dropEmpty = true): string
 /**
  * Public form rate-limit backed by DB when available (session fallback).
  */
-function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $windowSeconds = 600): bool
+function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $windowSeconds = 600, bool $bindClient = true): bool
 {
     $scope = trim($scope);
     if ($scope === '') {
@@ -256,7 +256,11 @@ function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $
     $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
     $ua = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
     $uaKey = substr(hash('sha256', $ua), 0, 16);
-    $key = hash('sha256', strtolower($scope) . '|' . $ip . '|' . $uaKey);
+    $keyMaterial = strtolower($scope);
+    if ($bindClient) {
+        $keyMaterial .= '|' . $ip . '|' . $uaKey;
+    }
+    $key = hash('sha256', $keyMaterial);
 
     $conn = (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
     if ($conn instanceof mysqli) {

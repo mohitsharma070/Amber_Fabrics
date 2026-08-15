@@ -7,6 +7,9 @@ require_once __DIR__ . '/services/CartService.php';
 require_once __DIR__ . '/services/InventoryService.php';
 require_once __DIR__ . '/services/OrderAccessService.php';
 require_once __DIR__ . '/services/DeliveryEstimateService.php';
+require_once __DIR__ . '/services/ProductAdminService.php';
+require_once __DIR__ . '/services/ProductImportService.php';
+require_once __DIR__ . '/services/ProductVariantService.php';
 require_once __DIR__ . '/services/EmailService.php';
 
 $helperFiles = [

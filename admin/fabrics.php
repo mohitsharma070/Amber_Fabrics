@@ -24,7 +24,7 @@ $state = [
 
 $search = $state['q'];
 $status = $state['status'];
-if (!in_array($status, ['', 'active', 'inactive'], true)) {
+if (!in_array($status, ['', 'draft', 'active', 'inactive'], true)) {
     $status = '';
 }
 $sort = $state['sort'];
@@ -38,9 +38,11 @@ $types = '';
 $params = [];
 
 if ($search !== '') {
-    $where[] = '(f.name LIKE ? OR f.sku LIKE ?)';
+    $where[] = '(f.name LIKE ? OR f.sku LIKE ? OR f.product_code LIKE ? OR f.amazon_asin LIKE ?)';
     $like = "%{$search}%";
-    $types .= 'ss';
+    $types .= 'ssss';
+    $params[] = $like;
+    $params[] = $like;
     $params[] = $like;
     $params[] = $like;
 }
@@ -69,8 +71,7 @@ if ($page > $pages) {
 
 $listSql = "SELECT
                 f.id, f.name, f.category,
-                COALESCE(NULLIF(f.image, ''), fv.variant_preview_image, '') AS list_image,
-                f.image,
+                COALESCE(fm.primary_image, fv.variant_preview_image, '') AS list_image,
                 f.sku,
                 f.price, f.sale_price, f.stock, f.unit_type,
                 f.stock_meters,
@@ -83,14 +84,18 @@ $listSql = "SELECT
                     WHEN f.stock_meters IS NOT NULL AND f.stock_meters > 0 THEN f.stock_meters
                     ELSE COALESCE(f.stock, 0)
                 END AS effective_stock,
-                f.status, f.is_featured,
-                f.gsm, f.width, f.moq, f.lead_time,
+                f.status,
                 COALESCE(fv.variant_count, 0) AS variant_count,
                 CASE
                     WHEN f.unit_type = 'meter' THEN COALESCE(fv.variant_stock_meters, 0)
                     ELSE COALESCE(fv.variant_stock_units, 0)
                 END AS variant_stock
             FROM fabrics f
+            LEFT JOIN (
+                SELECT fabric_id, MAX(CASE WHEN is_primary=1 THEN filename ELSE NULL END) AS preferred_image,
+                       SUBSTRING_INDEX(GROUP_CONCAT(filename ORDER BY is_primary DESC, sort_order, id), ',', 1) AS primary_image
+                FROM fabric_media WHERE media_type='image' GROUP BY fabric_id
+            ) fm ON fm.fabric_id = f.id
             LEFT JOIN (
                 SELECT
                     fabric_id,
@@ -130,7 +135,10 @@ include 'partials/header.php';
         <h1 class="mb-1">Products</h1>
         <p class="text-muted mb-0">Showing <?php echo count($products); ?> of <?php echo $total; ?> products</p>
     </div>
-    <a class="btn btn-primary" href="add-fabric.php">Add Product</a>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-primary" href="product-import.php">Import CSV</a>
+        <a class="btn btn-primary" href="add-fabric.php">Add Product</a>
+    </div>
 </div>
 
 <form class="row g-2 mb-3" method="GET" action="fabrics.php">
@@ -179,19 +187,18 @@ include 'partials/header.php';
             <tr>
                 <th>Image</th>
                 <th>Product Name</th>
-                <th>Category</th>
-                <th>Price</th>
-                <th>Sale Price</th>
-                <th>Stock</th>
+                <th>Product Type</th>
+                <th>MRP</th>
+                <th>Selling Price</th>
+                <th>Quantity</th>
                 <th>Variants</th>
                 <th>Status</th>
-                <th>Featured</th>
                 <th class="text-end">Actions</th>
             </tr>
         </thead>
         <tbody>
         <?php if (empty($products)): ?>
-            <tr class="admin-empty-row"><td colspan="10" class="text-center text-muted">No products found.</td></tr>
+            <tr class="admin-empty-row"><td colspan="9" class="text-center text-muted">No products found.</td></tr>
         <?php endif; ?>
 
         <?php foreach ($products as $p): ?>
@@ -199,8 +206,7 @@ include 'partials/header.php';
                 $stockVal = round((float) ($p['effective_stock'] ?? 0), 2);
                 $unitType = in_array((string) ($p['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $p['unit_type'] : 'meter';
                 $isLowStock = $stockVal <= 3;
-                $statusClass = ($p['status'] ?? 'inactive') === 'active' ? 'bg-success' : 'bg-secondary';
-                $featuredClass = !empty($p['is_featured']) ? 'bg-warning text-dark' : 'bg-light text-dark';
+                $statusClass = ($p['status'] ?? 'inactive') === 'active' ? 'bg-success' : (($p['status'] ?? '') === 'draft' ? 'bg-warning text-dark' : 'bg-secondary');
             ?>
             <tr class="<?php echo $isLowStock ? 'table-warning' : ''; ?>">
                 <td data-label="Image">
@@ -216,20 +222,15 @@ include 'partials/header.php';
                     <?php if (!empty($p['sku'])): ?>
                         <div class="text-muted small">SKU: <?php echo e($p['sku']); ?></div>
                     <?php endif; ?>
-                    <?php if (!empty($p['gsm']) || !empty($p['width']) || !empty($p['moq'])): ?>
-                        <div class="text-muted small">
-                            <?php if (!empty($p['gsm'])): ?>GSM: <?php echo e($p['gsm']); ?><?php endif; ?>
-                            <?php if (!empty($p['width'])): ?> | Width: <?php echo e($p['width']); ?><?php endif; ?>
-                            <?php if (!empty($p['moq'])): ?> | MOQ: <?php echo e($p['moq']); ?><?php endif; ?>
-                        </div>
-                    <?php endif; ?>
+                    <?php if (!empty($p['product_code'])):?><div class="text-muted small">Product Code: <?php echo e($p['product_code']);?></div><?php endif;?>
+                    <?php if (!empty($p['amazon_asin'])):?><div class="text-muted small">Amazon ASIN: <?php echo e($p['amazon_asin']);?></div><?php endif;?>
                 </td>
-                <td data-label="Category"><?php echo e($p['category'] ?: '-'); ?></td>
-                <td data-label="Price"><?php echo isset($p['price']) ? number_format((float) $p['price'], 2) : '0.00'; ?></td>
-                <td data-label="Sale Price">
-                    <?php echo ($p['sale_price'] !== null && $p['sale_price'] !== '') ? number_format((float) $p['sale_price'], 2) : '-'; ?>
+                <td data-label="Product Type"><?php echo e($p['category'] ?: '-'); ?></td>
+                <td data-label="MRP"><?php echo isset($p['price']) ? number_format((float) $p['price'], 2) : '0.00'; ?></td>
+                <td data-label="Selling Price">
+                    <?php echo number_format((float)((($p['sale_price']??0)>0)?$p['sale_price']:($p['price']??0)),2); ?>
                 </td>
-                <td data-label="Stock">
+                <td data-label="Quantity">
                     <span class="<?php echo $isLowStock ? 'text-danger fw-bold' : ''; ?>">
                         <?php echo e(format_quantity_by_unit($stockVal, $unitType)); ?><?php echo InventoryService::quantity_unit_suffix($unitType); ?>
                     </span>
@@ -248,9 +249,6 @@ include 'partials/header.php';
                 </td>
                 <td data-label="Status">
                     <span class="badge <?php echo $statusClass; ?>"><?php echo ucfirst((string) ($p['status'] ?? 'inactive')); ?></span>
-                </td>
-                <td data-label="Featured">
-                    <span class="badge <?php echo $featuredClass; ?>"><?php echo !empty($p['is_featured']) ? 'Yes' : 'No'; ?></span>
                 </td>
                 <td data-label="Actions" class="text-end">
                     <a class="btn btn-sm btn-outline-secondary" href="edit-fabric.php?id=<?php echo (int) $p['id']; ?>"><i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit</a>

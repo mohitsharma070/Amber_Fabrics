@@ -103,14 +103,14 @@ function meta_pixel_product_payload(mysqli $conn, int $productId): ?array
     if ($productId <= 0) {
         return null;
     }
-    $stmt = $conn->prepare("SELECT id, name, price, sale_price, price_inr FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
+    $stmt = $conn->prepare("SELECT id, name, price, sale_price FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
     $stmt->bind_param('i', $productId);
     $stmt->execute();
     $product = $stmt->get_result()->fetch_assoc();
     if (!$product) {
         return null;
     }
-    $regular = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
+    $regular = (float) ($product['price'] ?? 0);
     $sale = (float) ($product['sale_price'] ?? 0);
     $price = ($sale > 0 && $sale < $regular) ? $sale : $regular;
     return [

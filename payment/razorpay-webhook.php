@@ -287,6 +287,7 @@ try {
         PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
         $conn->commit();
         error_log('[razorpay-webhook] replay business-idempotent paid event_id=' . $eventId . ' order_id=' . $orderId);
+        EmailService::send_requested_account_activation_email($conn, $orderId);
         http_response_code(200);
         echo 'Already processed';
         exit;
@@ -386,6 +387,7 @@ try {
         'payment_status' => 'paid',
     ]);
 
+    EmailService::send_requested_account_activation_email($conn, $orderId);
     EmailService::send_order_confirmation_email($conn, $orderId);
     http_response_code(200);
     echo 'OK';

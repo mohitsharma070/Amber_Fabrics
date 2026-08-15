@@ -54,19 +54,20 @@ function product_feed_filesystem_dir(): string
 function product_feed_fetch_rows(mysqli $conn): array
 {
     $stmt = $conn->prepare(
-        "SELECT id, name, sku, category, description, image, price, sale_price, price_inr, stock, stock_meters, unit_type, status, is_available, created_at
-         FROM fabrics
-         WHERE status = 'active' AND is_available = 1
-         ORDER BY id DESC"
+        "SELECT f.id, f.name, f.sku, f.slug, f.category, f.description, f.price, f.sale_price, f.stock, f.stock_meters, f.unit_type, f.status, f.is_available, f.created_at,
+                COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image
+         FROM fabrics f
+         WHERE f.status = 'active' AND f.is_available = 1
+         ORDER BY f.id DESC"
     );
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     return is_array($rows) ? $rows : [];
 }
 
-function product_feed_product_url(int $productId): string
+function product_feed_product_url(int $productId, string $slug = ''): string
 {
-    return SiteContext::url('/fabric.php?id=' . $productId);
+    return SiteContext::url($slug !== '' ? '/fabric/' . rawurlencode($slug) : '/fabric.php?id=' . $productId);
 }
 
 function product_feed_image_url(string $image): string
@@ -81,7 +82,7 @@ function product_feed_image_url(string $image): string
 function product_feed_normalize_row(array $row): array
 {
     $id = (int) ($row['id'] ?? 0);
-    $price = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
+    $price = (float) ($row['price'] ?? 0);
     $sale = (float) ($row['sale_price'] ?? 0);
     $finalPrice = ($sale > 0 && $sale < $price) ? $sale : $price;
     $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $row['unit_type'] : 'meter';
@@ -93,7 +94,7 @@ function product_feed_normalize_row(array $row): array
         'sku' => trim((string) ($row['sku'] ?? '')),
         'description' => trim((string) ($row['description'] ?? '')),
         'category' => trim((string) ($row['category'] ?? '')),
-        'link' => product_feed_product_url($id),
+        'link' => product_feed_product_url($id, trim((string)($row['slug'] ?? ''))),
         'image_link' => product_feed_image_url((string) ($row['image'] ?? '')),
         'availability' => $stock > 0 ? 'in stock' : 'out of stock',
         'price_inr' => round(max(0, $finalPrice), 2),

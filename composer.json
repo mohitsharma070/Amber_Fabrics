@@ -4,7 +4,7 @@
   "type": "project",
   "license": "proprietary",
   "scripts": {
-    "test": "php tests/endpoint_contract_test.php && php tests/bigship_payload_test.php && php tests/clean_url_contract_test.php && php tests/checkout_shipping_contract_test.php && php tests/conversion_mvp_contract_test.php"
+    "test": "php tests/endpoint_contract_test.php && php tests/bigship_payload_test.php && php tests/clean_url_contract_test.php && php tests/checkout_shipping_contract_test.php && php tests/conversion_mvp_contract_test.php && php tests/admin_product_editor_v2_contract_test.php && php tests/product_variant_alignment_contract_test.php && php tests/product_import_contract_test.php"
   },
   "require": {
     "php": "^8.2",

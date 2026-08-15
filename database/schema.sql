@@ -64,46 +64,29 @@ CREATE TABLE IF NOT EXISTS fabrics (
     category         VARCHAR(100)  DEFAULT NULL,
     unit_type        ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
     meter_options    VARCHAR(100)  DEFAULT NULL,
-    print_style      VARCHAR(100)  DEFAULT NULL,
-    material         VARCHAR(255)  DEFAULT NULL,
-    gsm              VARCHAR(50)   DEFAULT NULL,
-    width            VARCHAR(50)   DEFAULT NULL,
-    moq              VARCHAR(100)  DEFAULT NULL,
-    lead_time        VARCHAR(100)  DEFAULT NULL,
-    dispatch_time    VARCHAR(100)  DEFAULT NULL,
     size             VARCHAR(100)  DEFAULT NULL,
     color            VARCHAR(100)  DEFAULT NULL,
     description      TEXT,
-    wash_care        TEXT,
-    image            VARCHAR(255)  DEFAULT NULL,
-    image2           VARCHAR(255)  DEFAULT NULL,
-    image3           VARCHAR(255)  DEFAULT NULL,
-    image4           VARCHAR(255)  DEFAULT NULL,
-    video            VARCHAR(255)  DEFAULT NULL,
     price            DECIMAL(10,2) DEFAULT 0.00,
     sale_price       DECIMAL(10,2) DEFAULT NULL,
     cost_price       DECIMAL(10,2) DEFAULT 0.00,
-    price_inr        DECIMAL(10,2) DEFAULT NULL,
-    price_usd        DECIMAL(10,2) DEFAULT NULL,
     stock            DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     stock_meters     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     low_stock_threshold_units INT DEFAULT NULL,
     low_stock_threshold_meters DECIMAL(10,2) DEFAULT NULL,
     min_order_meters DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     qty_step         DECIMAL(10,4) DEFAULT 0.0000,
-    is_featured      TINYINT(1)    DEFAULT 0,
     status           ENUM('active','inactive') DEFAULT 'active',
     is_available     TINYINT(1)    DEFAULT 1,
     created_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_fabrics_storefront (status, category, is_available, created_at),
-    INDEX idx_fabrics_material (material),
     -- Catalog listing: status/category + sort by created_at/id (newest/oldest)
     INDEX idx_fabrics_catalog_created (status, category, created_at, id),
     -- Catalog listing: name sorting for scoped category/status listings
     INDEX idx_fabrics_catalog_name (status, category, name, id),
     -- Catalog keyword search across storefront fields
     INDEX idx_fabrics_created_id (created_at, id),
-    FULLTEXT KEY ft_fabrics_catalog_search (name, sku, material, category, dispatch_time, color, size)
+    INDEX idx_fabrics_search (name, sku)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Product Categories

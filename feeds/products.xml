@@ -1,1 +1,45 @@
-﻿<?xml version="1.0" encoding="UTF-8"?><products></products>
+<?xml version="1.0" encoding="UTF-8"?>
+<products generated_at="2026-08-14T02:45:11+00:00" count="3">
+  <product>
+    <id>15</id>
+    <title>Satin Fabric</title>
+    <sku></sku>
+    <description>Shiny satin fabric used for dresses and evening wear</description>
+    <category>bedsheets</category>
+    <link>http://localhost:8000/fabric/satin-fabric-15</link>
+    <image_link>http://localhost:8000/images/fabrics/satin1.jpg</image_link>
+    <availability>in stock</availability>
+    <price currency="INR">1.00</price>
+    <sale_price currency="INR">1.00</sale_price>
+    <unit_type>piece</unit_type>
+    <stock>10</stock>
+  </product>
+  <product>
+    <id>2</id>
+    <title>Linen Plain Fabric</title>
+    <sku>FABRIC-BY-METER-LINEN-WHITE-140</sku>
+    <description>High quality breathable linen fabric for garments</description>
+    <category>fabric-by-meter</category>
+    <link>http://localhost:8000/fabric/linen-plain-fabric-2</link>
+    <image_link>http://localhost:8000/images/fabrics/linen1.jpg</image_link>
+    <availability>in stock</availability>
+    <price currency="INR">1.00</price>
+    <sale_price currency="INR">1.00</sale_price>
+    <unit_type>meter</unit_type>
+    <stock>1</stock>
+  </product>
+  <product>
+    <id>1</id>
+    <title>Cotton Printed Fabric</title>
+    <sku>BEDSHEETS</sku>
+    <description>Premium printed cotton fabric suitable for dresses and shirts</description>
+    <category>bedsheets</category>
+    <link>http://localhost:8000/fabric/cotton-printed-fabric-1</link>
+    <image_link>http://localhost:8000/images/fabrics/cotton1.jpg</image_link>
+    <availability>in stock</availability>
+    <price currency="INR">1.00</price>
+    <sale_price currency="INR">1.00</sale_price>
+    <unit_type>piece</unit_type>
+    <stock>27</stock>
+  </product>
+</products>

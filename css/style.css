@@ -361,8 +361,8 @@ img {
     top: 94px;
 }
 
-/* On phones, let customers review the items and total before entering
-   delivery and payment details. Desktop keeps the existing side-by-side view. */
+/* On phones, keep delivery first; the order summary follows the gated
+   delivery/payment flow instead of pushing address fields below the fold. */
 @media (max-width: 991.98px) {
     .checkout-layout {
         flex-direction: column;
@@ -373,7 +373,7 @@ img {
     }
 
     .checkout-summary-column {
-        order: -1 !important;
+        order: 1 !important;
     }
 
     .checkout-summary-sticky {
@@ -1469,6 +1469,20 @@ img {
 .animate-in.is-visible {
     opacity: 1;
     transform: translateY(0);
+}
+
+#variant-editor-modal .modal-content {
+    min-height: min(720px, calc(100vh - 2rem));
+}
+
+#variant-editor-modal .modal-body {
+    overflow-y: auto;
+}
+
+@media (max-width: 767.98px) {
+    #variant-editor-modal .modal-content {
+        min-height: calc(100vh - 1rem);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3410,9 +3424,8 @@ img {
     }
 }
 
-/* Checkout mobile order: keep the product and total ahead of checkout fields.
-   This sits at the end of the stylesheet so no later component rule can
-   override it. */
+/* Checkout mobile order: delivery remains the first task. This sits at the end
+   of the stylesheet so no later component rule can override it. */
 @media (max-width: 991.98px) {
     .checkout-layout.row {
         display: flex !important;
@@ -3420,7 +3433,7 @@ img {
     }
 
     .checkout-layout.row > .checkout-summary-column {
-        order: -1 !important;
+        order: 1 !important;
     }
 
     .checkout-layout.row > .checkout-form-column {

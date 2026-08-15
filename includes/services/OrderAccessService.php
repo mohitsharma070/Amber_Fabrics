@@ -7,10 +7,21 @@ final class OrderAccessService
 
     public static function enabled(): bool { return (int) plugin_setting('conversion-mvp', 'guest_order_access_enabled', 1) === 1; }
 
+    private static function purposeEnabled(string $purpose): bool
+    {
+        if ($purpose === 'activate') {
+            return (int) plugin_setting('conversion-mvp', 'account_activation_enabled', 1) === 1;
+        }
+        return self::enabled();
+    }
+
     public static function createToken(mysqli $conn, int $orderId, string $purpose = 'manage', ?int $ttlSeconds = null): string
     {
-        if ($orderId <= 0 || !in_array($purpose, ['manage', 'activate'], true)) { throw new InvalidArgumentException('Invalid order access token request.'); }
-        $ttl = $ttlSeconds ?? ($purpose === 'activate' ? 86400 : 2592000);
+        if ($orderId <= 0 || !in_array($purpose, ['manage', 'activate'], true) || !self::purposeEnabled($purpose)) { throw new InvalidArgumentException('Invalid order access token request.'); }
+        $configuredTtl = $purpose === 'activate'
+            ? (int) plugin_setting('conversion-mvp', 'account_activation_token_ttl_seconds', 86400)
+            : (int) plugin_setting('conversion-mvp', 'guest_order_token_ttl_seconds', 1800);
+        $ttl = $ttlSeconds ?? $configuredTtl;
         $raw = bin2hex(random_bytes(32));
         $hash = hash('sha256', $raw);
         $expires = gmdate('Y-m-d H:i:s', time() + max(300, $ttl));
@@ -24,7 +35,7 @@ final class OrderAccessService
 
     public static function consume(mysqli $conn, string $raw, string $purpose = 'manage'): ?array
     {
-        if (!self::enabled() || !preg_match('/^[a-f0-9]{64}$/', $raw)) { return null; }
+        if (!in_array($purpose, ['manage', 'activate'], true) || !self::purposeEnabled($purpose) || !preg_match('/^[a-f0-9]{64}$/', $raw)) { return null; }
         $hash = hash('sha256', $raw);
         $conn->begin_transaction();
         try {

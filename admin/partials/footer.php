@@ -18,7 +18,7 @@
 
 <script src="../js/script.js?v=20260516b" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
+<script nonce="<?php echo e((string) ($cspNonce ?? '')); ?>">
 (function () {
     var modalEl = document.getElementById('adminConfirmModal');
     if (!modalEl || typeof bootstrap === 'undefined') {

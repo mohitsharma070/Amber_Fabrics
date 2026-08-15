@@ -324,28 +324,7 @@ final class InventoryService
     }
 
     /**
-     * Return the first active variant for a fabric (fallback for legacy quick-add flows).
-     */
-    public static function get_first_active_variant(mysqli $conn, int $fabricId): ?array
-    {
-        if ($fabricId <= 0) {
-            return null;
-        }
-        $stmt = $conn->prepare(
-            "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active, sort_order
-             FROM fabric_variants
-             WHERE fabric_id = ? AND is_active = 1
-             ORDER BY sort_order ASC, id ASC
-             LIMIT 1"
-        );
-        $stmt->bind_param('i', $fabricId);
-        $stmt->execute();
-        return $stmt->get_result()->fetch_assoc() ?: null;
-    }
-
-    /**
      * Return the first active in-stock variant for a fabric.
-     * Falls back to first active variant when all are out of stock.
      */
     public static function get_first_active_in_stock_variant(mysqli $conn, int $fabricId, string $unitType): ?array
     {
@@ -357,8 +336,8 @@ final class InventoryService
         $stmt = $conn->prepare(
             "SELECT id, fabric_id, color, size, sku, image, image2, image3, image4, video, pack_label, units_per_set, price_override, stock, stock_meters, is_active, sort_order
              FROM fabric_variants
-             WHERE fabric_id = ? AND is_active = 1
-             ORDER BY CASE WHEN COALESCE($stockColumn, 0) > 0 THEN 0 ELSE 1 END, sort_order ASC, id ASC
+             WHERE fabric_id = ? AND is_active = 1 AND COALESCE($stockColumn, 0) > 0
+             ORDER BY sort_order ASC, id ASC
              LIMIT 1"
         );
         $stmt->bind_param('i', $fabricId);

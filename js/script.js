@@ -27,6 +27,10 @@ document.addEventListener("DOMContentLoaded", function () {
             var form = e.target;
             if (!form || form.tagName !== "FORM") return;
 
+            // A form-level validator or AJAX handler already owns this submit.
+            // Do not leave its button in the global navigation loading state.
+            if (e.defaultPrevented) return;
+
             // Don't apply to filter/sort forms that auto-submit and need to stay responsive
             if (form.classList.contains("js-no-loading") || form.classList.contains("cart-qty-form")) return;
 

@@ -2,7 +2,7 @@
 (function () {
     var formEl = document.getElementById('product-editor-form');
     var tabButtons = Array.prototype.slice.call(document.querySelectorAll('.product-editor-tab'));
-    var unitSelect = document.querySelector('select[name="unit_type"]');
+    var unitSelect = document.querySelector('[name="unit_type"]');
     var minOrderInput = document.querySelector('input[name="min_order_meters"]');
     var qtyStepInput = document.querySelector('input[name="qty_step"]');
     var meterOptionsInput = document.querySelector('input[name="meter_options"]');
@@ -14,10 +14,11 @@
     var skuPreview = document.getElementById('sku_preview');
     var skuHidden = document.getElementById('sku_hidden');
     var variantsTabLink = document.getElementById('variants-tab-link');
+    var productTypeSelect = document.querySelector('select[name="product_type"]');
     var prevTabBtn = document.getElementById('product-prev-tab-btn');
     var nextTabBtn = document.getElementById('product-next-tab-btn');
     var currentSection = 'details';
-    var sectionOrder = ['details', 'pricing', 'content'];
+    var sectionOrder = ['details', 'pricing', 'content', 'shipping'];
     if (!unitSelect) return;
 
     function assignSections() {
@@ -81,11 +82,10 @@
             prevTabBtn.disabled = false;
         }
         if (nextTabBtn) {
-            // Hide Next button only in Content tab
-            nextTabBtn.style.display = (section === 'content') ? 'none' : '';
+            nextTabBtn.style.display = (section === sectionOrder[sectionOrder.length - 1]) ? 'none' : '';
         }
         Array.prototype.forEach.call(document.querySelectorAll('.js-content-only'), function (el) {
-            el.classList.toggle('d-none', section !== 'content');
+            el.classList.toggle('d-none', section !== sectionOrder[sectionOrder.length - 1]);
         });
     }
 
@@ -161,16 +161,19 @@
             gsmInput ? skuPart(gsmInput.value) : ''
         ].filter(Boolean);
         var sku = parts.length ? parts.join('-') : 'SKU';
-        skuPreview.value = sku;
-        skuHidden.value = sku;
+        if (skuPreview) skuPreview.value = sku;
+        if (skuHidden && String(skuHidden.value || '').trim() === '') skuHidden.value = sku;
     }
 
     unitSelect.addEventListener('change', applyUnitRules);
+    if(productTypeSelect){var originalProductType=productTypeSelect.value;productTypeSelect.addEventListener('change',function(){if(productTypeSelect.value===originalProductType)return;var message=productTypeSelect.value==='variable'?'Switching to variable product will clear base stock and keep the product as draft until a sellable variant exists. Continue?':'Switching to simple product will deactivate variants and requires explicit base stock. Continue?';if(!window.confirm(message))productTypeSelect.value=originalProductType;});}
     [categoryInput, materialInput, gsmInput].forEach(function (el) {
         if (!el) return;
         el.addEventListener('input', updateSkuPreview);
         el.addEventListener('change', updateSkuPreview);
     });
+    var slugInput=document.querySelector('input[name="slug"]');
+    if(slugInput){slugInput.addEventListener('input',function(){var out=document.getElementById('product-slug-preview');if(out)out.textContent=slugInput.value;});}
     tabButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             setSection(btn.getAttribute('data-editor-tab') || 'details');
@@ -210,8 +213,11 @@
     }
 
     assignSections();
-    setSection('details');
+    var savedSection = sessionStorage.getItem('amberProductEditorSection') || 'details';
+    setSection(sectionOrder.indexOf(savedSection) >= 0 ? savedSection : 'details');
+    tabButtons.forEach(function(btn){btn.addEventListener('click',function(){sessionStorage.setItem('amberProductEditorSection',btn.getAttribute('data-editor-tab')||'details');});});
     applyUnitRules();
     updateSkuPreview();
+    if(formEl){var dirty=false;formEl.addEventListener('input',function(){dirty=true;});formEl.addEventListener('submit',function(){dirty=false;var submit=formEl.querySelector('button[name="submit"]');if(submit){submit.disabled=true;submit.textContent='Saving...';}});window.addEventListener('beforeunload',function(event){if(!dirty)return;event.preventDefault();event.returnValue='';});}
 })();
 </script>

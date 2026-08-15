@@ -11,11 +11,18 @@ return [
         'conversion-mvp' => [
             'guest_order_access_enabled' => (int) (function_exists('_cfg') ? _cfg('GUEST_ORDER_ACCESS_ENABLED', '1') : '1'),
             'account_activation_enabled' => (int) (function_exists('_cfg') ? _cfg('ACCOUNT_ACTIVATION_ENABLED', '1') : '1'),
+            'guest_order_token_ttl_seconds' => (int) (function_exists('_cfg') ? _cfg('GUEST_ORDER_TOKEN_TTL_SECONDS', '1800') : '1800'),
+            'account_activation_token_ttl_seconds' => (int) (function_exists('_cfg') ? _cfg('ACCOUNT_ACTIVATION_TOKEN_TTL_SECONDS', '86400') : '86400'),
             'delivery_estimates_enabled' => (int) (function_exists('_cfg') ? _cfg('DELIVERY_ESTIMATES_ENABLED', '1') : '1'),
             'default_dispatch_min_days' => (int) (function_exists('_cfg') ? _cfg('DEFAULT_DISPATCH_MIN_DAYS', '2') : '2'),
             'default_dispatch_max_days' => (int) (function_exists('_cfg') ? _cfg('DEFAULT_DISPATCH_MAX_DAYS', '5') : '5'),
             'transit_min_days' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_TRANSIT_MIN_DAYS', '3') : '3'),
             'transit_max_days' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_TRANSIT_MAX_DAYS', '7') : '7'),
+        ],
+        'admin-product-editor-v2' => [
+            'enabled' => (int) (function_exists('_cfg') ? _cfg('ADMIN_PRODUCT_EDITOR_V2_ENABLED', '1') : '1'),
+            'max_gallery_images' => 10,
+            'max_product_videos' => 2,
         ],
         'cod-guard' => [
             'whatsapp_threshold' => (float) (function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_THRESHOLD', '1000') : '1000'),

@@ -2,309 +2,42 @@
 require_once __DIR__ . '/../includes/init.php';
 require_admin();
 
-$errors = [];
-$categories = [];
-$categorySlugMap = [];
-
-try {
-    $categories = storefront_categories_fetch($conn);
-    foreach ($categories as $catRow) {
-        $slugKey = trim((string) ($catRow['slug'] ?? ''));
-        if ($slugKey !== '') {
-            $categorySlugMap[$slugKey] = true;
-        }
-    }
-} catch (Throwable $e) {
-    // Keep form usable even if categories table is unavailable.
-    $categories = [];
-    $categorySlugMap = [];
-}
-
-$old = [
-    'name' => '',
-    'category' => '',
-    'unit_type' => 'meter',
-    'print_style' => '',
-    'price' => '',
-    'sale_price' => '',
-    'cost_price' => '',
-    'stock' => '0',
-    'sku' => '',
-    'size' => '',
-    'meter_options' => '',
-    'color' => '',
-    'material' => '',
-    'gsm' => '',
-    'width' => '',
-    'moq' => '',
-    'lead_time' => '',
-    'dispatch_time' => '',
-    'dispatch_min_days' => '',
-    'dispatch_max_days' => '',
-    'wash_care' => '',
-    'description' => '',
-    'status' => 'active',
-    'is_featured' => 0,
-    'is_available' => 1,
-    'min_order_meters' => '1',
-    'qty_step' => '',
-    'low_stock_threshold_units' => '',
-    'low_stock_threshold_meters' => '',
-];
-
-if(isset($_POST['submit'])){
-    if (!verify_csrf()) {
-        flash('error', 'Invalid session token. Please try again.');
-        redirect('add-fabric.php');
-    }
-    $name          = trim($_POST['name']          ?? '');
-    $category      = trim($_POST['category']      ?? '');
-    $unitType      = trim((string) ($_POST['unit_type'] ?? 'meter'));
-    $price         = trim($_POST['price']         ?? '');
-    $salePrice     = trim($_POST['sale_price']    ?? '');
-    $costPrice     = trim($_POST['cost_price']    ?? '');
-    $stock         = trim($_POST['stock']         ?? '0');
-    $size          = '';
-    $meterOptions  = trim($_POST['meter_options']  ?? '');
-    $color         = '';
-    $printStyle    = trim($_POST['print_style']    ?? '');
-    $material      = trim($_POST['material']      ?? '');
-    $gsm           = trim($_POST['gsm']           ?? '');
-    $sku           = generate_unique_fabric_sku($conn, $category, $material, '', $gsm);
-    $width         = trim($_POST['width']         ?? '');
-    $moq           = trim($_POST['moq']           ?? '');
-    $lead          = trim($_POST['lead_time']     ?? '');
-    $dispatchTime  = trim($_POST['dispatch_time'] ?? '');
-    $dispatchMinDays = max(0,(int)($_POST['dispatch_min_days']??0));$dispatchMaxDays=max($dispatchMinDays,(int)($_POST['dispatch_max_days']??0));
-    $washCare      = trim($_POST['wash_care']     ?? '');
-    $description   = trim($_POST['description']   ?? '');
-    $status        = trim($_POST['status']        ?? 'active');
-    $isFeatured    = isset($_POST['is_featured']) ? 1 : 0;
-    $isAvailInput  = isset($_POST['is_available']) ? 1 : 0;
-    $minOrderInput = trim((string) ($_POST['min_order_meters'] ?? '1'));
-    $minOrder      = is_numeric($minOrderInput) ? (float) $minOrderInput : 1.0;
-    if ($unitType === 'piece' || $unitType === 'set') {
-        $minOrder = (float) max(1, (int) round($minOrder));
-    } else {
-        $minOrder = normalize_meter_quantity($minOrder, 1.0);
-    }
-    $qtyStepRaw    = trim($_POST['qty_step'] ?? '');
-    $qtyStep       = ($qtyStepRaw !== '' && is_numeric($qtyStepRaw) && (float) $qtyStepRaw > 0) ? round((float) $qtyStepRaw, 4) : 0.0;
-    $lowStockUnitsRaw = trim((string) ($_POST['low_stock_threshold_units'] ?? ''));
-    $lowStockMetersRaw = trim((string) ($_POST['low_stock_threshold_meters'] ?? ''));
-    $lowStockUnits = ($lowStockUnitsRaw !== '' && is_numeric($lowStockUnitsRaw) && (float) $lowStockUnitsRaw >= 0)
-        ? (int) round((float) $lowStockUnitsRaw)
-        : null;
-    $lowStockMeters = ($lowStockMetersRaw !== '' && is_numeric($lowStockMetersRaw) && (float) $lowStockMetersRaw >= 0)
-        ? round((float) $lowStockMetersRaw, 2)
-        : null;
-    $parsedMeterOptions = CartService::parse_meter_options($meterOptions, (float) $minOrder);
-    $normalizedMeterOptions = implode(', ', array_map(static function ($val): string {
-        return format_meter_quantity((float) $val);
-    }, $parsedMeterOptions));
-
-    $old = [
-        'name' => $name,
-        'category' => $category,
-        'unit_type' => $unitType,
-        'price' => $price,
-        'sale_price' => $salePrice,
-        'cost_price' => $costPrice,
-        'stock' => $stock,
-        'sku' => $sku,
-        'size' => $size,
-        'meter_options' => $normalizedMeterOptions,
-        'color' => $color,
-        'print_style' => $printStyle,
-        'material' => $material,
-        'gsm' => $gsm,
-        'width' => $width,
-        'moq' => $moq,
-        'lead_time' => $lead,
-        'dispatch_time' => $dispatchTime,
-        'wash_care' => $washCare,
-        'description' => $description,
-        'status' => $status,
-        'is_featured' => $isFeatured,
-        'is_available' => $isAvailInput,
-        'min_order_meters' => format_meter_quantity($minOrder),
-        'qty_step' => $qtyStepRaw,
-        'low_stock_threshold_units' => $lowStockUnitsRaw,
-        'low_stock_threshold_meters' => $lowStockMetersRaw,
-    ];
-
-    if ($name === '') {
-        $errors['name'] = 'Product name is required.';
-    }
-    if ($category === '') {
-        $errors['category'] = 'Category is required.';
-    } elseif (!isset($categorySlugMap[$category])) {
-        $errors['category'] = 'Select a valid storefront category.';
-    }
-    if (!in_array($unitType, ['meter', 'piece', 'set'], true)) {
-        $errors['unit_type'] = 'Select a valid unit type.';
-    }
-    if ($price === '' || !is_numeric($price) || (float) $price < 0) {
-        $errors['price'] = 'Regular price is required and must be 0 or more.';
-    }
-    if ($salePrice !== '' && (!is_numeric($salePrice) || (float) $salePrice < 0)) {
-        $errors['sale_price'] = 'Sale price must be 0 or more.';
-    }
-    if ($costPrice === '' || !is_numeric($costPrice) || (float) $costPrice < 0) {
-        $errors['cost_price'] = 'Cost price is required and must be 0 or more.';
-    }
-    if (!is_numeric($stock) || (float) $stock < 0) {
-        $errors['stock'] = 'Stock must be a non-negative number.';
-    } elseif (($unitType === 'piece' || $unitType === 'set') && floor((float) $stock) != (float) $stock) {
-        $errors['stock'] = 'Piece/Set products require whole-number stock.';
-    }
-    if (!in_array($status, ['active', 'inactive'], true)) {
-        $errors['status'] = 'Invalid status selected.';
-    }
-    if ($minOrder <= 0) {
-        $errors['min_order_meters'] = 'Min. order qty must be greater than 0.';
-    } elseif (($unitType === 'piece' || $unitType === 'set') && floor($minOrder) != $minOrder) {
-        $errors['min_order_meters'] = 'Piece/Set products require whole-number min. order qty.';
-    }
-    if ($lowStockUnitsRaw !== '' && ($lowStockUnits === null || $lowStockUnits < 0)) {
-        $errors['low_stock_threshold_units'] = 'Low stock threshold (units) must be 0 or more.';
-    }
-    if ($lowStockMetersRaw !== '' && ($lowStockMeters === null || $lowStockMeters < 0)) {
-        $errors['low_stock_threshold_meters'] = 'Low stock threshold (meters) must be 0 or more.';
-    }
-    if ($unitType === 'meter') {
-        if (empty($parsedMeterOptions)) {
-            $errors['meter_options'] = 'Provide at least one valid meter option (e.g. 1, 2, 2.5).';
-        } elseif (!in_array(round((float) $minOrder, 2), array_map(static function ($val) {
-            return round((float) $val, 2);
-        }, $parsedMeterOptions), true)) {
-            $errors['meter_options'] = 'Meter options must include the minimum order qty.';
-        }
-    } else {
-        $normalizedMeterOptions = '';
-        $lowStockMeters = null;
-    }
-    if ($unitType === 'meter') {
-        $lowStockUnits = null;
-    }
-
-    $imageName = null;
-    $image2Name = null;
-    $image3Name = null;
-    $image4Name = null;
-    $videoName = null;
-
-    $imageFields = [
-        'image' => 'Main image',
-        'image2' => 'Image 2',
-        'image3' => 'Image 3',
-        'image4' => 'Image 4',
-    ];
-    foreach ($imageFields as $field => $label) {
-        if (empty($_FILES[$field]['name'])) {
-            continue;
-        }
-        $file = $_FILES[$field];
-        try {
-            $saved = save_fabric_image_upload($file, $label);
-        } catch (Throwable $e) {
-            $errors[$field] = $e->getMessage();
-            continue;
-        }
-        if ($field === 'image') { $imageName = $saved; }
-        if ($field === 'image2') { $image2Name = $saved; }
-        if ($field === 'image3') { $image3Name = $saved; }
-        if ($field === 'image4') { $image4Name = $saved; }
-    }
-
-    if (!empty($_FILES['video']['name'])) {
-        $file = $_FILES['video'];
-        $allowedVideoExt = ['mp4', 'webm', 'ogg'];
-        $allowedVideoMime = ['video/mp4', 'video/webm', 'video/ogg'];
-        $maxVideoSize = 25 * 1024 * 1024;
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $mime = mime_content_type($file['tmp_name']) ?: '';
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            $errors['video'] = 'Video upload failed. Please try again.';
-        } elseif ($file['size'] > $maxVideoSize) {
-            $errors['video'] = 'Video must be under 25MB.';
-        } elseif (!in_array($ext, $allowedVideoExt, true) || !in_array($mime, $allowedVideoMime, true)) {
-            $errors['video'] = 'Video must be MP4, WEBM or OGG.';
-        } else {
-            $videoName = random_filename($file['name']);
-            $target = __DIR__ . "/../images/fabrics/{$videoName}";
-            if (!move_uploaded_file($file['tmp_name'], $target)) {
-                $errors['video'] = 'Video upload failed.';
-            }
-        }
-    }
-
-    if (empty($errors)) {
-        $priceVal      = (float) $price;
-        $salePriceVal  = ($salePrice !== '') ? (float) $salePrice : null;
-        $costPriceVal  = (float) $costPrice;
-        if ($unitType === 'piece' || $unitType === 'set') {
-            $stockVal = normalize_piece_quantity($stock, 0);
-            $stockMeters = 0.00;
-            $minOrderVal = (float) max(1, (int) round($minOrder));
-        } else {
-            $stockMeters = round((float) $stock, 2);
-            $stockVal = 0;
-            $minOrderVal = round($minOrder, 2);
-        }
-        $hasInitialStock = ($unitType === 'meter')
-            ? ((float) $stockMeters > 0)
-            : ((float) $stockVal > 0);
-        $isAvailable   = ($status === 'active' && $hasInitialStock) ? 1 : 0;
-        $priceInrVal   = $priceVal; // map regular price for existing listing compatibility
-        $priceUsdVal   = null;
-
-        $stmt = $conn->prepare(
-            "INSERT INTO fabrics (
-                name, sku, category, unit_type, meter_options, print_style, material, gsm, width, moq, lead_time, dispatch_time,
-                size, color, description, wash_care, image,
-                image2, image3, image4, video,
-                price, sale_price, cost_price, price_inr, price_usd,
-                stock, stock_meters, low_stock_threshold_units, low_stock_threshold_meters, min_order_meters, qty_step,
-                is_featured, status, is_available
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        );
-        $stmt->bind_param(
-            'sssssssssssssssssssssdddddddidddisi',
-            $name, $sku, $category, $unitType, $normalizedMeterOptions, $printStyle, $material, $gsm, $width, $moq, $lead, $dispatchTime,
-            $size, $color, $description, $washCare, $imageName, $image2Name, $image3Name, $image4Name, $videoName,
-            $priceVal, $salePriceVal, $costPriceVal, $priceInrVal, $priceUsdVal,
-            $stockVal, $stockMeters, $lowStockUnits, $lowStockMeters, $minOrderVal, $qtyStep,
-            $isFeatured, $status, $isAvailable
-        );
-        $stmt->execute();
-        $newId = (int) $conn->insert_id;
-        $range=$conn->prepare("UPDATE fabrics SET dispatch_min_days=NULLIF(?,0),dispatch_max_days=NULLIF(?,0) WHERE id=?");$range->bind_param('iii',$dispatchMinDays,$dispatchMaxDays,$newId);$range->execute();
-        flash('success', 'Product created. Now add colour &amp; size variants below.');
-        redirect('edit-fabric.php?id=' . $newId . '&new_product=1');
+$errors=[];
+$categories=storefront_categories_fetch($conn);
+$old=['product_code'=>'','amazon_asin'=>'','name'=>'','category'=>'','unit_type'=>'piece','product_type'=>'simple','sku'=>'','slug'=>''];
+if($_SERVER['REQUEST_METHOD']==='POST'){
+    foreach($old as $key=>$unused){$old[$key]=trim((string)($_POST[$key]??$old[$key]));}
+    if(!verify_csrf()){$errors['form']='Invalid session token. Please try again.';}
+    if($old['name']==='')$errors['name']='Product name is required.';
+    $validCategories=array_column($categories,'slug');
+    if(!in_array($old['category'],$validCategories,true))$errors['category']='Select a valid category.';
+    if(!in_array($old['unit_type'],['meter','piece','set'],true))$errors['unit_type']='Select a valid unit type.';
+    if(!in_array($old['product_type'],['simple','variable'],true))$errors['product_type']='Select a valid product mode.';
+    $catalogValidation=ProductAdminService::validateCatalog($conn,$old);$errors=array_merge($errors,$catalogValidation['errors']);
+    if(!$errors){
+        try{
+            $id=ProductAdminService::createDraft($conn,$old,(int)$_SESSION['admin_id']);
+            ProductAdminService::saveCatalog($conn,$id,$old);
+            flash('success','Draft created. Complete the checklist, add media and stock, then publish.');
+            redirect('edit-fabric.php?id='.$id.'&new_product=1');
+        }catch(Throwable $e){$errors['form']=$e->getMessage();}
     }
 }
+$metaTitle=SiteContext::title('Add Product');include 'partials/header.php';
 ?>
-
-<?php
-$metaTitle = SiteContext::title('Add Product');
-$metaDescription = 'Admin page to add new product details to ' . SiteContext::name() . ' shop.';
-$metaKeywords = 'admin, add product, catalog, ' . SiteContext::name();
-include 'partials/header.php'; ?>
-
-<h1 class="mb-4">Add Product</h1>
-
-<?php if (!empty($errors)): ?>
-    <div class="alert alert-warning">Please fix the errors below.</div>
-<?php endif; ?>
-
-<?php
-$isEdit = false;
-$submitLabel = 'Save Product';
-$cancelHref = 'fabrics.php';
-$cancelLabel = 'Cancel';
-include __DIR__ . '/partials/fabric-product-form.php';
-include __DIR__ . '/partials/fabric-product-form-script.php';
-?>
-
+<div class="mx-auto" style="max-width:760px">
+  <div class="mb-4"><h1 class="mb-1">Create Product Draft</h1><p class="text-muted mb-0">These field names match the catalogue CSV. Complete the remaining catalogue fields in the editor.</p></div>
+  <?php if(isset($errors['form'])):?><div class="alert alert-danger"><?php echo e($errors['form']);?></div><?php endif;?>
+  <form method="post" class="card shadow-sm js-no-loading" id="product-draft-form">
+    <div class="card-body row g-3"><?php echo csrf_field(); ?>
+      <input type="hidden" name="unit_type" value="piece"><input type="hidden" name="product_type" value="simple"><input type="hidden" name="slug" value="">
+      <div class="col-md-6"><label class="form-label">Product Code</label><input name="product_code" maxlength="100" class="<?php echo form_class($errors,'product_code');?> text-uppercase" value="<?php echo e($old['product_code']);?>"><?php echo form_error($errors,'product_code');?></div>
+      <div class="col-md-6"><label class="form-label">Amazon ASIN</label><input name="amazon_asin" maxlength="10" class="<?php echo form_class($errors,'amazon_asin');?> text-uppercase" value="<?php echo e($old['amazon_asin']);?>"><?php echo form_error($errors,'amazon_asin');?></div>
+      <div class="col-12"><label class="form-label">Name *</label><input name="name" required maxlength="255" class="<?php echo form_class($errors,'name');?>" value="<?php echo e($old['name']);?>"><?php echo form_error($errors,'name');?></div>
+      <div class="col-md-6"><label class="form-label">Product Type *</label><select name="category" required class="<?php echo form_class($errors,'category','form-select');?>"><option value="">Select product type</option><?php foreach($categories as $cat):?><option value="<?php echo e($cat['slug']);?>" <?php echo $old['category']===$cat['slug']?'selected':'';?>><?php echo e($cat['name']);?></option><?php endforeach;?></select><?php echo form_error($errors,'category');?></div>
+      <div class="col-md-6"><label class="form-label">Sku Id</label><input name="sku" maxlength="100" class="form-control text-uppercase" value="<?php echo e($old['sku']);?>" placeholder="Generated if blank"></div>
+    </div>
+    <div class="card-footer d-flex justify-content-between"><a class="btn btn-outline-secondary" href="fabrics.php">Cancel</a><button class="btn btn-primary">Create Draft &amp; Continue</button></div>
+  </form>
+</div>
 <?php include 'partials/footer.php'; ?>

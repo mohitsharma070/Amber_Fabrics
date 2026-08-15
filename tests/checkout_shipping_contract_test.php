@@ -44,7 +44,7 @@ $assert(!str_contains($rateSource, "\$_POST['subtotal']"), 'Shipping rate still 
 $assert(str_contains($rateSource, 'CartService::cart_items_subtotal'), 'Shipping rate does not derive subtotal from the server cart.');
 $assert(str_contains($rateSource, "'invoice_value' => \$invoiceValue"), 'Shipping rate does not send the discounted invoice value.');
 $assert(str_contains($checkoutSource, "'invoice_value' => (float) \$taxableAmount"), 'Initial checkout quote does not use the discounted invoice value.');
-$assert(str_contains($checkoutSource, "shipping_quote_store(\n    (float) \$taxableAmount"), 'Initial checkout token does not bind the discounted invoice value.');
+$assert((bool) preg_match('/shipping_quote_store\(\s*\(float\) \$taxableAmount/', $checkoutSource), 'Initial checkout token does not bind the discounted invoice value.');
 $assert(str_contains($rateSource, "shipping_quote_store(\n    (float) \$invoiceValue"), 'Refreshed quote token does not bind the discounted invoice value.');
 $assert(str_contains($placeOrderSource, 'abs($quoteSubtotal - $quotedInvoiceValue)'), 'Order placement does not validate the coupon-adjusted quote value.');
 $assert(substr_count($checkoutSource, 'data-preserve-checkout-state') >= 2, 'Coupon forms are not both preserving checkout state.');

@@ -6,8 +6,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) { flash('error', 'Invalid session.'); redirect('/guest/order-access'); }
     $number = strtoupper(trim((string) ($_POST['order_number'] ?? '')));
     $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-    $key = 'guest_order_link_' . hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? '') . '|' . $email);
-    if (public_form_rate_limit_allow($key, 5, 900) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $ipKey = 'guest_order_link_ip_' . hash('sha256', (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+    $identifierKey = 'guest_order_link_identifier_' . hash('sha256', $number . '|' . $email);
+    // Scope hashes contain no raw PII. Disabling implicit client binding makes
+    // these true independent limits: one per IP and one per order/email pair.
+    $ipAllowed = public_form_rate_limit_allow($ipKey, 10, 900, false);
+    $identifierAllowed = public_form_rate_limit_allow($identifierKey, 5, 900, false);
+    if ($ipAllowed && $identifierAllowed && filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $stmt = $conn->prepare("SELECT id FROM orders WHERE order_number=? AND LOWER(TRIM(customer_email))=? LIMIT 1");
         $stmt->bind_param('ss', $number, $email); $stmt->execute(); $row=$stmt->get_result()->fetch_assoc();
         if ($row) { EmailService::send_guest_manage_link($conn, (int) $row['id']); }

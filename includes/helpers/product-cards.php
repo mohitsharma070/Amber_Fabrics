@@ -6,17 +6,14 @@ function product_card_select_columns(array $extraColumns = []): string
         'f.id',
         'f.name',
         'f.category',
-        'f.image',
-        'f.material',
+        "COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image",
         'f.size',
         'f.unit_type',
         'f.price',
         'f.sale_price',
-        'f.price_inr',
         'f.stock',
         'f.stock_meters',
         'f.is_available',
-        'f.dispatch_time',
         'f.created_at',
         'COALESCE(v.id, 0) AS variant_id',
         "COALESCE(v.color, '') AS variant_color",
@@ -44,7 +41,7 @@ function product_card_select_columns(array $extraColumns = []): string
 
 function product_card_build_context(mysqli $conn, array $row): array
 {
-    $regularPrice = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
+    $regularPrice = (float) ($row['price'] ?? 0);
     $salePrice = (float) ($row['sale_price'] ?? 0);
     $variantId = (int) ($row['variant_id'] ?? 0);
     $variantColor = trim((string) ($row['variant_color'] ?? ''));
@@ -112,7 +109,7 @@ function product_card_build_context(mysqli $conn, array $row): array
     $showStrikePrice = $regularPrice > 0 && $unitPrice > 0 && $unitPrice < $regularPrice;
 
     $hasSizeOptions = !empty(CartService::parse_size_options((string) ($row['size'] ?? '')));
-    $productUrl = 'fabric.php?id=' . (int) ($row['id'] ?? 0);
+    $productUrl = ltrim(ProductAdminService::publicPath($row), '/');
     if ($variantId > 0) {
         $productUrl .= '&variant=' . $variantId;
     }

@@ -150,7 +150,7 @@ function google_analytics_product_item(mysqli $conn, int $productId, float $quan
     }
 
     $stmt = $conn->prepare(
-        "SELECT id, name, category, unit_type, price, sale_price, price_inr
+        "SELECT id, name, category, unit_type, price, sale_price
          FROM fabrics
          WHERE id = ? AND status = 'active'
          LIMIT 1"
@@ -162,7 +162,7 @@ function google_analytics_product_item(mysqli $conn, int $productId, float $quan
         return null;
     }
 
-    $regular = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
+    $regular = (float) ($product['price'] ?? 0);
     $sale = (float) ($product['sale_price'] ?? 0);
     $price = ($sale > 0 && $sale < $regular) ? $sale : $regular;
     $variantParts = [];

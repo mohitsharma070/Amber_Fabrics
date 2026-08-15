@@ -36,9 +36,10 @@ final class CartService
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
-        $sql = "SELECT id, name, image, unit_type, meter_options, min_order_meters, qty_step, price, sale_price, price_inr, stock, stock_meters, is_available, dispatch_time
-                FROM fabrics
-                WHERE status = 'active' AND id IN ($placeholders)";
+        $sql = "SELECT f.id, f.name, COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image, f.product_type, f.unit_type, f.meter_options, f.min_order_meters, f.qty_step, f.price, f.sale_price, f.stock, f.stock_meters, f.is_available,
+                       shipping_weight_kg, parcel_length_cm, parcel_width_cm, parcel_height_cm, gst_rate, hsn_code
+                FROM fabrics f
+                WHERE f.status = 'active' AND f.id IN ($placeholders)";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param($types, ...$ids);
         $stmt->execute();
@@ -63,6 +64,12 @@ final class CartService
 
             $row = $rowMap[$pid];
             $variant = ($variantId > 0 && isset($variantMap[$variantId])) ? $variantMap[$variantId] : null;
+            $requiresVariant = (($row['product_type'] ?? 'simple') === 'variable');
+            if (($requiresVariant && $variantId <= 0) || (!$requiresVariant && $variantId > 0)) {
+                $removedKeys[] = (string) $cartKey;
+                $invalidVariantFound = true;
+                continue;
+            }
             if ($variantId > 0 && (!$variant || (int) ($variant['fabric_id'] ?? 0) !== $pid || (int) ($variant['is_active'] ?? 0) !== 1)) {
                 $removedKeys[] = (string) $cartKey;
                 $invalidVariantFound = true;
@@ -104,7 +111,7 @@ final class CartService
                 $bundleQty = max(1, (int) round($bundleRatio));
             }
 
-            $regular = (float) (($row['price'] !== null && $row['price'] !== '') ? $row['price'] : ($row['price_inr'] ?? 0));
+            $regular = (float) ($row['price'] ?? 0);
             $sale = (float) ($row['sale_price'] ?? 0);
             if ($variant && $variant['price_override'] !== null && (float) $variant['price_override'] > 0) {
                 $unitPrice = (float) $variant['price_override'];
@@ -171,7 +178,12 @@ final class CartService
                 'subtotal' => $lineTotal,
                 'stock' => $displayStock,
                 'in_stock' => $inStock,
-                'dispatch_time' => trim((string) ($row['dispatch_time'] ?? '')),
+                'shipping_weight_kg' => $row['shipping_weight_kg'] ?? null,
+                'parcel_length_cm' => $row['parcel_length_cm'] ?? null,
+                'parcel_width_cm' => $row['parcel_width_cm'] ?? null,
+                'parcel_height_cm' => $row['parcel_height_cm'] ?? null,
+                'gst_rate' => $row['gst_rate'] ?? null,
+                'hsn_code' => $row['hsn_code'] ?? null,
                 'meter_length' => $meterLength,
                 'bundle_quantity' => $bundleQty,
                 'max_bundle_qty' => $maxBundleQty,
@@ -410,8 +422,8 @@ final class CartService
     /**
      * Parse a cart key in the format "{fabricId}::{variantId}".
      * Returns [fabricId, variantId] - both integers.
-     * variantId = 0 means no variant (legacy key or default).
-     * Legacy keys like "{fabricId}::{size-text}" are treated as variantId = 0.
+     * variantId = 0 identifies a simple product.
+     * Non-numeric suffixes are normalized to the simple-product form.
      */
     public static function cart_parse_key(string $rawKey): array
     {
@@ -589,7 +601,7 @@ final class CartService
                     }
                 }
                 $q = normalize_quantity_by_unit($qty, $unitType);
-                // For display in legacy columns, preserve size from session when variant not present.
+                // Simple products preserve the selected base-product size.
                 $selectedSize = '';
                 if ($variantId <= 0) {
                     $selectedSize = trim((string) ($_SESSION['cart_size'][$rawKey] ?? ''));
@@ -740,7 +752,7 @@ final class CartService
                     $variantId = (int) ($row['variant_id'] ?? 0);
                     $cartKey   = trim((string) ($row['cart_key'] ?? ''));
                     if ($cartKey === '') {
-                        // Reconstruct key: prefer variant id, fall back to legacy size-based key.
+                        // Reconstruct the canonical product/variant key.
                         if ($variantId > 0) {
                             $cartKey = $pid . '::' . $variantId;
                         } else {

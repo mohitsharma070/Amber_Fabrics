@@ -2,6 +2,54 @@
 
 final class EmailService
 {
+    public static function mark_account_activation_requested(mysqli $conn, int $orderId): void
+    {
+        if ($orderId <= 0) {
+            throw new InvalidArgumentException('Invalid order for account activation request.');
+        }
+        $stmt = $conn->prepare(
+            "UPDATE orders
+             SET account_activation_requested = 1, account_activation_sent_at = NULL
+             WHERE id = ? AND customer_id IS NULL"
+        );
+        $stmt->bind_param('i', $orderId);
+        $stmt->execute();
+    }
+
+    public static function send_requested_account_activation_email(mysqli $conn, int $orderId): bool
+    {
+        if ($orderId <= 0) {
+            return false;
+        }
+
+        // Claim the side effect atomically. Both the browser verification route
+        // and Razorpay webhook may finalize the same order at nearly the same time.
+        $claim = $conn->prepare(
+            "UPDATE orders
+             SET account_activation_sent_at = NOW()
+             WHERE id = ? AND customer_id IS NULL
+               AND account_activation_requested = 1
+               AND account_activation_sent_at IS NULL"
+        );
+        $claim->bind_param('i', $orderId);
+        $claim->execute();
+        if ($claim->affected_rows !== 1) {
+            return false;
+        }
+
+        $sent = self::send_account_activation_email($conn, $orderId);
+        if (!$sent) {
+            // Permit a later webhook/verification retry when delivery failed.
+            $release = $conn->prepare(
+                "UPDATE orders SET account_activation_sent_at = NULL
+                 WHERE id = ? AND customer_id IS NULL AND account_activation_requested = 1"
+            );
+            $release->bind_param('i', $orderId);
+            $release->execute();
+        }
+        return $sent;
+    }
+
     private static function applyTemplate(PHPMailer\PHPMailer\PHPMailer $mail, array $template): void
     {
         $mail->Subject=(string)($template['subject']??'');$html=(string)($template['html_body']??'');$text=(string)($template['text_body']??$template['body']??'');
@@ -18,7 +66,7 @@ final class EmailService
     {
         $stmt=$conn->prepare("SELECT customer_name,customer_email FROM orders WHERE id=? LIMIT 1");$stmt->bind_param('i',$orderId);$stmt->execute();$o=$stmt->get_result()->fetch_assoc();if(!$o||!filter_var($o['customer_email']??'',FILTER_VALIDATE_EMAIL)){return false;}
         $exists=$conn->prepare("SELECT id FROM customers WHERE LOWER(TRIM(email))=LOWER(TRIM(?)) LIMIT 1");$exists->bind_param('s',$o['customer_email']);$exists->execute();$customer=$exists->get_result()->fetch_assoc();if($customer){$raw=bin2hex(random_bytes(32));$hash=hash('sha256',$raw);$expires=gmdate('Y-m-d H:i:s',time()+3600);$upd=$conn->prepare("UPDATE customers SET reset_token=?,reset_token_expires=? WHERE id=?");$cid=(int)$customer['id'];$upd->bind_param('ssi',$hash,$expires,$cid);$upd->execute();return self::send_customer_password_reset_email($o['customer_email'],$raw);}
-        try{$token=OrderAccessService::createToken($conn,$orderId,'activate',86400);$t=email_template_build('account_activation',['name'=>$o['customer_name'],'activation_url'=>app_url('/guest/account-activate?token='.urlencode($token))]);$mail=self::_mailer_base();$mail->addAddress($o['customer_email'],$o['customer_name']);self::applyTemplate($mail,$t);return self::deliver($mail);}catch(Throwable $e){error_log('[email] account activation failed: '.$e->getMessage());return false;}
+        try{$token=OrderAccessService::createToken($conn,$orderId,'activate');$t=email_template_build('account_activation',['name'=>$o['customer_name'],'activation_url'=>app_url('/guest/account-activate?token='.urlencode($token))]);$mail=self::_mailer_base();$mail->addAddress($o['customer_email'],$o['customer_name']);self::applyTemplate($mail,$t);return self::deliver($mail);}catch(Throwable $e){error_log('[email] account activation failed: '.$e->getMessage());return false;}
     }
     private static function deliver(PHPMailer\PHPMailer\PHPMailer $mail): bool
     {

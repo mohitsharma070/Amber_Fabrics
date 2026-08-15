@@ -26,7 +26,7 @@ if ($productId <= 0) {
     redirect('/catalog.php');
 }
 
-$stmt = $conn->prepare("SELECT id, name, size, color, unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price, price_inr FROM fabrics WHERE id = ? LIMIT 1");
+$stmt = $conn->prepare("SELECT id, name, size, color, product_type, unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters, is_available, status, price, sale_price FROM fabrics WHERE id = ? LIMIT 1");
 $stmt->bind_param('i', $productId);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
@@ -84,7 +84,8 @@ if ($unitType === 'meter') {
 }
 
 $sizeOptions = CartService::parse_size_options((string) ($product['size'] ?? ''));
-$productVariants = InventoryService::get_fabric_variants($conn, $productId);
+$requiresVariant = (($product['product_type'] ?? 'simple') === 'variable');
+$productVariants = $requiresVariant ? InventoryService::get_fabric_variants($conn, $productId) : [];
 $hasActiveVariants = false;
 foreach ($productVariants as $variantRow) {
     if ((int) ($variantRow['is_active'] ?? 0) === 1) {
@@ -96,17 +97,26 @@ foreach ($productVariants as $variantRow) {
 // ── Variant lookup ──────────────────────────────────────────────────────────
 // Try explicit variant first (from product page), then color+size, then first active variant.
 $variant = null;
-if ($postedVariantId > 0) {
+if ($requiresVariant && $postedVariantId > 0) {
     $candidate = InventoryService::get_variant_by_id($conn, $postedVariantId);
     if ($candidate && (int) ($candidate['fabric_id'] ?? 0) === $productId && (int) ($candidate['is_active'] ?? 0) === 1) {
         $variant = $candidate;
     }
 }
-if (!$variant && ($selectedColor !== '' || $selectedSize !== '')) {
+if ($requiresVariant && !$variant && ($selectedColor !== '' || $selectedSize !== '')) {
     $variant = InventoryService::find_variant($conn, $productId, $selectedColor, $selectedSize);
 }
-if (!$variant) {
+if ($requiresVariant && !$variant) {
     $variant = InventoryService::get_first_active_in_stock_variant($conn, $productId, $unitType);
+}
+if ($requiresVariant && !$variant) {
+    if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Please select an available product variant.']);
+        exit;
+    }
+    flash('error', 'Please select an available product variant.');
+    redirect('/fabric.php?id=' . $productId);
 }
 if (!$variant && !$hasActiveVariants) {
     if ($selectedSize !== '' && !empty($sizeOptions) && !in_array($selectedSize, $sizeOptions, true)) {
@@ -146,7 +156,7 @@ if ($variant) {
     $selectedSize = CartService::variant_size_display($variant, $unitType);
 }
 
-// Use variant stock; fall back to fabric-level stock for legacy items with no variant.
+// Variable products use variant stock; simple products use base-product stock.
 $stock = 0.0;
 if ($variantId > 0) {
     $stock = ($unitType === 'piece' || $unitType === 'set')
@@ -160,7 +170,7 @@ if ($variantId > 0) {
 $stock = max(0.0, $stock);
 
 // Determine unit price: variant override first, then sale price, then base price.
-$regularPrice = (float) (($product['price'] !== null && $product['price'] !== '') ? $product['price'] : ($product['price_inr'] ?? 0));
+$regularPrice = (float) ($product['price'] ?? 0);
 $salePrice    = (float) ($product['sale_price'] ?? 0);
 $overridePrice = ($variant && $variant['price_override'] !== null) ? (float) $variant['price_override'] : null;
 if ($overridePrice !== null && $overridePrice > 0) {
@@ -188,7 +198,7 @@ if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_le
     $_SESSION['cart_meter_length'] = [];
 }
 
-// New cart key format: "{fabricId}::{variantId}" (or ::0 for legacy fallback).
+// Cart key format: "{fabricId}::{variantId}"; simple products use variant id 0.
 $cartKey = $productId . '::' . ($variantId > 0 ? $variantId : 0);
 
 $existing = isset($_SESSION['cart'][$cartKey])

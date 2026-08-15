@@ -44,82 +44,98 @@ function ensure_tables(mysqli $conn): void
     $conn->query(
         "CREATE TABLE IF NOT EXISTS fabrics (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            product_code VARCHAR(100) UNIQUE DEFAULT NULL,
+            amazon_asin VARCHAR(20) DEFAULT NULL,
             name VARCHAR(255) NOT NULL,
             sku VARCHAR(100) UNIQUE DEFAULT NULL,
             category VARCHAR(100) DEFAULT NULL,
+            product_type ENUM('simple','variable') NOT NULL DEFAULT 'simple',
+            slug VARCHAR(191) DEFAULT NULL,
+            UNIQUE KEY uq_fabrics_slug (slug),
             unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'meter',
             meter_options VARCHAR(100) DEFAULT NULL,
-            print_style VARCHAR(100) DEFAULT NULL,
-            material VARCHAR(255) DEFAULT NULL,
-            gsm VARCHAR(50) DEFAULT NULL,
-            width VARCHAR(50) DEFAULT NULL,
-            moq VARCHAR(100) DEFAULT NULL,
-            lead_time VARCHAR(100) DEFAULT NULL,
-            dispatch_time VARCHAR(100) DEFAULT NULL,
             size VARCHAR(100) DEFAULT NULL,
             color VARCHAR(100) DEFAULT NULL,
             description TEXT,
-            wash_care TEXT,
-            image VARCHAR(255) DEFAULT NULL,
-            image2 VARCHAR(255) DEFAULT NULL,
-            image3 VARCHAR(255) DEFAULT NULL,
-            image4 VARCHAR(255) DEFAULT NULL,
-            video VARCHAR(255) DEFAULT NULL,
+            catalog_data LONGTEXT DEFAULT NULL,
+            hsn_code VARCHAR(8) DEFAULT NULL,
+            gst_rate DECIMAL(5,2) DEFAULT NULL,
+            shipping_weight_kg DECIMAL(10,3) DEFAULT NULL,
+            parcel_length_cm DECIMAL(10,2) DEFAULT NULL,
+            parcel_width_cm DECIMAL(10,2) DEFAULT NULL,
+            parcel_height_cm DECIMAL(10,2) DEFAULT NULL,
             price DECIMAL(10,2) DEFAULT 0.00,
             sale_price DECIMAL(10,2) DEFAULT NULL,
             cost_price DECIMAL(10,2) DEFAULT 0.00,
-            price_inr DECIMAL(10,2) DEFAULT NULL,
-            price_usd DECIMAL(10,2) DEFAULT NULL,
             stock DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             stock_meters DECIMAL(10,2) DEFAULT 0.00,
             min_order_meters DECIMAL(10,2) DEFAULT 1.00,
             qty_step DECIMAL(10,4) DEFAULT 0.0000,
-            is_featured TINYINT(1) DEFAULT 0,
-            status ENUM('active','inactive') DEFAULT 'active',
+            status ENUM('draft','active','inactive') DEFAULT 'draft',
             is_available TINYINT(1) DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            published_at DATETIME DEFAULT NULL,
+            published_by INT DEFAULT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
     // Backfill product columns for existing installs created before ecommerce expansion.
     $fabricColumnDefinitions = [
+        'product_code' => "VARCHAR(100) NULL DEFAULT NULL",
+        'amazon_asin' => "VARCHAR(20) NULL DEFAULT NULL",
         'name' => "VARCHAR(255) NOT NULL",
         'price' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
         'sale_price' => "DECIMAL(10,2) NULL DEFAULT NULL",
         'cost_price' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
-        'price_inr' => "DECIMAL(10,2) NULL DEFAULT NULL",
-        'price_usd' => "DECIMAL(10,2) NULL DEFAULT NULL",
         'stock' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
         'stock_meters' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
         'min_order_meters' => "DECIMAL(10,2) NOT NULL DEFAULT 1.00",
         'qty_step' => "DECIMAL(10,4) NOT NULL DEFAULT 0.0000",
-        'is_featured' => "TINYINT(1) NOT NULL DEFAULT 0",
         'is_available' => "TINYINT(1) NOT NULL DEFAULT 1",
         'unit_type' => "ENUM('meter','piece','set') NOT NULL DEFAULT 'meter'",
         'meter_options' => "VARCHAR(100) NULL DEFAULT NULL",
-        'print_style' => "VARCHAR(100) NULL DEFAULT NULL",
-        'material' => "VARCHAR(255) NULL DEFAULT NULL",
-        'gsm' => "VARCHAR(50) NULL DEFAULT NULL",
-        'width' => "VARCHAR(50) NULL DEFAULT NULL",
-        'moq' => "VARCHAR(100) NULL DEFAULT NULL",
-        'lead_time' => "VARCHAR(100) NULL DEFAULT NULL",
-        'dispatch_time' => "VARCHAR(100) NULL DEFAULT NULL",
         'sku' => "VARCHAR(100) NULL DEFAULT NULL",
         'size' => "VARCHAR(100) NULL DEFAULT NULL",
         'color' => "VARCHAR(100) NULL DEFAULT NULL",
         'category' => "VARCHAR(100) NULL DEFAULT NULL",
+        'product_type' => "ENUM('simple','variable') NOT NULL DEFAULT 'simple'",
+        'slug' => "VARCHAR(191) NULL DEFAULT NULL",
         'description' => "TEXT NULL",
-        'wash_care' => "TEXT NULL",
-        'image' => "VARCHAR(255) NULL DEFAULT NULL",
-        'image2' => "VARCHAR(255) NULL DEFAULT NULL",
-        'image3' => "VARCHAR(255) NULL DEFAULT NULL",
-        'image4' => "VARCHAR(255) NULL DEFAULT NULL",
-        'video' => "VARCHAR(255) NULL DEFAULT NULL",
-        'status' => "ENUM('active','inactive') NOT NULL DEFAULT 'active'",
+        'catalog_data' => "LONGTEXT NULL DEFAULT NULL",
+        'hsn_code' => "VARCHAR(8) NULL DEFAULT NULL",
+        'gst_rate' => "DECIMAL(5,2) NULL DEFAULT NULL",
+        'shipping_weight_kg' => "DECIMAL(10,3) NULL DEFAULT NULL",
+        'parcel_length_cm' => "DECIMAL(10,2) NULL DEFAULT NULL",
+        'parcel_width_cm' => "DECIMAL(10,2) NULL DEFAULT NULL",
+        'parcel_height_cm' => "DECIMAL(10,2) NULL DEFAULT NULL",
+        'status' => "ENUM('draft','active','inactive') NOT NULL DEFAULT 'draft'",
         'created_at' => "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP",
+        'published_at' => "DATETIME NULL DEFAULT NULL",
+        'published_by' => "INT NULL DEFAULT NULL",
+        'updated_at' => "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
     ];
 
     $ensureColumns($conn, 'fabrics', $fabricColumnDefinitions);
+
+    if ($columnExists($conn, 'fabrics', 'status')) {
+        $conn->query("ALTER TABLE fabrics MODIFY COLUMN status ENUM('draft','active','inactive') NOT NULL DEFAULT 'draft'");
+    }
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS fabric_media (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            fabric_id INT NOT NULL,
+            media_type ENUM('image','video') NOT NULL DEFAULT 'image',
+            filename VARCHAR(255) NOT NULL,
+            alt_text VARCHAR(255) NOT NULL DEFAULT '',
+            is_primary TINYINT(1) NOT NULL DEFAULT 0,
+            sort_order SMALLINT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_fabric_media_product_sort (fabric_id, media_type, sort_order),
+            CONSTRAINT fk_fabric_media_fabric FOREIGN KEY (fabric_id) REFERENCES fabrics(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
 
     if ($columnExists($conn, 'fabrics', 'stock_meters')) {
         $conn->query("ALTER TABLE fabrics MODIFY COLUMN stock_meters DECIMAL(10,2) NOT NULL DEFAULT 0.00");
@@ -159,12 +175,6 @@ function ensure_tables(mysqli $conn): void
             UNIQUE KEY uq_fabric_color_size (fabric_id, color, size)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
-    // Seed one default active variant per existing product for backward compatibility.
-    $conn->query(
-        "INSERT IGNORE INTO fabric_variants (fabric_id, color, size, stock, stock_meters, is_active)
-         SELECT id, COALESCE(NULLIF(TRIM(color), ''), ''), '', 0, 0, 1
-         FROM fabrics"
-    );
     if (!$columnExists($conn, 'fabric_variants', 'image')) {
         $conn->query("ALTER TABLE fabric_variants ADD COLUMN image VARCHAR(255) NULL DEFAULT NULL AFTER sku");
     }
@@ -202,6 +212,10 @@ function ensure_tables(mysqli $conn): void
         if (!$skuIndexExists) {
             $conn->query("CREATE UNIQUE INDEX uq_fabrics_sku ON fabrics (sku)");
         }
+    }
+    if ($columnExists($conn, 'fabrics', 'product_code')) {
+        $productCodeIndexCheck=$conn->query("SELECT COUNT(*) AS total FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='fabrics' AND INDEX_NAME='uq_fabrics_product_code'");
+        if((int)(($productCodeIndexCheck->fetch_assoc()['total']??0))===0)$conn->query("CREATE UNIQUE INDEX uq_fabrics_product_code ON fabrics (product_code)");
     }
 
     // Product categories
@@ -612,6 +626,8 @@ function ensure_tables(mysqli $conn): void
         'courier_name' => "VARCHAR(255) NULL DEFAULT NULL",
         'cod_fee' => "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
         'base_shipping' => "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+        'account_activation_requested' => "TINYINT(1) NOT NULL DEFAULT 0",
+        'account_activation_sent_at' => "DATETIME NULL DEFAULT NULL",
     ]);
     if ($columnExists($conn, 'orders', 'coupon_id')) {
         $indexCheck = $conn->query("SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders' AND INDEX_NAME = 'idx_orders_coupon_id'");

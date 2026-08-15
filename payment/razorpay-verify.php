@@ -101,6 +101,7 @@ try {
 
     if (($order['payment_status'] ?? '') === 'paid') {
         CartService::checkout_session_clear_after_order($conn, $customerId);
+        EmailService::send_requested_account_activation_email($conn, $orderId);
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
 
@@ -172,6 +173,7 @@ try {
     if (($lockedOrder['payment_status'] ?? '') === 'paid') {
         $conn->commit();
         CartService::checkout_session_clear_after_order($conn, $customerId);
+        EmailService::send_requested_account_activation_email($conn, $orderId);
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
     if (!in_array((string) ($lockedOrder['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
@@ -241,9 +243,9 @@ try {
         $conn,
         $orderId,
         'payment_captured',
-        'customer',
+        $customerId > 0 ? 'customer' : 'guest',
         $customerId,
-        'customer',
+        $customerId > 0 ? 'customer' : 'guest',
         'Razorpay payment id: ' . $paymentId
     );
 
@@ -268,6 +270,7 @@ try {
         'payment_status' => 'paid',
     ]);
 
+    EmailService::send_requested_account_activation_email($conn, $orderId);
     EmailService::send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {

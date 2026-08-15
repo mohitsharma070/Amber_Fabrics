@@ -113,8 +113,8 @@ if ($maxPrice > 0 && $maxPrice < $minPrice) {
 $effectivePriceExpr = "LEAST(
     CASE
         WHEN COALESCE(v.price_override, 0) > 0 THEN v.price_override
-        WHEN COALESCE(f.sale_price, 0) > 0 AND f.sale_price < COALESCE(NULLIF(f.price, 0), f.price_inr, 99999999) THEN f.sale_price
-        ELSE COALESCE(NULLIF(f.price, 0), f.price_inr, 99999999)
+        WHEN COALESCE(f.sale_price, 0) > 0 AND f.sale_price < COALESCE(NULLIF(f.price, 0), 99999999) THEN f.sale_price
+        ELSE COALESCE(NULLIF(f.price, 0), 99999999)
     END,
     99999999
 )";
@@ -131,21 +131,10 @@ $params = $sellableCategorySlugs;
 $types .= str_repeat('s', count($sellableCategorySlugs));
 
 if ($search !== '') {
-    $fulltextQuery = catalog_build_boolean_search($search);
-    if ($fulltextQuery !== '' && catalog_fulltext_available($conn)) {
-        $where[] = "(MATCH(f.name, f.sku, f.material, f.category, f.dispatch_time, f.color, f.size) AGAINST (? IN BOOLEAN MODE)
-                 OR MATCH(v.color, v.size, v.sku, v.pack_label) AGAINST (? IN BOOLEAN MODE))";
-        $types .= 'ss';
-        $params[] = $fulltextQuery;
-        $params[] = $fulltextQuery;
-    } else {
-        $where[] = "(f.name LIKE ? OR f.sku LIKE ? OR f.material LIKE ?)";
-        $like = "%{$search}%";
-        $types .= 'sss';
-        $params[] = $like;
-        $params[] = $like;
-        $params[] = $like;
-    }
+    $where[] = "(f.name LIKE ? OR f.sku LIKE ? OR f.catalog_data LIKE ? OR v.color LIKE ? OR v.size LIKE ? OR v.sku LIKE ?)";
+    $like = "%{$search}%";
+    $types .= 'ssssss';
+    for ($i = 0; $i < 6; $i++) $params[] = $like;
 }
 if ($category !== '') {
     $where[] = "f.category = ?";
@@ -166,7 +155,7 @@ if ($inStock === '1') {
     $where[] = "(f.is_available = 1 AND ((f.unit_type IN ('piece','set') AND (COALESCE(v.stock, f.stock) > 0)) OR (f.unit_type = 'meter' AND (COALESCE(v.stock_meters, f.stock_meters) > 0))))";
 }
 if ($materialFilter !== '') {
-    $where[] = "f.material LIKE ?";
+    $where[] = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_material')), JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_fabric')), '') LIKE ?";
     $types .= 's';
     $params[] = '%' . $materialFilter . '%';
 }
@@ -181,7 +170,7 @@ if ($sizeFilter !== '') {
     $params[] = '%' . $sizeFilter . '%';
 }
 if ($dispatchFilter !== '') {
-    $where[] = "f.dispatch_time LIKE ?";
+    $where[] = "CONCAT(COALESCE(f.dispatch_min_days,''), '-', COALESCE(f.dispatch_max_days,'')) LIKE ?";
     $types .= 's';
     $params[] = '%' . $dispatchFilter . '%';
 }

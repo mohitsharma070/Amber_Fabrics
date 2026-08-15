@@ -935,11 +935,13 @@ function shipping_courier_order_payload(mysqli $conn, int $orderId): ?array
     }
 
     $itemStmt = $conn->prepare(
-        "SELECT product_name, fabric_name_snapshot, fabric_sku_snapshot, size, color,
-                unit_type, quantity, quantity_meters, price, price_per_meter, total, line_total
-         FROM order_items
-         WHERE order_id = ?
-         ORDER BY id ASC"
+        "SELECT oi.product_name, oi.fabric_name_snapshot, oi.fabric_sku_snapshot, oi.size, oi.color,
+                oi.unit_type, oi.quantity, oi.quantity_meters, oi.price, oi.price_per_meter, oi.total, oi.line_total,
+                f.shipping_weight_kg, f.parcel_length_cm, f.parcel_width_cm, f.parcel_height_cm
+         FROM order_items oi
+         LEFT JOIN fabrics f ON f.id = COALESCE(oi.product_id, oi.fabric_id)
+         WHERE oi.order_id = ?
+         ORDER BY oi.id ASC"
     );
     $itemStmt->bind_param('i', $orderId);
     $itemStmt->execute();
@@ -1163,7 +1165,13 @@ function shipping_courier_bigship_parcel(array $items, ?array $settings = null):
             ? (float) ($item['quantity_meters'] ?? $item['quantity'] ?? 0)
             : (float) ($item['quantity'] ?? $item['bundle_quantity'] ?? 0);
         $quantity = max(0.0, $quantity);
-        if ($unitType === 'meter') {
+        $productWeight = max(0.0, (float) ($item['shipping_weight_kg'] ?? 0));
+        $length = max($length, (float) ($item['parcel_length_cm'] ?? 0));
+        $width = max($width, (float) ($item['parcel_width_cm'] ?? 0));
+        $baseHeight = max($baseHeight, (float) ($item['parcel_height_cm'] ?? 0));
+        if ($productWeight > 0) {
+            $weight += $quantity * $productWeight;
+        } elseif ($unitType === 'meter') {
             $weight += $quantity * max(0.01, (float) ($settings['bigship_weight_per_meter_kg'] ?? 0.25));
         } elseif (in_array($unitType, ['set', 'bundle'], true)) {
             $weight += $quantity * max(0.01, (float) ($settings['bigship_weight_per_set_kg'] ?? 0.75));

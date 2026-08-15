@@ -6,21 +6,6 @@ function adjust_fabric_stock(mysqli $conn, int $fabricId, string $unitType, floa
     InventoryService::adjust_fabric_stock($conn, $fabricId, $unitType, $qty, $direction);
 }
 
-function adjust_variant_stock(mysqli $conn, int $variantId, string $unitType, float $qty, string $direction = 'decrease') : void
-{
-    InventoryService::adjust_variant_stock($conn, $variantId, $unitType, $qty, $direction);
-}
-
-function get_fabric_variants(mysqli $conn, int $fabricId) : array
-{
-    return InventoryService::get_fabric_variants($conn, $fabricId);
-}
-
-function get_variant_by_id(mysqli $conn, int $variantId) : ?array
-{
-    return InventoryService::get_variant_by_id($conn, $variantId);
-}
-
 function shipping_quote_store(float $subtotal,
     string $country,
     string $pincode,
@@ -38,26 +23,6 @@ function shipping_quote_store(float $subtotal,
 function shipping_quote_get(string $token) : ?array
 {
     return InventoryService::shipping_quote_get($token);
-}
-
-function get_first_active_variant(mysqli $conn, int $fabricId) : ?array
-{
-    return InventoryService::get_first_active_variant($conn, $fabricId);
-}
-
-function get_first_active_in_stock_variant(mysqli $conn, int $fabricId, string $unitType) : ?array
-{
-    return InventoryService::get_first_active_in_stock_variant($conn, $fabricId, $unitType);
-}
-
-function find_variant(mysqli $conn, int $fabricId, string $color, string $size) : ?array
-{
-    return InventoryService::find_variant($conn, $fabricId, $color, $size);
-}
-
-function get_variants_by_ids(mysqli $conn, array $variantIds) : array
-{
-    return InventoryService::get_variants_by_ids($conn, $variantIds);
 }
 
 function orders_supports_inventory_tracking(mysqli $conn) : bool

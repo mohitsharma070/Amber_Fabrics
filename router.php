@@ -75,6 +75,9 @@ if ($route === '') {
     $relativeFile = 'sitemap.php';
 } elseif (in_array($route, $publicRoutes, true)) {
     $relativeFile = $route . '.php';
+} elseif (preg_match('#^fabric/([^/]+)$#', $route, $fabricSlugMatch)) {
+    $_GET['slug'] = rawurldecode($fabricSlugMatch[1]);
+    $relativeFile = 'fabric.php';
 } elseif (preg_match('#^admin/([A-Za-z0-9-]+)$#', $route, $adminMatch)) {
     $adminFile = 'admin/' . $adminMatch[1] . '.php';
     if (is_file(__DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $adminFile))) {
