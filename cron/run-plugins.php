@@ -193,6 +193,12 @@ $results[] = cron_run_job('stale_razorpay_release', $isCriticalJob, static funct
     return ['released_count' => (int) $released, 'ttl_minutes' => 30, 'limit' => 200];
 });
 
+$results[] = cron_run_job('public_form_rate_limit_cleanup', false, static function () use ($conn): array {
+    $stmt = $conn->prepare("DELETE FROM public_form_attempts WHERE updated_at < (NOW() - INTERVAL 7 DAY) LIMIT 5000");
+    $stmt->execute();
+    return ['deleted_count' => (int) $stmt->affected_rows, 'limit' => 5000];
+});
+
 $results[] = cron_run_job('plugin_tick', false, static function () use ($conn): array {
     $report = function_exists('do_action_report')
         ? do_action_report('cron.tick', [

@@ -185,7 +185,8 @@ render_login:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo e(SiteContext::title('Admin Login')); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260506c">
+    <link rel="stylesheet" href="../css/style.css?v=20260815b">
+    <link rel="stylesheet" href="../css/admin.css?v=20260815b">
 </head>
 <body class="bg-light">
 <div class="container py-5">

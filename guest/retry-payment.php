@@ -32,6 +32,10 @@ try {
     }
 
     InventoryService::reserve_order_inventory($conn, $orderId);
+    $resolvedCouponId = PaymentService::resolve_coupon_id_for_order($conn, $orderId, (string) ($order['order_notes'] ?? ''));
+    if ($resolvedCouponId > 0) {
+        reserve_coupon_for_order($conn, $resolvedCouponId, 0, $orderId);
+    }
     $stmt = $conn->prepare(
         "UPDATE orders SET payment_status = 'pending', updated_at = NOW()
          WHERE id = ? AND order_status IN ('pending', 'confirmed')"
@@ -58,9 +62,5 @@ try {
 
 $_SESSION['pending_order_id'] = $orderId;
 $_SESSION['pending_order_number'] = (string) $order['order_number'];
-$_SESSION['pending_coupon_id'] = PaymentService::resolve_coupon_id_for_order(
-    $conn,
-    $orderId,
-    (string) ($order['order_notes'] ?? '')
-);
+$_SESSION['pending_coupon_id'] = $resolvedCouponId;
 redirect('/payment/razorpay-create.php');

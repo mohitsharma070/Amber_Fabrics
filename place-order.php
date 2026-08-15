@@ -852,24 +852,11 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
     ];
     do_action('order.after_create', $orderHookContext);
 
-    // For COD: increment coupon usage only after the order is committed (payment confirmed
-    // on delivery is outside our system's control, but the order is real and the discount
-    // is locked in — this is the earliest safe point for COD).
-    // For Razorpay: coupon increment happens in razorpay-verify.php after payment confirmation.
-    if ($couponId > 0 && ($paymentMethod === 'cod' || $isZeroAmountOrder)) {
-        $couponUsedStmt = $conn->prepare(
-            "UPDATE coupons
-             SET used_count = used_count + 1
-             WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
-        );
-        $couponUsedStmt->bind_param('i', $couponId);
-        $couponUsedStmt->execute();
-        if ($conn->affected_rows <= 0) {
-            throw new RuntimeException('Coupon usage limit reached.');
-        }
-        if ($customerId > 0 && !mark_coupon_used_once($conn, $couponId, $customerId, $orderId)) {
-            throw new RuntimeException('Unable to mark coupon usage for this order.');
-        }
+    // Coupon capacity is part of the order reservation and is committed atomically
+    // with inventory for both COD and Razorpay orders.
+    if ($couponId > 0) {
+        reserve_coupon_for_order($conn, $couponId, $customerId, $orderId);
+        log_order_activity($conn, $orderId, 'coupon_reserved', 'system', 0, 'system', 'Coupon capacity reserved with order creation.');
     }
 
     $conn->commit();

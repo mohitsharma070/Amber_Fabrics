@@ -846,17 +846,6 @@ function shipping_courier_http_json(string $method, string $path, array $payload
     return shipping_courier_bigship_client()->request($method, $path, $payload, $headers);
 }
 
-function shipping_courier_http_post_multipart(string $path, array $payload): array
-{
-    if (!shipping_courier_enabled()) {
-        return shipping_courier_result(false, 'Shipping courier plugin is disabled.', ['status' => 0, 'body' => null]);
-    }
-    if (!shipping_courier_provider_configured()) {
-        return shipping_courier_result(false, 'Shipping courier provider is not configured.', ['status' => 0, 'body' => null]);
-    }
-    return shipping_courier_bigship_client()->request('POST', $path, $payload, [], true, true);
-}
-
 function shipping_courier_order_ready_for_shipment(array $order): bool
 {
     $orderStatus = strtolower((string) ($order['order_status'] ?? ''));

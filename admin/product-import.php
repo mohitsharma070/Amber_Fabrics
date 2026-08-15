@@ -59,7 +59,7 @@ include 'partials/header.php';
           <div class="col-md-6"><label class="form-label" for="default_unit">Fallback selling unit</label><select class="form-select" id="default_unit" name="default_unit"><option value="piece" <?php echo $defaultUnit==='piece'?'selected':''; ?>>Piece</option><option value="meter" <?php echo $defaultUnit==='meter'?'selected':''; ?>>Meter</option><option value="set" <?php echo $defaultUnit==='set'?'selected':''; ?>>Set</option></select><div class="form-text">Used only when a row has no Selling Unit. Older CSV files can still infer Meter or Set from Size Type.</div></div>
         </div>
       </div>
-      <div class="card-footer d-flex flex-wrap justify-content-end gap-2"><button class="btn btn-outline-primary" name="action" value="validate">Validate Only</button><button class="btn btn-primary" name="action" value="import" onclick="return confirm('Import all valid rows now?');">Validate &amp; Import</button></div>
+      <div class="card-footer d-flex flex-wrap justify-content-end gap-2"><button class="btn btn-outline-primary" name="action" value="validate">Validate Only</button><button class="btn btn-primary" name="action" value="import" data-confirm="Import all valid rows now?">Validate &amp; Import</button></div>
     </form>
   </div>
   <div class="col-xl-4">

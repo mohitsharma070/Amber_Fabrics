@@ -16,6 +16,26 @@ function current_customer_id(): ?int
     return isset($_SESSION['customer_id']) ? (int) $_SESSION['customer_id'] : null;
 }
 
+function customer_clear_auth_session(bool $markInvalidated = true): void
+{
+    foreach ([
+        'customer_id',
+        'customer_name',
+        'customer_auth_version',
+        'customer_session_started_at',
+        'customer_last_seen_at',
+        'customer_session_fingerprint',
+    ] as $key) {
+        unset($_SESSION[$key]);
+    }
+    if ($markInvalidated) {
+        $_SESSION['customer_auth_invalidated'] = true;
+    }
+    if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+        session_regenerate_id(true);
+    }
+}
+
 function customer_session_fingerprint(?string $userAgent = null): string
 {
     $ua = $userAgent ?? (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
@@ -24,8 +44,12 @@ function customer_session_fingerprint(?string $userAgent = null): string
 
 function customer_session_valid(mysqli $conn, int $customerId): bool
 {
+    static $validationCache = [];
     if ($customerId <= 0) {
         return false;
+    }
+    if (array_key_exists($customerId, $validationCache)) {
+        return $validationCache[$customerId];
     }
 
     $now = time();
@@ -57,20 +81,25 @@ function customer_session_valid(mysqli $conn, int $customerId): bool
     }
 
     try {
-        $stmt = $conn->prepare('SELECT is_active FROM customers WHERE id = ? LIMIT 1');
+        $stmt = $conn->prepare('SELECT is_active, auth_version FROM customers WHERE id = ? LIMIT 1');
         $stmt->bind_param('i', $customerId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         if (!$row || (isset($row['is_active']) && (int) $row['is_active'] !== 1)) {
-            return false;
+            return $validationCache[$customerId] = false;
+        }
+        $databaseAuthVersion = max(1, (int) ($row['auth_version'] ?? 1));
+        $sessionAuthVersion = (int) ($_SESSION['customer_auth_version'] ?? 0);
+        if ($sessionAuthVersion <= 0 || $sessionAuthVersion !== $databaseAuthVersion) {
+            return $validationCache[$customerId] = false;
         }
     } catch (Throwable $e) {
         error_log('[customer-auth] Session validation unavailable: ' . $e->getMessage());
-        return false;
+        return $validationCache[$customerId] = false;
     }
 
     $_SESSION['customer_last_seen_at'] = $now;
-    return true;
+    return $validationCache[$customerId] = true;
 }
 
 function require_customer(): void
@@ -78,8 +107,9 @@ function require_customer(): void
     $customerId = (int) ($_SESSION['customer_id'] ?? 0);
     $conn = (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
     if ($customerId <= 0 || !$conn || !customer_session_valid($conn, $customerId)) {
-        if ($customerId > 0) {
-            app_destroy_session(true);
+        if ($customerId > 0 || !empty($_SESSION['customer_auth_invalidated'])) {
+            customer_clear_auth_session(false);
+            unset($_SESSION['customer_auth_invalidated']);
             flash('error', 'Your session expired. Please log in again.');
         } else {
             flash('error', 'Please log in to continue.');
@@ -103,23 +133,41 @@ function customer_check_rate_limit(mysqli $conn, string $email, string $ip): boo
 {
     $key = customer_rate_limit_key($email, $ip);
     try {
+        $conn->begin_transaction();
+        $seed = $conn->prepare(
+            "INSERT IGNORE INTO customer_login_attempts (attempt_key, attempts, blocked_until) VALUES (?, 0, NULL)"
+        );
+        $seed->bind_param('s', $key);
+        $seed->execute();
         $stmt = $conn->prepare(
-            "SELECT attempts, blocked_until FROM customer_login_attempts WHERE attempt_key = ?"
+            "SELECT attempts, blocked_until FROM customer_login_attempts WHERE attempt_key = ? FOR UPDATE"
         );
         $stmt->bind_param('s', $key);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
     } catch (Throwable $e) {
+        try { $conn->rollback(); } catch (Throwable $ignored) {}
         error_log('[customer-auth] rate limit check unavailable: ' . $e->getMessage());
         return true;
     }
 
-    if (!$row) {
-        return true; // no record, allow
+    $now = new DateTimeImmutable('now');
+    $blockedUntil = !empty($row['blocked_until']) ? new DateTimeImmutable((string) $row['blocked_until']) : null;
+    if ($blockedUntil && $now < $blockedUntil) {
+        $conn->commit();
+        return false;
     }
-    if ($row['blocked_until'] && new DateTime() < new DateTime($row['blocked_until'])) {
-        return false; // still blocked
-    }
+    $attempts = $blockedUntil ? 0 : (int) ($row['attempts'] ?? 0);
+    $attempts++;
+    $nextBlockedUntil = $attempts >= CUSTOMER_MAX_ATTEMPTS
+        ? $now->modify('+' . CUSTOMER_LOCK_MINUTES . ' minutes')->format('Y-m-d H:i:s')
+        : null;
+    $update = $conn->prepare(
+        "UPDATE customer_login_attempts SET attempts = ?, blocked_until = ? WHERE attempt_key = ?"
+    );
+    $update->bind_param('iss', $attempts, $nextBlockedUntil, $key);
+    $update->execute();
+    $conn->commit();
     return true;
 }
 
@@ -134,23 +182,8 @@ function customer_record_attempt(mysqli $conn, string $email, string $ip, bool $
             return;
         }
 
-        $blocked = null;
-        $stmt = $conn->prepare("SELECT attempts FROM customer_login_attempts WHERE attempt_key = ?");
-        $stmt->bind_param('s', $key);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $attempts = $row ? (int) $row['attempts'] + 1 : 1;
-        if ($attempts >= CUSTOMER_MAX_ATTEMPTS) {
-            $blocked = (new DateTime())->modify('+' . CUSTOMER_LOCK_MINUTES . ' minutes')->format('Y-m-d H:i:s');
-        }
-
-        $upsert = $conn->prepare(
-            "INSERT INTO customer_login_attempts (attempt_key, attempts, blocked_until)
-             VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE attempts = ?, blocked_until = ?"
-        );
-        $upsert->bind_param('sisis', $key, $attempts, $blocked, $attempts, $blocked);
-        $upsert->execute();
+        // Failed attempts are consumed atomically by customer_check_rate_limit()
+        // before password verification, so concurrent requests cannot bypass it.
     } catch (Throwable $e) {
         error_log('[customer-auth] rate limit write unavailable: ' . $e->getMessage());
     }

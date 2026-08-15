@@ -168,25 +168,16 @@ final class PaymentService
         if ($resolvedCouponId <= 0) {
             return false;
         }
-        if (has_customer_used_coupon($conn, $resolvedCouponId, $customerId)) {
-            throw new RuntimeException('Coupon already used by this customer.');
-        }
-
-        $couponStmt = $conn->prepare(
-            "UPDATE coupons SET used_count = used_count + 1
-             WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
+        $stmt = $conn->prepare(
+            "SELECT 1 FROM coupon_usages WHERE order_id = ? AND coupon_id = ? LIMIT 1"
         );
-        $couponStmt->bind_param('i', $resolvedCouponId);
-        $couponStmt->execute();
-        if ($conn->affected_rows <= 0) {
-            throw new RuntimeException('Coupon usage limit reached.');
+        $stmt->bind_param('ii', $orderId, $resolvedCouponId);
+        $stmt->execute();
+        $reserved = (bool) $stmt->get_result()->fetch_assoc();
+        if (!$reserved) {
+            error_log('[payment] Captured order has no coupon reservation: order_id=' . $orderId . ' coupon_id=' . $resolvedCouponId);
         }
-
-        if (!mark_coupon_used_once($conn, $resolvedCouponId, $customerId, $orderId)) {
-            throw new RuntimeException('Unable to mark coupon usage for this order.');
-        }
-        log_order_activity($conn, $orderId, 'coupon_consumed', 'system', 0, 'system', 'Coupon usage count incremented after payment.');
-        return true;
+        return $reserved;
     }
 
     public static function razorpay_validate_remote_capture(string $paymentId, string $rzpOrderId, float $expectedAmountInr): array
@@ -426,34 +417,58 @@ final class PaymentService
             return false;
         }
         $note = 'System cancelled stale pending Razorpay order after ' . $ttlMinutes . ' minutes.';
-        $upd = $conn->prepare(
-            "UPDATE orders
-             SET order_status = 'cancelled',
-                 status = 'cancelled',
-                 notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
-                 updated_at = NOW()
-             WHERE id = ?
-               AND payment_method = 'razorpay'
-               AND payment_status IN ('pending', 'failed')
-               AND order_status IN ('pending', 'confirmed')"
-        );
-        $upd->bind_param('ssi', $note, $note, $orderId);
-        $upd->execute();
-        if ((int) $upd->affected_rows <= 0) {
-            return false;
+        $conn->begin_transaction();
+        try {
+            $lock = $conn->prepare(
+                "SELECT id
+                 FROM orders
+                 WHERE id = ?
+                   AND payment_method = 'razorpay'
+                   AND payment_status IN ('pending', 'failed')
+                   AND order_status IN ('pending', 'confirmed')
+                   AND created_at < (NOW() - INTERVAL ? MINUTE)
+                 FOR UPDATE"
+            );
+            $lock->bind_param('ii', $orderId, $ttlMinutes);
+            $lock->execute();
+            if (!$lock->get_result()->fetch_assoc()) {
+                $conn->rollback();
+                return false;
+            }
+
+            $upd = $conn->prepare(
+                "UPDATE orders
+                 SET payment_status = 'failed',
+                     order_status = 'cancelled',
+                     status = 'cancelled',
+                     notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+                     updated_at = NOW()
+                 WHERE id = ?"
+            );
+            $upd->bind_param('ssi', $note, $note, $orderId);
+            $upd->execute();
+
+            $updPay = $conn->prepare(
+                "UPDATE payments
+                 SET payment_status = 'failed'
+                 WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status = 'pending'"
+            );
+            $updPay->bind_param('i', $orderId);
+            $updPay->execute();
+
+            InventoryService::restore_order_inventory($conn, $orderId);
+            release_coupon_usage_for_order($conn, $orderId);
+            log_order_activity($conn, $orderId, 'payment_expired', 'system', 0, 'system', $note);
+            $conn->commit();
+            return true;
+        } catch (Throwable $e) {
+            try {
+                $conn->rollback();
+            } catch (Throwable $rollbackException) {
+                // ignore rollback failure
+            }
+            throw $e;
         }
-
-        $updPay = $conn->prepare(
-            "UPDATE payments
-             SET payment_status = 'failed'
-             WHERE order_id = ? AND payment_method = 'razorpay' AND payment_status = 'pending'"
-        );
-        $updPay->bind_param('i', $orderId);
-        $updPay->execute();
-
-        InventoryService::restore_order_inventory($conn, $orderId);
-        log_order_activity($conn, $orderId, 'payment_expired', 'system', 0, 'system', $note);
-        return true;
     }
 
     public static function release_stale_pending_razorpay_orders_for_customer(mysqli $conn, int $customerId, int $ttlMinutes = 30): void

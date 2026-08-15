@@ -265,25 +265,19 @@ function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $
     $conn = (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) ? $GLOBALS['conn'] : null;
     if ($conn instanceof mysqli) {
         try {
-            $conn->query(
-                "CREATE TABLE IF NOT EXISTS public_form_attempts (
-                    attempt_key CHAR(64) PRIMARY KEY,
-                    scope VARCHAR(80) NOT NULL,
-                    ip_address VARCHAR(45) NOT NULL,
-                    user_agent_hash CHAR(16) NOT NULL,
-                    attempts INT NOT NULL DEFAULT 0,
-                    window_started_at DATETIME NOT NULL,
-                    blocked_until DATETIME DEFAULT NULL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    INDEX idx_public_form_attempts_scope_updated (scope, updated_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            $conn->begin_transaction();
+            $seed = $conn->prepare(
+                "INSERT IGNORE INTO public_form_attempts
+                    (attempt_key, scope, ip_address, user_agent_hash, attempts, window_started_at, blocked_until)
+                 VALUES (?, ?, ?, ?, 0, NOW(), NULL)"
             );
-
+            $seed->bind_param('ssss', $key, $scope, $ip, $uaKey);
+            $seed->execute();
             $stmt = $conn->prepare(
                 "SELECT attempts, UNIX_TIMESTAMP(window_started_at) AS window_ts, UNIX_TIMESTAMP(blocked_until) AS blocked_ts
                  FROM public_form_attempts
                  WHERE attempt_key = ?
-                 LIMIT 1"
+                 LIMIT 1 FOR UPDATE"
             );
             $stmt->bind_param('s', $key);
             $stmt->execute();
@@ -297,6 +291,7 @@ function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $
             $blockedTs = (int) ($row['blocked_ts'] ?? 0);
 
             if ($blockedTs > $now) {
+                $conn->commit();
                 return false;
             }
 
@@ -308,38 +303,31 @@ function public_form_rate_limit_allow(string $scope, int $maxAttempts = 5, int $
             if ($attempts >= $maxAttempts) {
                 $blockedUntil = date('Y-m-d H:i:s', $now + $windowSeconds);
                 $upd = $conn->prepare(
-                    "INSERT INTO public_form_attempts (attempt_key, scope, ip_address, user_agent_hash, attempts, window_started_at, blocked_until)
-                     VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?)
-                     ON DUPLICATE KEY UPDATE
-                        attempts = VALUES(attempts),
-                        window_started_at = VALUES(window_started_at),
-                        blocked_until = VALUES(blocked_until),
-                        updated_at = CURRENT_TIMESTAMP"
+                    "UPDATE public_form_attempts
+                     SET attempts = ?, window_started_at = FROM_UNIXTIME(?), blocked_until = ?
+                     WHERE attempt_key = ?"
                 );
-                $upd->bind_param('ssssiis', $key, $scope, $ip, $uaKey, $attempts, $windowTs, $blockedUntil);
+                $upd->bind_param('iiss', $attempts, $windowTs, $blockedUntil, $key);
                 $upd->execute();
                 $upd->close();
+                $conn->commit();
                 return false;
             }
 
             $attempts++;
             $ins = $conn->prepare(
-                "INSERT INTO public_form_attempts (attempt_key, scope, ip_address, user_agent_hash, attempts, window_started_at, blocked_until)
-                 VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?), NULL)
-                 ON DUPLICATE KEY UPDATE
-                    attempts = VALUES(attempts),
-                    window_started_at = VALUES(window_started_at),
-                    blocked_until = NULL,
-                    updated_at = CURRENT_TIMESTAMP"
+                "UPDATE public_form_attempts
+                 SET scope = ?, ip_address = ?, user_agent_hash = ?, attempts = ?,
+                     window_started_at = FROM_UNIXTIME(?), blocked_until = NULL
+                 WHERE attempt_key = ?"
             );
-            $ins->bind_param('ssssii', $key, $scope, $ip, $uaKey, $attempts, $windowTs);
+            $ins->bind_param('sssiis', $scope, $ip, $uaKey, $attempts, $windowTs, $key);
             $ins->execute();
             $ins->close();
-
-            // Lightweight cleanup of stale rows.
-            $conn->query("DELETE FROM public_form_attempts WHERE updated_at < (NOW() - INTERVAL 7 DAY)");
+            $conn->commit();
             return true;
         } catch (Throwable $e) {
+            try { $conn->rollback(); } catch (Throwable $ignored) {}
             error_log('[app] public form rate-limit fallback to session: ' . $e->getMessage());
         }
     }

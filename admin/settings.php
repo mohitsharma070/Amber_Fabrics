@@ -458,7 +458,7 @@ elseif ($activeTab === 'announcements'): ?>
     <div class="mb-3">
         <button type="submit" name="reset_announcement_dismissals" value="1"
                 class="btn btn-outline-warning btn-sm"
-                onclick="return confirm('Reset announcement dismissals for all visitors?');">
+                data-confirm="Reset announcement dismissals for all visitors?">
             Reset Announcement Dismissals
         </button>
     </div>

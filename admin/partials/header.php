@@ -121,7 +121,8 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
     <link rel="apple-touch-icon" href="../images/favicon-light.svg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260516d">
+    <link rel="stylesheet" href="../css/style.css?v=20260815b">
+    <link rel="stylesheet" href="../css/admin.css?v=20260815b">
 </head>
 <body class="admin-shell">
 <nav class="navbar navbar-expand-lg navbar-dark">

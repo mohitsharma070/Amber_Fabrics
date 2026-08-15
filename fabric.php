@@ -299,7 +299,9 @@ if ($metaDescriptionRaw !== '') {
 } else {
     $metaDescription = 'Product details from ' . SiteContext::name() . '.';
 }
-$metaImage = !empty($galleryImages[0]) ? 'images/fabrics/' . (string) $galleryImages[0] : '';
+$metaImage = !empty($galleryImages[0])
+    ? SiteContext::url('/images/fabrics/' . rawurlencode((string) $galleryImages[0]))
+    : SiteContext::url('/images/fabrics/default.jpg');
 $metaUrl = SiteContext::url(ProductAdminService::publicPath($product));
 include 'includes/header.php';
 do_action('product.view', [
@@ -308,27 +310,15 @@ do_action('product.view', [
     'customer_id' => (int) ($_SESSION['customer_id'] ?? 0),
 ]);
 ?>
-<style nonce="<?php echo $cspNonce; ?>">
-@media (max-width: 767.98px) {
-    .product-media-main {
-        height: 300px !important;
-    }
-    .product-media-thumb {
-        width: 64px !important;
-        height: 64px !important;
-    }
-}
-</style>
-
 <section class="page-hero py-4">
     <div class="container">
-        <a href="catalog.php" class="text-white opacity-75 small">&larr; Back to Shop</a>
+        <a href="/catalog" class="text-white opacity-75 small">&larr; Back to Shop</a>
     </div>
 </section>
 
 <section class="section-block">
     <div class="container">
-        <div class="row g-5">
+        <div class="row g-3 g-md-5">
             <div class="col-md-5">
                 <?php if (!empty($galleryImages)): ?>
                     <?php $mainImageAsset = fabric_image_asset_data((string) $galleryImages[0]); ?>
@@ -346,7 +336,7 @@ do_action('product.view', [
                         </picture>
                         <?php if ($videoFile !== ''): ?>
                             <video id="product-main-video" class="w-100 h-100 d-none" style="object-fit:contain;background:#101418;" controls preload="metadata">
-                                <source src="images/fabrics/<?php echo e($videoFile); ?>">
+                                <source src="/images/fabrics/<?php echo e(rawurlencode($videoFile)); ?>">
                             </video>
                         <?php endif; ?>
                     </div>
@@ -357,15 +347,19 @@ do_action('product.view', [
                                     class="btn p-0 border rounded media-thumb product-media-thumb <?php echo $index === 0 ? 'border-primary' : 'border-light'; ?>"
                                     data-type="image"
                                     data-src="<?php echo e($thumbAsset['src']); ?>"
-                                    data-webp-srcset="<?php echo e((string) ($thumbAsset['webp_srcset'] ?? '')); ?>">
-                                <img src="<?php echo e((string) ($thumbAsset['thumb_src'] ?? '')); ?>" alt="" loading="lazy">
+                                    data-webp-srcset="<?php echo e((string) ($thumbAsset['webp_srcset'] ?? '')); ?>"
+                                    aria-label="View <?php echo e($product['name']); ?> image <?php echo $index + 1; ?>"
+                                    aria-current="<?php echo $index === 0 ? 'true' : 'false'; ?>">
+                                <img src="<?php echo e((string) ($thumbAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($product['name']); ?> thumbnail <?php echo $index + 1; ?>" loading="lazy">
                             </button>
                         <?php endforeach; ?>
                         <?php if ($videoFile !== ''): ?>
                             <button type="button"
                                     class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative"
                                     data-type="video"
-                                    data-src="images/fabrics/<?php echo e($videoFile); ?>">
+                                    data-src="/images/fabrics/<?php echo e(rawurlencode($videoFile)); ?>"
+                                    aria-label="Play <?php echo e($product['name']); ?> video"
+                                    aria-current="false">
                                 <div class="product-media-thumb-video">Video</div>
                             </button>
                         <?php endif; ?>
@@ -383,9 +377,11 @@ do_action('product.view', [
                             thumbs.forEach(function (t) {
                                 t.classList.remove('border-primary');
                                 t.classList.add('border-light');
+                                t.setAttribute('aria-current', 'false');
                             });
                             thumb.classList.remove('border-light');
                             thumb.classList.add('border-primary');
+                            thumb.setAttribute('aria-current', 'true');
 
                             var type = thumb.getAttribute('data-type');
                             var src = thumb.getAttribute('data-src') || '';
@@ -424,16 +420,16 @@ do_action('product.view', [
                             setMedia: function (images, videoFile) {
                                 var html = '';
                                 (images || []).forEach(function (img, idx) {
-                                    var src = 'images/fabrics/' + img;
+                                    var src = '/images/fabrics/' + encodeURIComponent(img);
                                     html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb '
                                         + (idx === 0 ? 'border-primary' : 'border-light')
-                                        + '" data-type="image" data-src="' + src + '" data-webp-srcset="">'
-                                        + '<img src="' + src + '" alt="">'
+                                        + '" data-type="image" data-src="' + src + '" data-webp-srcset="" aria-label="View product image ' + (idx + 1) + '" aria-current="' + (idx === 0 ? 'true' : 'false') + '">'
+                                        + '<img src="' + src + '" alt="Product thumbnail ' + (idx + 1) + '">'
                                         + '</button>';
                                 });
                                 if (videoFile) {
-                                    var vsrc = 'images/fabrics/' + videoFile;
-                                    html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative" data-type="video" data-src="' + vsrc + '">'
+                                    var vsrc = '/images/fabrics/' + encodeURIComponent(videoFile);
+                                    html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative" data-type="video" data-src="' + vsrc + '" aria-label="Play product video" aria-current="false">'
                                         + '<div class="product-media-thumb-video">Video</div>'
                                         + '</button>';
                                 }
@@ -489,7 +485,8 @@ do_action('product.view', [
                         <?php foreach ($colorsForPicker as $cidx => $colorName): ?>
                             <button type="button"
                                     class="btn btn-sm color-swatch-btn <?php echo $cidx === 0 ? 'btn-dark' : 'btn-outline-dark'; ?>"
-                                    data-color="<?php echo e($colorName); ?>">
+                                    data-color="<?php echo e($colorName); ?>"
+                                    aria-pressed="<?php echo $cidx === 0 ? 'true' : 'false'; ?>">
                                 <?php echo e($colorName ?: 'Default'); ?>
                             </button>
                         <?php endforeach; ?>
@@ -519,7 +516,8 @@ do_action('product.view', [
                         ?>
                             <button type="button"
                                     class="btn btn-sm size-option-btn <?php echo $isDefault ? 'btn-dark' : 'btn-outline-dark'; ?>"
-                                    data-size="<?php echo e($sz); ?>">
+                                    data-size="<?php echo e($sz); ?>"
+                                    aria-pressed="<?php echo $isDefault ? 'true' : 'false'; ?>">
                                 <?php echo e($szLabel); ?>
                             </button>
                         <?php $sizeIdx++; endforeach; ?>
@@ -554,7 +552,8 @@ do_action('product.view', [
                         <?php foreach ($sizeOptions as $idx => $opt): ?>
                             <button type="button"
                                     class="btn btn-sm size-option-btn <?php echo $idx === 0 ? 'btn-dark' : 'btn-outline-dark'; ?>"
-                                    data-size="<?php echo e($opt); ?>">
+                                    data-size="<?php echo e($opt); ?>"
+                                    aria-pressed="<?php echo $idx === 0 ? 'true' : 'false'; ?>">
                                 <?php echo e($opt); ?>
                             </button>
                         <?php endforeach; ?>
@@ -569,7 +568,8 @@ do_action('product.view', [
                         <?php foreach ($meterOptions as $idx => $mval): ?>
                             <button type="button"
                                     class="btn btn-sm meter-option-btn <?php echo $idx === 0 ? 'btn-primary' : 'btn-outline-primary'; ?>"
-                                    data-meters="<?php echo e($mval); ?>">
+                                    data-meters="<?php echo e($mval); ?>"
+                                    aria-pressed="<?php echo $idx === 0 ? 'true' : 'false'; ?>">
                                 <?php echo e($mval); ?>m
                             </button>
                         <?php endforeach; ?>
@@ -596,7 +596,8 @@ do_action('product.view', [
                         <?php elseif (!empty($sizeOptions)): ?>
                             <input type="hidden" name="selected_size" id="selected_size_add" value="<?php echo e($defaultSize); ?>">
                         <?php endif; ?>
-                        <div class="d-flex gap-2 align-items-center">
+                        <div class="product-purchase-controls">
+                            <div class="product-quantity-controls">
                             <?php if ($unitType === 'meter'): ?>
                                 <button type="button" id="qty_dec" class="btn btn-outline-secondary" aria-label="Decrease quantity">-</button>
                                 <input type="number"
@@ -626,7 +627,8 @@ do_action('product.view', [
                                 </select>
                                 <button type="button" id="qty_inc" class="btn btn-outline-secondary" aria-label="Increase quantity">+</button>
                             <?php endif; ?>
-                            <button type="submit" id="add_to_cart_submit" class="btn btn-primary flex-grow-1" <?php echo $inStock ? '' : 'disabled'; ?>>
+                            </div>
+                            <button type="submit" id="add_to_cart_submit" class="btn btn-primary product-add-cart-button" <?php echo $inStock ? '' : 'disabled'; ?>>
                                 Add to Cart
                             </button>
                         </div>
@@ -893,6 +895,7 @@ do_action('product.view', [
                                             var selected = button === enabledMeterButton;
                                             button.classList.toggle('btn-primary', selected);
                                             button.classList.toggle('btn-outline-primary', !selected);
+                                            button.setAttribute('aria-pressed', selected ? 'true' : 'false');
                                         });
                                         var meterValue = String(meterLength).replace(/\.0+$/, '');
                                         if (meterLengthInput) meterLengthInput.value = meterValue;
@@ -1003,8 +1006,10 @@ do_action('product.view', [
                             function activateColor(color, preferredSize) {
                                 // Update colour swatches
                                 colorSwatches.forEach(function (b) {
-                                    b.classList.toggle('btn-dark', b.getAttribute('data-color') === color);
-                                    b.classList.toggle('btn-outline-dark', b.getAttribute('data-color') !== color);
+                                    var selected = b.getAttribute('data-color') === color;
+                                    b.classList.toggle('btn-dark', selected);
+                                    b.classList.toggle('btn-outline-dark', !selected);
+                                    b.setAttribute('aria-pressed', selected ? 'true' : 'false');
                                 });
                                 // Filter size buttons for this colour
                                 var sizesForColor = [];
@@ -1040,6 +1045,7 @@ do_action('product.view', [
                                     var sz = b.getAttribute('data-size');
                                     b.classList.toggle('btn-dark', hasSizes && sz === firstSize);
                                     b.classList.toggle('btn-outline-dark', !(hasSizes && sz === firstSize));
+                                    b.setAttribute('aria-pressed', hasSizes && sz === firstSize ? 'true' : 'false');
                                 });
                                 updateVariantState(color, HIDE_VARIANT_SIZE ? '' : firstSize);
                             }
@@ -1059,10 +1065,12 @@ do_action('product.view', [
                                         if (b.style.display !== 'none') {
                                             b.classList.remove('btn-dark');
                                             b.classList.add('btn-outline-dark');
+                                            b.setAttribute('aria-pressed', 'false');
                                         }
                                     });
                                     btn.classList.remove('btn-outline-dark');
                                     btn.classList.add('btn-dark');
+                                    btn.setAttribute('aria-pressed', 'true');
                                     updateVariantState(currentColor(), btn.getAttribute('data-size') || '');
                                 });
                             });
@@ -1078,9 +1086,11 @@ do_action('product.view', [
                                         sizeButtons.forEach(function (b) {
                                             b.classList.remove('btn-dark');
                                             b.classList.add('btn-outline-dark');
+                                            b.setAttribute('aria-pressed', 'false');
                                         });
                                         btn.classList.remove('btn-outline-dark');
                                         btn.classList.add('btn-dark');
+                                        btn.setAttribute('aria-pressed', 'true');
                                         if (sizeAdd) sizeAdd.value = val;
                                         if (sizeBuy) sizeBuy.value = val;
                                     });
@@ -1097,9 +1107,11 @@ do_action('product.view', [
                                         meterButtons.forEach(function (b) {
                                             b.classList.remove('btn-primary');
                                             b.classList.add('btn-outline-primary');
+                                            b.setAttribute('aria-pressed', 'false');
                                         });
                                         btn.classList.remove('btn-outline-primary');
                                         btn.classList.add('btn-primary');
+                                        btn.setAttribute('aria-pressed', 'true');
                                         var normalized = val.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
                                         if (isMeterUnit) {
                                             if (meterLengthInput) {

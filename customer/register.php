@@ -31,6 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($name === '')   { $errors['name'] = 'Full name is required.'; }
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) { $errors['email'] = 'Enter a valid email address.'; }
+    if (mb_strlen($name) > 255) { $errors['name'] = 'Full name must be 255 characters or fewer.'; }
+    if (mb_strlen($email) > 255) { $errors['email'] = 'Email must be 255 characters or fewer.'; }
+    if ($phone !== '' && (mb_strlen($phone) > 30 || !preg_match('/^[0-9+\-\s()]{7,30}$/', $phone))) { $errors['phone'] = 'Enter a valid phone number.'; }
+    if (mb_strlen($country) > 100) { $errors['country'] = 'Country must be 100 characters or fewer.'; }
     $passwordError = password_strength_error($password);
     if ($passwordError !== null) { $errors['password'] = $passwordError; }
     if ($password !== $confirm) { $errors['confirm_password'] = 'Passwords do not match.'; }
@@ -50,22 +54,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $token = bin2hex(random_bytes(32));
         $tokenHash = hash('sha256', $token);
         $verifyExpires = (new DateTime('now', new DateTimeZone('UTC')))->modify('+24 hours')->format('Y-m-d H:i:s');
-        $stmt  = $conn->prepare(
-            "INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token, email_verify_expires)
-             VALUES (?, ?, ?, ?, ?, 0, ?, ?)"
-        );
-        $stmt->bind_param('sssssss', $name, $email, $hash, $phone, $country, $tokenHash, $verifyExpires);
-        $stmt->execute();
-
-        $emailSent = EmailService::send_customer_verification_email($email, $name, $token);
-
-        if ($emailSent) {
-            flash('success', 'Account created! Please check your email to verify your address before logging in.');
-        } else {
-            flash('warning', 'Account created, but we could not send the verification email right now. '
-                . 'Please <a href="/customer/resend-verification.php">request a new verification email</a>.');
+        try {
+            $stmt  = $conn->prepare(
+                "INSERT INTO customers (name, email, password_hash, phone, country, email_verified, email_verify_token, email_verify_expires)
+                 VALUES (?, ?, ?, ?, ?, 0, ?, ?)"
+            );
+            $stmt->bind_param('sssssss', $name, $email, $hash, $phone, $country, $tokenHash, $verifyExpires);
+            $stmt->execute();
+        } catch (mysqli_sql_exception $e) {
+            if ((int) $e->getCode() === 1062) {
+                $errors['email'] = 'Unable to create account. Please try a different email or log in.';
+            } else {
+                error_log('[customer-register] Account insert failed: ' . $e->getMessage());
+                $errors['_register'] = 'Unable to create your account right now. Please try again.';
+            }
         }
-        redirect('/customer/login.php');
+
+        if (empty($errors)) {
+            $emailSent = EmailService::send_customer_verification_email($email, $name, $token);
+
+            if ($emailSent) {
+                flash('success', 'Account created! Please check your email to verify your address before logging in.');
+            } else {
+                flash('warning', 'Account created, but we could not send the verification email right now. '
+                    . 'Please <a href="/customer/resend-verification.php">request a new verification email</a>.');
+            }
+            redirect('/customer/login.php');
+        }
     }
 }
 
@@ -85,7 +100,7 @@ include __DIR__ . '/../includes/header.php';
         <div class="row justify-content-center">
             <div class="col-md-7 col-lg-5">
                 <?php if ($errors): ?>
-                    <div class="alert alert-danger">Please fix the errors below.</div>
+                    <div class="alert alert-danger"><?php echo e((string) ($errors['_register'] ?? 'Please fix the errors below.')); ?></div>
                 <?php endif; ?>
 
                 <div class="surface-panel p-4">
@@ -104,11 +119,13 @@ include __DIR__ . '/../includes/header.php';
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Phone Number</label>
-                            <input type="tel" name="phone" class="form-control" value="<?php echo e($old['phone']); ?>">
+                            <input type="tel" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" value="<?php echo e($old['phone']); ?>">
+                            <?php echo form_error($errors, 'phone'); ?>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Country</label>
-                            <input type="text" name="country" class="form-control" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
+                            <input type="text" name="country" class="<?php echo form_class($errors, 'country'); ?>" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
+                            <?php echo form_error($errors, 'country'); ?>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Password * <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>

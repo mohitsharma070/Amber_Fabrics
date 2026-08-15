@@ -488,6 +488,7 @@ final class CartService
     public static function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null): void
     {
         try {
+            $conn->begin_transaction();
             if ($meterMap === null) {
                 $meterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length']))
                     ? $_SESSION['cart_meter_length']
@@ -498,6 +499,7 @@ final class CartService
             $del->bind_param('i', $cartId);
             $del->execute();
             if (empty($cart)) {
+                $conn->commit();
                 return;
             }
             $supportsMeterLength = CartService::cart_items_supports_meter_length($conn);
@@ -643,7 +645,9 @@ final class CartService
                 }
                 $ins->execute();
             }
+            $conn->commit();
         } catch (Throwable $e) {
+            try { $conn->rollback(); } catch (Throwable $ignored) {}
             error_log('[app] cart_save_to_db failed: ' . $e->getMessage());
         }
     }

@@ -316,6 +316,7 @@ function ensure_tables(mysqli $conn): void
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) UNIQUE NOT NULL,
             password_hash VARCHAR(255) NOT NULL,
+            auth_version INT UNSIGNED NOT NULL DEFAULT 1,
             phone VARCHAR(30) DEFAULT NULL,
             country VARCHAR(100) DEFAULT NULL,
             email_verified TINYINT(1) DEFAULT 0,
@@ -329,6 +330,7 @@ function ensure_tables(mysqli $conn): void
 
     $ensureColumns($conn, 'customers', [
         'is_active' => "TINYINT(1) NOT NULL DEFAULT 1",
+        'auth_version' => "INT UNSIGNED NOT NULL DEFAULT 1",
         'email_verify_expires' => "DATETIME NULL DEFAULT NULL",
     ]);
 
@@ -787,11 +789,11 @@ function ensure_tables(mysqli $conn): void
         "CREATE TABLE IF NOT EXISTS coupon_usages (
             id INT AUTO_INCREMENT PRIMARY KEY,
             coupon_id INT NOT NULL,
-            customer_id INT NOT NULL,
+            customer_id INT DEFAULT NULL,
             order_id INT NOT NULL,
             used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_coupon_usages_coupon_customer (coupon_id, customer_id),
-            INDEX idx_coupon_usages_order_id (order_id),
+            UNIQUE KEY uq_coupon_usages_order_id (order_id),
             CONSTRAINT fk_coupon_usages_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
             CONSTRAINT fk_coupon_usages_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
             CONSTRAINT fk_coupon_usages_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
@@ -807,6 +809,8 @@ function ensure_tables(mysqli $conn): void
             payment_status ENUM('pending','paid','failed','refunded') DEFAULT 'pending',
             transaction_id VARCHAR(255) DEFAULT NULL,
             razorpay_order_id VARCHAR(255) DEFAULT NULL,
+            razorpay_create_claim_token CHAR(32) DEFAULT NULL,
+            razorpay_create_claimed_at DATETIME DEFAULT NULL,
             razorpay_payment_id VARCHAR(255) DEFAULT NULL,
             razorpay_signature VARCHAR(255) DEFAULT NULL,
             amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -1021,6 +1025,11 @@ function ensure_tables(mysqli $conn): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
+    $ensureColumns($conn, 'payments', [
+        'razorpay_create_claim_token' => "CHAR(32) NULL DEFAULT NULL",
+        'razorpay_create_claimed_at' => "DATETIME NULL DEFAULT NULL",
+    ]);
+
     $conn->query(
         "CREATE TABLE IF NOT EXISTS shipping_courier_reference_cache (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -1035,6 +1044,47 @@ function ensure_tables(mysqli $conn): void
             UNIQUE KEY uq_shipping_courier_reference (provider, reference_type, segment_type),
             INDEX idx_shipping_courier_reference_expiry (expires_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    $conn->query("ALTER TABLE coupon_usages MODIFY COLUMN customer_id INT NULL");
+    $conn->query(
+        "DELETE duplicate_usage
+         FROM coupon_usages duplicate_usage
+         JOIN coupon_usages kept_usage
+           ON kept_usage.order_id = duplicate_usage.order_id
+          AND kept_usage.id < duplicate_usage.id"
+    );
+    $couponOrderIndex = $conn->query(
+        "SELECT NON_UNIQUE
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'coupon_usages'
+           AND INDEX_NAME IN ('idx_coupon_usages_order_id', 'uq_coupon_usages_order_id')
+         ORDER BY NON_UNIQUE ASC
+         LIMIT 1"
+    )->fetch_assoc();
+    if (!$couponOrderIndex || (int) ($couponOrderIndex['NON_UNIQUE'] ?? 1) !== 0) {
+        if ($couponOrderIndex) {
+            $conn->query("ALTER TABLE coupon_usages DROP INDEX idx_coupon_usages_order_id");
+        }
+        $conn->query("ALTER TABLE coupon_usages ADD UNIQUE KEY uq_coupon_usages_order_id (order_id)");
+    }
+    $conn->query(
+        "INSERT IGNORE INTO coupon_usages (coupon_id, customer_id, order_id, used_at)
+         SELECT o.coupon_id, o.customer_id, o.id, o.created_at
+         FROM orders o
+         WHERE o.coupon_id IS NOT NULL
+           AND o.coupon_id > 0
+           AND o.payment_status IN ('pending', 'paid')
+           AND o.order_status NOT IN ('cancelled', 'refunded')"
+    );
+    $conn->query(
+        "UPDATE coupons c
+         LEFT JOIN (
+             SELECT coupon_id, COUNT(*) AS reservation_count
+             FROM coupon_usages
+             GROUP BY coupon_id
+         ) usage_totals ON usage_totals.coupon_id = c.id
+         SET c.used_count = COALESCE(usage_totals.reservation_count, 0)"
     );
 
     $conn->query(

@@ -5,57 +5,6 @@ $metaDescription = 'Shop premium Bedsheets, Towels, and Table Covers from ' . Si
 $metaKeywords = 'shop home textiles, bedsheets, towels, table covers, ' . SiteContext::name();
 include 'includes/header.php';
 
-function catalog_fulltext_available(mysqli $conn): bool
-{
-    static $checked = false;
-    static $ready = false;
-    if ($checked) {
-        return $ready;
-    }
-    $checked = true;
-
-    $cacheKey = 'catalog_fulltext_available';
-    $cacheTsKey = 'catalog_fulltext_available_ts';
-    $cacheTtlSec = 600;
-    if (isset($_SESSION[$cacheKey], $_SESSION[$cacheTsKey])) {
-        $cachedAt = (int) $_SESSION[$cacheTsKey];
-        if ($cachedAt > 0 && (time() - $cachedAt) <= $cacheTtlSec) {
-            $ready = (bool) $_SESSION[$cacheKey];
-            return $ready;
-        }
-    }
-
-    try {
-        $sql = "SELECT COUNT(*) AS total
-                FROM information_schema.STATISTICS
-                WHERE TABLE_SCHEMA = DATABASE()
-                  AND TABLE_NAME = 'fabrics'
-                  AND INDEX_NAME = 'ft_fabrics_catalog_search'
-                  AND INDEX_TYPE = 'FULLTEXT'";
-        $row = $conn->query($sql)->fetch_assoc();
-        $ready = ((int) ($row['total'] ?? 0)) > 0;
-    } catch (Throwable $e) {
-        $ready = false;
-    }
-    $_SESSION[$cacheKey] = $ready ? 1 : 0;
-    $_SESSION[$cacheTsKey] = time();
-    return $ready;
-}
-
-function catalog_build_boolean_search(string $search): string
-{
-    $tokens = preg_split('/\s+/', strtolower(trim($search))) ?: [];
-    $parts = [];
-    foreach ($tokens as $token) {
-        $token = preg_replace('/[^a-z0-9\-]/', '', $token);
-        if ($token === '' || strlen($token) < 3) {
-            continue;
-        }
-        $parts[] = '+' . $token . '*';
-    }
-    return implode(' ', $parts);
-}
-
 $perPageOptions = [10, 20, 30];
 $sortMap = [
     'newest' => 'f.created_at DESC, f.id DESC, COALESCE(v.id, 0) DESC',
@@ -585,7 +534,7 @@ function catalog_query(array $params): string {
     'sort' => $sort,
 ]); ?>
 
-<section class="section-block pt-0">
+<section class="section-block">
     <div class="container">
         <div class="surface-panel text-center">
             <h5 class="mb-2">Need International Shipping or Bulk Quantities?</h5>

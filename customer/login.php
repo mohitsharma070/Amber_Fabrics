@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!customer_check_rate_limit($conn, $email, $ip)) {
         $errors['_login'] = 'Too many failed attempts. Please wait ' . CUSTOMER_LOCK_MINUTES . ' minutes before trying again.';
     } else {
-        $stmt = $conn->prepare("SELECT id, name, password_hash, email_verified, is_active FROM customers WHERE email = ?");
+        $stmt = $conn->prepare("SELECT id, name, password_hash, auth_version, email_verified, is_active FROM customers WHERE email = ?");
         $stmt->bind_param('s', $email);
         $stmt->execute();
         $customer = $stmt->get_result()->fetch_assoc();
@@ -50,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_regenerate_id(true);
             $_SESSION['customer_id']   = $customer['id'];
             $_SESSION['customer_name'] = $customer['name'];
+            $_SESSION['customer_auth_version'] = max(1, (int) ($customer['auth_version'] ?? 1));
             $_SESSION['customer_session_started_at'] = time();
             $_SESSION['customer_last_seen_at'] = time();
             $_SESSION['customer_session_fingerprint'] = customer_session_fingerprint();
@@ -214,7 +215,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($returnTo ?: '/index.php');
             }
         } else {
-            customer_record_attempt($conn, $email, $ip, false);
             $errors['_login'] = 'Invalid email or password.';
         }
     }

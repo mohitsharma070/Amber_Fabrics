@@ -56,6 +56,13 @@ if (!headers_sent()) {
     header('Content-Security-Policy: ' . implode('; ', $cspParts));
 }
 
+if (isset($conn) && $conn instanceof mysqli) {
+    $bootCustomerId = (int) ($_SESSION['customer_id'] ?? 0);
+    if ($bootCustomerId > 0 && !customer_session_valid($conn, $bootCustomerId)) {
+        customer_clear_auth_session(true);
+    }
+}
+
 do_action('app.init', [
     'app_env' => $appEnv,
     'app_mode' => $appMode,

@@ -310,7 +310,7 @@ include __DIR__ . '/../includes/header.php';
                     </form>
                     <?php endif; ?>
                     <?php if ($canCancel): ?>
-                    <form method="POST" action="/customer/cancel-order.php" class="mt-2" onsubmit="return confirm('Cancel this order?');">
+                    <form method="POST" action="/customer/cancel-order.php" class="mt-2" data-confirm="Cancel this order?">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                         <button type="submit" class="btn btn-outline-danger w-100">Cancel Order</button>

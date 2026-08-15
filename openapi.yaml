@@ -1,0 +1,1666 @@
+openapi: 3.0.3
+info:
+  title: Amber Fabrics Web Endpoints
+  version: 1.0.0
+  description: |
+    Baseline OpenAPI contract for file-based PHP endpoints in this repository.
+    This specification focuses on currently observable request/response shapes
+    and guards without changing business behavior.
+servers:
+  - url: /
+security: []
+tags:
+  - name: Pages
+  - name: Cart
+  - name: Coupon
+  - name: Checkout
+  - name: Payment
+  - name: Customer
+  - name: Guest
+  - name: Admin
+  - name: Operations
+  - name: Webhook
+  - name: Utility
+paths:
+  /catalog.php:
+    get:
+      tags: [Pages]
+      summary: Catalog page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /fabric.php:
+    get:
+      tags: [Pages]
+      summary: Fabric details page
+      parameters:
+        - in: query
+          name: id
+          schema:
+            type: integer
+            minimum: 1
+          required: false
+          description: Fabric ID; either id or slug identifies the product.
+        - in: query
+          name: slug
+          schema:
+            type: string
+          required: false
+          description: Product slug; either slug or id identifies the product.
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /fabric/{slug}:
+    get:
+      tags: [Pages]
+      summary: Fabric details page via clean URL
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Product not found
+
+  /cart.php:
+    get:
+      tags: [Pages]
+      summary: Cart page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /checkout.php:
+    get:
+      tags: [Pages]
+      summary: Checkout page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redirect to login/cart depending on session state
+
+  /add-to-cart.php:
+    post:
+      tags: [Cart]
+      summary: Add product variant to cart
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AddToCartRequest'
+      responses:
+        '200':
+          description: JSON success for AJAX requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '302':
+          description: Redirect for non-AJAX browser flow
+        '403':
+          description: Invalid CSRF token
+
+  /update-cart.php:
+    post:
+      tags: [Cart]
+      summary: Update cart quantities
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect to cart page after update
+
+  /remove-cart.php:
+    post:
+      tags: [Cart]
+      summary: Remove cart item
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token, cart_key]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                cart_key:
+                  type: string
+      responses:
+        '302':
+          description: Redirect to cart
+
+  /move-to-wishlist.php:
+    post:
+      tags: [Cart]
+      summary: Move cart item to wishlist
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token, cart_key]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                cart_key:
+                  type: string
+      responses:
+        '302':
+          description: Redirect to cart/wishlist
+
+  /move-to-cart.php:
+    post:
+      tags: [Cart]
+      summary: Move wishlist item to cart
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token, cart_key]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                cart_key:
+                  type: string
+      responses:
+        '302':
+          description: Redirect to cart/wishlist
+
+  /remove-wishlist.php:
+    post:
+      tags: [Cart]
+      summary: Remove wishlist item
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token, cart_key]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                cart_key:
+                  type: string
+      responses:
+        '302':
+          description: Redirect to wishlist
+
+  /apply-coupon.php:
+    post:
+      tags: [Coupon]
+      summary: Apply coupon to current cart/checkout session
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ApplyCouponRequest'
+      responses:
+        '302':
+          description: Redirect to cart/checkout with flash status
+        '403':
+          description: Invalid CSRF token
+
+  /remove-coupon.php:
+    post:
+      tags: [Coupon]
+      summary: Remove active coupon from session
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CsrfOnlyRequest'
+      responses:
+        '302':
+          description: Redirect to cart/checkout
+
+  /shipping-rate.php:
+    post:
+      tags: [Checkout]
+      summary: Calculate shipping quote
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ShippingRateRequest'
+      responses:
+        '200':
+          description: Shipping quote response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShippingRateResponse'
+        '403':
+          description: Invalid CSRF token
+        '405':
+          description: Method not allowed
+        '429':
+          description: Rate limited
+
+  /place-order.php:
+    post:
+      tags: [Checkout]
+      summary: Create order from checkout session
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PlaceOrderRequest'
+      responses:
+        '302':
+          description: Redirect to order success, payment, or back to checkout
+        '403':
+          description: Invalid CSRF token
+
+  /payment/razorpay-create.php:
+    get:
+      tags: [Payment]
+      summary: Razorpay checkout launch page
+      responses:
+        '200':
+          description: HTML page with checkout integration
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redirect to checkout when state is invalid
+
+  /payment/razorpay-verify.php:
+    post:
+      tags: [Payment]
+      summary: Verify Razorpay success callback
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RazorpayVerifyRequest'
+      responses:
+        '302':
+          description: Redirect to success/orders/checkout with flash status
+
+  /payment/razorpay-failure.php:
+    post:
+      tags: [Payment]
+      summary: Record an informational Razorpay browser failure callback
+      description: >-
+        Records browser-reported failure or cancellation without finalizing the
+        order or releasing inventory/coupon reservations. A signed failure
+        webhook, explicit cancellation, or stale-order expiry is authoritative.
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RazorpayFailureRequest'
+      responses:
+        '302':
+          description: Redirect to customer orders or the guest order result with retry guidance
+
+  /payment/razorpay-webhook.php:
+    post:
+      tags: [Webhook, Payment]
+      summary: Razorpay server-to-server webhook
+      security:
+        - razorpaySignatureHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook accepted/ignored/already processed
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          description: Invalid signature/payload
+        '500':
+          description: Server error
+
+  /cod-guard-webhook.php:
+    get:
+      tags: [Webhook]
+      summary: COD Guard webhook verification handshake
+      security:
+        - webhookVerifyTokenQuery: []
+      parameters:
+        - in: query
+          name: hub.mode
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: hub.verify_token
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: hub.challenge
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification challenge response
+          content:
+            text/plain:
+              schema:
+                type: string
+        '403':
+          description: Forbidden
+    post:
+      tags: [Webhook]
+      summary: COD Guard message webhook callback
+      security:
+        - genericWebhookSignatureHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                additionalProperties: true
+        '400':
+          description: Invalid payload
+        '403':
+          description: Invalid signature
+        '405':
+          description: Method not allowed
+        '500':
+          description: Processing error
+
+  /shipping-courier-webhook.php:
+    post:
+      tags: [Webhook]
+      summary: Shipping courier status webhook callback
+      security:
+        - genericWebhookSignatureHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook processed or duplicate ack
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                additionalProperties: true
+        '400':
+          description: Invalid payload
+        '403':
+          description: Invalid signature
+        '405':
+          description: Method not allowed
+        '500':
+          description: Processing error
+        '503':
+          description: Lifecycle storage unavailable
+
+  /announcement-dismiss.php:
+    get:
+      tags: [Utility]
+      summary: Check announcement dismissal state
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{32}$'
+      responses:
+        '200':
+          description: Dismissal state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  dismissed:
+                    type: boolean
+        '422':
+          description: Invalid key
+    post:
+      tags: [Utility]
+      summary: Mark announcement as dismissed
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token, key]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                key:
+                  type: string
+                  pattern: '^[a-f0-9]{32}$'
+      responses:
+        '200':
+          description: JSON operation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '403':
+          description: Invalid session token
+        '422':
+          description: Invalid key
+
+  /cookie-consent.php:
+    post:
+      tags: [Utility]
+      summary: Store marketing cookie consent
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token, choice]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                choice:
+                  type: string
+                  enum: [accept, allow, granted, reject, deny, denied]
+      responses:
+        '200':
+          description: Consent stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+                    enum: [granted, denied]
+        '403':
+          description: Invalid session token
+        '422':
+          description: Invalid consent choice
+
+  /contact.php:
+    post:
+      tags: [Utility]
+      summary: Submit contact form
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+              additionalProperties: true
+      responses:
+        '200':
+          description: HTML contact page with flash status
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /export-inquiry.php:
+    post:
+      tags: [Utility]
+      summary: Submit export inquiry
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect after submit
+
+  /review-rating-submit.php:
+    post:
+      tags: [Utility]
+      summary: Submit review/rating
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect with flash status
+
+  /delivery-estimate.php:
+    post:
+      tags: [Checkout]
+      summary: Estimate delivery for a product and destination
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeliveryEstimateRequest'
+      responses:
+        '200':
+          description: Delivery estimate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '403':
+          description: Invalid CSRF token
+        '405':
+          description: Method not allowed
+        '422':
+          description: Invalid product, quantity, or pincode
+
+  /retry-payment.php:
+    post:
+      tags: [Payment, Customer]
+      summary: Retry an eligible customer order payment
+      security:
+        - customerSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrderActionRequest'
+      responses:
+        '302':
+          description: Redirect to Razorpay checkout or the customer order page
+
+  /customer/login.php:
+    get:
+      tags: [Customer]
+      summary: Customer login form
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+    post:
+      tags: [Customer]
+      summary: Start a customer session
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Successful login or validation redirect
+
+  /customer/register.php:
+    get:
+      tags: [Customer]
+      summary: Customer registration form
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+    post:
+      tags: [Customer]
+      summary: Register a customer account
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Registration outcome redirect
+
+  /customer/forgot-password.php:
+    get:
+      tags: [Customer]
+      summary: Password reset request form
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+    post:
+      tags: [Customer]
+      summary: Request a password reset email
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmailCsrfRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Invalid-session redirect
+        '429':
+          description: Rate limit represented in the rendered form
+
+  /customer/reset-password.php:
+    get:
+      tags: [Customer]
+      summary: Password reset form
+      parameters:
+        - $ref: '#/components/parameters/TokenQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+    post:
+      tags: [Customer]
+      summary: Set a new password using a reset token
+      parameters:
+        - $ref: '#/components/parameters/TokenQuery'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordConfirmationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Success or invalid-session redirect
+
+  /customer/verify-email.php:
+    get:
+      tags: [Customer]
+      summary: Verify a customer email token
+      parameters:
+        - $ref: '#/components/parameters/TokenQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+
+  /customer/profile.php:
+    get:
+      tags: [Customer]
+      summary: Customer profile and addresses
+      security:
+        - customerSessionAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Authentication redirect
+    post:
+      tags: [Customer]
+      summary: Update customer profile, password, or addresses
+      security:
+        - customerSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+              additionalProperties: true
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Authentication or update redirect
+
+  /customer/orders.php:
+    get:
+      tags: [Customer]
+      summary: Customer order history
+      security:
+        - customerSessionAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Authentication redirect
+
+  /customer/order-view.php:
+    get:
+      tags: [Customer]
+      summary: Customer-owned order detail
+      security:
+        - customerSessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderIdQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Authentication or order-not-found redirect
+
+  /customer/cancel-order.php:
+    post:
+      tags: [Customer]
+      summary: Cancel an eligible customer-owned order
+      security:
+        - customerSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrderActionRequest'
+      responses:
+        '302':
+          description: Redirect to customer orders with outcome
+
+  /customer/request-return.php:
+    post:
+      tags: [Customer, Guest]
+      summary: Request a return for an authorized order
+      security:
+        - customerSessionAuth: []
+        - guestOrderSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [csrf_token, order_id, reason]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                order_id:
+                  type: integer
+                reason:
+                  type: string
+                customer_note:
+                  type: string
+                return_qty:
+                  type: object
+                  additionalProperties:
+                    type: number
+                image_1:
+                  type: string
+                  format: binary
+                image_2:
+                  type: string
+                  format: binary
+      responses:
+        '302':
+          description: Redirect to the authorized order with outcome
+
+  /customer/logout.php:
+    post:
+      tags: [Customer]
+      summary: End the customer session
+      security:
+        - customerSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CsrfOnlyRequest'
+      responses:
+        '302':
+          description: Redirect to customer login
+
+  /guest/order-access.php:
+    get:
+      tags: [Guest]
+      summary: Guest order access request form
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '404':
+          description: Guest order access feature disabled
+    post:
+      tags: [Guest]
+      summary: Email a non-enumerating guest order access link
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GuestOrderAccessRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Invalid-session redirect
+        '404':
+          description: Guest order access feature disabled
+
+  /guest/order-auth.php:
+    get:
+      tags: [Guest]
+      summary: Consume a single-use guest management token
+      parameters:
+        - $ref: '#/components/parameters/TokenQuery'
+      responses:
+        '302':
+          description: Grant scoped order session and redirect, or reject token
+
+  /guest/order.php:
+    get:
+      tags: [Guest]
+      summary: View an order authorized in the guest session
+      security:
+        - guestOrderSessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderIdQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Guest authorization expired or order unavailable
+
+  /guest/cancel-order.php:
+    post:
+      tags: [Guest]
+      summary: Cancel an eligible guest-authorized order
+      security:
+        - guestOrderSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrderActionRequest'
+      responses:
+        '302':
+          description: Redirect to guest order with outcome
+        '403':
+          description: Invalid CSRF token or guest order authorization
+
+  /guest/retry-payment.php:
+    post:
+      tags: [Guest, Payment]
+      summary: Retry payment for an eligible guest-authorized order
+      security:
+        - guestOrderSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrderActionRequest'
+      responses:
+        '302':
+          description: Redirect to Razorpay checkout
+        '403':
+          description: Invalid CSRF token or guest order authorization
+
+  /admin/login.php:
+    get:
+      tags: [Admin]
+      summary: Administrator login form
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+    post:
+      tags: [Admin]
+      summary: Verify administrator credentials and initiate OTP
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: OTP or dashboard redirect
+        '429':
+          description: Login rate limit represented in the rendered form
+
+  /admin/verify-otp.php:
+    get:
+      tags: [Admin]
+      summary: Administrator OTP form
+      security:
+        - sessionCookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Missing pending-login session redirect
+    post:
+      tags: [Admin]
+      summary: Verify or resend administrator OTP
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                otp:
+                  type: string
+                action:
+                  type: string
+                  enum: [verify, resend]
+              additionalProperties: true
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Successful verification or invalid-session redirect
+
+  /admin/logout.php:
+    post:
+      tags: [Admin]
+      summary: End the administrator session
+      security:
+        - adminSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CsrfOnlyRequest'
+      responses:
+        '302':
+          description: Redirect to administrator login
+
+  /admin/product-actions.php:
+    post:
+      tags: [Admin]
+      summary: Run a product readiness or lifecycle action
+      security:
+        - adminSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminProductActionRequest'
+      responses:
+        '200':
+          description: Product action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '403':
+          description: Invalid admin session, request method, or CSRF token
+        '404':
+          description: Product not found
+        '422':
+          description: Product action validation failed
+
+  /admin/fabric-variants.php:
+    get:
+      tags: [Admin]
+      summary: List variants for a product
+      security:
+        - adminSessionAuth: []
+      parameters:
+        - in: query
+          name: action
+          required: true
+          schema:
+            type: string
+            enum: [list]
+        - in: query
+          name: fabric_id
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Product and variant JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '400':
+          description: Missing product ID
+        '404':
+          description: Product not found
+    post:
+      tags: [Admin]
+      summary: Save, delete, or reorder product variants
+      security:
+        - adminSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [csrf_token, action, fabric_id]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                action:
+                  type: string
+                  enum: [save, delete, reorder]
+                fabric_id:
+                  type: integer
+                  minimum: 1
+              additionalProperties: true
+      responses:
+        '200':
+          description: Variant action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '400':
+          description: Invalid variant input
+        '403':
+          description: Invalid CSRF token
+        '404':
+          description: Product or variant not found
+
+  /admin/shipping-rate-test.php:
+    post:
+      tags: [Admin]
+      summary: Test an administrator shipping quote
+      security:
+        - adminSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ShippingRateRequest'
+      responses:
+        '200':
+          description: Shipping quote diagnostic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessResponse'
+        '403':
+          description: Invalid admin session or CSRF token
+        '405':
+          description: Method not allowed
+        '422':
+          description: Invalid pincode
+
+  /admin/product-import.php:
+    get:
+      tags: [Admin]
+      summary: Product CSV import form or downloadable template
+      security:
+        - adminSessionAuth: []
+      parameters:
+        - in: query
+          name: download
+          schema:
+            type: string
+            enum: [template]
+      responses:
+        '200':
+          description: HTML import page or CSV template
+    post:
+      tags: [Admin]
+      summary: Validate or import a product catalogue CSV
+      security:
+        - adminSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [csrf_token, catalogue, action]
+              properties:
+                csrf_token:
+                  $ref: '#/components/schemas/CsrfToken'
+                catalogue:
+                  type: string
+                  format: binary
+                action:
+                  type: string
+                  enum: [validate, import]
+                duplicate_mode:
+                  type: string
+                  enum: [skip, update]
+                default_unit:
+                  type: string
+                  enum: [piece, meter, set]
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '302':
+          description: Authentication redirect
+
+  /cron/run-plugins.php:
+    get:
+      tags: [Operations]
+      summary: Run scheduled plugin jobs over HTTP
+      security:
+        - cronTokenHeader: []
+        - cronTokenQuery: []
+      responses:
+        '200':
+          description: Job execution log
+          content:
+            text/plain:
+              schema:
+                type: string
+        '403':
+          description: Missing or invalid cron token
+        '500':
+          description: One or more critical jobs failed
+
+components:
+  securitySchemes:
+    sessionCookieAuth:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+      description: Session cookie used for browser-authenticated flows.
+    customerSessionAuth:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+      description: Session containing an authenticated customer ID.
+    adminSessionAuth:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+      description: Session containing an authenticated administrator ID.
+    guestOrderSessionAuth:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+      description: Session authorized for a specific guest order by the order-access flow.
+    razorpaySignatureHeader:
+      type: apiKey
+      in: header
+      name: X-Razorpay-Signature
+      description: Razorpay webhook HMAC signature header.
+    genericWebhookSignatureHeader:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+      description: Generic signature header placeholder for plugin-managed webhook signatures.
+    webhookVerifyTokenQuery:
+      type: apiKey
+      in: query
+      name: hub.verify_token
+      description: Webhook verification token query parameter.
+    cronTokenHeader:
+      type: apiKey
+      in: header
+      name: X-Cron-Token
+      description: Secret token configured as CRON_RUN_TOKEN.
+    cronTokenQuery:
+      type: apiKey
+      in: query
+      name: token
+      description: Query-string alternative for CRON_RUN_TOKEN.
+
+  parameters:
+    TokenQuery:
+      in: query
+      name: token
+      required: true
+      schema:
+        type: string
+        minLength: 32
+    OrderIdQuery:
+      in: query
+      name: id
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    HtmlPage:
+      description: Server-rendered HTML page
+      content:
+        text/html:
+          schema:
+            type: string
+
+  schemas:
+    ApiSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      additionalProperties: true
+
+    CsrfOnlyRequest:
+      type: object
+      required: [csrf_token]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+
+    LoginRequest:
+      type: object
+      required: [csrf_token, email, password]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RegistrationRequest:
+      type: object
+      required: [csrf_token, name, email, password, confirm_password]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        country:
+          type: string
+        password:
+          type: string
+          format: password
+        confirm_password:
+          type: string
+          format: password
+
+    EmailCsrfRequest:
+      type: object
+      required: [csrf_token, email]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        email:
+          type: string
+          format: email
+
+    PasswordConfirmationRequest:
+      type: object
+      required: [csrf_token, password, confirm_password]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        password:
+          type: string
+          format: password
+        confirm_password:
+          type: string
+          format: password
+
+    GuestOrderAccessRequest:
+      type: object
+      required: [csrf_token, order_number, email]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        order_number:
+          type: string
+        email:
+          type: string
+          format: email
+
+    OrderActionRequest:
+      type: object
+      required: [csrf_token, order_id]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        order_id:
+          type: integer
+          minimum: 1
+
+    DeliveryEstimateRequest:
+      type: object
+      required: [csrf_token, product_id, quantity, pincode]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        product_id:
+          type: integer
+          minimum: 1
+        variant_id:
+          type: integer
+          minimum: 0
+        quantity:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+        pincode:
+          type: string
+          pattern: '^[1-9][0-9]{5}$'
+        payment_method:
+          type: string
+          enum: [cod, razorpay]
+
+    AdminProductActionRequest:
+      type: object
+      required: [csrf_token, product_id, action]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        product_id:
+          type: integer
+          minimum: 1
+        action:
+          type: string
+          enum: [save-section, readiness, publish, unpublish, enable-variants, disable-variants]
+        base_stock:
+          type: number
+          minimum: 0
+      additionalProperties: true
+
+    AddToCartRequest:
+      type: object
+      required: [csrf_token]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        product_id:
+          type: integer
+          minimum: 1
+        fabric_id:
+          type: integer
+          minimum: 1
+        variant_id:
+          type: integer
+          minimum: 0
+        quantity:
+          type: number
+          minimum: 0
+        meter_length:
+          type: number
+          minimum: 0
+        bundle_quantity:
+          type: integer
+          minimum: 1
+        selected_size:
+          type: string
+        selected_color:
+          type: string
+        redirect_to:
+          type: string
+      additionalProperties: true
+
+    ApplyCouponRequest:
+      type: object
+      required: [csrf_token, coupon_code]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        coupon_code:
+          type: string
+        redirect_to:
+          type: string
+          enum: [cart, checkout]
+        shipping_address_id:
+          type: integer
+          minimum: 0
+      additionalProperties: true
+
+    ShippingRateRequest:
+      type: object
+      required: [csrf_token, subtotal]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        pincode:
+          type: string
+        subtotal:
+          type: number
+          minimum: 0
+        payment_method:
+          type: string
+          enum: [cod, razorpay]
+      additionalProperties: true
+
+    ShippingRateResponse:
+      type: object
+      required: [ok, shipping_total]
+      properties:
+        ok:
+          type: boolean
+        source:
+          type: string
+        quote_token:
+          type: string
+        courier_name:
+          type: string
+        courier_id:
+          type: integer
+        base_shipping:
+          type: number
+        cod_fee:
+          type: number
+        shipping_total:
+          type: number
+      additionalProperties: true
+
+    PlaceOrderRequest:
+      type: object
+      required:
+        - csrf_token
+        - full_name
+        - phone
+        - email
+        - address
+        - city
+        - state
+        - pincode
+        - country
+        - payment_method
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        order_nonce:
+          type: string
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        pincode:
+          type: string
+        country:
+          type: string
+        order_notes:
+          type: string
+        payment_method:
+          type: string
+          enum: [cod, razorpay]
+        online_method:
+          type: string
+        shipping_address_id:
+          type: integer
+          minimum: 0
+        shipping_quote_token:
+          type: string
+        create_account:
+          type: integer
+          enum: [0, 1]
+        create_account_password:
+          type: string
+        create_account_confirm_password:
+          type: string
+      additionalProperties: true
+
+    RazorpayVerifyRequest:
+      type: object
+      required:
+        - csrf_token
+        - razorpay_payment_id
+        - razorpay_order_id
+        - razorpay_signature
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        razorpay_payment_id:
+          type: string
+        razorpay_order_id:
+          type: string
+        razorpay_signature:
+          type: string
+      additionalProperties: true
+
+    RazorpayFailureRequest:
+      type: object
+      required: [csrf_token]
+      properties:
+        csrf_token:
+          $ref: '#/components/schemas/CsrfToken'
+        event_type:
+          type: string
+          enum: [failed, cancelled]
+        razorpay_payment_id:
+          type: string
+        razorpay_order_id:
+          type: string
+        error_code:
+          type: string
+        error_description:
+          type: string
+      additionalProperties: true
+
+    CsrfToken:
+      type: string
+      minLength: 32
+      description: Session-bound token submitted in the csrf_token form field.

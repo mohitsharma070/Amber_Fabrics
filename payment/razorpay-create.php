@@ -47,6 +47,7 @@ $cancelInvalidRazorpayOrder = static function (mysqli $conn, int $orderId, strin
         $paymentUpdate->execute();
 
         InventoryService::restore_order_inventory($conn, $orderId);
+        release_coupon_usage_for_order($conn, $orderId);
         log_order_activity($conn, $orderId, 'payment_invalid_amount', 'system', 0, 'system', $reason);
         $conn->commit();
     } catch (Throwable $cleanupException) {
@@ -126,11 +127,14 @@ if ($amountPaise <= 0) {
 }
 
 try {
+    $claimToken = bin2hex(random_bytes(16));
+    $ownsCreateClaim = false;
+    $conn->begin_transaction();
     $paymentRowStmt = $conn->prepare(
-        "SELECT id, razorpay_order_id
+        "SELECT id, razorpay_order_id, razorpay_create_claim_token, razorpay_create_claimed_at
          FROM payments
          WHERE order_id = ? AND payment_method = 'razorpay'
-         LIMIT 1"
+         LIMIT 1 FOR UPDATE"
     );
     $paymentRowStmt->bind_param('i', $orderId);
     $paymentRowStmt->execute();
@@ -141,8 +145,26 @@ try {
     $paymentRowId = (int) ($payRow['id'] ?? 0);
     $existingRzpOrderId = trim((string) ($payRow['razorpay_order_id'] ?? ''));
     $remoteRzpOrderId = '';
+    $activeClaim = trim((string) ($payRow['razorpay_create_claim_token'] ?? '')) !== ''
+        && strtotime((string) ($payRow['razorpay_create_claimed_at'] ?? '')) >= strtotime('-30 seconds');
 
-    if ($existingRzpOrderId === '') {
+    if ($existingRzpOrderId !== '') {
+        $rzpOrderId = $existingRzpOrderId;
+        $conn->commit();
+    } elseif (!$activeClaim) {
+        $claimStmt = $conn->prepare(
+            "UPDATE payments
+             SET razorpay_create_claim_token = ?, razorpay_create_claimed_at = NOW()
+             WHERE id = ? AND razorpay_order_id IS NULL"
+        );
+        $claimStmt->bind_param('si', $claimToken, $paymentRowId);
+        $claimStmt->execute();
+        if ($claimStmt->affected_rows !== 1) {
+            throw new RuntimeException('Unable to claim Razorpay order initialization.');
+        }
+        $ownsCreateClaim = true;
+        $conn->commit();
+
         $createResp = PaymentService::razorpay_create_order_remote($orderId, (string) $order['order_number'], $amountPaise);
         if (empty($createResp['ok'])) {
             $providerError = (string) ($createResp['error'] ?? 'gateway_create_failed');
@@ -152,47 +174,58 @@ try {
         }
         $remoteRzpOrderId = trim((string) ($createResp['id'] ?? ''));
         error_log('[razorpay-create] provider create success order_id=' . $orderId . ' rzp_order_id=' . $remoteRzpOrderId . ' duration_ms=' . (int) ($createResp['duration_ms'] ?? 0));
-    }
-
-    $conn->begin_transaction();
-    $payLockStmt = $conn->prepare(
-        "SELECT id, razorpay_order_id
-         FROM payments
-         WHERE order_id = ? AND payment_method = 'razorpay'
-         LIMIT 1 FOR UPDATE"
-    );
-    $payLockStmt->bind_param('i', $orderId);
-    $payLockStmt->execute();
-    $lockedPayRow = $payLockStmt->get_result()->fetch_assoc();
-    if (!$lockedPayRow) {
-        throw new RuntimeException('Payment row not found during payment create finalize.');
-    }
-
-    $lockedRzpOrderId = trim((string) ($lockedPayRow['razorpay_order_id'] ?? ''));
-    if ($lockedRzpOrderId !== '') {
-        $rzpOrderId = $lockedRzpOrderId;
-    } else {
         if ($remoteRzpOrderId === '') {
             throw new RuntimeException('Razorpay order id missing after provider create.');
+        }
+
+        $conn->begin_transaction();
+        $payLockStmt = $conn->prepare(
+            "SELECT razorpay_order_id, razorpay_create_claim_token
+             FROM payments WHERE id = ? LIMIT 1 FOR UPDATE"
+        );
+        $payLockStmt->bind_param('i', $paymentRowId);
+        $payLockStmt->execute();
+        $lockedPayRow = $payLockStmt->get_result()->fetch_assoc();
+        if (!$lockedPayRow || !hash_equals($claimToken, (string) ($lockedPayRow['razorpay_create_claim_token'] ?? ''))) {
+            throw new RuntimeException('Razorpay order initialization claim changed unexpectedly.');
         }
         $rzpOrderId = $remoteRzpOrderId;
         $payStmt = $conn->prepare(
             "UPDATE payments
-             SET razorpay_order_id = ?, transaction_id = ?
-             WHERE order_id = ? AND payment_method = 'razorpay'"
+             SET razorpay_order_id = ?, transaction_id = ?,
+                 razorpay_create_claim_token = NULL, razorpay_create_claimed_at = NULL
+             WHERE id = ?"
         );
-        $payStmt->bind_param('ssi', $rzpOrderId, $rzpOrderId, $orderId);
+        $payStmt->bind_param('ssi', $rzpOrderId, $rzpOrderId, $paymentRowId);
         $payStmt->execute();
         log_order_activity($conn, $orderId, 'payment_session_created', 'system', 0, 'system', 'Razorpay order id: ' . $rzpOrderId);
+        $conn->commit();
+    } else {
+        $conn->commit();
+        // Another request owns the short-lived provider call. Wait for its
+        // stored result rather than creating a duplicate Razorpay order.
+        $rzpOrderId = '';
+        for ($waitAttempt = 0; $waitAttempt < 20 && $rzpOrderId === ''; $waitAttempt++) {
+            usleep(500000);
+            $waitStmt = $conn->prepare("SELECT razorpay_order_id FROM payments WHERE id = ? LIMIT 1");
+            $waitStmt->bind_param('i', $paymentRowId);
+            $waitStmt->execute();
+            $waitRow = $waitStmt->get_result()->fetch_assoc();
+            $rzpOrderId = trim((string) ($waitRow['razorpay_order_id'] ?? ''));
+        }
+        if ($rzpOrderId === '') {
+            throw new RuntimeException('Razorpay order initialization is still in progress.');
+        }
     }
 
+    $conn->begin_transaction();
     PaymentService::payment_attempt_touch(
         $conn,
         'razorpay',
         $rzpOrderId,
         $orderId,
         $paymentRowId,
-        $existingRzpOrderId !== '' ? 'checkout_opened' : 'created',
+        $existingRzpOrderId !== '' || !$ownsCreateClaim ? 'checkout_opened' : 'created',
         'create',
         '',
         '',
@@ -201,7 +234,7 @@ try {
         '',
         '',
         json_encode(['order_number' => (string) $order['order_number'], 'amount_paise' => $amountPaise], JSON_UNESCAPED_UNICODE),
-        $existingRzpOrderId !== ''
+        $existingRzpOrderId !== '' || !$ownsCreateClaim
     );
     $conn->commit();
 } catch (Throwable $e) {
@@ -209,6 +242,19 @@ try {
         $conn->rollback();
     } catch (Throwable $rollbackException) {
         // ignore rollback errors
+    }
+    if (!empty($ownsCreateClaim) && !empty($claimToken)) {
+        try {
+            $clearClaim = $conn->prepare(
+                "UPDATE payments
+                 SET razorpay_create_claim_token = NULL, razorpay_create_claimed_at = NULL
+                 WHERE id = ? AND razorpay_create_claim_token = ? AND razorpay_order_id IS NULL"
+            );
+            $clearClaim->bind_param('is', $paymentRowId, $claimToken);
+            $clearClaim->execute();
+        } catch (Throwable $clearException) {
+            error_log('[razorpay-create] could not clear create claim: ' . $clearException->getMessage());
+        }
     }
     error_log('[razorpay] create failed: ' . $e->getMessage());
     flash('error', 'Unable to initialize Razorpay payment. Please try again.');

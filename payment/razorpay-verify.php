@@ -249,14 +249,6 @@ try {
         'Razorpay payment id: ' . $paymentId
     );
 
-    PaymentService::consume_coupon_after_razorpay_capture(
-        $conn,
-        $orderId,
-        $customerId,
-        (int) ($_SESSION['pending_coupon_id'] ?? 0),
-        (string) ($lockedOrder['order_notes'] ?? '')
-    );
-
     $conn->commit();
 
     CartService::checkout_session_clear_after_order($conn, $customerId);

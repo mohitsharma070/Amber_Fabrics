@@ -156,7 +156,7 @@ include 'partials/header.php'; ?>
                 <textarea name="internal_note" class="form-control mb-2" rows="4" placeholder="Write internal note"><?php echo e($inquiry['internal_note']); ?></textarea>
                 <button name="save_note" class="btn btn-outline-secondary" type="submit">Save Note</button>
             </form>
-            <form method="POST" onsubmit="return confirm('Delete this inquiry?');">
+            <form method="POST" data-confirm="Delete this inquiry?">
                 <?php echo csrf_field(); ?>
                 <button name="delete" class="btn btn-outline-danger" type="submit">Delete Inquiry</button>
             </form>

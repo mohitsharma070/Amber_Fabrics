@@ -652,7 +652,7 @@ function cod_guard_render_admin_panel(array $context): void
                     <input type="hidden" name="action" value="cod_guard_mark_confirmed">
                     <button class="btn btn-sm btn-success" type="submit">Mark COD Confirmed</button>
                 </form>
-                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="d-grid gap-2 mt-2" onsubmit="return confirm('Cancel this unconfirmed COD order?');">
+                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="d-grid gap-2 mt-2" data-confirm="Cancel this unconfirmed COD order?">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="cod_guard_mark_cancelled">
                     <button class="btn btn-sm btn-outline-danger" type="submit">Cancel COD Order</button>

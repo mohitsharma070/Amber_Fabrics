@@ -40,12 +40,19 @@ if (!$invalid && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         $hash = password_hash($password, PASSWORD_DEFAULT);
         $upd  = $conn->prepare(
-            "UPDATE customers SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?"
+            "UPDATE customers
+             SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL, auth_version = auth_version + 1
+             WHERE id = ? AND reset_token = ? AND reset_token_expires > UTC_TIMESTAMP()"
         );
-        $upd->bind_param('si', $hash, $customer['id']);
+        $upd->bind_param('sis', $hash, $customer['id'], $tokenHash);
         $upd->execute();
-        flash('success', 'Password reset successfully. Please log in.');
-        redirect('/customer/login.php');
+        if ($upd->affected_rows !== 1) {
+            $invalid = true;
+            $errors['password'] = 'This reset link was already used or has expired.';
+        } else {
+            flash('success', 'Password reset successfully. Please log in.');
+            redirect('/customer/login.php');
+        }
     }
 }
 

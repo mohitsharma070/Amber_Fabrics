@@ -5,6 +5,19 @@ function normalize_coupon_code(string $code): string
     return strtoupper(trim($code));
 }
 
+function coupon_redirect_target(string $fallback = '/cart.php'): string
+{
+    $target = (string) ($_POST['redirect_to'] ?? '');
+    $addressId = (int) ($_POST['shipping_address_id'] ?? 0);
+    if ($target === 'checkout') {
+        return $addressId > 0 ? ('/checkout.php?address_id=' . $addressId) : '/checkout.php';
+    }
+    if ($target === 'cart') {
+        return '/cart.php';
+    }
+    return $fallback;
+}
+
 /** Preserve the in-progress checkout form when applying/removing a coupon. */
 function preserve_checkout_state_from_coupon_request(): void
 {
@@ -68,18 +81,56 @@ function has_customer_used_coupon(mysqli $conn, int $couponId, int $customerId):
     return !empty($row);
 }
 
-function mark_coupon_used_once(mysqli $conn, int $couponId, int $customerId, int $orderId): bool
+/** Reserve one global coupon slot for an order inside the caller transaction. */
+function reserve_coupon_for_order(mysqli $conn, int $couponId, int $customerId, int $orderId): bool
 {
-    if ($couponId <= 0 || $customerId <= 0 || $orderId <= 0) {
+    if ($couponId <= 0 || $orderId <= 0) {
         return false;
     }
 
-    $stmt = $conn->prepare(
-        "INSERT INTO coupon_usages (coupon_id, customer_id, order_id)
-         VALUES (?, ?, ?)"
+    $existingStmt = $conn->prepare(
+        "SELECT coupon_id FROM coupon_usages WHERE order_id = ? LIMIT 1 FOR UPDATE"
     );
-    $stmt->bind_param('iii', $couponId, $customerId, $orderId);
-    return $stmt->execute();
+    $existingStmt->bind_param('i', $orderId);
+    $existingStmt->execute();
+    $existing = $existingStmt->get_result()->fetch_assoc();
+    if ($existing) {
+        if ((int) ($existing['coupon_id'] ?? 0) !== $couponId) {
+            throw new RuntimeException('Order coupon reservation does not match the order.');
+        }
+        return true;
+    }
+
+    $couponStmt = $conn->prepare(
+        "SELECT id, usage_limit, used_count FROM coupons WHERE id = ? LIMIT 1 FOR UPDATE"
+    );
+    $couponStmt->bind_param('i', $couponId);
+    $couponStmt->execute();
+    if (!$couponStmt->get_result()->fetch_assoc()) {
+        throw new RuntimeException('Coupon is no longer available.');
+    }
+    if ($customerId > 0 && has_customer_used_coupon($conn, $couponId, $customerId)) {
+        throw new RuntimeException('You have already used this coupon.');
+    }
+
+    $reserve = $conn->prepare(
+        "UPDATE coupons
+         SET used_count = used_count + 1
+         WHERE id = ? AND (usage_limit = 0 OR used_count < usage_limit)"
+    );
+    $reserve->bind_param('i', $couponId);
+    $reserve->execute();
+    if ($reserve->affected_rows <= 0) {
+        throw new RuntimeException('Coupon usage limit reached.');
+    }
+
+    $reservationCustomerId = $customerId > 0 ? $customerId : null;
+    $insert = $conn->prepare(
+        "INSERT INTO coupon_usages (coupon_id, customer_id, order_id) VALUES (?, ?, ?)"
+    );
+    $insert->bind_param('iii', $couponId, $reservationCustomerId, $orderId);
+    $insert->execute();
+    return true;
 }
 
 function release_coupon_usage_for_order(mysqli $conn, int $orderId): bool
@@ -92,7 +143,8 @@ function release_coupon_usage_for_order(mysqli $conn, int $orderId): bool
         "SELECT coupon_id
          FROM coupon_usages
          WHERE order_id = ?
-         LIMIT 1"
+         LIMIT 1
+         FOR UPDATE"
     );
     $stmt->bind_param('i', $orderId);
     $stmt->execute();
@@ -105,6 +157,9 @@ function release_coupon_usage_for_order(mysqli $conn, int $orderId): bool
     $del = $conn->prepare("DELETE FROM coupon_usages WHERE order_id = ?");
     $del->bind_param('i', $orderId);
     $del->execute();
+    if ($del->affected_rows <= 0) {
+        return false;
+    }
 
     $upd = $conn->prepare("UPDATE coupons SET used_count = GREATEST(used_count - 1, 0) WHERE id = ?");
     $upd->bind_param('i', $couponId);
@@ -173,11 +228,6 @@ function validate_coupon_for_amount(array $coupon, float $amount, string $today)
         'code' => (string) ($coupon['code'] ?? ''),
         'coupon_id' => (int) ($coupon['id'] ?? 0),
     ];
-}
-
-function validate_coupon_for_subtotal(array $coupon, float $subtotal, string $today): array
-{
-    return validate_coupon_for_amount($coupon, $subtotal, $today);
 }
 
 function get_active_coupon_discount(mysqli $conn, ?string $couponCode, float $amount): array

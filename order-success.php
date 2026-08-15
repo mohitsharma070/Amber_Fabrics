@@ -131,6 +131,9 @@ include __DIR__ . '/includes/header.php';
                     <?php endif; ?>
 
                     <div class="d-flex gap-2 justify-content-center">
+                        <?php if ($paymentMethod === 'razorpay' && $paymentStatus !== 'paid' && (int) ($_SESSION['pending_order_id'] ?? 0) === $orderId): ?>
+                            <a href="/payment/razorpay-create.php" class="btn btn-warning">Retry Payment</a>
+                        <?php endif; ?>
                         <?php if ($customerId > 0): ?>
                             <a href="/customer/order-view?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
                         <?php endif; ?>

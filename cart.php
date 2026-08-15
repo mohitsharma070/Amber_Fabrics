@@ -95,8 +95,8 @@ include __DIR__ . '/includes/header.php';
                             <p class="text-muted small mb-0">No products saved yet. Use "Move to Wishlist" on any cart item.</p>
                         <?php else: ?>
                             <?php foreach ($wishlistItems as $w): ?>
-                                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                                    <div>
+                                <div class="saved-cart-item d-flex justify-content-between align-items-center py-2 border-bottom">
+                                    <div class="saved-cart-item__details">
                                         <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
                                         <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
                                         <div class="small text-muted">
@@ -107,7 +107,7 @@ include __DIR__ . '/includes/header.php';
                                             <?php endif; ?>
                                         </div>
                                     </div>
-                                    <div class="d-flex gap-2">
+                                    <div class="saved-cart-item__actions d-flex gap-2">
                                         <form method="POST" action="/move-to-cart.php" class="d-inline">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
@@ -233,8 +233,8 @@ include __DIR__ . '/includes/header.php';
                             <p class="text-muted small mb-0">No products saved yet. Use "Move to Wishlist" on any cart item.</p>
                         <?php else: ?>
                             <?php foreach ($wishlistItems as $w): ?>
-                                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                                    <div>
+                                <div class="saved-cart-item d-flex justify-content-between align-items-center py-2 border-bottom">
+                                    <div class="saved-cart-item__details">
                                         <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
                                         <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
                                         <div class="small text-muted">
@@ -245,7 +245,7 @@ include __DIR__ . '/includes/header.php';
                                             <?php endif; ?>
                                         </div>
                                     </div>
-                                    <div class="d-flex gap-2">
+                                    <div class="saved-cart-item__actions d-flex gap-2">
                                         <form method="POST" action="/move-to-cart.php" class="d-inline">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">

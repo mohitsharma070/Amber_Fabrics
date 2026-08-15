@@ -1,3 +1,5 @@
+</main>
+
 <footer class="site-footer">
     <?php
     $footerSiteName = site_name();
@@ -123,9 +125,9 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['login.php'], true);
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.97 1.35A1 1 0 0 1 3.73 1h8.54a1 1 0 0 1 .76.35l2.609 3.044A1.5 1.5 0 0 1 16 5.37v.255a2.375 2.375 0 0 1-4.25 1.458A2.371 2.371 0 0 1 9.875 8 2.37 2.37 0 0 1 8 7.083 2.37 2.37 0 0 1 6.125 8a2.37 2.37 0 0 1-1.875-.917A2.375 2.375 0 0 1 0 5.625V5.37a1.5 1.5 0 0 1 .361-.976zM1.5 8.5A.5.5 0 0 1 2 8h1a.5.5 0 0 1 .5.5V14h8V8.5A.5.5 0 0 1 12 8h1a.5.5 0 0 1 .5.5V15a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>
         <span>Shop</span>
     </a>
-    <a class="mobile-bottom-nav__item position-relative <?php echo $currentPage === 'cart.php' ? 'is-active' : ''; ?>" href="/cart" aria-label="Cart">
+    <a class="mobile-bottom-nav__item position-relative <?php echo $currentPage === 'cart.php' ? 'is-active' : ''; ?>" href="/cart" aria-label="Cart" data-cart-link>
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM3.102 4l1.313 7h8.17l1.313-7H3.102zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
-        <?php if (($cartCount ?? 0) > 0): ?><span class="cart-badge"><?php echo (int) $cartCount; ?></span><?php endif; ?>
+        <?php if (($cartCount ?? 0) > 0): ?><span class="cart-badge" data-cart-badge><?php echo (int) $cartCount; ?></span><?php endif; ?>
         <span>Cart</span>
     </a>
     <?php if ($isLoggedIn): ?>
@@ -160,7 +162,7 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['login.php'], true);
 <div
     id="cookieConsentBanner"
     data-consent-status="<?php echo e($marketingConsentStatus); ?>"
-    class="position-fixed bottom-0 start-0 end-0 p-3 <?php echo $marketingConsentStatus === 'unknown' ? '' : 'd-none'; ?>"
+    class="cookie-consent-banner position-fixed start-0 end-0 p-3 <?php echo $showMobileBottomNav ? 'has-mobile-nav ' : ''; ?><?php echo $marketingConsentStatus === 'unknown' ? '' : 'd-none'; ?>"
     style="z-index:1085;"
 >
     <div class="container">

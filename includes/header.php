@@ -31,11 +31,11 @@ $siteUrlForHead = app_url();
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
-<link rel="stylesheet" href="/css/style.css?v=20260809g">
+<link rel="stylesheet" href="/css/style.css?v=20260815b">
 
 <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
 
-<script src="/js/script.js?v=20260809c" defer></script>
+<script src="/js/script.js?v=20260815c" defer></script>
 
 <?php do_action('page.head', [
     'page' => basename($_SERVER['PHP_SELF'] ?? ''),
@@ -45,6 +45,8 @@ $siteUrlForHead = app_url();
 </head>
 
 <body>
+
+<a class="skip-link" href="#main-content">Skip to main content</a>
 
 <?php 
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
@@ -90,9 +92,9 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
                         <?php endif; ?>
                     </ul>
                 </div>
-                <a class="header-icon-link position-relative d-none d-lg-inline-flex <?php echo $currentPage === 'cart.php' ? 'active' : ''; ?>" href="/cart" title="Cart" aria-label="Cart">
+                <a class="header-icon-link position-relative d-none d-lg-inline-flex <?php echo $currentPage === 'cart.php' ? 'active' : ''; ?>" href="/cart" title="Cart" aria-label="Cart" data-cart-link>
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM3.102 4l1.313 7h8.17l1.313-7H3.102zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
-                    <?php if ($cartCount > 0): ?><span class="cart-badge"><?php echo $cartCount; ?></span><?php endif; ?>
+                    <?php if ($cartCount > 0): ?><span class="cart-badge" data-cart-badge><?php echo $cartCount; ?></span><?php endif; ?>
                 </a>
                 <?php if ($isLoggedIn): ?>
                     <a class="header-icon-link d-none d-lg-inline-flex <?php echo $currentPage === 'profile.php' ? 'active' : ''; ?>" href="/customer/profile" title="Account" aria-label="Account">
@@ -137,7 +139,7 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
             <a class="nav-link <?php echo in_array($currentPage, ['contact.php','thank-you.php'], true) ? 'active' : ''; ?>" href="/contact">Contact</a>
         </div>
         <div class="mobile-drawer-utility">
-            <a class="drawer-utility-link position-relative" href="/cart">Cart <?php if ($cartCount > 0): ?><span class="cart-badge"><?php echo $cartCount; ?></span><?php endif; ?></a>
+            <a class="drawer-utility-link position-relative" href="/cart" data-cart-link>Cart <?php if ($cartCount > 0): ?><span class="cart-badge" data-cart-badge><?php echo $cartCount; ?></span><?php endif; ?></a>
             <?php if ($isLoggedIn): ?>
                 <a class="drawer-utility-link" href="/customer/orders">My Orders</a>
                 <a class="drawer-utility-link" href="/customer/profile">Account</a>
@@ -164,3 +166,5 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
         <div class="alert alert-warning text-center mb-0 rounded-0" role="status"><?php echo e($msg); ?></div>
     <?php endif; ?>
 <?php endif; ?>
+
+<main id="main-content" tabindex="-1">

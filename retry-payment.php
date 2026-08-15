@@ -42,6 +42,10 @@ try {
     }
 
     InventoryService::reserve_order_inventory($conn, $orderId);
+    $resolvedCouponId = PaymentService::resolve_coupon_id_for_order($conn, $orderId, (string) ($order['order_notes'] ?? ''));
+    if ($resolvedCouponId > 0) {
+        reserve_coupon_for_order($conn, $resolvedCouponId, $customerId, $orderId);
+    }
 
     $resetOrder = $conn->prepare(
         "UPDATE orders
@@ -66,19 +70,13 @@ try {
 } catch (Throwable $e) {
     $conn->rollback();
     error_log('[retry-payment] failed to reset order/payment status: ' . $e->getMessage());
-    $msg = $e->getMessage();
-    flash('error', $msg !== '' ? $msg : 'Unable to retry payment right now. Please try again.');
+    flash('error', 'Unable to retry payment. Inventory or coupon capacity may no longer be available.');
     redirect('/customer/orders.php');
 }
 
 $_SESSION['pending_order_id']     = $order['id'];
 $_SESSION['pending_order_number'] = $order['order_number'];
-$_SESSION['pending_coupon_id']    = 0;
-
-$resolvedCouponId = PaymentService::resolve_coupon_id_for_order($conn, (int) $order['id'], (string) ($order['order_notes'] ?? ''));
-if ($resolvedCouponId > 0) {
-    $_SESSION['pending_coupon_id'] = $resolvedCouponId;
-}
+$_SESSION['pending_coupon_id']    = $resolvedCouponId;
 
 if ($order['payment_method'] === 'razorpay') {
     redirect('/payment/razorpay-create.php');

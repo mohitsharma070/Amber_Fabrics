@@ -101,6 +101,44 @@ function order_refund_initiated(string $orderStatus, string $paymentMethod, stri
         && $paymentStatus === 'paid';
 }
 
+function order_customer_status_messages(array $order): array
+{
+    $messages = [];
+    $returnStatus = strtolower((string) ($order['return_status'] ?? ''));
+    if ($returnStatus !== '') {
+        $messages[] = [
+            'class' => 'secondary',
+            'text' => 'Return ' . trim((string) ($order['return_number'] ?? '')) . ': ' . strtoupper(str_replace('_', ' ', $returnStatus)),
+        ];
+    }
+
+    if (strtolower((string) ($order['payment_status'] ?? '')) === 'failed') {
+        $failureReason = order_failure_reason((string) ($order['notes'] ?? ''));
+        if ($failureReason !== '') {
+            $messages[] = ['class' => 'warning', 'text' => order_failure_message_for_customer($failureReason)];
+        }
+    }
+
+    if (order_refund_initiated(
+        strtolower((string) ($order['order_status'] ?? $order['status'] ?? '')),
+        strtolower((string) ($order['payment_method'] ?? '')),
+        strtolower((string) ($order['payment_status'] ?? ''))
+    )) {
+        $messages[] = ['class' => 'info', 'text' => 'Refund initiated. Amount will be returned to your original payment method as per bank/payment timelines.'];
+    }
+
+    if (strtolower((string) ($order['payment_status'] ?? '')) === 'refunded') {
+        $messages[] = ['class' => 'success', 'text' => 'Refund processed on payment gateway. Bank/card/UPI credit can take 2-7 working days (sometimes up to 10 working days).'];
+    }
+
+    return $messages;
+}
+
+foreach ($orders as &$orderRow) {
+    $orderRow['_customer_status_messages'] = order_customer_status_messages($orderRow);
+}
+unset($orderRow);
+
 $metaTitle = SiteContext::title('My Orders');
 include __DIR__ . '/../includes/header.php';
 ?>
@@ -157,13 +195,16 @@ include __DIR__ . '/../includes/header.php';
                             </form>
                             <?php endif; ?>
                             <?php if ($canCancel): ?>
-                            <form method="POST" action="/customer/cancel-order.php" class="d-inline" onsubmit="return confirm('Cancel this order?');">
+                            <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="Cancel this order?">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
                             </form>
                             <?php endif; ?>
                         </div>
+                        <?php foreach (($o['_customer_status_messages'] ?? []) as $message): ?>
+                            <div class="alert alert-<?php echo e((string) $message['class']); ?> py-2 px-3 mt-2 mb-0 small" role="alert"><?php echo e((string) $message['text']); ?></div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -190,12 +231,6 @@ include __DIR__ . '/../includes/header.php';
                         $totalQty = (float) ($o['total_qty'] ?? 0);
                         $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
                         $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
-                        $isRefundInitiated = order_refund_initiated(
-                            strtolower($effectiveOrderStatus),
-                            strtolower((string) ($o['payment_method'] ?? '')),
-                            strtolower((string) ($o['payment_status'] ?? ''))
-                        );
-                        $returnStatus = strtolower((string) ($o['return_status'] ?? ''));
                     ?>
                         <tr>
                             <td class="fw-semibold"><?php echo e($o['order_number']); ?></td>
@@ -219,7 +254,7 @@ include __DIR__ . '/../includes/header.php';
                                 </form>
                                 <?php endif; ?>
                                 <?php if ($canCancel): ?>
-                                <form method="POST" action="/customer/cancel-order.php" class="d-inline" onsubmit="return confirm('Cancel this order?');">
+                                <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="Cancel this order?">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Cancel Order</button>
@@ -227,49 +262,15 @@ include __DIR__ . '/../includes/header.php';
                                 <?php endif; ?>
                             </td>
                         </tr>
-                        <?php if ($returnStatus !== ''): ?>
+                        <?php foreach (($o['_customer_status_messages'] ?? []) as $message): ?>
                         <tr>
                             <td colspan="7" class="small pt-0 border-0">
-                                <div class="alert alert-secondary py-2 px-3 mb-0" role="alert">
-                                    Return <?php echo e((string) ($o['return_number'] ?? '')); ?>: <?php echo e(strtoupper(str_replace('_', ' ', $returnStatus))); ?>
+                                <div class="alert alert-<?php echo e((string) $message['class']); ?> py-2 px-3 mb-0" role="alert">
+                                    <?php echo e((string) $message['text']); ?>
                                 </div>
                             </td>
                         </tr>
-                        <?php endif; ?>
-                        <?php
-                            $failureReason = '';
-                            if (($o['payment_status'] ?? '') === 'failed') {
-                                $failureReason = order_failure_reason((string) ($o['notes'] ?? ''));
-                            }
-                        ?>
-                        <?php if ($failureReason !== ''): ?>
-                        <?php $failureMessage = order_failure_message_for_customer($failureReason); ?>
-                        <tr>
-                            <td colspan="7" class="small text-warning-emphasis pt-0 border-0">
-                                <div class="alert alert-warning py-2 px-3 mb-0" role="alert">
-                                    <?php echo e($failureMessage); ?>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                        <?php if ($isRefundInitiated): ?>
-                        <tr>
-                            <td colspan="7" class="small text-info-emphasis pt-0 border-0">
-                                <div class="alert alert-info py-2 px-3 mb-0" role="alert">
-                                    Refund initiated. Amount will be returned to your original payment method as per bank/payment timelines.
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                        <?php if (strtolower((string) ($o['payment_status'] ?? '')) === 'refunded'): ?>
-                        <tr>
-                            <td colspan="7" class="small text-success-emphasis pt-0 border-0">
-                                <div class="alert alert-success py-2 px-3 mb-0" role="alert">
-                                    Refund processed on payment gateway. Bank/card/UPI credit can take 2-7 working days (sometimes up to 10 working days).
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endif; ?>
+                        <?php endforeach; ?>
                     <?php endforeach; ?>
                     </tbody>
                 </table>

@@ -252,7 +252,7 @@ include 'partials/header.php';
                 </td>
                 <td data-label="Added"><?php echo e(date('d M Y', strtotime((string) $item['created_at']))); ?></td>
                 <td data-label="Actions" class="text-end">
-                    <form method="POST" class="d-inline" onsubmit="return confirm('Delete this media item?');">
+                    <form method="POST" class="d-inline" data-confirm="Delete this media item?">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id" value="<?php echo (int) $item['id']; ?>">

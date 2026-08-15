@@ -344,7 +344,7 @@ include 'partials/header.php';
                                 </div>
                             </form>
                         </details>
-                        <form method="post" class="d-inline-block mt-2" onsubmit="return confirm('Delete category <?php echo e((string) $cat['name']); ?>?');">
+                        <form method="post" class="d-inline-block mt-2" data-confirm="Delete category <?php echo e((string) $cat['name']); ?>?">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?php echo (int) $cat['id']; ?>">

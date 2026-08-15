@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS customers (
     name                VARCHAR(255) NOT NULL,
     email               VARCHAR(255) UNIQUE NOT NULL,
     password_hash       VARCHAR(255) NOT NULL,
+    auth_version        INT UNSIGNED NOT NULL DEFAULT 1,
     phone               VARCHAR(30)  DEFAULT NULL,
     country             VARCHAR(100) DEFAULT NULL,
     is_active           TINYINT(1)   NOT NULL DEFAULT 1,
@@ -514,6 +515,8 @@ CREATE TABLE IF NOT EXISTS payments (
     payment_status      ENUM('pending','paid','failed','refunded') DEFAULT 'pending',
     transaction_id      VARCHAR(255)  DEFAULT NULL,
     razorpay_order_id   VARCHAR(255)  DEFAULT NULL,
+    razorpay_create_claim_token CHAR(32) DEFAULT NULL,
+    razorpay_create_claimed_at DATETIME DEFAULT NULL,
     razorpay_payment_id VARCHAR(255)  DEFAULT NULL,
     razorpay_signature  VARCHAR(255)  DEFAULT NULL,
     amount              DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -958,11 +961,11 @@ CREATE TABLE IF NOT EXISTS marketing_attributions (
 CREATE TABLE IF NOT EXISTS coupon_usages (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     coupon_id   INT NOT NULL,
-    customer_id INT NOT NULL,
+    customer_id INT DEFAULT NULL,
     order_id    INT NOT NULL,
     used_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_coupon_usages_coupon_customer (coupon_id, customer_id),
-    INDEX idx_coupon_usages_order_id (order_id),
+    UNIQUE KEY uq_coupon_usages_order_id (order_id),
     CONSTRAINT fk_coupon_usages_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
     CONSTRAINT fk_coupon_usages_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     CONSTRAINT fk_coupon_usages_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
@@ -1065,7 +1068,8 @@ INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-08-16-remove-obsolete-product-fields.sql','c2ca92e4f7fea6433df41578dfc79124da7cf7333403871cd7e5970edc25a175'),
 ('2026-08-17-remove-legacy-placeholder-variants.sql','1c036a6635e64ffe2f191616630bfb08c9ed5389d7a556e20916e45845a1d3d0'),
 ('2026-08-18-purge-legacy-placeholder-variants.sql','7ff11fa4a42abc61052ac8b54a6614cbc06622c7b753599c7314d5bfadc46d6a'),
-('2026-08-19-backend-integrity-hardening.sql',  'fedb5362871f1be607d033ebbb42346dcbde3f2e920bc1f4156a55cee1b1a75d');
+('2026-08-19-backend-integrity-hardening.sql',  'fedb5362871f1be607d033ebbb42346dcbde3f2e920bc1f4156a55cee1b1a75d'),
+('2026-08-20-customer-backend-hardening.sql',   '39ebf3f24a9451fded654ab77c4ad8e4fc090877fef3f1d217df2e462c92afe2');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

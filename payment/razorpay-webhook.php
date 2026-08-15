@@ -203,6 +203,7 @@ if ($eventType === 'payment.failed') {
                 $rzpOrderId
             );
             InventoryService::restore_order_inventory($conn, $orderId);
+            release_coupon_usage_for_order($conn, $orderId);
             log_order_activity($conn, $orderId, 'payment_failed', 'webhook', 0, 'razorpay', $note);
         }
 
@@ -352,13 +353,6 @@ try {
         false
     );
 
-    PaymentService::consume_coupon_after_razorpay_capture(
-        $conn,
-        $orderId,
-        (int) ($order['customer_id'] ?? 0),
-        0,
-        (string) ($order['order_notes'] ?? '')
-    );
     $orderCustomerId = (int) ($order['customer_id'] ?? 0);
     if ($orderCustomerId > 0) {
         CartService::cart_clear_db($conn, $orderCustomerId);

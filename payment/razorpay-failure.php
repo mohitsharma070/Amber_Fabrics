@@ -121,16 +121,18 @@ try {
             $parts[] = 'reason: ' . $errorDescription;
         }
         $note = implode(' | ', $parts);
-        PaymentService::razorpay_mark_order_failed(
+        // A browser callback is not authoritative: Razorpay may still deliver
+        // a capture webhook after the modal closes or reports a transient error.
+        // Keep the order pending and inventory/coupon reservations intact.
+        log_order_activity(
             $conn,
             $orderId,
-            (string) ($order['payment_status'] ?? ''),
-            $note,
-            $paymentId,
-            $rzpOrderId
+            $eventType === 'cancelled' ? 'payment_browser_cancelled' : 'payment_browser_failed',
+            $customerId > 0 ? 'customer' : 'guest',
+            $customerId,
+            $customerId > 0 ? 'customer' : 'guest',
+            $note
         );
-        InventoryService::restore_order_inventory($conn, $orderId);
-        log_order_activity($conn, $orderId, 'payment_failed', 'customer', $customerId, 'customer', $note);
     }
 
     $conn->commit();
@@ -138,11 +140,11 @@ try {
     if ($eventType === 'cancelled') {
         flash('error', $customerId > 0
             ? 'Payment was cancelled. You can retry payment from your orders.'
-            : 'Payment was cancelled. Your cart has been kept so you can try again.');
+            : 'Payment was cancelled. Your order and reserved items are still available; retry payment below.');
     } else {
         $msg = $customerId > 0
             ? 'Payment failed. You can retry payment from your orders.'
-            : 'Payment failed. Your cart has been kept so you can try again.';
+            : 'Payment failed. Your order and reserved items are still available; retry payment below.';
         if ($errorDescription !== '') {
             $msg .= ' Reason: ' . $errorDescription;
         } elseif ($errorCode !== '') {
@@ -150,7 +152,7 @@ try {
         }
         flash('error', $msg);
     }
-    redirect($customerId > 0 ? '/customer/orders.php' : '/checkout.php');
+    redirect($customerId > 0 ? '/customer/orders.php' : '/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {
     try {
         $conn->rollback();
@@ -162,5 +164,5 @@ try {
     flash('error', $customerId > 0
         ? 'Unable to process payment status. Please check your order in My Orders.'
         : 'Unable to process payment status. If money was debited, contact support with your order number.');
-    redirect($customerId > 0 ? '/customer/orders.php' : '/checkout.php');
+    redirect($customerId > 0 ? '/customer/orders.php' : '/order-success.php?order=' . urlencode($orderNumber));
 }

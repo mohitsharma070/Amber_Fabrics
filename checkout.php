@@ -441,9 +441,9 @@ include __DIR__ . '/includes/header.php';
                             </label>
                             <div class="checkout-pay-panel" id="razorpay-panel">
                                 <div class="checkout-online-methods">
-                                    <button type="button" class="checkout-online-method is-active" data-online-method="upi">UPI</button>
-                                    <button type="button" class="checkout-online-method" data-online-method="card">Card</button>
-                                    <button type="button" class="checkout-online-method" data-online-method="emi">EMI</button>
+                                    <button type="button" class="checkout-online-method is-active" data-online-method="upi" aria-pressed="true">UPI</button>
+                                    <button type="button" class="checkout-online-method" data-online-method="card" aria-pressed="false">Card</button>
+                                    <button type="button" class="checkout-online-method" data-online-method="emi" aria-pressed="false">EMI</button>
                                 </div>
                                 <noscript>
                                     <div class="mb-3">
@@ -589,6 +589,14 @@ include __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         </div>
                         <div id="checkout_delivery_estimate" class="small text-muted mb-2"><?php if ($hasCompleteDelivery): ?>Estimated delivery: <?php echo e(DeliveryEstimateService::formatRange($deliveryEstimate['estimated_delivery_start'] ?? null,$deliveryEstimate['estimated_delivery_end'] ?? null)); ?><?php endif; ?></div>
+                        <?php if ($isIndia): ?>
+                        <div id="checkout_mobile_review_section" class="checkout-mobile-review d-lg-none mt-3<?php echo $hasCompleteDelivery ? '' : ' d-none'; ?>" aria-hidden="<?php echo $hasCompleteDelivery ? 'false' : 'true'; ?>">
+                            <div class="small text-muted mb-2">Step 3 of 3: Review</div>
+                            <button type="submit" form="checkout_form" id="mobile_place_order_btn" class="btn btn-primary btn-lg w-100">
+                                <span id="mobile_place_order_label"><?php echo $selectedPayment === 'cod' ? 'Place COD Order — ' : 'Pay Securely — '; ?></span><span id="mobile_summary_total"><?php echo e(money($totalAmount)); ?></span>
+                            </button>
+                        </div>
+                        <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -634,6 +642,7 @@ include __DIR__ . '/includes/header.php';
     var shippingQuoteTokenInput = document.getElementById('shipping_quote_token');
     var mobileTotalEl = document.getElementById('mobile_summary_total');
     var mobileSubmitBtn = document.getElementById('mobile_place_order_btn');
+    var mobileSubmitLabel = document.getElementById('mobile_place_order_label');
     var checkoutForm = document.getElementById('checkout_form');
     var sectionAddress = document.getElementById('checkout_section_address');
     var sectionPayment = document.getElementById('checkout_section_payment');
@@ -653,6 +662,7 @@ include __DIR__ . '/includes/header.php';
     var continuePaymentBtn = document.getElementById('checkout_continue_payment');
     var deliveryStatusEl = document.getElementById('checkout_delivery_status');
     var checkoutReviewSection = document.getElementById('checkout_review_section');
+    var mobileReviewSection = document.getElementById('checkout_mobile_review_section');
     var deliveryUnlocked = <?php echo ($hasCompleteDelivery && $shippingQuoteToken !== '') ? 'true' : 'false'; ?>;
     var deliveryRequestPending = false;
 
@@ -761,6 +771,7 @@ include __DIR__ . '/includes/header.php';
         }
         var currentTotal = Number(String(totalEl.textContent || '').replace(/[^0-9.]/g, '')) || taxable;
         if (checkoutSubmit) checkoutSubmit.textContent = (paymentMethod === 'cod' ? 'Place COD Order — ' : 'Pay Securely — ') + toMoney(currentTotal);
+        if (mobileSubmitLabel) mobileSubmitLabel.textContent = paymentMethod === 'cod' ? 'Place COD Order — ' : 'Pay Securely — ';
     }
 
     function setCheckoutUnlocked(unlocked) {
@@ -773,6 +784,10 @@ include __DIR__ . '/includes/header.php';
             checkoutReviewSection.classList.toggle('d-none', !deliveryUnlocked);
             checkoutReviewSection.setAttribute('aria-hidden', deliveryUnlocked ? 'false' : 'true');
         }
+        if (mobileReviewSection) {
+            mobileReviewSection.classList.toggle('d-none', !deliveryUnlocked);
+            mobileReviewSection.setAttribute('aria-hidden', deliveryUnlocked ? 'false' : 'true');
+        }
         if (!deliveryUnlocked && shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
         syncSummary();
     }
@@ -784,6 +799,7 @@ include __DIR__ . '/includes/header.php';
             continuePaymentBtn.classList.toggle('is-loading', deliveryRequestPending);
         }
         if (checkoutSubmit) checkoutSubmit.disabled = deliveryRequestPending;
+        if (mobileSubmitBtn) mobileSubmitBtn.disabled = deliveryRequestPending;
     }
 
     function invalidateDeliveryQuote() {
@@ -931,6 +947,7 @@ include __DIR__ . '/includes/header.php';
                 mobileTotalEl.textContent = toMoney(total);
             }
             if(checkoutSubmit){checkoutSubmit.textContent=(paymentMethod==='cod'?'Place COD Order — ':'Pay Securely — ')+toMoney(total);}
+            if(mobileSubmitLabel){mobileSubmitLabel.textContent=paymentMethod==='cod'?'Place COD Order — ':'Pay Securely — ';}
             if(checkoutDeliveryEstimate&&data.estimated_delivery_label){checkoutDeliveryEstimate.textContent='Estimated delivery: '+String(data.estimated_delivery_label);}
             if(typeof window.gtag==='function'){window.gtag('event','add_shipping_info',{currency:'INR',value:total,shipping_tier:shippingSource});}
             setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
@@ -979,7 +996,9 @@ include __DIR__ . '/includes/header.php';
 
     function activateOnlineMethod(method) {
         onlineMethodButtons.forEach(function (btn) {
-            btn.classList.toggle('is-active', btn.getAttribute('data-online-method') === method);
+            var selected = btn.getAttribute('data-online-method') === method;
+            btn.classList.toggle('is-active', selected);
+            btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
         });
         onlinePanels.forEach(function (panel) {
             panel.classList.toggle('is-active', panel.getAttribute('data-online-panel') === method);
@@ -1056,11 +1075,6 @@ include __DIR__ . '/includes/header.php';
             updateSectionSummaries();
             setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, true);
             if (sectionPayment) sectionPayment.scrollIntoView({behavior: 'smooth', block: 'start'});
-        });
-    }
-    if (mobileSubmitBtn && checkoutForm) {
-        mobileSubmitBtn.addEventListener('click', function () {
-            checkoutForm.requestSubmit();
         });
     }
     if (createAccountCheckbox) {

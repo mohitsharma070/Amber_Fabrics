@@ -36,7 +36,12 @@ try {
     } catch (Throwable $rollbackException) {
         // ignore
     }
-    flash('error', $e->getMessage() !== '' ? $e->getMessage() : 'Unable to cancel order right now.');
+    if ($e instanceof mysqli_sql_exception) {
+        error_log('[customer-cancel-order] Database failure: ' . $e->getMessage());
+        flash('error', 'Unable to cancel order right now.');
+    } else {
+        flash('error', $e->getMessage() !== '' ? $e->getMessage() : 'Unable to cancel order right now.');
+    }
 }
 
 redirect('/customer/orders.php');
