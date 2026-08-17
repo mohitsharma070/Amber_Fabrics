@@ -6,7 +6,7 @@
  * 'enabled' => ['utm-attribution', 'meta-pixel'],
  */
 return [
-    'enabled' => ['conversion-mvp', 'cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'google-analytics', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'back-in-stock-alert', 'newsletter', 'shipping-rto-risk', 'shipping-courier', 'review-rating', 'order-timeline', 'seo-suite', 'recommendations', 'support-tickets'],
+    'enabled' => ['cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'google-analytics', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'back-in-stock-alert', 'newsletter', 'shipping-rto-risk', 'shipping-courier', 'review-rating', 'order-timeline', 'seo-suite', 'recommendations', 'support-tickets'],
     'settings' => [
         'conversion-mvp' => [
             'guest_order_access_enabled' => (int) (function_exists('_cfg') ? _cfg('GUEST_ORDER_ACCESS_ENABLED', '1') : '1'),
@@ -61,6 +61,8 @@ return [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('ABANDONED_CART_EMAIL_ENABLED', '1') : '1'),
             'delay_minutes' => (int) (function_exists('_cfg') ? _cfg('ABANDONED_CART_EMAIL_DELAY_MINUTES', '60') : '60'),
             'max_emails' => (int) (function_exists('_cfg') ? _cfg('ABANDONED_CART_EMAIL_MAX_EMAILS', '1') : '1'),
+            'max_failures' => (int) (function_exists('_cfg') ? _cfg('ABANDONED_CART_EMAIL_MAX_FAILURES', '5') : '5'),
+            'retry_base_minutes' => (int) (function_exists('_cfg') ? _cfg('ABANDONED_CART_EMAIL_RETRY_BASE_MINUTES', '15') : '15'),
         ],
         'product-feed' => [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('PRODUCT_FEED_ENABLED', '1') : '1'),
@@ -78,6 +80,8 @@ return [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_ENABLED', '1') : '1'),
             'batch_size' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_BATCH_SIZE', '50') : '50'),
             'cooldown_hours' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_COOLDOWN_HOURS', '1') : '1'),
+            'max_failures' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_MAX_FAILURES', '5') : '5'),
+            'retry_base_minutes' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_RETRY_BASE_MINUTES', '15') : '15'),
             'from_name' => function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_FROM_NAME', '') : '',
         ],
         'newsletter' => [

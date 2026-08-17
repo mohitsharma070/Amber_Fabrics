@@ -131,11 +131,15 @@ The default tests are intentionally lightweight and do not replace browser, paym
 
 ## Production operations
 
-The secured cron entry point is `cron/run-plugins.php`. Run it from CLI with production mode; HTTP execution requires the configured cron token.
+The secured cron entry point is `cron/run-plugins.php`. Configure one Hostinger CLI job every 10 minutes. CLI is preferred; HTTP execution requires `X-Cron-Token` (the query token remains a compatibility fallback). A normal or `--local-smoke` run processes real records, while `--check` performs read-only readiness validation.
 
 ```bash
-APP_MODE=production php cron/run-plugins.php
+php cron/run-plugins.php
+php cron/run-plugins.php --check
+php cron/run-plugins.php --local-smoke
 ```
+
+The runner uses filesystem and MySQL locks, returns nonzero for payment/COD integrity failures, records degraded noncritical work for the admin dashboard, and retries scheduled notification delivery with bounded backoff.
 
 Deployment should back up files and database, apply backward-compatible migrations, deploy the matching commit, and smoke-test authentication, catalog, cart, checkout, payment, order, and admin workflows.
 

@@ -7,7 +7,7 @@ add_filter('admin.order_action.handled', 'shipping_courier_handle_admin_action',
 add_action('order.after_commit', 'shipping_courier_after_order_commit', 30);
 add_action('order.after_payment_success', 'shipping_courier_after_payment_success', 30);
 add_action('order.after_status_change', 'shipping_courier_after_status_change', 30);
-add_action('cron.tick', 'shipping_courier_cron_tracking_sync', 35);
+function_exists('add_cron_action') ? add_cron_action('shipping_courier_cron_tracking_sync', 35, false) : add_action('cron.tick', 'shipping_courier_cron_tracking_sync', 35);
 add_filter('admin.return_action.handled', 'shipping_courier_handle_admin_return_action', 20);
 add_action('admin.return_row.actions', 'shipping_courier_render_return_actions', 20);
 add_filter('shipping.quote', 'shipping_courier_filter_shipping_quote', 20);
@@ -2676,28 +2676,33 @@ function shipping_courier_after_status_change(array $context): void
     }
 }
 
-function shipping_courier_cron_tracking_sync(array $context): void
+function shipping_courier_cron_tracking_sync(array $context): array
 {
     if (!shipping_courier_enabled() || empty(shipping_courier_settings()['tracking_sync'])) {
-        return;
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'disabled']);
     }
 
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
-    if (!$conn instanceof mysqli || !shipping_courier_provider_configured() || !shipping_courier_metadata_table_ready($conn)) {
-        return;
+    if (!$conn instanceof mysqli || !shipping_courier_metadata_table_ready($conn)) {
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
+    }
+    if (!shipping_courier_provider_configured()) {
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'provider_not_configured']);
     }
 
+    $referenceFailures = 0;
     $segment = shipping_courier_bigship_segment(shipping_courier_settings());
     if (shipping_courier_reference_cache_get($conn, 'payment_modes', $segment) === null) {
         $referenceResult = shipping_courier_bigship_sync_reference_data($conn);
         if (empty($referenceResult['ok'])) {
-            error_log('[shipping-courier] reference sync skipped: ' . (string) ($referenceResult['message'] ?? 'unknown'));
+            $referenceFailures++;
+            error_log('[shipping-courier] reference sync skipped: ' . CronService::sanitizeError((string) ($referenceResult['message'] ?? 'unknown')));
         }
     }
 
     $provider = shipping_courier_provider_name();
     if ($provider === '') {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'provider_name_unavailable']);
     }
 
     $stmt = $conn->prepare(
@@ -2716,6 +2721,8 @@ function shipping_courier_cron_tracking_sync(array $context): void
     $stmt->bind_param('s', $provider);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $succeeded = 0;
+    $failed = $referenceFailures;
     foreach ($rows as $row) {
         $orderId = (int) ($row['order_id'] ?? 0);
         if ($orderId <= 0) {
@@ -2723,7 +2730,11 @@ function shipping_courier_cron_tracking_sync(array $context): void
         }
         $result = shipping_courier_sync_tracking($conn, $orderId);
         if (empty($result['ok'])) {
-            error_log('[shipping-courier] cron tracking sync skipped for order ' . $orderId . ': ' . (string) ($result['message'] ?? 'unknown'));
+            $failed++;
+            error_log('[shipping-courier] cron tracking sync skipped for order ' . $orderId . ': ' . CronService::sanitizeError((string) ($result['message'] ?? 'unknown')));
+        } else {
+            $succeeded++;
         }
     }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows) + $referenceFailures, $succeeded, $failed);
 }

@@ -40,6 +40,13 @@ function ensure_tables(mysqli $conn): void
         }
     };
 
+    $indexExists = static function (mysqli $conn, string $table, string $index): bool {
+        $stmt = $conn->prepare("SELECT COUNT(*) AS total FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?");
+        $stmt->bind_param('ss', $table, $index);
+        $stmt->execute();
+        return (int) ($stmt->get_result()->fetch_assoc()['total'] ?? 0) > 0;
+    };
+
     // Fabrics table
     $conn->query(
         "CREATE TABLE IF NOT EXISTS fabrics (
@@ -468,19 +475,35 @@ function ensure_tables(mysqli $conn): void
             items_count INT NOT NULL DEFAULT 0,
             subtotal_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             cart_summary TEXT,
-            status ENUM('active','completed','recovered') NOT NULL DEFAULT 'active',
+            status ENUM('active','processing','completed','recovered','failed') NOT NULL DEFAULT 'active',
             emails_sent_count INT NOT NULL DEFAULT 0,
+            delivery_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+            consecutive_failures INT UNSIGNED NOT NULL DEFAULT 0,
             next_send_at DATETIME DEFAULT NULL,
             last_sent_at DATETIME DEFAULT NULL,
+            last_attempt_at DATETIME DEFAULT NULL,
+            last_error VARCHAR(1000) DEFAULT NULL,
             last_activity_at DATETIME DEFAULT NULL,
             recovered_at DATETIME DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uq_abandoned_cart_customer (customer_id),
             INDEX idx_abandoned_cart_status_next (status, next_send_at),
+            INDEX idx_abandoned_cart_processing (status, updated_at),
             CONSTRAINT fk_abandoned_cart_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    $ensureColumns($conn, 'abandoned_cart_reminders', [
+        'delivery_attempts' => 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER emails_sent_count',
+        'consecutive_failures' => 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER delivery_attempts',
+        'last_attempt_at' => 'DATETIME NULL AFTER last_sent_at',
+        'last_error' => 'VARCHAR(1000) NULL AFTER last_attempt_at',
+    ]);
+    $conn->query("ALTER TABLE abandoned_cart_reminders MODIFY COLUMN status ENUM('active','processing','completed','recovered','failed') NOT NULL DEFAULT 'active'");
+    if (!$indexExists($conn, 'abandoned_cart_reminders', 'idx_abandoned_cart_processing')) {
+        $conn->query("ALTER TABLE abandoned_cart_reminders ADD INDEX idx_abandoned_cart_processing (status, updated_at)");
+    }
 
     // Inventory alert logs
     $conn->query(
@@ -503,9 +526,11 @@ function ensure_tables(mysqli $conn): void
             variant_id INT DEFAULT NULL,
             customer_id INT DEFAULT NULL,
             email VARCHAR(255) NOT NULL,
-            status ENUM('pending','processing','sent','cancelled') NOT NULL DEFAULT 'pending',
+            status ENUM('pending','processing','sent','cancelled','failed') NOT NULL DEFAULT 'pending',
+            delivery_attempts INT UNSIGNED NOT NULL DEFAULT 0,
             unsubscribe_token CHAR(64) NOT NULL,
             requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            next_attempt_at DATETIME DEFAULT NULL,
             notified_at DATETIME DEFAULT NULL,
             last_error TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -516,11 +541,22 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_bis_customer (customer_id),
             INDEX idx_bis_email (email),
             INDEX idx_bis_status_requested (status, requested_at),
+            INDEX idx_bis_status_next_attempt (status, next_attempt_at, id),
             CONSTRAINT fk_bis_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE,
             CONSTRAINT fk_bis_variant FOREIGN KEY (variant_id) REFERENCES fabric_variants(id) ON DELETE SET NULL,
             CONSTRAINT fk_bis_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    $ensureColumns($conn, 'back_in_stock_subscriptions', [
+        'delivery_attempts' => 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER status',
+        'next_attempt_at' => 'DATETIME NULL AFTER requested_at',
+    ]);
+    $conn->query("ALTER TABLE back_in_stock_subscriptions MODIFY COLUMN status ENUM('pending','processing','sent','cancelled','failed') NOT NULL DEFAULT 'pending'");
+    $conn->query("UPDATE back_in_stock_subscriptions SET next_attempt_at = DATE_ADD(requested_at, INTERVAL 1 HOUR) WHERE status = 'pending' AND next_attempt_at IS NULL");
+    if (!$indexExists($conn, 'back_in_stock_subscriptions', 'idx_bis_status_next_attempt')) {
+        $conn->query("ALTER TABLE back_in_stock_subscriptions ADD INDEX idx_bis_status_next_attempt (status, next_attempt_at, id)");
+    }
 
     // Shipping / RTO risk table
     $conn->query(
@@ -906,7 +942,8 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_shipping_courier_order (order_id),
             INDEX idx_shipping_courier_provider_order (provider, provider_order_id),
             INDEX idx_shipping_courier_provider_shipment (provider, provider_shipment_id),
-            INDEX idx_shipping_courier_status (provider, provider_status)
+            INDEX idx_shipping_courier_status (provider, provider_status),
+            INDEX idx_shipping_courier_provider_updated (provider, updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
@@ -957,6 +994,9 @@ function ensure_tables(mysqli $conn): void
     }
     if (empty($shippingCourierIndexes['idx_shipping_courier_status'])) {
         $conn->query("ALTER TABLE shipping_courier_shipments ADD INDEX idx_shipping_courier_status (provider, provider_status)");
+    }
+    if (empty($shippingCourierIndexes['idx_shipping_courier_provider_updated'])) {
+        $conn->query("ALTER TABLE shipping_courier_shipments ADD INDEX idx_shipping_courier_provider_updated (provider, updated_at)");
     }
 
     $shippingCourierOrderFkCheck = $conn->query(
@@ -1024,7 +1064,6 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_shipping_courier_webhook_processed (processed_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
-
     $ensureColumns($conn, 'payments', [
         'razorpay_create_claim_token' => "CHAR(32) NULL DEFAULT NULL",
         'razorpay_create_claimed_at' => "DATETIME NULL DEFAULT NULL",
@@ -1248,9 +1287,13 @@ function ensure_tables(mysqli $conn): void
             window_started_at DATETIME NOT NULL,
             blocked_until DATETIME DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_public_form_attempts_scope_updated (scope, updated_at)
+            INDEX idx_public_form_attempts_scope_updated (scope, updated_at),
+            INDEX idx_public_form_attempts_updated (updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    if (!$indexExists($conn, 'public_form_attempts', 'idx_public_form_attempts_updated')) {
+        $conn->query("ALTER TABLE public_form_attempts ADD INDEX idx_public_form_attempts_updated (updated_at)");
+    }
 
     $conn->query(
         "CREATE TABLE IF NOT EXISTS payment_webhook_events (
@@ -1730,6 +1773,9 @@ function ensure_tables(mysqli $conn): void
             'requester_name' => "VARCHAR(255) NULL DEFAULT NULL",
             'requester_email' => "VARCHAR(255) NULL DEFAULT NULL",
         ]);
+        if (!$indexExists($conn, 'support_tickets', 'idx_support_tickets_status_updated')) {
+            $conn->query("ALTER TABLE support_tickets ADD INDEX idx_support_tickets_status_updated (status, updated_at)");
+        }
     }
 
     $returnsOrderFkCheck = $conn->query(

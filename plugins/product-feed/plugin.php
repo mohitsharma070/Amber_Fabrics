@@ -1,7 +1,7 @@
 <?php
 
 add_action('app.init', 'product_feed_maybe_serve', 15);
-add_action('cron.tick', 'product_feed_refresh_files', 30);
+function_exists('add_cron_action') ? add_cron_action('product_feed_refresh_files', 30, false) : add_action('cron.tick', 'product_feed_refresh_files', 30);
 
 function product_feed_settings(): array
 {
@@ -201,26 +201,49 @@ function product_feed_maybe_serve(array $context): void
     product_feed_serve_content($uriPath === $jsonPath ? 'json' : 'xml', $payloads);
 }
 
-function product_feed_refresh_files(array $context): void
+function product_feed_atomic_write(string $path, string $payload): void
+{
+    $directory = dirname($path);
+    $temporary = tempnam($directory, '.feed-');
+    if ($temporary === false) {
+        throw new RuntimeException('Unable to create a temporary product feed file.');
+    }
+    try {
+        $written = file_put_contents($temporary, $payload, LOCK_EX);
+        if ($written === false || $written !== strlen($payload)) {
+            throw new RuntimeException('Unable to write the complete product feed payload.');
+        }
+        if (!@rename($temporary, $path)) {
+            throw new RuntimeException('Unable to publish the product feed file.');
+        }
+        $temporary = '';
+    } finally {
+        if ($temporary !== '' && is_file($temporary)) {
+            @unlink($temporary);
+        }
+    }
+}
+
+function product_feed_refresh_files(array $context): array
 {
     if (!product_feed_enabled()) {
-        return;
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'disabled']);
     }
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli) {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'database_unavailable']);
     }
     $settings = product_feed_settings();
     $dir = product_feed_filesystem_dir();
     if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-        error_log('[product-feed] unable to create feed directory: ' . $dir);
-        return;
+        throw new RuntimeException('Unable to create the product feed directory.');
     }
 
     $payloads = product_feed_build_payloads($conn);
     $xmlFile = $dir . DIRECTORY_SEPARATOR . basename($settings['xml_file']);
     $jsonFile = $dir . DIRECTORY_SEPARATOR . basename($settings['json_file']);
 
-    @file_put_contents($xmlFile, $payloads['xml']);
-    @file_put_contents($jsonFile, $payloads['json']);
+    product_feed_atomic_write($xmlFile, (string) $payloads['xml']);
+    product_feed_atomic_write($jsonFile, (string) $payloads['json']);
+    return CronService::result('success', 2, 2, 0);
 }

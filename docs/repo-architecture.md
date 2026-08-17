@@ -46,7 +46,7 @@ MySQL, session state, email, Razorpay, Bigship, generated feeds
 | Admin | `admin/edit-fabric.php`, `admin/orders.php`, admin JSON handlers | HTML/JSON | Admin OTP session, CSRF for mutations |
 | Payment | `payment/razorpay-create.php`, verify/failure/webhook | HTML/redirect/text | Customer ownership + CSRF, or Razorpay signature |
 | Webhook | Razorpay, COD Guard, shipping courier | Text/JSON | Provider signature/shared-secret validation |
-| Cron | `cron/run-plugins.php` | CLI output/text | CLI production mode or cron token |
+| Cron | `cron/run-plugins.php` | CLI output/text | CLI production mode or header-preferred cron token |
 
 Clean routes and explicit handler routes coexist. Machine callbacks and mutations intentionally retain explicit `.php` paths.
 
@@ -85,6 +85,14 @@ Authenticated customers access their own orders. Guests receive expiring managem
 
 The shipping plugin authenticates to Bigship server-side, caches reference/auth data, requests rates, creates and places shipments, stores AWB/courier metadata, and synchronizes tracking from cron. Credentials and bearer tokens never belong in browser responses.
 
+### Scheduled operations
+
+`cron/run-plugins.php` is the single scheduler entry point and should run every 10 minutes. A filesystem lock and a MySQL named lock prevent overlap across processes and hosts. `--check` validates readiness without processing records; `--local-smoke` is not a dry run and executes jobs against the configured local database. HTTP callers should use `X-Cron-Token`; the query token is retained only for deployment compatibility and responses are never cached.
+
+Cron callbacks return structured success, skipped, degraded, or failed results. Razorpay expiry and COD expiry are critical and produce a nonzero exit when any record cannot be finalized. Recoverable mail, feed, courier, inventory, RTO, and support errors continue the remaining batch and mark the run degraded. The latest run status, last fully successful time, duration, and sanitized failure summary are persisted in `site_settings` and surfaced on the admin dashboard.
+
+Abandoned-cart and back-in-stock mail use atomic claims, recover claims older than 15 minutes, and retry five times with 15, 30, 60, 120, and 240 minute delays. Product feeds are written to verified same-directory temporary files and atomically renamed so readers cannot observe partial files.
+
 ## Persistence
 
 - `database/schema.sql` describes fresh installations.
@@ -98,7 +106,7 @@ The shipping plugin authenticates to Bigship server-side, caches reference/auth 
 
 Tests are standalone PHP programs invoked by `composer test`. They are source and invariant contracts so they can run without database credentials or third-party networks. They cover routing, shipping payloads, checkout state, product editing/import/variants, backend integrity, frontend regression markers, and compatibility-safe cleanup boundaries.
 
-`composer test:integration` runs the live product-schema cleanup test and therefore requires an authorized local MySQL database. It must not be pointed at production.
+`composer test:integration` runs the live product-schema cleanup and cron named-lock/schema tests and therefore requires an authorized local MySQL database. It must not be pointed at production.
 
 This suite should be supplemented with database integration, browser, Razorpay test-mode, courier sandbox, mail-delivery, cron, and production smoke tests.
 

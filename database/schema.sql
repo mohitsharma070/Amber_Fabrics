@@ -222,7 +222,8 @@ CREATE TABLE IF NOT EXISTS public_form_attempts (
     window_started_at DATETIME NOT NULL,
     blocked_until    DATETIME DEFAULT NULL,
     updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_public_form_attempts_scope_updated (scope, updated_at)
+    INDEX idx_public_form_attempts_scope_updated (scope, updated_at),
+    INDEX idx_public_form_attempts_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Persistent shopping cart (one per customer)
@@ -283,16 +284,21 @@ CREATE TABLE IF NOT EXISTS abandoned_cart_reminders (
     items_count INT NOT NULL DEFAULT 0,
     subtotal_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     cart_summary TEXT,
-    status ENUM('active','completed','recovered') NOT NULL DEFAULT 'active',
+    status ENUM('active','processing','completed','recovered','failed') NOT NULL DEFAULT 'active',
     emails_sent_count INT NOT NULL DEFAULT 0,
+    delivery_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    consecutive_failures INT UNSIGNED NOT NULL DEFAULT 0,
     next_send_at DATETIME DEFAULT NULL,
     last_sent_at DATETIME DEFAULT NULL,
+    last_attempt_at DATETIME DEFAULT NULL,
+    last_error VARCHAR(1000) DEFAULT NULL,
     last_activity_at DATETIME DEFAULT NULL,
     recovered_at DATETIME DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_abandoned_cart_customer (customer_id),
     INDEX idx_abandoned_cart_status_next (status, next_send_at),
+    INDEX idx_abandoned_cart_processing (status, updated_at),
     CONSTRAINT fk_abandoned_cart_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -314,9 +320,11 @@ CREATE TABLE IF NOT EXISTS back_in_stock_subscriptions (
     variant_id INT DEFAULT NULL,
     customer_id INT DEFAULT NULL,
     email VARCHAR(255) NOT NULL,
-    status ENUM('pending','processing','sent','cancelled') NOT NULL DEFAULT 'pending',
+    status ENUM('pending','processing','sent','cancelled','failed') NOT NULL DEFAULT 'pending',
+    delivery_attempts INT UNSIGNED NOT NULL DEFAULT 0,
     unsubscribe_token CHAR(64) NOT NULL,
     requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    next_attempt_at DATETIME DEFAULT NULL,
     notified_at DATETIME DEFAULT NULL,
     last_error TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -327,6 +335,7 @@ CREATE TABLE IF NOT EXISTS back_in_stock_subscriptions (
     INDEX idx_bis_customer (customer_id),
     INDEX idx_bis_email (email),
     INDEX idx_bis_status_requested (status, requested_at),
+    INDEX idx_bis_status_next_attempt (status, next_attempt_at, id),
     CONSTRAINT fk_bis_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE,
     CONSTRAINT fk_bis_variant FOREIGN KEY (variant_id) REFERENCES fabric_variants(id) ON DELETE SET NULL,
     CONSTRAINT fk_bis_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
@@ -562,6 +571,7 @@ CREATE TABLE IF NOT EXISTS shipping_courier_shipments (
     INDEX idx_shipping_courier_provider_order (provider, provider_order_id),
     INDEX idx_shipping_courier_provider_shipment (provider, provider_shipment_id),
     INDEX idx_shipping_courier_status (provider, provider_status),
+    INDEX idx_shipping_courier_provider_updated (provider, updated_at),
     CONSTRAINT fk_shipping_courier_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     CONSTRAINT fk_shipping_courier_shipment FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1033,6 +1043,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     INDEX idx_support_tickets_customer_status (customer_id, status, last_message_at),
     INDEX idx_support_tickets_order (order_id),
     INDEX idx_support_tickets_admin_queue (status, priority, last_message_at),
+    INDEX idx_support_tickets_status_updated (status, updated_at),
     CONSTRAINT fk_support_tickets_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     CONSTRAINT fk_support_tickets_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1069,7 +1080,8 @@ INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-08-17-remove-legacy-placeholder-variants.sql','1c036a6635e64ffe2f191616630bfb08c9ed5389d7a556e20916e45845a1d3d0'),
 ('2026-08-18-purge-legacy-placeholder-variants.sql','7ff11fa4a42abc61052ac8b54a6614cbc06622c7b753599c7314d5bfadc46d6a'),
 ('2026-08-19-backend-integrity-hardening.sql',  'fedb5362871f1be607d033ebbb42346dcbde3f2e920bc1f4156a55cee1b1a75d'),
-('2026-08-20-customer-backend-hardening.sql',   '39ebf3f24a9451fded654ab77c4ad8e4fc090877fef3f1d217df2e462c92afe2');
+('2026-08-20-customer-backend-hardening.sql',   '39ebf3f24a9451fded654ab77c4ad8e4fc090877fef3f1d217df2e462c92afe2'),
+('2026-08-21-cron-reliability-hardening.sql',   '015a242297956f84b692491d9f4242e8511618d125aa39032ec34e5ce46508b3');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

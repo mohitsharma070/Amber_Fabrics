@@ -2,7 +2,7 @@
 
 add_action('order.after_create', 'shipping_rto_risk_on_order_create', 25);
 add_action('admin.order_view.sidebar', 'shipping_rto_risk_render_admin_panel', 25);
-add_action('cron.tick', 'shipping_rto_risk_cron_backfill', 45);
+function_exists('add_cron_action') ? add_cron_action('shipping_rto_risk_cron_backfill', 45, false) : add_action('cron.tick', 'shipping_rto_risk_cron_backfill', 45);
 
 function shipping_rto_risk_settings(): array
 {
@@ -296,15 +296,15 @@ function shipping_rto_risk_render_admin_panel(array $context): void
     <?php
 }
 
-function shipping_rto_risk_cron_backfill(array $context): void
+function shipping_rto_risk_cron_backfill(array $context): array
 {
     $settings = shipping_rto_risk_settings();
     if (!$settings['enabled']) {
-        return;
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'disabled']);
     }
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli || !shipping_rto_risk_table_ready($conn)) {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
     }
     $stmt = $conn->prepare(
         "SELECT o.id
@@ -317,10 +317,19 @@ function shipping_rto_risk_cron_backfill(array $context): void
     );
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $succeeded = 0;
+    $failed = 0;
     foreach ($rows as $row) {
         $orderId = (int) ($row['id'] ?? 0);
         if ($orderId > 0) {
-            shipping_rto_risk_assess_order($conn, $orderId);
+            try {
+                shipping_rto_risk_assess_order($conn, $orderId);
+                $succeeded++;
+            } catch (Throwable $e) {
+                $failed++;
+                error_log('[shipping-rto-risk] cron assessment failed for order ' . $orderId . ': ' . CronService::sanitizeError($e->getMessage()));
+            }
         }
     }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows), $succeeded, $failed);
 }

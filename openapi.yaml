@@ -1257,6 +1257,7 @@ paths:
     get:
       tags: [Operations]
       summary: Run scheduled plugin jobs over HTTP
+      description: Runs scheduled work with overlap protection. Prefer X-Cron-Token; the query token is retained for compatibility. Returns 200 for healthy or degraded noncritical work and 500 for critical or runtime failure.
       security:
         - cronTokenHeader: []
         - cronTokenQuery: []
@@ -1269,8 +1270,10 @@ paths:
                 type: string
         '403':
           description: Missing or invalid cron token
+        '405':
+          description: HTTP method is not GET
         '500':
-          description: One or more critical jobs failed
+          description: One or more critical jobs failed, or the runner could not start safely
 
 components:
   securitySchemes:
@@ -1313,12 +1316,12 @@ components:
       type: apiKey
       in: header
       name: X-Cron-Token
-      description: Secret token configured as CRON_RUN_TOKEN.
+      description: Preferred secret token configured as CRON_RUN_TOKEN.
     cronTokenQuery:
       type: apiKey
       in: query
       name: token
-      description: Query-string alternative for CRON_RUN_TOKEN.
+      description: Deprecated compatibility alternative for CRON_RUN_TOKEN; use X-Cron-Token to avoid URL log exposure.
 
   parameters:
     TokenQuery:

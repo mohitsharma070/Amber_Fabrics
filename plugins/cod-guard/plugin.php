@@ -5,8 +5,12 @@ add_action('order.after_create', 'cod_guard_after_order_create', 10);
 add_action('order.after_commit', 'cod_guard_send_confirmation_after_commit', 10);
 add_action('admin.order_view.sidebar', 'cod_guard_render_admin_panel', 10);
 add_filter('admin.order_action.handled', 'cod_guard_handle_admin_action', 10);
-add_action('cron.tick', 'cod_guard_send_pending_confirmation_messages', 5);
-add_action('cron.tick', 'cod_guard_auto_cancel_expired', 10);
+function_exists('add_cron_action')
+    ? add_cron_action('cod_guard_send_pending_confirmation_messages', 5, false)
+    : add_action('cron.tick', 'cod_guard_send_pending_confirmation_messages', 5);
+function_exists('add_cron_action')
+    ? add_cron_action('cod_guard_auto_cancel_expired', 10, true)
+    : add_action('cron.tick', 'cod_guard_auto_cancel_expired', 10);
 
 function cod_guard_settings(): array
 {
@@ -571,12 +575,24 @@ function cod_guard_send_confirmation_after_commit(array $context): void
     cod_guard_send_confirmation_message($conn, $orderId);
 }
 
-function cod_guard_send_pending_confirmation_messages(array $context): void
+function cod_guard_send_pending_confirmation_messages(array $context): array
 {
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli || !cod_guard_message_tracking_ready($conn)) {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
     }
+
+    $recover = $conn->prepare(
+        "UPDATE cod_confirmations
+         SET message_status = 'failed',
+             message_error = 'Recovered stale sending claim.',
+             message_attempts = message_attempts + 1,
+             updated_at = NOW()
+         WHERE message_status = 'sending'
+           AND updated_at < (NOW() - INTERVAL 15 MINUTE)"
+    );
+    $recover->execute();
+    $recovered = (int) $recover->affected_rows;
 
     $settings = cod_guard_settings();
     $maxAttempts = (int) ($settings['message_max_attempts'] ?? 3);
@@ -603,12 +619,20 @@ function cod_guard_send_pending_confirmation_messages(array $context): void
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+    $succeeded = 0;
+    $failed = 0;
     foreach ($rows as $row) {
         $orderId = (int) ($row['order_id'] ?? 0);
         if ($orderId > 0) {
-            cod_guard_send_confirmation_message($conn, $orderId);
+            $result = cod_guard_send_confirmation_message($conn, $orderId);
+            if (!empty($result['ok'])) {
+                $succeeded++;
+            } else {
+                $failed++;
+            }
         }
     }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows), $succeeded, $failed, ['recovered_claims' => $recovered]);
 }
 
 function cod_guard_render_admin_panel(array $context): void
@@ -1113,11 +1137,11 @@ function cod_guard_handle_admin_action($handled, array $context)
     return true;
 }
 
-function cod_guard_auto_cancel_expired(array $context): void
+function cod_guard_auto_cancel_expired(array $context): array
 {
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli || !cod_guard_table_ready($conn)) {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
     }
 
     $stmt = $conn->prepare(
@@ -1134,6 +1158,8 @@ function cod_guard_auto_cancel_expired(array $context): void
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+    $succeeded = 0;
+    $failed = 0;
     foreach ($rows as $row) {
         $orderId = (int) ($row['order_id'] ?? 0);
         if ($orderId <= 0) {
@@ -1143,12 +1169,15 @@ function cod_guard_auto_cancel_expired(array $context): void
             $conn->begin_transaction();
             cod_guard_cancel_order($conn, $orderId, 'Auto-cancelled because COD confirmation deadline expired.', 'system', 0, 'cod-guard', 'auto_cancelled');
             $conn->commit();
+            $succeeded++;
         } catch (Throwable $e) {
             try {
                 $conn->rollback();
             } catch (Throwable $rollbackException) {
             }
-            error_log('[cod-guard] auto cancel failed for order ' . $orderId . ': ' . $e->getMessage());
+            $failed++;
+            error_log('[cod-guard] auto cancel failed for order ' . $orderId . ': ' . CronService::sanitizeError($e->getMessage()));
         }
     }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows), $succeeded, $failed);
 }

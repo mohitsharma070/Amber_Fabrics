@@ -10,6 +10,25 @@ function add_action(string $hook, callable $callback, int $priority = 10): void
     $GLOBALS['amber_hooks']['actions'][$hook][$priority][] = $callback;
 }
 
+function add_cron_action(callable $callback, int $priority = 10, bool $critical = false): void
+{
+    add_action('cron.tick', $callback, $priority);
+    $GLOBALS['amber_cron_metadata'][$priority][cron_callback_name($callback)] = [
+        'critical' => $critical,
+    ];
+}
+
+function cron_callback_name(callable $callback): string
+{
+    if (is_string($callback)) {
+        return $callback;
+    }
+    if (is_array($callback) && count($callback) >= 2) {
+        return (is_object($callback[0]) ? get_class($callback[0]) : (string) $callback[0]) . '::' . (string) $callback[1];
+    }
+    return 'closure';
+}
+
 function do_action(string $hook, array $context = []): void
 {
     if (empty($GLOBALS['amber_hooks']['actions'][$hook]) || !is_array($GLOBALS['amber_hooks']['actions'][$hook])) {
@@ -22,7 +41,8 @@ function do_action(string $hook, array $context = []): void
             try {
                 $callback($context);
             } catch (Throwable $e) {
-                error_log('[amber-plugin] action "' . $hook . '" failed: ' . $e->getMessage());
+                $message = class_exists('CronService') ? CronService::sanitizeError($e->getMessage()) : $e->getMessage();
+                error_log('[amber-plugin] action "' . $hook . '" failed: ' . $message);
             }
         }
     }
@@ -44,32 +64,38 @@ function do_action_report(string $hook, array $context = []): array
     ksort($GLOBALS['amber_hooks']['actions'][$hook]);
     foreach ($GLOBALS['amber_hooks']['actions'][$hook] as $priority => $callbacks) {
         foreach ((array) $callbacks as $callback) {
-            $name = 'closure';
-            if (is_string($callback)) {
-                $name = $callback;
-            } elseif (is_array($callback) && count($callback) >= 2) {
-                $name = (is_object($callback[0]) ? get_class($callback[0]) : (string) $callback[0]) . '::' . (string) $callback[1];
-            }
+            $name = cron_callback_name($callback);
+            $critical = !empty($GLOBALS['amber_cron_metadata'][$priority][$name]['critical']);
             $started = microtime(true);
             try {
-                $callback($context);
+                $callbackResult = $callback($context);
+                $result = class_exists('CronService')
+                    ? CronService::normalizeResult($callbackResult)
+                    : (is_array($callbackResult) ? $callbackResult : ['status' => 'success']);
                 $report[] = [
                     'hook' => $hook,
                     'priority' => (int) $priority,
                     'callback' => $name,
-                    'ok' => true,
+                    'critical' => $critical,
+                    'ok' => !in_array((string) ($result['status'] ?? 'success'), ['failed'], true),
+                    'status' => (string) ($result['status'] ?? 'success'),
                     'duration_ms' => (int) round((microtime(true) - $started) * 1000),
                     'error' => '',
+                    'result' => $result,
                 ];
             } catch (Throwable $e) {
-                error_log('[amber-plugin] action "' . $hook . '" failed: ' . $e->getMessage());
+                $message = class_exists('CronService') ? CronService::sanitizeError($e->getMessage()) : $e->getMessage();
+                error_log('[amber-plugin] action "' . $hook . '" failed: ' . $message);
                 $report[] = [
                     'hook' => $hook,
                     'priority' => (int) $priority,
                     'callback' => $name,
+                    'critical' => $critical,
                     'ok' => false,
+                    'status' => 'failed',
                     'duration_ms' => (int) round((microtime(true) - $started) * 1000),
-                    'error' => $e->getMessage(),
+                    'error' => class_exists('CronService') ? CronService::sanitizeError($e->getMessage()) : $e->getMessage(),
+                    'result' => null,
                 ];
             }
         }

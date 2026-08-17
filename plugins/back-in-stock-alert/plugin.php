@@ -2,7 +2,7 @@
 
 add_action('app.init', 'back_in_stock_alert_handle_request', 25);
 add_action('product.details.after', 'back_in_stock_alert_render_signup_form', 15);
-add_action('cron.tick', 'back_in_stock_alert_send_notifications', 50);
+function_exists('add_cron_action') ? add_cron_action('back_in_stock_alert_send_notifications', 50, false) : add_action('cron.tick', 'back_in_stock_alert_send_notifications', 50);
 
 function back_in_stock_alert_settings(): array
 {
@@ -10,6 +10,8 @@ function back_in_stock_alert_settings(): array
         'enabled' => (int) plugin_setting('back-in-stock-alert', 'enabled', 1) === 1,
         'batch_size' => max(1, min(200, (int) plugin_setting('back-in-stock-alert', 'batch_size', 50))),
         'cooldown_hours' => max(0, (int) plugin_setting('back-in-stock-alert', 'cooldown_hours', 1)),
+        'max_failures' => max(1, (int) plugin_setting('back-in-stock-alert', 'max_failures', 5)),
+        'retry_base_minutes' => max(1, (int) plugin_setting('back-in-stock-alert', 'retry_base_minutes', 15)),
         'from_name' => trim((string) plugin_setting('back-in-stock-alert', 'from_name', SiteContext::name())),
     ];
 }
@@ -192,16 +194,19 @@ function back_in_stock_alert_subscribe(mysqli $conn, int $productId, int $varian
              unsubscribe_token = ?,
              requested_at = NOW(),
              notified_at = NULL,
+             delivery_attempts = 0,
+             next_attempt_at = DATE_ADD(NOW(), INTERVAL ? HOUR),
              last_error = NULL,
              updated_at = NOW()
          WHERE email = ?
            AND product_id = ?
            AND variant_id <=> ?
-           AND status IN ('sent','cancelled')
+           AND status IN ('sent','cancelled','failed')
          ORDER BY updated_at DESC, id DESC
          LIMIT 1"
     );
-    $reactivate->bind_param('issii', $customerIdParam, $token, $email, $productId, $variantIdParam);
+    $cooldownHours = (int) back_in_stock_alert_settings()['cooldown_hours'];
+    $reactivate->bind_param('isisii', $customerIdParam, $token, $cooldownHours, $email, $productId, $variantIdParam);
     try {
         $reactivate->execute();
         if ($conn->affected_rows > 0) {
@@ -217,10 +222,10 @@ function back_in_stock_alert_subscribe(mysqli $conn, int $productId, int $varian
 
     $stmt = $conn->prepare(
         "INSERT INTO back_in_stock_subscriptions
-            (product_id, variant_id, customer_id, email, status, unsubscribe_token, requested_at)
-         VALUES (?, ?, ?, ?, 'pending', ?, NOW())"
+            (product_id, variant_id, customer_id, email, status, unsubscribe_token, requested_at, next_attempt_at)
+         VALUES (?, ?, ?, ?, 'pending', ?, NOW(), DATE_ADD(NOW(), INTERVAL ? HOUR))"
     );
-    $stmt->bind_param('iiiss', $productId, $variantIdParam, $customerIdParam, $email, $token);
+    $stmt->bind_param('iiissi', $productId, $variantIdParam, $customerIdParam, $email, $token, $cooldownHours);
     try {
         $stmt->execute();
     } catch (mysqli_sql_exception $e) {
@@ -501,7 +506,7 @@ function back_in_stock_alert_render_signup_form(array $context): void
 function back_in_stock_alert_fetch_due_subscriptions(mysqli $conn, int $limit, int $cooldownHours): array
 {
     $stmt = $conn->prepare(
-        "SELECT bis.id, bis.product_id, bis.variant_id, bis.email, bis.unsubscribe_token,
+        "SELECT bis.id, bis.product_id, bis.variant_id, bis.email, bis.unsubscribe_token, bis.delivery_attempts,
                 f.name AS product_name, f.unit_type, f.stock, f.stock_meters,
                 c.name AS customer_name,
                 v.color AS variant_color, v.size AS variant_size, v.stock AS variant_stock, v.stock_meters AS variant_stock_meters
@@ -510,8 +515,8 @@ function back_in_stock_alert_fetch_due_subscriptions(mysqli $conn, int $limit, i
          LEFT JOIN customers c ON c.id = bis.customer_id
          LEFT JOIN fabric_variants v ON v.id = bis.variant_id
          WHERE bis.status = 'pending'
-           AND bis.requested_at <= DATE_SUB(NOW(), INTERVAL ? HOUR)
-           AND bis.updated_at <= DATE_SUB(NOW(), INTERVAL ? HOUR)
+           AND bis.next_attempt_at IS NOT NULL
+           AND bis.next_attempt_at <= NOW()
            AND f.status = 'active'
            AND f.is_available = 1
            AND (
@@ -539,7 +544,7 @@ function back_in_stock_alert_fetch_due_subscriptions(mysqli $conn, int $limit, i
          ORDER BY bis.requested_at ASC, bis.id ASC
          LIMIT ?"
     );
-    $stmt->bind_param('iii', $cooldownHours, $cooldownHours, $limit);
+    $stmt->bind_param('i', $limit);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     return is_array($rows) ? $rows : [];
@@ -551,7 +556,7 @@ function back_in_stock_alert_send_one_email(array $row, array $settings): array
     $variantId = (int) ($row['variant_id'] ?? 0);
     $email = back_in_stock_alert_normalize_email((string) ($row['email'] ?? ''));
     if ($productId <= 0 || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        return ['ok' => false, 'error' => 'Invalid subscription recipient or product.'];
+        return ['ok' => false, 'error' => 'Invalid subscription recipient or product.', 'permanent' => true];
     }
 
     $productName = (string) ($row['product_name'] ?? 'Item');
@@ -596,8 +601,9 @@ function back_in_stock_alert_send_one_email(array $row, array $settings): array
         $mail->send();
         return ['ok' => true, 'error' => ''];
     } catch (Throwable $e) {
-        error_log('[back-in-stock-alert] email failed: ' . $e->getMessage());
-        return ['ok' => false, 'error' => $e->getMessage() !== '' ? $e->getMessage() : 'Email delivery failed.'];
+        $error = CronService::sanitizeError($e->getMessage());
+        error_log('[back-in-stock-alert] email failed: ' . $error);
+        return ['ok' => false, 'error' => $error !== '' ? $error : 'Email delivery failed.'];
     }
 }
 
@@ -606,6 +612,7 @@ function back_in_stock_alert_claim_subscription(mysqli $conn, int $id): bool
     $claim = $conn->prepare(
         "UPDATE back_in_stock_subscriptions
          SET status = 'processing',
+             delivery_attempts = delivery_attempts + 1,
              last_error = NULL,
              updated_at = NOW()
          WHERE id = ?
@@ -622,6 +629,7 @@ function back_in_stock_alert_mark_sent(mysqli $conn, int $id): void
         "UPDATE back_in_stock_subscriptions
          SET status = 'sent',
              notified_at = NOW(),
+             next_attempt_at = NULL,
              last_error = NULL,
              updated_at = NOW()
          WHERE id = ?
@@ -631,7 +639,7 @@ function back_in_stock_alert_mark_sent(mysqli $conn, int $id): void
     $stmt->execute();
 }
 
-function back_in_stock_alert_mark_failed(mysqli $conn, int $id, string $error): void
+function back_in_stock_alert_mark_failed(mysqli $conn, int $id, string $error, int $attempts, array $settings): void
 {
     $error = trim($error);
     if ($error === '') {
@@ -642,30 +650,49 @@ function back_in_stock_alert_mark_failed(mysqli $conn, int $id, string $error): 
     } else {
         $error = substr($error, 0, 1000);
     }
+    $terminal = $attempts >= (int) $settings['max_failures'];
+    $retryMinutes = min(240, (int) $settings['retry_base_minutes'] * (2 ** max(0, $attempts - 1)));
+    $nextAttempt = $terminal ? null : date('Y-m-d H:i:s', time() + ($retryMinutes * 60));
+    $status = $terminal ? 'failed' : 'pending';
     $stmt = $conn->prepare(
         "UPDATE back_in_stock_subscriptions
-         SET status = 'pending',
+         SET status = ?,
+             next_attempt_at = ?,
              last_error = ?,
              updated_at = NOW()
          WHERE id = ?
            AND status = 'processing'"
     );
-    $stmt->bind_param('si', $error, $id);
+    $stmt->bind_param('sssi', $status, $nextAttempt, $error, $id);
     $stmt->execute();
 }
 
-function back_in_stock_alert_send_notifications(array $context): void
+function back_in_stock_alert_send_notifications(array $context): array
 {
     $settings = back_in_stock_alert_settings();
     if (!$settings['enabled']) {
-        return;
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'disabled']);
     }
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli || !back_in_stock_alert_table_ready($conn)) {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
     }
 
+    $recover = $conn->prepare(
+        "UPDATE back_in_stock_subscriptions
+         SET status = CASE WHEN delivery_attempts >= ? THEN 'failed' ELSE 'pending' END,
+             next_attempt_at = CASE WHEN delivery_attempts >= ? THEN NULL ELSE NOW() END,
+             last_error = 'Recovered stale processing claim.',
+             updated_at = NOW()
+         WHERE status = 'processing' AND updated_at < (NOW() - INTERVAL 15 MINUTE)"
+    );
+    $maxFailures = (int) $settings['max_failures'];
+    $recover->bind_param('ii', $maxFailures, $maxFailures);
+    $recover->execute();
+
     $rows = back_in_stock_alert_fetch_due_subscriptions($conn, (int) $settings['batch_size'], (int) $settings['cooldown_hours']);
+    $succeeded = 0;
+    $failed = 0;
     foreach ($rows as $row) {
         $id = (int) ($row['id'] ?? 0);
         if ($id <= 0) {
@@ -679,16 +706,24 @@ function back_in_stock_alert_send_notifications(array $context): void
             $result = back_in_stock_alert_send_one_email($row, $settings);
             if (!empty($result['ok'])) {
                 back_in_stock_alert_mark_sent($conn, $id);
+                $succeeded++;
                 continue;
             }
 
             $error = (string) ($result['error'] ?? 'Email delivery failed.');
+            $error = CronService::sanitizeError($error);
             error_log('[back-in-stock-alert] notification failed for subscription ' . $id . ': ' . $error);
-            back_in_stock_alert_mark_failed($conn, $id, $error);
+            $failed++;
+            $attempts = !empty($result['permanent'])
+                ? (int) $settings['max_failures']
+                : (int) ($row['delivery_attempts'] ?? 0) + 1;
+            back_in_stock_alert_mark_failed($conn, $id, $error, $attempts, $settings);
         } catch (Throwable $e) {
-            $error = $e->getMessage() !== '' ? $e->getMessage() : 'Notification processing failed.';
+            $error = CronService::sanitizeError($e->getMessage() !== '' ? $e->getMessage() : 'Notification processing failed.');
             error_log('[back-in-stock-alert] notification exception for subscription ' . $id . ': ' . $error);
-            back_in_stock_alert_mark_failed($conn, $id, $error);
+            $failed++;
+            back_in_stock_alert_mark_failed($conn, $id, $error, (int) ($row['delivery_attempts'] ?? 0) + 1, $settings);
         }
     }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows), $succeeded, $failed);
 }

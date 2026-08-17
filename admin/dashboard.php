@@ -89,10 +89,24 @@ unset($_orderStats, $_fabricStats, $_secondaryStats);
 // --- End consolidated stats ---
 
 $cronLastRunAt = '';
+$cronLastSuccessAt = '';
+$cronLastStatus = '';
+$cronFailedJobs = 0;
+$cronDegradedJobs = 0;
+$cronDurationMs = 0;
 try {
-    $cronStmt = $conn->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'cron_last_run_at' LIMIT 1");
+    $cronStmt = $conn->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('cron_last_run_at','cron_last_success_at','cron_last_status','cron_last_failed_jobs','cron_last_degraded_jobs','cron_last_duration_ms')");
     $cronStmt->execute();
-    $cronLastRunAt = (string) ($cronStmt->get_result()->fetch_assoc()['setting_value'] ?? '');
+    $cronSettings = [];
+    foreach ($cronStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $cronRow) {
+        $cronSettings[(string) $cronRow['setting_key']] = (string) ($cronRow['setting_value'] ?? '');
+    }
+    $cronLastRunAt = (string) ($cronSettings['cron_last_run_at'] ?? '');
+    $cronLastSuccessAt = (string) ($cronSettings['cron_last_success_at'] ?? '');
+    $cronLastStatus = strtolower((string) ($cronSettings['cron_last_status'] ?? ''));
+    $cronFailedJobs = (int) ($cronSettings['cron_last_failed_jobs'] ?? 0);
+    $cronDegradedJobs = (int) ($cronSettings['cron_last_degraded_jobs'] ?? 0);
+    $cronDurationMs = (int) ($cronSettings['cron_last_duration_ms'] ?? 0);
 } catch (Throwable $e) {
     $cronLastRunAt = '';
 }
@@ -103,6 +117,10 @@ if ($cronLastRunAt !== '') {
         $cronLagMinutes = max(0, (int) floor((time() - $cronTs) / 60));
     }
 }
+$cronExpectedMinutes = max(1, (int) _cfg('CRON_EXPECTED_INTERVAL_MINUTES', '10'));
+$cronOverdueMinutes = max(20, $cronExpectedMinutes * 2);
+$cronOverdue = $cronLagMinutes === null || $cronLagMinutes > $cronOverdueMinutes;
+$cronUnhealthy = in_array($cronLastStatus, ['failed', 'degraded'], true);
 
 $salesStmt = $conn->prepare("SELECT COALESCE(SUM(total_amount), 0) AS total_sales FROM orders WHERE payment_status = 'paid' AND {$orderRangeClause}");
 $salesStmt->bind_param('ss', $rangeStartAt, $rangeEndExclusive);
@@ -283,14 +301,23 @@ include 'partials/header.php';
         </form>
     </div>
 
-    <?php if ($staleOnlinePending > 0 || $refundPendingCount > 0 || $codPendingConfirm > 0 || $cronLagMinutes === null || $cronLagMinutes > 20): ?>
-    <div class="alert alert-warning mb-3">
+    <?php if (!$cronOverdue && $cronLastStatus === 'success'): ?>
+    <div class="mb-3">
+        <span class="badge text-bg-success">Cron healthy</span>
+        <span class="small text-muted ms-2">Last run <?php echo (int) $cronLagMinutes; ?> minute(s) ago in <?php echo (int) $cronDurationMs; ?> ms.</span>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($staleOnlinePending > 0 || $refundPendingCount > 0 || $codPendingConfirm > 0 || $cronOverdue || $cronUnhealthy): ?>
+    <div class="alert <?php echo $cronLastStatus === 'failed' ? 'alert-danger' : 'alert-warning'; ?> mb-3">
         <div class="fw-semibold mb-1">Operational Alerts</div>
         <div class="small">
             <?php if ($staleOnlinePending > 0): ?>Stale online pending orders: <strong><?php echo $staleOnlinePending; ?></strong>. <?php endif; ?>
             <?php if ($refundPendingCount > 0): ?>Refund queue (cancelled + paid): <strong><?php echo $refundPendingCount; ?></strong>. <?php endif; ?>
             <?php if ($codPendingConfirm > 0): ?>Pending COD confirmations: <strong><?php echo $codPendingConfirm; ?></strong>. <?php endif; ?>
-            <?php if ($cronLagMinutes === null): ?>Cron last-run timestamp not found.<?php elseif ($cronLagMinutes > 20): ?>Cron last run <?php echo (int) $cronLagMinutes; ?> minutes ago.<?php endif; ?>
+            <?php if ($cronLagMinutes === null): ?>Cron last-run timestamp not found.<?php elseif ($cronLagMinutes > $cronOverdueMinutes): ?>Cron last run <?php echo (int) $cronLagMinutes; ?> minutes ago.<?php endif; ?>
+            <?php if ($cronLastStatus === 'failed'): ?>Cron failed with <strong><?php echo $cronFailedJobs; ?></strong> failed job(s).<?php elseif ($cronLastStatus === 'degraded'): ?>Cron completed with <strong><?php echo $cronDegradedJobs; ?></strong> degraded job(s).<?php endif; ?>
+            <?php if ($cronLastStatus !== 'success' && $cronLastSuccessAt !== ''): ?> Last fully successful run: <?php echo e($cronLastSuccessAt); ?>.<?php endif; ?>
         </div>
     </div>
     <?php endif; ?>

@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/CronService.php';
+
 final class PaymentService
 {
     public static function orders_structured_financial_columns_ready(mysqli $conn): bool
@@ -499,8 +501,14 @@ final class PaymentService
 
     public static function release_stale_pending_razorpay_orders_global(mysqli $conn, int $ttlMinutes = 30, int $limit = 100): int
     {
+        $report = self::release_stale_pending_razorpay_orders_global_report($conn, $ttlMinutes, $limit);
+        return (int) ($report['succeeded'] ?? 0);
+    }
+
+    public static function release_stale_pending_razorpay_orders_global_report(mysqli $conn, int $ttlMinutes = 30, int $limit = 100): array
+    {
         if ($ttlMinutes < 1) {
-            return 0;
+            return CronService::result('skipped', 0, 0, 0, ['reason' => 'invalid_ttl']);
         }
         $limit = max(1, min(500, $limit));
         $stmt = $conn->prepare(
@@ -517,16 +525,28 @@ final class PaymentService
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $released = 0;
+        $failedOrderIds = [];
         foreach ($rows as $row) {
             $orderId = (int) ($row['id'] ?? 0);
             if ($orderId <= 0) {
                 continue;
             }
-            if (PaymentService::cancel_stale_pending_razorpay_order($conn, $orderId, $ttlMinutes)) {
-                $released++;
+            try {
+                if (PaymentService::cancel_stale_pending_razorpay_order($conn, $orderId, $ttlMinutes)) {
+                    $released++;
+                }
+            } catch (Throwable $e) {
+                $failedOrderIds[] = $orderId;
+                error_log('[payment] stale Razorpay release failed for order ' . $orderId . ': ' . CronService::sanitizeError($e->getMessage()));
             }
         }
-        return $released;
+        $failed = count($failedOrderIds);
+        return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows), $released, $failed, [
+            'released_count' => $released,
+            'failed_order_ids' => $failedOrderIds,
+            'ttl_minutes' => $ttlMinutes,
+            'limit' => $limit,
+        ]);
     }
 
     public static function checkout_shipping_for_order(float $subtotal, string $country, string $pincode, string $paymentMethod): array

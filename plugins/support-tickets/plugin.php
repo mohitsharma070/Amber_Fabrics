@@ -7,7 +7,7 @@ add_filter('admin.nav.items', 'support_tickets_admin_nav_items', 20);
 add_filter('admin.order_action.handled', 'support_tickets_handle_admin_order_action', 20);
 add_action('customer.order_view.after', 'support_tickets_render_order_panel', 20);
 add_action('admin.order_view.sidebar', 'support_tickets_render_admin_order_sidebar', 20);
-add_action('cron.tick', 'support_tickets_cron_tick', 60);
+function_exists('add_cron_action') ? add_cron_action('support_tickets_cron_tick', 60, false) : add_action('cron.tick', 'support_tickets_cron_tick', 60);
 
 function support_tickets_settings(): array
 {
@@ -408,17 +408,17 @@ function support_tickets_update_status(mysqli $conn, int $ticketId, string $stat
     }
 }
 
-function support_tickets_cron_tick(array $context): void
+function support_tickets_cron_tick(array $context): array
 {
     $settings = support_tickets_settings();
     $conn = $context['conn'] ?? null;
     if (!$settings['enabled'] || !$conn instanceof mysqli || !support_tickets_table_ready($conn)) {
-        return;
+        return CronService::result(!$settings['enabled'] ? 'skipped' : 'failed', 0, 0, !$settings['enabled'] ? 0 : 1, ['reason' => !$settings['enabled'] ? 'disabled' : 'schema_or_database_unavailable']);
     }
 
     $autoCloseDays = (int) ($settings['auto_close_days'] ?? 0);
     if ($autoCloseDays <= 0) {
-        return;
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'auto_close_disabled']);
     }
 
     $stmt = $conn->prepare(
@@ -433,10 +433,12 @@ function support_tickets_cron_tick(array $context): void
     $stmt->execute();
     $tickets = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     if (empty($tickets)) {
-        return;
+        return CronService::result('success');
     }
 
     $systemName = 'cron';
+    $succeeded = 0;
+    $failed = 0;
     foreach ($tickets as $ticket) {
         $ticketId = (int) ($ticket['id'] ?? 0);
         if ($ticketId <= 0) {
@@ -444,10 +446,13 @@ function support_tickets_cron_tick(array $context): void
         }
         try {
             support_tickets_update_status($conn, $ticketId, 'closed', 0, $systemName);
+            $succeeded++;
         } catch (Throwable $e) {
-            error_log('[support-tickets] cron auto-close failed for ticket ' . $ticketId . ': ' . $e->getMessage());
+            $failed++;
+            error_log('[support-tickets] cron auto-close failed for ticket ' . $ticketId . ': ' . CronService::sanitizeError($e->getMessage()));
         }
     }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($tickets), $succeeded, $failed);
 }
 
 function support_tickets_handle_admin_order_action($handled, array $context): bool

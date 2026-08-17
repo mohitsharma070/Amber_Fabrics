@@ -1,6 +1,6 @@
 <?php
 
-add_action('cron.tick', 'inventory_alert_run', 40);
+function_exists('add_cron_action') ? add_cron_action('inventory_alert_run', 40, false) : add_action('cron.tick', 'inventory_alert_run', 40);
 
 function inventory_alert_settings(): array
 {
@@ -93,25 +93,25 @@ function inventory_alert_send_email(array $lines): bool
         $mail->send();
         return true;
     } catch (Throwable $e) {
-        error_log('[inventory-alert] email failed: ' . $e->getMessage());
+        error_log('[inventory-alert] email failed: ' . CronService::sanitizeError($e->getMessage()));
         return false;
     }
 }
 
-function inventory_alert_run(array $context): void
+function inventory_alert_run(array $context): array
 {
     $settings = inventory_alert_settings();
     if (!$settings['enabled']) {
-        return;
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'disabled']);
     }
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli || !inventory_alert_table_ready($conn)) {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
     }
 
     $rows = inventory_alert_fetch_candidates($conn, $settings);
     if (empty($rows)) {
-        return;
+        return CronService::result('success');
     }
 
     $cooldown = (int) $settings['cooldown_hours'];
@@ -133,7 +133,7 @@ function inventory_alert_run(array $context): void
     }
 
     if (empty($alertRows)) {
-        return;
+        return CronService::result('success', count($rows));
     }
 
     $lines = [
@@ -151,7 +151,7 @@ function inventory_alert_run(array $context): void
     $lines[] = 'Please restock these products.';
 
     if (!inventory_alert_send_email($lines)) {
-        return;
+        return CronService::result('degraded', count($alertRows), 0, count($alertRows), ['reason' => admin_notification_email() === '' ? 'recipient_not_configured' : 'email_delivery_failed']);
     }
 
     foreach ($alertRows as $item) {
@@ -161,4 +161,5 @@ function inventory_alert_run(array $context): void
         }
         inventory_alert_log_sent($conn, $pid, (string) ($item['unit_type'] ?? 'piece'), (float) ($item['stock'] ?? 0));
     }
+    return CronService::result('success', count($alertRows), count($alertRows), 0);
 }

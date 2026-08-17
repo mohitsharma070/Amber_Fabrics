@@ -2,7 +2,7 @@
 
 add_action('app.init', 'abandoned_cart_capture_activity', 20);
 add_action('order.after_create', 'abandoned_cart_mark_recovered', 20);
-add_action('cron.tick', 'abandoned_cart_send_reminders', 20);
+function_exists('add_cron_action') ? add_cron_action('abandoned_cart_send_reminders', 20, false) : add_action('cron.tick', 'abandoned_cart_send_reminders', 20);
 
 function abandoned_cart_settings(): array
 {
@@ -10,6 +10,8 @@ function abandoned_cart_settings(): array
         'enabled' => (int) plugin_setting('abandoned-cart-email', 'enabled', 1) === 1,
         'delay_minutes' => max(10, (int) plugin_setting('abandoned-cart-email', 'delay_minutes', 60)),
         'max_emails' => max(1, (int) plugin_setting('abandoned-cart-email', 'max_emails', 1)),
+        'max_failures' => max(1, (int) plugin_setting('abandoned-cart-email', 'max_failures', 5)),
+        'retry_base_minutes' => max(1, (int) plugin_setting('abandoned-cart-email', 'retry_base_minutes', 15)),
     ];
 }
 
@@ -164,6 +166,10 @@ function abandoned_cart_capture_activity(array $context): void
             cart_summary = VALUES(cart_summary),
             status = 'active',
             recovered_at = NULL,
+            delivery_attempts = 0,
+            consecutive_failures = 0,
+            last_attempt_at = NULL,
+            last_error = NULL,
             next_send_at = VALUES(next_send_at),
             last_activity_at = NOW(),
             updated_at = NOW()"
@@ -188,13 +194,13 @@ function abandoned_cart_mark_recovered(array $context): void
          SET status = 'recovered',
              recovered_at = NOW(),
              updated_at = NOW()
-         WHERE customer_id = ? AND status = 'active'"
+         WHERE customer_id = ? AND status IN ('active','processing')"
     );
     $stmt->bind_param('i', $customerId);
     $stmt->execute();
 }
 
-function abandoned_cart_send_one_email(string $email, string $name, int $itemsCount, float $subtotal, string $summary): bool
+function abandoned_cart_send_one_email(string $email, string $name, int $itemsCount, float $subtotal, string $summary): array
 {
     $appUrl = rtrim(_cfg('APP_URL', ''), '/');
     if ($appUrl === '') {
@@ -211,7 +217,7 @@ function abandoned_cart_send_one_email(string $email, string $name, int $itemsCo
         'cart_url' => $cartUrl,
     ]);
     if ($template['subject'] === '' || $template['body'] === '') {
-        return false;
+        return ['ok' => false, 'error' => 'Email template is unavailable.'];
     }
 
     try {
@@ -220,26 +226,42 @@ function abandoned_cart_send_one_email(string $email, string $name, int $itemsCo
         $mail->Subject = $template['subject'];
         $mail->Body = $template['body'];
         $mail->send();
-        return true;
+        return ['ok' => true, 'error' => ''];
     } catch (Throwable $e) {
-        error_log('[abandoned-cart-email] send failed: ' . $e->getMessage());
-        return false;
+        $error = CronService::sanitizeError($e->getMessage());
+        error_log('[abandoned-cart-email] send failed: ' . $error);
+        return ['ok' => false, 'error' => $error !== '' ? $error : 'Email delivery failed.'];
     }
 }
 
-function abandoned_cart_send_reminders(array $context): void
+function abandoned_cart_send_reminders(array $context): array
 {
     $settings = abandoned_cart_settings();
     if (!$settings['enabled']) {
-        return;
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'disabled']);
     }
     $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
     if (!$conn instanceof mysqli || !abandoned_cart_table_ready($conn)) {
-        return;
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
     }
 
+    $recover = $conn->prepare(
+        "UPDATE abandoned_cart_reminders
+         SET status = CASE WHEN consecutive_failures + 1 >= ? THEN 'failed' ELSE 'active' END,
+             next_send_at = CASE WHEN consecutive_failures + 1 >= ? THEN NULL ELSE DATE_ADD(NOW(), INTERVAL ? MINUTE) END,
+             consecutive_failures = consecutive_failures + 1,
+             last_error = 'Recovered stale processing claim.',
+             updated_at = NOW()
+         WHERE status = 'processing' AND updated_at < (NOW() - INTERVAL 15 MINUTE)"
+    );
+    $maxFailures = (int) $settings['max_failures'];
+    $retryBaseMinutes = (int) $settings['retry_base_minutes'];
+    $recover->bind_param('iii', $maxFailures, $maxFailures, $retryBaseMinutes);
+    $recover->execute();
+
     $stmt = $conn->prepare(
-        "SELECT id, customer_id, customer_email, customer_name, items_count, subtotal_amount, cart_summary, emails_sent_count
+        "SELECT id, customer_id, customer_email, customer_name, items_count, subtotal_amount, cart_summary,
+                emails_sent_count, consecutive_failures
          FROM abandoned_cart_reminders
          WHERE status = 'active'
            AND next_send_at IS NOT NULL
@@ -253,26 +275,42 @@ function abandoned_cart_send_reminders(array $context): void
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+    $succeeded = 0;
+    $failed = 0;
     foreach ($rows as $row) {
         $id = (int) ($row['id'] ?? 0);
         if ($id <= 0) {
+            $failed++;
+            continue;
+        }
+        $claim = $conn->prepare(
+            "UPDATE abandoned_cart_reminders
+             SET status = 'processing', delivery_attempts = delivery_attempts + 1, last_attempt_at = NOW(), updated_at = NOW()
+             WHERE id = ? AND status = 'active' AND next_send_at <= NOW()"
+        );
+        $claim->bind_param('i', $id);
+        $claim->execute();
+        if ($claim->affected_rows !== 1) {
             continue;
         }
         $email = trim((string) ($row['customer_email'] ?? ''));
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $invalid = $conn->prepare(
                 "UPDATE abandoned_cart_reminders
-                 SET status = 'completed',
+                 SET status = 'failed',
                      next_send_at = NULL,
+                     consecutive_failures = consecutive_failures + 1,
+                     last_error = 'Invalid recipient email.',
                      updated_at = NOW()
-                 WHERE id = ?"
+                 WHERE id = ? AND status = 'processing'"
             );
             $invalid->bind_param('i', $id);
             $invalid->execute();
+            $failed++;
             continue;
         }
 
-        $sent = abandoned_cart_send_one_email(
+        $sendResult = abandoned_cart_send_one_email(
             $email,
             (string) ($row['customer_name'] ?? ''),
             (int) ($row['items_count'] ?? 0),
@@ -280,19 +318,39 @@ function abandoned_cart_send_reminders(array $context): void
             (string) ($row['cart_summary'] ?? '')
         );
 
-        if ($sent) {
+        if (!empty($sendResult['ok'])) {
             $upd = $conn->prepare(
                 "UPDATE abandoned_cart_reminders
                  SET emails_sent_count = emails_sent_count + 1,
                      last_sent_at = NOW(),
-                     status = CASE WHEN emails_sent_count + 1 >= ? THEN 'completed' ELSE status END,
+                     consecutive_failures = 0,
+                     last_error = NULL,
+                     status = CASE WHEN emails_sent_count + 1 >= ? THEN 'completed' ELSE 'active' END,
                      next_send_at = CASE WHEN emails_sent_count + 1 >= ? THEN NULL ELSE DATE_ADD(NOW(), INTERVAL ? MINUTE) END,
                      updated_at = NOW()
-                 WHERE id = ?"
+                 WHERE id = ? AND status = 'processing'"
             );
             $delay = (int) $settings['delay_minutes'];
             $upd->bind_param('iiii', $maxEmails, $maxEmails, $delay, $id);
             $upd->execute();
+            $succeeded++;
+        } else {
+            $failed++;
+            $nextFailures = (int) ($row['consecutive_failures'] ?? 0) + 1;
+            $maxFailures = (int) $settings['max_failures'];
+            $retryMinutes = min(240, (int) $settings['retry_base_minutes'] * (2 ** max(0, $nextFailures - 1)));
+            $error = CronService::sanitizeError((string) ($sendResult['error'] ?? 'Email delivery failed.'));
+            $terminal = $nextFailures >= $maxFailures;
+            $nextAttempt = $terminal ? null : date('Y-m-d H:i:s', time() + ($retryMinutes * 60));
+            $status = $terminal ? 'failed' : 'active';
+            $upd = $conn->prepare(
+                "UPDATE abandoned_cart_reminders
+                 SET status = ?, consecutive_failures = ?, last_error = ?, next_send_at = ?, updated_at = NOW()
+                 WHERE id = ? AND status = 'processing'"
+            );
+            $upd->bind_param('sissi', $status, $nextFailures, $error, $nextAttempt, $id);
+            $upd->execute();
         }
     }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows), $succeeded, $failed);
 }
