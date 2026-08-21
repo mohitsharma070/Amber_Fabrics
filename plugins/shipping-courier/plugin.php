@@ -8,6 +8,7 @@ add_action('order.after_commit', 'shipping_courier_after_order_commit', 30);
 add_action('order.after_payment_success', 'shipping_courier_after_payment_success', 30);
 add_action('order.after_status_change', 'shipping_courier_after_status_change', 30);
 function_exists('add_cron_action') ? add_cron_action('shipping_courier_cron_tracking_sync', 35, false) : add_action('cron.tick', 'shipping_courier_cron_tracking_sync', 35);
+function_exists('add_cron_action') ? add_cron_action('shipping_courier_cron_reverse_sync', 36, false) : add_action('cron.tick', 'shipping_courier_cron_reverse_sync', 36);
 add_filter('admin.return_action.handled', 'shipping_courier_handle_admin_return_action', 20);
 add_action('admin.return_row.actions', 'shipping_courier_render_return_actions', 20);
 add_filter('shipping.quote', 'shipping_courier_filter_shipping_quote', 20);
@@ -2017,6 +2018,29 @@ function shipping_courier_find_webhook_shipment(mysqli $conn, array $payload): ?
 
 function shipping_courier_handle_webhook_payload(mysqli $conn, array $payload): array
 {
+    if (shipping_courier_reverse_supports('webhook')) {
+        $reverseEvent = apply_filters('shipping_courier.reverse.webhook_metadata', null, [
+            'conn' => $conn,
+            'provider' => shipping_courier_provider_name(),
+            'payload' => $payload,
+        ]);
+        if (is_array($reverseEvent) && (int) ($reverseEvent['return_id'] ?? 0) > 0 && (int) ($reverseEvent['order_id'] ?? 0) > 0) {
+            $reversePickup = shipping_courier_upsert_reverse_pickup(
+                $conn,
+                (int) $reverseEvent['return_id'],
+                (int) $reverseEvent['order_id'],
+                array_merge($reverseEvent, ['provider' => shipping_courier_provider_name()])
+            );
+            return [
+                'processed' => true,
+                'ignored' => false,
+                'order_id' => (int) $reverseEvent['order_id'],
+                'reverse_pickup' => true,
+                'provider_status' => (string) ($reversePickup['provider_status'] ?? ''),
+            ];
+        }
+    }
+
     $matched = shipping_courier_find_webhook_shipment($conn, $payload);
     if (!$matched) {
         return ['processed' => false, 'ignored' => true, 'reason' => 'shipment_not_found'];
@@ -2117,7 +2141,8 @@ function shipping_courier_get_reverse_pickup(mysqli $conn, int $returnId, string
     }
 
     $stmt = $conn->prepare(
-        "SELECT id, return_id, order_id, provider, provider_order_id, provider_pickup_id,
+        "SELECT id, return_id, order_id, provider, initialization_status, claim_token, claimed_at,
+                attempt_count, last_attempt_at, last_error, provider_order_id, provider_pickup_id,
                 provider_status, tracking_id, tracking_url, label_url,
                 raw_response_json, created_at, updated_at
          FROM shipping_courier_reverse_pickups
@@ -2151,11 +2176,15 @@ function shipping_courier_upsert_reverse_pickup(
 
     $stmt = $conn->prepare(
         "INSERT INTO shipping_courier_reverse_pickups
-            (return_id, order_id, provider, provider_order_id, provider_pickup_id,
+            (return_id, order_id, provider, initialization_status, provider_order_id, provider_pickup_id,
              provider_status, tracking_id, tracking_url, label_url, raw_response_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, 'created', ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
             order_id = VALUES(order_id),
+            initialization_status = 'created',
+            claim_token = NULL,
+            claimed_at = NULL,
+            last_error = NULL,
             provider_order_id = COALESCE(NULLIF(VALUES(provider_order_id), ''), provider_order_id),
             provider_pickup_id = COALESCE(NULLIF(VALUES(provider_pickup_id), ''), provider_pickup_id),
             provider_status = COALESCE(NULLIF(VALUES(provider_status), ''), provider_status),
@@ -2244,6 +2273,91 @@ function shipping_courier_reverse_metadata_from_response(array $body): array
     ];
 }
 
+function shipping_courier_reverse_capabilities(): array
+{
+    $provider = shipping_courier_provider_name();
+    $capabilities = [
+        'create' => false,
+        'cancel' => false,
+        'sync' => false,
+        'label' => false,
+        'webhook' => false,
+    ];
+    if (!in_array($provider, ['bigship', 'bigship-direct'], true)) {
+        $filtered = apply_filters('shipping_courier.reverse.capabilities', $capabilities, ['provider' => $provider]);
+        if (is_array($filtered)) {
+            foreach ($capabilities as $name => $unused) {
+                $capabilities[$name] = !empty($filtered[$name]);
+            }
+        }
+    }
+    return $capabilities;
+}
+
+function shipping_courier_reverse_supports(string $capability): bool
+{
+    return !empty(shipping_courier_reverse_capabilities()[strtolower(trim($capability))]);
+}
+
+function shipping_courier_claim_reverse_pickup(mysqli $conn, int $returnId, int $orderId, string $provider): array
+{
+    $token = bin2hex(random_bytes(16));
+    $conn->begin_transaction();
+    try {
+        $insert = $conn->prepare(
+            "INSERT IGNORE INTO shipping_courier_reverse_pickups
+                (return_id, order_id, provider, initialization_status)
+             VALUES (?, ?, ?, 'idle')"
+        );
+        $insert->bind_param('iis', $returnId, $orderId, $provider);
+        $insert->execute();
+
+        $select = $conn->prepare(
+            'SELECT provider_pickup_id, initialization_status, claimed_at
+             FROM shipping_courier_reverse_pickups
+             WHERE return_id = ? AND provider = ? FOR UPDATE'
+        );
+        $select->bind_param('is', $returnId, $provider);
+        $select->execute();
+        $row = $select->get_result()->fetch_assoc() ?: [];
+        if (trim((string) ($row['provider_pickup_id'] ?? '')) !== '') {
+            $conn->commit();
+            return ['claimed' => false, 'existing' => true, 'token' => ''];
+        }
+        $claimingAt = strtotime((string) ($row['claimed_at'] ?? '')) ?: 0;
+        if (($row['initialization_status'] ?? '') === 'claiming' && $claimingAt > time() - 900) {
+            $conn->commit();
+            return ['claimed' => false, 'existing' => false, 'token' => ''];
+        }
+
+        $update = $conn->prepare(
+            "UPDATE shipping_courier_reverse_pickups
+             SET initialization_status='claiming', claim_token=?, claimed_at=NOW(),
+                 attempt_count=attempt_count+1, last_attempt_at=NOW(), last_error=NULL
+             WHERE return_id=? AND provider=?"
+        );
+        $update->bind_param('sis', $token, $returnId, $provider);
+        $update->execute();
+        $conn->commit();
+        return ['claimed' => true, 'existing' => false, 'token' => $token];
+    } catch (Throwable $e) {
+        $conn->rollback();
+        throw $e;
+    }
+}
+
+function shipping_courier_fail_reverse_claim(mysqli $conn, int $returnId, string $provider, string $token, string $error): void
+{
+    $error = class_exists('CronService') ? CronService::sanitizeError($error) : mb_substr(trim($error), 0, 1000);
+    $stmt = $conn->prepare(
+        "UPDATE shipping_courier_reverse_pickups
+         SET initialization_status='failed', claim_token=NULL, claimed_at=NULL, last_error=?
+         WHERE return_id=? AND provider=? AND claim_token=?"
+    );
+    $stmt->bind_param('siss', $error, $returnId, $provider, $token);
+    $stmt->execute();
+}
+
 function shipping_courier_create_reverse_pickup(mysqli $conn, int $returnId): array
 {
     if (!shipping_courier_enabled()) {
@@ -2252,8 +2366,8 @@ function shipping_courier_create_reverse_pickup(mysqli $conn, int $returnId): ar
     if (!shipping_courier_provider_configured()) {
         return shipping_courier_result(false, 'Shipping courier provider is not configured.');
     }
-    if (in_array(shipping_courier_provider_name(), ['bigship', 'bigship-direct'], true)) {
-        return shipping_courier_result(false, 'Bigship Unified Outbound API does not provide the legacy reverse-pickup endpoint. Process this return manually.');
+    if (!shipping_courier_reverse_supports('create')) {
+        return shipping_courier_result(false, 'This provider has no verified reverse-pickup API. Manual pickup is required.');
     }
     if (!shipping_courier_reverse_table_ready($conn)) {
         return shipping_courier_result(false, 'Reverse pickup metadata table is unavailable.');
@@ -2270,14 +2384,28 @@ function shipping_courier_create_reverse_pickup(mysqli $conn, int $returnId): ar
     }
 
     $provider = shipping_courier_provider_name();
-    $existing = shipping_courier_get_reverse_pickup($conn, $returnId, $provider);
-    if (!empty($existing['provider_pickup_id'])) {
-        return shipping_courier_result(true, 'Reverse pickup already exists.', ['reverse_pickup' => $existing]);
+    $claim = shipping_courier_claim_reverse_pickup($conn, $returnId, (int) ($return['order_id'] ?? 0), $provider);
+    if (!$claim['claimed']) {
+        $existing = shipping_courier_get_reverse_pickup($conn, $returnId, $provider);
+        return !empty($claim['existing'])
+            ? shipping_courier_result(true, 'Reverse pickup already exists.', ['reverse_pickup' => $existing])
+            : shipping_courier_result(false, 'Reverse pickup initialization is already in progress.');
     }
 
-    $response = shipping_courier_http_json('POST', '/reverse-pickups', $payload);
-    if (empty($response['ok'])) {
-        error_log('[shipping-courier] reverse pickup failed for return ' . $returnId . ': ' . (string) ($response['message'] ?? 'unknown'));
+    $response = apply_filters('shipping_courier.reverse.create_result', null, [
+        'conn' => $conn,
+        'provider' => $provider,
+        'return_id' => $returnId,
+        'payload' => $payload,
+        'claim_token' => $claim['token'],
+    ]);
+    if (!is_array($response) || empty($response['ok'])) {
+        $message = is_array($response) ? (string) ($response['message'] ?? 'Provider adapter did not create the pickup.') : 'Provider adapter did not return a result.';
+        shipping_courier_fail_reverse_claim($conn, $returnId, $provider, (string) $claim['token'], $message);
+        error_log('[shipping-courier] reverse pickup failed for return ' . $returnId . ': ' . CronService::sanitizeError($message));
+        if (!is_array($response)) {
+            return shipping_courier_result(false, $message);
+        }
         return $response;
     }
 
@@ -2294,6 +2422,14 @@ function shipping_courier_create_reverse_pickup(mysqli $conn, int $returnId): ar
         'provider_response' => $body,
         'order_id' => (int) ($return['order_id'] ?? 0),
     ]);
+}
+
+function shipping_courier_maybe_auto_create_reverse_pickup(mysqli $conn, int $returnId): array
+{
+    if (!shipping_courier_reverse_supports('create')) {
+        return shipping_courier_result(false, 'Manual pickup required.', ['manual' => true]);
+    }
+    return shipping_courier_create_reverse_pickup($conn, $returnId);
 }
 
 function shipping_courier_render_return_actions(array $context): void
@@ -2313,7 +2449,7 @@ function shipping_courier_render_return_actions(array $context): void
     $labelUrl = InventoryService::safe_external_url((string) ($reversePickup['label_url'] ?? ''));
     $canCreate = shipping_courier_enabled()
         && shipping_courier_provider_configured()
-        && !in_array($provider, ['bigship', 'bigship-direct'], true)
+        && shipping_courier_reverse_supports('create')
         && strtolower((string) ($return['status'] ?? '')) === 'approved'
         && empty($reversePickup['provider_pickup_id']);
     ?>
@@ -2338,6 +2474,9 @@ function shipping_courier_render_return_actions(array $context): void
             <input type="hidden" name="filter_page" value="<?php echo (int) ($context['filter_page'] ?? 1); ?>">
             <button type="submit" class="btn btn-sm btn-outline-secondary w-100">Create Reverse Pickup</button>
         </form>
+    <?php endif; ?>
+    <?php if (strtolower((string) ($return['status'] ?? '')) === 'approved' && !shipping_courier_reverse_supports('create')): ?>
+        <div class="small text-warning mt-2">Manual pickup required: the configured provider has no verified reverse-pickup capability.</div>
     <?php endif; ?>
     <?php
 }
@@ -2737,4 +2876,48 @@ function shipping_courier_cron_tracking_sync(array $context): array
         }
     }
     return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows) + $referenceFailures, $succeeded, $failed);
+}
+
+function shipping_courier_cron_reverse_sync(array $context): array
+{
+    if (!shipping_courier_enabled() || !shipping_courier_reverse_supports('sync')) {
+        return CronService::result('skipped', 0, 0, 0, ['reason' => 'provider_sync_capability_unavailable']);
+    }
+    $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
+    if (!$conn instanceof mysqli || !shipping_courier_reverse_table_ready($conn)) {
+        return CronService::result('failed', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
+    }
+
+    $provider = shipping_courier_provider_name();
+    $stmt = $conn->prepare(
+        "SELECT id, return_id, order_id, provider_pickup_id, provider_status
+         FROM shipping_courier_reverse_pickups
+         WHERE provider=? AND provider_pickup_id IS NOT NULL AND provider_pickup_id<>''
+           AND COALESCE(provider_status, '') NOT IN ('delivered','completed','cancelled','canceled','failed')
+         ORDER BY updated_at ASC LIMIT 25"
+    );
+    $stmt->bind_param('s', $provider);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $succeeded = 0;
+    $failed = 0;
+    foreach ($rows as $row) {
+        $result = apply_filters('shipping_courier.reverse.sync_result', null, [
+            'conn' => $conn,
+            'provider' => $provider,
+            'reverse_pickup' => $row,
+        ]);
+        if (!is_array($result) || empty($result['ok']) || !is_array($result['body'] ?? null)) {
+            $failed++;
+            continue;
+        }
+        shipping_courier_upsert_reverse_pickup(
+            $conn,
+            (int) $row['return_id'],
+            (int) $row['order_id'],
+            array_merge(shipping_courier_reverse_metadata_from_response($result['body']), ['provider' => $provider])
+        );
+        $succeeded++;
+    }
+    return CronService::result($failed > 0 ? 'degraded' : 'success', count($rows), $succeeded, $failed);
 }

@@ -12,6 +12,10 @@ $isCustomersNav = $currentPage === 'customers.php';
 $isMarketingNav = in_array($currentPage, ['coupons.php', 'reviews.php', 'export-inquiries.php'], true);
 $isOperationsNav = in_array($currentPage, ['shipping-rates.php', 'expenses.php'], true);
 $isSettingsNav = $currentPage === 'settings.php';
+$currentRole = (string) ($_SESSION['admin_role'] ?? 'viewer');
+$adminCanMutateCurrentPage = admin_can(admin_route_capability($currentPage, 'POST'), $currentRole);
+$adminCanManageSettings = admin_can('settings.manage', $currentRole);
+$adminCanManageAdmins = admin_can('admins.manage', $currentRole);
 $pendingRefunds = 0;
 $pendingReviews = 0;
 try {
@@ -122,9 +126,9 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="../css/style.css?v=20260815b">
-    <link rel="stylesheet" href="../css/admin.css?v=20260815b">
+    <link rel="stylesheet" href="../css/admin.css?v=20260821a">
 </head>
-<body class="admin-shell">
+<body class="admin-shell<?php echo $adminCanMutateCurrentPage ? '' : ' admin-read-only'; ?>" data-admin-can-mutate="<?php echo $adminCanMutateCurrentPage ? '1' : '0'; ?>">
 <nav class="navbar navbar-expand-lg navbar-dark">
     <div class="container">
         <a class="navbar-brand brand-mark text-white d-flex align-items-center" href="dashboard.php">
@@ -196,7 +200,15 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
                     </ul>
                 </div>
 
-                <a class="nav-link <?php echo $isSettingsNav ? 'active' : ''; ?>" href="settings.php"><i class="bi bi-sliders me-2" aria-hidden="true"></i>Settings</a>
+                <a class="nav-link <?php echo $currentPage === 'operations.php' ? 'active' : ''; ?>" href="operations.php"><i class="bi bi-activity me-2" aria-hidden="true"></i>Operations Center</a>
+
+                <?php if ($adminCanManageAdmins): ?>
+                    <a class="nav-link <?php echo $currentPage === 'admins.php' ? 'active' : ''; ?>" href="admins.php"><i class="bi bi-person-gear me-2" aria-hidden="true"></i>Administrators</a>
+                <?php endif; ?>
+
+                <?php if ($adminCanManageSettings): ?>
+                    <a class="nav-link <?php echo $isSettingsNav ? 'active' : ''; ?>" href="settings.php"><i class="bi bi-sliders me-2" aria-hidden="true"></i>Settings</a>
+                <?php endif; ?>
 
                 <?php foreach ($pluginNavItems as $pluginNavItem): ?>
                     <a class="nav-link <?php echo !empty($pluginNavItem['active']) ? 'active' : ''; ?>" href="<?php echo e((string) $pluginNavItem['url']); ?>">
@@ -204,7 +216,7 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
                     </a>
                 <?php endforeach; ?>
 
-                <form method="POST" action="logout.php" class="d-inline" aria-label="Admin logout">
+                <form method="POST" action="logout.php" class="d-inline admin-logout-form" aria-label="Admin logout">
                     <?php echo csrf_field(); ?>
                     <button type="submit" class="btn btn-link nav-link text-white" title="Log out of admin"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>Log out</button>
                 </form>

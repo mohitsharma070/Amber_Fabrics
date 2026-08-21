@@ -75,7 +75,7 @@ foreach (['admin/product-import.php', 'admin/inquiry-view.php', 'admin/categorie
 $assert(!str_contains($adminConfirmSources, 'onclick="return confirm') && !str_contains($adminConfirmSources, 'onsubmit="return confirm') && substr_count($adminConfirmSources, 'data-confirm=') >= 6, 'Admin confirmations must use CSP-safe delegated hooks.');
 $assert(!str_contains($script . $adminScript . $style . $adminStyle, "\xC3\xA2") && !str_contains($script . $adminScript . $style . $adminStyle, "\xEF\xBF\xBD"), 'First-party assets must not contain mojibake or replacement characters.');
 $assetTemplates = $header . $adminHeader . $adminFooter . $adminLogin . $adminOtp;
-$assert(!str_contains($assetTemplates, 'v=20260815a') && substr_count($assetTemplates, 'v=20260815b') >= 8 && substr_count($assetTemplates, 'script.js?v=20260815c') === 2, 'Storefront and admin templates must use the current first-party asset versions.');
+$assert(!str_contains($assetTemplates, 'v=20260815a') && substr_count($assetTemplates, 'v=20260815b') >= 4 && substr_count($assetTemplates, 'v=20260821a') === 4 && substr_count($assetTemplates, 'script.js?v=20260815c') === 2, 'Storefront and admin templates must use the current first-party asset versions.');
 $assetBytes = strlen($style) + strlen($adminStyle) + strlen($script) + strlen($adminScript);
 $assert($assetBytes <= 108023, 'Combined first-party assets must not exceed the pre-rewrite raw-byte baseline.');
 

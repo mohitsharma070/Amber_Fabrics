@@ -35,47 +35,51 @@ function inventory_alert_fetch_candidates(mysqli $conn, array $settings): array
     $piece = (float) $settings['piece_threshold'];
     $meter = (float) $settings['meter_threshold'];
     $stmt = $conn->prepare(
-        "SELECT id, name, sku, unit_type, stock, stock_meters, status, is_available,
-                low_stock_threshold_units, low_stock_threshold_meters
-         FROM fabrics
-         WHERE status = 'active'
-           AND is_available = 1
-           AND (
-                (unit_type IN ('piece','set') AND stock <= COALESCE(low_stock_threshold_units, ?))
-                OR
-                (unit_type = 'meter' AND stock_meters <= COALESCE(low_stock_threshold_meters, ?))
-           )
-         ORDER BY id ASC"
+        "SELECT f.id product_id, NULL variant_id, f.name, f.sku, '' color, '' size,
+                f.unit_type, f.stock, f.stock_meters
+         FROM fabrics f
+         WHERE f.status='active' AND f.is_available=1 AND f.product_type='simple'
+           AND ((f.unit_type IN ('piece','set') AND f.stock <= COALESCE(f.low_stock_threshold_units, ?))
+             OR (f.unit_type='meter' AND f.stock_meters <= COALESCE(f.low_stock_threshold_meters, ?)))
+         UNION ALL
+         SELECT f.id product_id, fv.id variant_id, f.name, COALESCE(NULLIF(fv.sku,''), f.sku),
+                fv.color, fv.size, f.unit_type, fv.stock, fv.stock_meters
+         FROM fabrics f JOIN fabric_variants fv ON fv.fabric_id=f.id AND fv.is_active=1
+         WHERE f.status='active' AND f.is_available=1 AND f.product_type='variable'
+           AND ((f.unit_type IN ('piece','set') AND fv.stock <= COALESCE(f.low_stock_threshold_units, ?))
+             OR (f.unit_type='meter' AND fv.stock_meters <= COALESCE(f.low_stock_threshold_meters, ?)))
+         ORDER BY product_id, variant_id"
     );
-    $stmt->bind_param('dd', $piece, $meter);
+    $stmt->bind_param('dddd', $piece, $meter, $piece, $meter);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     return is_array($rows) ? $rows : [];
 }
 
-function inventory_alert_recently_sent(mysqli $conn, int $productId, int $cooldownHours): bool
+function inventory_alert_recently_sent(mysqli $conn, int $productId, ?int $variantId, int $cooldownHours): bool
 {
     $stmt = $conn->prepare(
         "SELECT id
          FROM inventory_alert_logs
          WHERE product_id = ?
+           AND variant_id <=> ?
            AND sent_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
          ORDER BY sent_at DESC
          LIMIT 1"
     );
-    $stmt->bind_param('ii', $productId, $cooldownHours);
+    $stmt->bind_param('iii', $productId, $variantId, $cooldownHours);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     return (bool) $row;
 }
 
-function inventory_alert_log_sent(mysqli $conn, int $productId, string $unitType, float $stockValue): void
+function inventory_alert_log_sent(mysqli $conn, int $productId, ?int $variantId, string $unitType, float $stockValue): void
 {
     $stmt = $conn->prepare(
-        "INSERT INTO inventory_alert_logs (product_id, unit_type, stock_value, sent_at)
-         VALUES (?, ?, ?, NOW())"
+        "INSERT INTO inventory_alert_logs (product_id, variant_id, unit_type, stock_value, sent_at)
+         VALUES (?, ?, ?, ?, NOW())"
     );
-    $stmt->bind_param('isd', $productId, $unitType, $stockValue);
+    $stmt->bind_param('iisd', $productId, $variantId, $unitType, $stockValue);
     $stmt->execute();
 }
 
@@ -117,16 +121,21 @@ function inventory_alert_run(array $context): array
     $cooldown = (int) $settings['cooldown_hours'];
     $alertRows = [];
     foreach ($rows as $row) {
-        $pid = (int) ($row['id'] ?? 0);
-        if ($pid <= 0 || inventory_alert_recently_sent($conn, $pid, $cooldown)) {
+        $pid = (int) ($row['product_id'] ?? 0);
+        $variantId = (int) ($row['variant_id'] ?? 0);
+        $variantId = $variantId > 0 ? $variantId : null;
+        if ($pid <= 0 || inventory_alert_recently_sent($conn, $pid, $variantId, $cooldown)) {
             continue;
         }
         $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $row['unit_type'] : 'piece';
         $stockValue = $unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
         $alertRows[] = [
             'id' => $pid,
+            'variant_id' => $variantId,
             'name' => (string) ($row['name'] ?? ''),
             'sku' => (string) ($row['sku'] ?? ''),
+            'color' => (string) ($row['color'] ?? ''),
+            'size' => (string) ($row['size'] ?? ''),
             'unit_type' => $unitType,
             'stock' => $stockValue,
         ];
@@ -144,6 +153,7 @@ function inventory_alert_run(array $context): array
         $unitLabel = $item['unit_type'] === 'meter' ? 'meters' : ($item['unit_type'] === 'set' ? 'sets' : 'pieces');
         $lines[] = '- #' . (int) $item['id']
             . ' | ' . $item['name']
+            . (!empty($item['variant_id']) ? ' | Variant: ' . trim((string) $item['color'] . ' / ' . (string) $item['size'], ' /') : '')
             . ' | SKU: ' . ($item['sku'] !== '' ? $item['sku'] : '-')
             . ' | Stock: ' . format_quantity_by_unit((float) $item['stock'], (string) $item['unit_type']) . ' ' . $unitLabel;
     }
@@ -159,7 +169,7 @@ function inventory_alert_run(array $context): array
         if ($pid <= 0) {
             continue;
         }
-        inventory_alert_log_sent($conn, $pid, (string) ($item['unit_type'] ?? 'piece'), (float) ($item['stock'] ?? 0));
+        inventory_alert_log_sent($conn, $pid, isset($item['variant_id']) ? (int) $item['variant_id'] : null, (string) ($item['unit_type'] ?? 'piece'), (float) ($item['stock'] ?? 0));
     }
     return CronService::result('success', count($alertRows), count($alertRows), 0);
 }

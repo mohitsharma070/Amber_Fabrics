@@ -6,6 +6,8 @@ $validStatuses = ['requested','approved','rejected','pickup_scheduled','in_trans
 $perPageOptions = [10, 20, 50];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $notifyReturnId = 0;
+    $triggerReversePickup = false;
     $filterStatus = trim((string) ($_POST['filter_status'] ?? ''));
     if (!in_array($filterStatus, $validStatuses, true)) {
         $filterStatus = '';
@@ -189,6 +191,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $conn->commit();
+            if ($newStatus !== $currentStatus || $adminNote !== '') {
+                $notifyReturnId = $returnId;
+            }
+            $triggerReversePickup = $newStatus === 'approved' && $currentStatus !== 'approved';
             flash('success', 'Return updated successfully.');
         } catch (Throwable $e) {
             try {
@@ -199,6 +205,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } else {
         flash('error', 'Invalid return update.');
+    }
+    if ($notifyReturnId > 0 && !EmailService::send_return_status_update_email($conn, $notifyReturnId)) {
+        error_log('[returns] status saved but notification email was not delivered for return ' . $notifyReturnId);
+    }
+    if ($triggerReversePickup && function_exists('shipping_courier_maybe_auto_create_reverse_pickup')) {
+        shipping_courier_maybe_auto_create_reverse_pickup($conn, $returnId);
     }
     redirect($returnUrl);
 }
@@ -228,11 +240,13 @@ $pages = max(1, (int) ceil($total / $perPage));
 $page = list_clamp_page($page, $pages);
 $offset = ($page - 1) * $perPage;
 
-$sql = "SELECT r.*, o.order_number, o.payment_method, o.payment_status, o.total_amount, c.name AS customer_name, c.email AS customer_email,
+$sql = "SELECT r.*, o.order_number, o.payment_method, o.payment_status, o.total_amount,
+               COALESCE(NULLIF(c.name,''), NULLIF(o.customer_name,''), 'Guest customer') AS customer_name,
+               COALESCE(NULLIF(c.email,''), o.customer_email) AS customer_email,
                COALESCE(ri_tot.return_total, 0) AS return_total
         FROM returns r
         JOIN orders o ON o.id = r.order_id
-        JOIN customers c ON c.id = r.customer_id
+        LEFT JOIN customers c ON c.id = r.customer_id
         LEFT JOIN (
             SELECT return_id, SUM(line_total) AS return_total
             FROM return_items

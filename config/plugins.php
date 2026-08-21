@@ -6,7 +6,7 @@
  * 'enabled' => ['utm-attribution', 'meta-pixel'],
  */
 return [
-    'enabled' => ['cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'google-analytics', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'back-in-stock-alert', 'newsletter', 'shipping-rto-risk', 'shipping-courier', 'review-rating', 'order-timeline', 'seo-suite', 'recommendations', 'support-tickets'],
+    'enabled' => ['cod-guard', 'utm-attribution', 'meta-pixel', 'meta-capi', 'google-analytics', 'abandoned-cart-email', 'product-feed', 'inventory-alert', 'back-in-stock-alert', 'shipping-rto-risk', 'shipping-courier', 'review-rating', 'order-timeline', 'seo-suite', 'recommendations', 'support-tickets'],
     'settings' => [
         'conversion-mvp' => [
             'guest_order_access_enabled' => (int) (function_exists('_cfg') ? _cfg('GUEST_ORDER_ACCESS_ENABLED', '1') : '1'),
@@ -83,15 +83,6 @@ return [
             'max_failures' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_MAX_FAILURES', '5') : '5'),
             'retry_base_minutes' => (int) (function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_RETRY_BASE_MINUTES', '15') : '15'),
             'from_name' => function_exists('_cfg') ? _cfg('BACK_IN_STOCK_ALERT_FROM_NAME', '') : '',
-        ],
-        'newsletter' => [
-            'enabled' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_ENABLED', '1') : '1'),
-            'double_opt_in' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_DOUBLE_OPT_IN', '0') : '0'),
-            'send_welcome_email' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_SEND_WELCOME_EMAIL', '0') : '0'),
-            'batch_size' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_BATCH_SIZE', '50') : '50'),
-            'from_name' => function_exists('_cfg') ? _cfg('NEWSLETTER_FROM_NAME', '') : '',
-            'footer_form_enabled' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_FOOTER_FORM_ENABLED', '1') : '1'),
-            'source_tracking_enabled' => (int) (function_exists('_cfg') ? _cfg('NEWSLETTER_SOURCE_TRACKING_ENABLED', '1') : '1'),
         ],
         'shipping-rto-risk' => [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('SHIPPING_RTO_RISK_ENABLED', '1') : '1'),

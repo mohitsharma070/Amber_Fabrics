@@ -1247,7 +1247,7 @@ do_action('product.view', [
 
                 <div class="mb-0">
                     <h6 class="fw-semibold">Return Policy</h6>
-                    <p class="mb-2 text-muted">Returns or exchanges are supported for eligible cases as per policy.</p>
+                    <p class="mb-2 text-muted">Refund returns are supported for eligible cases within <?php echo return_request_window_days(); ?> calendar days of confirmed delivery.</p>
                     <a href="return-policy.php" class="btn btn-sm btn-outline-secondary">View Return Policy</a>
                 </div>
 

@@ -80,7 +80,7 @@ function cron_readiness_check(mysqli $conn): array
     $requiredTables = [
         'orders', 'payments', 'public_form_attempts', 'site_settings', 'cod_confirmations',
         'abandoned_cart_reminders', 'inventory_alert_logs', 'back_in_stock_subscriptions',
-        'shipping_rto_risks', 'support_tickets',
+        'shipping_rto_risks', 'support_tickets', 'cron_run_history',
     ];
     $missing = [];
     foreach ($requiredTables as $table) {
@@ -99,6 +99,8 @@ function cron_readiness_check(mysqli $conn): array
     $requiredColumns = [
         'abandoned_cart_reminders' => ['delivery_attempts', 'consecutive_failures', 'last_attempt_at', 'last_error'],
         'back_in_stock_subscriptions' => ['delivery_attempts', 'next_attempt_at'],
+        'inventory_alert_logs' => ['variant_id'],
+        'shipping_courier_reverse_pickups' => ['initialization_status', 'claim_token', 'attempt_count', 'last_error'],
     ];
     foreach ($requiredColumns as $table => $columns) {
         foreach ($columns as $column) {
@@ -160,21 +162,39 @@ function cron_plugin_tick(mysqli $conn): array
     ]);
 }
 
-function cron_save_health(mysqli $conn, array $summary, int $durationMs): void
+function cron_save_health(mysqli $conn, array $summary, int $durationMs, string $startedAt): void
 {
     $now = date('Y-m-d H:i:s');
+    $summaryJson = json_encode($summary['details'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]';
     $settings = [
         'cron_last_run_at' => $now,
         'cron_last_status' => (string) $summary['status'],
         'cron_last_duration_ms' => (string) max(0, $durationMs),
         'cron_last_failed_jobs' => (string) (int) $summary['failed'],
         'cron_last_degraded_jobs' => (string) (int) $summary['degraded'],
-        'cron_last_summary_json' => json_encode($summary['details'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]',
+        'cron_last_summary_json' => $summaryJson,
     ];
     if ($summary['status'] === 'success') {
         $settings['cron_last_success_at'] = $now;
     }
     SiteSettingsService::saveToDb($conn, $settings);
+
+    $historyStmt = $conn->prepare(
+        'INSERT INTO cron_run_history
+            (started_at, finished_at, duration_ms, status, jobs_total, jobs_failed, jobs_degraded, critical_jobs_failed, summary_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    $startedSql = date('Y-m-d H:i:s', strtotime($startedAt) ?: time());
+    $status = CronService::normalizeStatus((string) ($summary['status'] ?? 'failed'));
+    $jobsTotal = (int) ($summary['jobs_total'] ?? ((int) ($summary['failed'] ?? 0) + (int) ($summary['degraded'] ?? 0)));
+    $failed = (int) ($summary['failed'] ?? 0);
+    $degraded = (int) ($summary['degraded'] ?? 0);
+    $critical = (int) ($summary['critical_failures'] ?? 0);
+    $historyStmt->bind_param('ssisiiiis', $startedSql, $now, $durationMs, $status, $jobsTotal, $failed, $degraded, $critical, $summaryJson);
+    $historyStmt->execute();
+
+    $cleanup = $conn->prepare('DELETE FROM cron_run_history WHERE started_at < (NOW() - INTERVAL 30 DAY) ORDER BY started_at ASC LIMIT 500');
+    $cleanup->execute();
 }
 
 $mode = strtolower((string) ($GLOBALS['_app_mode'] ?? ''));
@@ -240,13 +260,15 @@ try {
     }
 
     $summary = CronService::summarize($jobs);
+    $summary['jobs_total'] = count($jobs);
     $duration = (int) round((microtime(true) - $runStart) * 1000);
     if (!$isCheck) {
         try {
-            cron_save_health($conn, $summary, $duration);
+            cron_save_health($conn, $summary, $duration, $runStartedAt);
         } catch (Throwable $e) {
             $jobs[] = ['name' => 'cron_health_save', 'critical' => true, 'status' => 'failed', 'error' => CronService::sanitizeError($e->getMessage()), 'result' => null];
             $summary = CronService::summarize($jobs);
+            $summary['jobs_total'] = count($jobs);
         }
     }
 

@@ -52,8 +52,8 @@ try {
     if ($deliveredAt === '') {
         throw new RuntimeException('Return can be requested only after delivery is confirmed with delivered date.');
     }
-    if (strtotime($deliveredAt) < strtotime('-7 days')) {
-        throw new RuntimeException('Return window is closed. You can request return only within 7 days of delivery.');
+    if (!return_request_is_eligible($deliveredAt)) {
+        throw new RuntimeException('Return window is closed. You can request a refund return only within ' . return_request_window_days() . ' calendar days of delivery.');
     }
 
     $existsStmt = $conn->prepare("SELECT id FROM returns WHERE order_id = ? LIMIT 1");
@@ -143,7 +143,7 @@ try {
     $insertReturn->bind_param('siissss', $returnNumber, $orderId, $returnCustomerId, $reason, $customerNote, $img1, $img2);
     $insertReturn->execute();
     $returnId = (int) $conn->insert_id;
-    $reverseNote = 'Manual reverse pickup required. Assign courier from admin based on location and package details.';
+    $reverseNote = 'Reverse pickup will be automated only when the configured courier supports it; otherwise arrange pickup manually.';
     $noteStmt = $conn->prepare("UPDATE returns SET admin_note = ? WHERE id = ?");
     $noteStmt->bind_param('si', $reverseNote, $returnId);
     $noteStmt->execute();

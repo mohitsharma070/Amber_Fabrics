@@ -141,6 +141,8 @@ php cron/run-plugins.php --local-smoke
 
 The runner uses filesystem and MySQL locks, returns nonzero for payment/COD integrity failures, records degraded noncritical work for the admin dashboard, and retries scheduled notification delivery with bounded backoff.
 
+`2026-08-22-ecommerce-operations-completion.sql` removes the retired, empty newsletter subscriber table and adds per-variant alert history, cron run history, and reverse-pickup claim metadata. Bigship reverse pickup remains a manual operation until a documented and sandbox-tested provider adapter declares the required capability.
+
 Deployment should back up files and database, apply backward-compatible migrations, deploy the matching commit, and smoke-test authentication, catalog, cart, checkout, payment, order, and admin workflows.
 
 ## Agentic maintenance

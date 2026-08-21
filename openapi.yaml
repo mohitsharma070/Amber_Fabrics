@@ -873,7 +873,8 @@ paths:
   /customer/request-return.php:
     post:
       tags: [Customer, Guest]
-      summary: Request a return for an authorized order
+      summary: Request a refund-only return for an authorized order
+      description: Accepts one eligible request within the inclusive seven-calendar-day UTC window measured from the recorded delivery timestamp. Customer sessions and guest order authorization use the same policy.
       security:
         - customerSessionAuth: []
         - guestOrderSessionAuth: []
@@ -1257,7 +1258,7 @@ paths:
     get:
       tags: [Operations]
       summary: Run scheduled plugin jobs over HTTP
-      description: Runs scheduled work with overlap protection. Prefer X-Cron-Token; the query token is retained for compatibility. Returns 200 for healthy or degraded noncritical work and 500 for critical or runtime failure.
+      description: Runs scheduled work with overlap protection. Prefer X-Cron-Token; the query token is retained for compatibility. Returns 200 for healthy or degraded noncritical work and 500 for critical or runtime failure. Compact sanitized run/callback failures are retained for 30 days for authorized administrators.
       security:
         - cronTokenHeader: []
         - cronTokenQuery: []

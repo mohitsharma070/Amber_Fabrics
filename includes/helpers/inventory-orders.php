@@ -1,6 +1,38 @@
 <?php
 require_once __DIR__ . '/../services/InventoryService.php';
 
+function return_request_window_days(): int
+{
+    return 7;
+}
+
+function return_request_eligibility(?string $deliveredAt, ?DateTimeImmutable $now = null): array
+{
+    $value = trim((string) $deliveredAt);
+    if ($value === '') {
+        return ['eligible' => false, 'expires_at' => null, 'reason' => 'delivery_not_confirmed'];
+    }
+    try {
+        $utc = new DateTimeZone('UTC');
+        $delivered = new DateTimeImmutable($value, $utc);
+        $delivered = $delivered->setTimezone($utc);
+        $now = ($now ?? new DateTimeImmutable('now', $utc))->setTimezone($utc);
+        $expires = $delivered->modify('+' . return_request_window_days() . ' days');
+        return [
+            'eligible' => $now >= $delivered && $now <= $expires,
+            'expires_at' => $expires->format('Y-m-d H:i:s'),
+            'reason' => $now > $expires ? 'window_closed' : ($now < $delivered ? 'delivery_in_future' : ''),
+        ];
+    } catch (Throwable $e) {
+        return ['eligible' => false, 'expires_at' => null, 'reason' => 'invalid_delivery_timestamp'];
+    }
+}
+
+function return_request_is_eligible(?string $deliveredAt, ?DateTimeImmutable $now = null): bool
+{
+    return !empty(return_request_eligibility($deliveredAt, $now)['eligible']);
+}
+
 function adjust_fabric_stock(mysqli $conn, int $fabricId, string $unitType, float $qty, string $direction = 'decrease') : void
 {
     InventoryService::adjust_fabric_stock($conn, $fabricId, $unitType, $qty, $direction);

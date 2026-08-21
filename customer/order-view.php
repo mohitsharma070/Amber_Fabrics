@@ -169,7 +169,7 @@ $isRefundInitiated = in_array(strtolower($effectiveOrderStatus), ['cancelled', '
     && in_array(strtolower((string) ($order['payment_method'] ?? '')), ['razorpay', 'upi'], true)
     && strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
 $deliveredAtForReturn = trim((string) ($shipment['delivered_at'] ?? ''));
-$isWithinReturnWindow = $deliveredAtForReturn !== '' && strtotime($deliveredAtForReturn) >= strtotime('-7 days');
+$isWithinReturnWindow = return_request_is_eligible($deliveredAtForReturn);
 $canRequestReturn = strtolower($effectiveOrderStatus) === 'delivered' && $isWithinReturnWindow && !$returnRequest;
 
 $metaTitle = 'Order ' . e($order['order_number']) . ' | ' . site_name();
@@ -381,13 +381,13 @@ include __DIR__ . '/../includes/header.php';
                             <label class="form-label small mb-1">Image 2 (required)</label>
                             <input type="file" name="image_2" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
                         </div>
-                        <div class="small text-muted mb-2">Step 4: Review and submit. Return allowed only within 7 days from delivery date.</div>
+                        <div class="small text-muted mb-2">Step 4: Review and submit. Refund returns are allowed within <?php echo return_request_window_days(); ?> calendar days of delivery.</div>
                         <button type="submit" class="btn btn-outline-secondary w-100">Submit Return Request</button>
                     </form>
                     <?php endif; ?>
                     <?php if (strtolower($effectiveOrderStatus) === 'delivered' && !$returnRequest && !$isWithinReturnWindow): ?>
                     <div class="alert alert-secondary mt-2 mb-0 py-2 small">
-                        Return window closed (7 days from delivery).
+                        Refund return window closed (<?php echo return_request_window_days(); ?> calendar days from delivery).
                     </div>
                     <?php endif; ?>
                 </div>

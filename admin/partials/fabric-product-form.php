@@ -2,7 +2,7 @@
 $isEdit=!empty($isEdit);
 $submitLabel=isset($submitLabel)?(string)$submitLabel:'Save Changes';$cancelHref=$cancelHref??'fabrics.php';
 $catalogLabels=[
- 'size_type'=>'Size Type','return_exchange_condition'=>'Return/Exchange Condition','size_chart'=>'Size Chart','pickup_address_code'=>'Pickup Address Code',
+ 'size_type'=>'Size Type','return_exchange_condition'=>'Return Condition','size_chart'=>'Size Chart','pickup_address_code'=>'Pickup Address Code',
  'customisation_id'=>'Customisation Id','associated_pixel'=>'Associated Pixel','attr_attribute_name'=>'Attribute Name','attr_brand_name'=>'Brand Name',
  'attr_type'=>'Type','attr_material'=>'Material','attr_product_type'=>'Product Type','attr_style_name'=>'Style Name','attr_design'=>'Design',
  'attr_printing_type'=>'Printing Type','attr_shape'=>'Shape','attr_pattern'=>'Pattern','attr_origin'=>'Origin','attr_thickness_ply'=>'Thickness / Ply',

@@ -65,17 +65,29 @@ $cancelledOrders    = (int)   ($_orderStats['cancelled_orders'] ?? 0);
 $staleOnlinePending = (int)   ($_orderStats['stale_online_pending'] ?? 0);
 $refundPendingCount = (int)   ($_orderStats['refund_pending'] ?? 0);
 
-// 2. Fabric totals (products + low-stock) in one query.
-$_fabricStats = $conn->query(
-    "SELECT
-        COUNT(*) AS total_products,
-        COUNT(CASE WHEN status = 'active'
-                        AND (CASE WHEN unit_type = 'meter' THEN COALESCE(stock_meters, 0) ELSE COALESCE(stock, 0) END) <= 3
-                   THEN 1 END) AS low_stock
-     FROM fabrics"
-)->fetch_assoc() ?: [];
-$totalProducts    = (int) ($_fabricStats['total_products'] ?? 0);
-$lowStockProducts = (int) ($_fabricStats['low_stock'] ?? 0);
+// 2. Count products and low-stock sellable SKUs. Variable-product parent
+// inventory is intentionally ignored; each active variant is one SKU.
+$totalProducts = (int) ($conn->query('SELECT COUNT(*) FROM fabrics')->fetch_row()[0] ?? 0);
+$pieceThreshold = max(0, (float) plugin_setting('inventory-alert', 'piece_threshold', 5));
+$meterThreshold = max(0, (float) plugin_setting('inventory-alert', 'meter_threshold', 10));
+$lowStockStmt = $conn->prepare(
+    "SELECT COUNT(*) FROM (
+        SELECT f.id offer_id
+        FROM fabrics f
+        WHERE f.status='active' AND f.is_available=1 AND f.product_type='simple'
+          AND ((f.unit_type='meter' AND f.stock_meters <= COALESCE(f.low_stock_threshold_meters, ?))
+            OR (f.unit_type IN ('piece','set') AND f.stock <= COALESCE(f.low_stock_threshold_units, ?)))
+        UNION ALL
+        SELECT fv.id offer_id
+        FROM fabrics f JOIN fabric_variants fv ON fv.fabric_id=f.id AND fv.is_active=1
+        WHERE f.status='active' AND f.is_available=1 AND f.product_type='variable'
+          AND ((f.unit_type='meter' AND fv.stock_meters <= COALESCE(f.low_stock_threshold_meters, ?))
+            OR (f.unit_type IN ('piece','set') AND fv.stock <= COALESCE(f.low_stock_threshold_units, ?)))
+     ) low_stock_offers"
+);
+$lowStockStmt->bind_param('dddd', $meterThreshold, $pieceThreshold, $meterThreshold, $pieceThreshold);
+$lowStockStmt->execute();
+$lowStockProducts = (int) ($lowStockStmt->get_result()->fetch_row()[0] ?? 0);
 
 // 3. Secondary counts (COD confirmations + export inquiries) via correlated sub-selects.
 $_secondaryStats = $conn->query(
@@ -85,7 +97,7 @@ $_secondaryStats = $conn->query(
 )->fetch_assoc() ?: [];
 $codPendingConfirm = (int) ($_secondaryStats['cod_pending'] ?? 0);
 $exportInquiries   = (int) ($_secondaryStats['export_inquiries'] ?? 0);
-unset($_orderStats, $_fabricStats, $_secondaryStats);
+unset($_orderStats, $_secondaryStats);
 // --- End consolidated stats ---
 
 $cronLastRunAt = '';
@@ -94,8 +106,9 @@ $cronLastStatus = '';
 $cronFailedJobs = 0;
 $cronDegradedJobs = 0;
 $cronDurationMs = 0;
+$cronSummary = [];
 try {
-    $cronStmt = $conn->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('cron_last_run_at','cron_last_success_at','cron_last_status','cron_last_failed_jobs','cron_last_degraded_jobs','cron_last_duration_ms')");
+    $cronStmt = $conn->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('cron_last_run_at','cron_last_success_at','cron_last_status','cron_last_failed_jobs','cron_last_degraded_jobs','cron_last_duration_ms','cron_last_summary_json')");
     $cronStmt->execute();
     $cronSettings = [];
     foreach ($cronStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $cronRow) {
@@ -107,6 +120,8 @@ try {
     $cronFailedJobs = (int) ($cronSettings['cron_last_failed_jobs'] ?? 0);
     $cronDegradedJobs = (int) ($cronSettings['cron_last_degraded_jobs'] ?? 0);
     $cronDurationMs = (int) ($cronSettings['cron_last_duration_ms'] ?? 0);
+    $decodedCronSummary = json_decode((string) ($cronSettings['cron_last_summary_json'] ?? '[]'), true);
+    $cronSummary = is_array($decodedCronSummary) ? array_slice($decodedCronSummary, 0, 10) : [];
 } catch (Throwable $e) {
     $cronLastRunAt = '';
 }
@@ -319,6 +334,22 @@ include 'partials/header.php';
             <?php if ($cronLastStatus === 'failed'): ?>Cron failed with <strong><?php echo $cronFailedJobs; ?></strong> failed job(s).<?php elseif ($cronLastStatus === 'degraded'): ?>Cron completed with <strong><?php echo $cronDegradedJobs; ?></strong> degraded job(s).<?php endif; ?>
             <?php if ($cronLastStatus !== 'success' && $cronLastSuccessAt !== ''): ?> Last fully successful run: <?php echo e($cronLastSuccessAt); ?>.<?php endif; ?>
         </div>
+        <?php if ($cronSummary !== []): ?>
+            <ul class="small mb-0 mt-2">
+                <?php foreach ($cronSummary as $cronDetail): ?>
+                    <?php if (!is_array($cronDetail)) continue; ?>
+                    <li>
+                        <strong><?php echo e((string) ($cronDetail['job'] ?? 'Unknown job')); ?></strong>
+                        <?php if (trim((string) ($cronDetail['error'] ?? '')) !== ''): ?>: <?php echo e(CronService::sanitizeError((string) $cronDetail['error'])); ?><?php endif; ?>
+                        <?php foreach ((array) ($cronDetail['callbacks'] ?? []) as $callback): ?>
+                            <?php if (!is_array($callback)) continue; ?>
+                            <div><?php echo e((string) ($callback['callback'] ?? 'Unknown callback')); ?>: <?php echo e(CronService::sanitizeError((string) ($callback['error'] ?? 'No details supplied.'))); ?></div>
+                        <?php endforeach; ?>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+            <a class="small" href="operations.php?view=cron">View cron history</a>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
     <div class="dashboard-kpi-grid">

@@ -306,11 +306,13 @@ CREATE TABLE IF NOT EXISTS abandoned_cart_reminders (
 CREATE TABLE IF NOT EXISTS inventory_alert_logs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     product_id INT NOT NULL,
+    variant_id INT DEFAULT NULL,
     unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'piece',
     stock_value DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     sent_at DATETIME NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_inventory_alert_product_sent (product_id, sent_at),
+    INDEX idx_inventory_alert_product_variant_sent (product_id, variant_id, sent_at),
     CONSTRAINT fk_inventory_alert_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -723,6 +725,12 @@ CREATE TABLE IF NOT EXISTS shipping_courier_reverse_pickups (
     return_id            INT NOT NULL,
     order_id             INT NOT NULL,
     provider             VARCHAR(64) NOT NULL,
+    initialization_status ENUM('idle','claiming','created','failed') NOT NULL DEFAULT 'idle',
+    claim_token          CHAR(32) DEFAULT NULL,
+    claimed_at           DATETIME DEFAULT NULL,
+    attempt_count        INT UNSIGNED NOT NULL DEFAULT 0,
+    last_attempt_at      DATETIME DEFAULT NULL,
+    last_error           VARCHAR(1000) DEFAULT NULL,
     provider_order_id    VARCHAR(191) DEFAULT NULL,
     provider_pickup_id   VARCHAR(191) DEFAULT NULL,
     provider_status      VARCHAR(80) DEFAULT NULL,
@@ -737,6 +745,8 @@ CREATE TABLE IF NOT EXISTS shipping_courier_reverse_pickups (
     INDEX idx_shipping_courier_reverse_provider_order (provider, provider_order_id),
     INDEX idx_shipping_courier_reverse_pickup (provider, provider_pickup_id),
     INDEX idx_shipping_courier_reverse_status (provider, provider_status),
+    INDEX idx_shipping_courier_reverse_claim (initialization_status, claimed_at),
+    INDEX idx_shipping_courier_reverse_sync (provider, provider_status, updated_at),
     CONSTRAINT fk_shipping_courier_reverse_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
     CONSTRAINT fk_shipping_courier_reverse_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -885,6 +895,22 @@ CREATE TABLE IF NOT EXISTS shipping_quotes (
     INDEX idx_shipping_quotes_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS cron_run_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    started_at DATETIME NOT NULL,
+    finished_at DATETIME NOT NULL,
+    duration_ms INT UNSIGNED NOT NULL DEFAULT 0,
+    status ENUM('success','degraded','failed','skipped') NOT NULL,
+    jobs_total INT UNSIGNED NOT NULL DEFAULT 0,
+    jobs_failed INT UNSIGNED NOT NULL DEFAULT 0,
+    jobs_degraded INT UNSIGNED NOT NULL DEFAULT 0,
+    critical_jobs_failed INT UNSIGNED NOT NULL DEFAULT 0,
+    summary_json JSON DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_cron_run_history_started (started_at),
+    INDEX idx_cron_run_history_status_started (status, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS guest_order_access_tokens (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_id INT NOT NULL,
@@ -998,32 +1024,6 @@ CREATE TABLE IF NOT EXISTS return_items (
     CONSTRAINT fk_return_items_return FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
     INDEX idx_return_items_return_id (return_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE TABLE IF NOT EXISTS newsletter_subscribers (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT DEFAULT NULL,
-    email VARCHAR(255) NOT NULL,
-    email_normalized VARCHAR(255) GENERATED ALWAYS AS (LOWER(TRIM(email))) STORED,
-    name VARCHAR(191) DEFAULT NULL,
-    status ENUM('pending','subscribed','unsubscribed','bounced') NOT NULL DEFAULT 'pending',
-    source VARCHAR(80) NOT NULL DEFAULT 'footer',
-    consent_ip VARCHAR(45) DEFAULT NULL,
-    consent_user_agent VARCHAR(255) DEFAULT NULL,
-    confirmed_at DATETIME DEFAULT NULL,
-    unsubscribed_at DATETIME DEFAULT NULL,
-    unsubscribe_token CHAR(64) NOT NULL,
-    verify_token CHAR(64) DEFAULT NULL,
-    subscribed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_sent_at DATETIME DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_newsletter_email_normalized (email_normalized),
-    UNIQUE KEY uq_newsletter_unsubscribe_token (unsubscribe_token),
-    UNIQUE KEY uq_newsletter_verify_token (verify_token),
-    INDEX idx_newsletter_customer (customer_id),
-    INDEX idx_newsletter_status (status, created_at),
-    CONSTRAINT fk_newsletter_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS support_tickets (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY,
     ticket_number    VARCHAR(32) NOT NULL,
@@ -1081,7 +1081,8 @@ INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-08-18-purge-legacy-placeholder-variants.sql','7ff11fa4a42abc61052ac8b54a6614cbc06622c7b753599c7314d5bfadc46d6a'),
 ('2026-08-19-backend-integrity-hardening.sql',  'fedb5362871f1be607d033ebbb42346dcbde3f2e920bc1f4156a55cee1b1a75d'),
 ('2026-08-20-customer-backend-hardening.sql',   '39ebf3f24a9451fded654ab77c4ad8e4fc090877fef3f1d217df2e462c92afe2'),
-('2026-08-21-cron-reliability-hardening.sql',   '015a242297956f84b692491d9f4242e8511618d125aa39032ec34e5ce46508b3');
+('2026-08-21-cron-reliability-hardening.sql',   '015a242297956f84b692491d9f4242e8511618d125aa39032ec34e5ce46508b3'),
+('2026-08-22-ecommerce-operations-completion.sql','bc0848785dd425bc672b62e72713a59cfbba526a173d9a139daa1b84e696944d');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

@@ -411,3 +411,9 @@
         transition: none;
     }
 }
+/* The server supplies admin-read-only after capability validation. Keep
+   mutation controls unavailable even when JavaScript is disabled. */
+.admin-read-only form[method="post" i]:not(.admin-logout-form) :is(button, input[type="submit"], input[type="image"]),
+.admin-read-only [data-admin-mutation] {
+    display: none !important;
+}

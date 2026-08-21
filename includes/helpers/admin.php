@@ -14,6 +14,74 @@ function admin_role_rank(string $role): int
     return $map[$role] ?? 0;
 }
 
+function admin_role_capabilities(string $role): array
+{
+    $common = ['admin.view', 'operations.view'];
+    return match (strtolower(trim($role))) {
+        'catalog_manager' => array_merge($common, ['catalog.manage']),
+        'operations_manager' => array_merge($common, ['operations.manage']),
+        'super_admin' => ['*'],
+        default => $common,
+    };
+}
+
+function admin_can(string $capability, ?string $role = null): bool
+{
+    $capability = strtolower(trim($capability));
+    if ($capability === '') {
+        return false;
+    }
+    $role = $role ?? (string) ($_SESSION['admin_role'] ?? 'viewer');
+    $capabilities = admin_role_capabilities($role);
+    return in_array('*', $capabilities, true) || in_array($capability, $capabilities, true);
+}
+
+function admin_route_capability(string $scriptName, string $method = 'GET'): string
+{
+    $base = strtolower(basename(trim($scriptName)));
+    $method = strtoupper(trim($method));
+
+    if ($base === 'admins.php') {
+        return 'admins.manage';
+    }
+    if ($base === 'logout.php') {
+        return 'admin.view';
+    }
+    if ($base === 'operations.php') {
+        return $method === 'POST' ? 'operations.manage' : 'operations.view';
+    }
+    if ($base === 'settings.php') {
+        return 'settings.manage';
+    }
+    if ($base === 'export-inquiries.php') {
+        return 'operations.manage';
+    }
+    if ($method !== 'POST') {
+        return 'admin.view';
+    }
+
+    $catalogRoutes = [
+        'about-media.php', 'add-fabric.php', 'categories.php', 'coupons.php',
+        'delete-fabric.php', 'edit-fabric.php', 'fabric-variants.php',
+        'product-actions.php', 'product-import.php', 'product-media.php', 'reviews.php',
+    ];
+    if (in_array($base, $catalogRoutes, true)) {
+        return 'catalog.manage';
+    }
+
+    $operationsRoutes = [
+        'bigship-service.php', 'customer-view.php', 'expenses.php', 'inquiry-view.php',
+        'order-view.php', 'orders.php', 'returns.php', 'shipping-rate-test.php',
+        'shipping-rates.php', 'support-tickets.php',
+    ];
+    if (in_array($base, $operationsRoutes, true)) {
+        return 'operations.manage';
+    }
+
+    // Unknown admin mutations fail closed. Read-only access remains available.
+    return 'admin.mutate';
+}
+
 function admin_activity_logs_table_ready(mysqli $conn): bool
 {
     static $checked = false;
@@ -71,34 +139,17 @@ function log_admin_activity(
 
 function admin_route_min_role(string $scriptName): string
 {
-    $script = strtolower(trim($scriptName));
-    $base = basename($script);
-    $superOnly = [
-        'settings.php',
-        'admins.php',
-        'shipping-rates.php',
-    ];
-    $opsAndAbove = [
-        'orders.php',
-        'order-view.php',
-        'returns.php',
-        'customers.php',
-        'customer-view.php',
-        'expenses.php',
-        'inquiries.php',
-        'inquiry-view.php',
-        'export-inquiries.php',
-    ];
-    if (in_array($base, $superOnly, true)) {
-        return 'super_admin';
-    }
-    if (in_array($base, $opsAndAbove, true)) {
-        return 'operations_manager';
-    }
-    return 'viewer';
+    // Compatibility helper for older internal callers. Authorization is now
+    // capability based so catalog and operations mutations remain separated.
+    return match (admin_route_capability($scriptName, (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'))) {
+        'catalog.manage' => 'catalog_manager',
+        'operations.manage' => 'operations_manager',
+        'admins.manage', 'settings.manage', 'admin.mutate' => 'super_admin',
+        default => 'viewer',
+    };
 }
 
-function admin_session_valid(mysqli $conn, int $adminId, string $sessionRole): bool
+function admin_session_valid(mysqli $conn, int $adminId, string &$sessionRole): bool
 {
     if ($adminId <= 0) {
         return false;
@@ -143,6 +194,7 @@ function admin_session_valid(mysqli $conn, int $adminId, string $sessionRole): b
         }
         if ($sessionRole !== '' && $dbRole !== strtolower($sessionRole)) {
             $_SESSION['admin_role'] = $dbRole;
+            $sessionRole = $dbRole;
         }
     } catch (Throwable $e) {
         return false;
@@ -177,10 +229,14 @@ function require_admin(): void
         redirect('login.php');
     }
 
-    $requiredRole = admin_route_min_role((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-    if (admin_role_rank($role) < admin_role_rank($requiredRole)) {
+    $role = strtolower(trim((string) ($_SESSION['admin_role'] ?? $role)));
+    $requiredCapability = admin_route_capability(
+        (string) ($_SERVER['SCRIPT_NAME'] ?? ''),
+        (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')
+    );
+    if (!admin_can($requiredCapability, $role)) {
         if ($conn instanceof mysqli) {
-            log_admin_activity($conn, $adminId, 'admin_access_denied', 'route', 0, 'Required role: ' . $requiredRole . ', current role: ' . $role, 'denied');
+            log_admin_activity($conn, $adminId, 'admin_access_denied', 'route', 0, 'Required capability: ' . $requiredCapability . ', current role: ' . $role, 'denied');
         }
         http_response_code(403);
         exit('Forbidden');

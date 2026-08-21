@@ -102,10 +102,6 @@
             </div>
         </div>
 
-        <?php do_action('footer.newsletter', [
-            'page' => basename($_SERVER['PHP_SELF'] ?? ''),
-        ]); ?>
-
         <div class="footer-bottom">
             <p class="mb-0 text-center">&copy; <?php echo date('Y'); ?> <?php echo e($footerSiteName); ?>. <?php echo e($footerBottomTagline); ?></p>
         </div>

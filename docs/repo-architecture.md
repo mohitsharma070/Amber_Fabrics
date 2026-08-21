@@ -53,7 +53,7 @@ Clean routes and explicit handler routes coexist. Machine callbacks and mutation
 ## Authentication and security boundaries
 
 - PHP sessions carry admin/customer identity, CSRF token, cart, wishlist, flash data, and checkout state.
-- `require_admin()` and `require_customer()` enforce protected browser areas.
+- `require_admin()` enforces explicit route capabilities in addition to session validity. Viewers are read-only, catalog managers mutate catalog/review/coupon/feed data, operations managers mutate order/payment/return/customer/support/courier/expense data, and super administrators alone manage administrators, settings, sensitive configuration, and audit records. Navigation filtering is convenience only; every mutation is protected server-side.
 - Admin login uses email/passphrase gating plus OTP verification; customer login has concurrency-safe rate limiting and session fingerprint/expiry checks. Every customer-aware storefront request also verifies that the account remains active and that the session `auth_version` matches the customer row. Password resets increment this version to revoke every session; an authenticated password change advances the version while updating only the current session.
 - Browser mutations use `verify_csrf()`.
 - Guest order operations use database-backed, expiring, hashed access tokens.
@@ -65,7 +65,9 @@ Clean routes and explicit handler routes coexist. Machine callbacks and mutation
 
 ### Product and inventory
 
-Products are simple or variable and sell by piece, set, or meter. `ProductAdminService`, `ProductVariantService`, and `InventoryService` coordinate publish readiness, SKU/slug uniqueness, variants, unit-aware stock, media, and availability. Historical variants may be archived instead of deleted when business records reference them.
+Products are simple or variable and sell by piece, set, or meter. `ProductAdminService`, `ProductVariantService`, and `InventoryService` coordinate publish readiness, SKU/slug uniqueness, variants, unit-aware stock, media, and availability. Historical variants may be archived instead of deleted when business records reference them. Stock dashboards and alerts count simple-product inventory plus active variant SKUs; unused variable-parent stock is excluded. Alert cooldowns are keyed by product and nullable variant.
+
+Product feeds retain their public XML/JSON locations and base fields. A simple product emits one stable `p-{product_id}` offer. A variable product emits one offer per active variant using `p-{product_id}-v-{variant_id}`, parent/item-group and variant identifiers, SKU, color, size, variant-image fallback, price-override fallback, unit type, and variant stock. Active zero-stock variants remain present as out-of-stock offers for restock consumers; archived variants are omitted.
 
 ### Cart and checkout
 
@@ -79,17 +81,17 @@ COD can support guests. Online payment proceeds through a claimed, reusable Razo
 
 ### Order access and after-sales
 
-Authenticated customers access their own orders. Guests receive expiring management/activation tokens. Cancellation, return, support, invoice, activation-email, and retry-payment flows retain order ownership or token checks.
+Authenticated customers access their own orders. Guests receive expiring management/activation tokens. Cancellation, return, support, invoice, activation-email, and retry-payment flows retain order ownership or token checks. Returns are refund-only and share one inclusive seven-calendar-day eligibility calculation from `shipments.delivered_at` in UTC. Guest order pages show the existing return, items, status, refund state, administrator message, and reverse-pickup tracking without permitting a duplicate request.
 
 ### Courier lifecycle
 
-The shipping plugin authenticates to Bigship server-side, caches reference/auth data, requests rates, creates and places shipments, stores AWB/courier metadata, and synchronizes tracking from cron. Credentials and bearer tokens never belong in browser responses.
+The shipping plugin authenticates to Bigship server-side, caches reference/auth data, requests rates, creates and places shipments, stores AWB/courier metadata, and synchronizes tracking from cron. Credentials and bearer tokens never belong in browser responses. Reverse pickup is capability-gated: creation is claimed atomically and only a registered adapter may execute create/sync/webhook operations. Bigship Unified Outbound declares no verified reverse-pickup capability, so approved Bigship returns clearly remain manual.
 
 ### Scheduled operations
 
 `cron/run-plugins.php` is the single scheduler entry point and should run every 10 minutes. A filesystem lock and a MySQL named lock prevent overlap across processes and hosts. `--check` validates readiness without processing records; `--local-smoke` is not a dry run and executes jobs against the configured local database. HTTP callers should use `X-Cron-Token`; the query token is retained only for deployment compatibility and responses are never cached.
 
-Cron callbacks return structured success, skipped, degraded, or failed results. Razorpay expiry and COD expiry are critical and produce a nonzero exit when any record cannot be finalized. Recoverable mail, feed, courier, inventory, RTO, and support errors continue the remaining batch and mark the run degraded. The latest run status, last fully successful time, duration, and sanitized failure summary are persisted in `site_settings` and surfaced on the admin dashboard.
+Cron callbacks return structured success, skipped, degraded, or failed results. Razorpay expiry and COD expiry are critical and produce a nonzero exit when any record cannot be finalized. Recoverable mail, feed, courier, inventory, RTO, and support errors continue the remaining batch and mark the run degraded. The latest run status, last fully successful time, duration, and sanitized failure summary are persisted in `site_settings` and surfaced on the admin dashboard. Compact sanitized histories are retained for 30 days in `cron_run_history`; bounded cleanup removes at most 500 expired rows per run. The Operations Center exposes cron callbacks, payment attempts, refund and stock ledgers, and super-admin audit records without raw payloads or secrets.
 
 Abandoned-cart and back-in-stock mail use atomic claims, recover claims older than 15 minutes, and retry five times with 15, 30, 60, 120, and 240 minute delays. Product feeds are written to verified same-directory temporary files and atomically renamed so readers cannot observe partial files.
 
@@ -100,6 +102,7 @@ Abandoned-cart and back-in-stock mail use atomic claims, recover claims older th
 - `database/migrations/*.sql` are immutable, ordered production changes.
 - `database/migrate.php` records filename and SHA-256 checksum in `schema_migrations` and supports `--only`/baseline modes.
 - Important workflows use transactions and ledger/history tables to preserve order and inventory integrity.
+- Newsletter runtime code and the fresh-install subscriber table have been retired. The 2026-08-22 migration removes the retired empty table; the historical newsletter migration remains immutable.
 - Public form and customer login limits use pre-created tables and row locks/atomic writes. Normal requests perform no DDL or global cleanup; bounded stale public-form cleanup runs from cron.
 
 ## Testing

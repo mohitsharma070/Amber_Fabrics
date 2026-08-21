@@ -58,9 +58,26 @@
         });
     }
 
+    function enforceReadOnlyMode() {
+        if (document.body.dataset.adminCanMutate !== "0") return;
+        document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(function (form) {
+            if (form.classList.contains("admin-logout-form")) return;
+            form.querySelectorAll("button, input[type=submit], input[type=image]").forEach(function (control) {
+                control.disabled = true;
+                control.setAttribute("aria-disabled", "true");
+                control.hidden = true;
+                control.title = "Your admin role has read-only access on this page.";
+            });
+        });
+        document.querySelectorAll("[data-admin-mutation]").forEach(function (control) {
+            control.setAttribute("hidden", "hidden");
+        });
+    }
+
     function init() {
         if (!document.body.classList.contains("admin-shell")) return;
         initNavigation();
+        enforceReadOnlyMode();
         document.querySelectorAll(".table-responsive > table.table").forEach(enhanceTable);
     }
 

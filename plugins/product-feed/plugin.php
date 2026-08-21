@@ -54,11 +54,22 @@ function product_feed_filesystem_dir(): string
 function product_feed_fetch_rows(mysqli $conn): array
 {
     $stmt = $conn->prepare(
-        "SELECT f.id, f.name, f.sku, f.slug, f.category, f.description, f.price, f.sale_price, f.stock, f.stock_meters, f.unit_type, f.status, f.is_available, f.created_at,
-                COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image
+        "SELECT CONCAT('p-', f.id) offer_id, f.id product_id, NULL variant_id,
+                f.name, f.sku, f.slug, f.category, f.description, f.price, f.sale_price,
+                NULL price_override, f.stock, f.stock_meters, f.unit_type, '' color, '' size,
+                f.status, f.is_available, f.created_at,
+                COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') image
          FROM fabrics f
-         WHERE f.status = 'active' AND f.is_available = 1
-         ORDER BY f.id DESC"
+         WHERE f.status='active' AND f.is_available=1 AND f.product_type='simple'
+         UNION ALL
+         SELECT CONCAT('p-', f.id, '-v-', fv.id) offer_id, f.id product_id, fv.id variant_id,
+                f.name, COALESCE(NULLIF(fv.sku,''), f.sku), f.slug, f.category, f.description,
+                f.price, f.sale_price, fv.price_override, fv.stock, fv.stock_meters, f.unit_type,
+                fv.color, fv.size, f.status, f.is_available, f.created_at,
+                COALESCE(NULLIF(fv.image,''), (SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') image
+         FROM fabrics f JOIN fabric_variants fv ON fv.fabric_id=f.id AND fv.is_active=1
+         WHERE f.status='active' AND f.is_available=1 AND f.product_type='variable'
+         ORDER BY product_id DESC, variant_id ASC"
     );
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -81,24 +92,35 @@ function product_feed_image_url(string $image): string
 
 function product_feed_normalize_row(array $row): array
 {
-    $id = (int) ($row['id'] ?? 0);
+    $productId = (int) ($row['product_id'] ?? 0);
+    $variantId = (int) ($row['variant_id'] ?? 0);
     $price = (float) ($row['price'] ?? 0);
     $sale = (float) ($row['sale_price'] ?? 0);
     $finalPrice = ($sale > 0 && $sale < $price) ? $sale : $price;
+    $override = (float) ($row['price_override'] ?? 0);
+    if ($override > 0) $finalPrice = $override;
     $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $row['unit_type'] : 'meter';
     $stock = ($unitType === 'meter') ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
+    $color = trim((string) ($row['color'] ?? ''));
+    $size = trim((string) ($row['size'] ?? ''));
+    $variantLabel = trim(implode(' / ', array_filter([$color, $size], static fn(string $value): bool => $value !== '')));
 
     return [
-        'id' => $id,
-        'title' => trim((string) ($row['name'] ?? '')),
+        'id' => trim((string) ($row['offer_id'] ?? ('p-' . $productId))),
+        'product_id' => $productId,
+        'variant_id' => $variantId > 0 ? $variantId : null,
+        'item_group_id' => 'p-' . $productId,
+        'title' => trim((string) ($row['name'] ?? '')) . ($variantLabel !== '' ? ' - ' . $variantLabel : ''),
         'sku' => trim((string) ($row['sku'] ?? '')),
+        'color' => $color,
+        'size' => $size,
         'description' => trim((string) ($row['description'] ?? '')),
         'category' => trim((string) ($row['category'] ?? '')),
-        'link' => product_feed_product_url($id, trim((string)($row['slug'] ?? ''))),
+        'link' => product_feed_product_url($productId, trim((string)($row['slug'] ?? ''))),
         'image_link' => product_feed_image_url((string) ($row['image'] ?? '')),
         'availability' => $stock > 0 ? 'in stock' : 'out of stock',
         'price_inr' => round(max(0, $finalPrice), 2),
-        'sale_price_inr' => $sale > 0 ? round(max(0, $sale), 2) : null,
+        'sale_price_inr' => $override <= 0 && $sale > 0 && $sale < $price ? round(max(0, $sale), 2) : null,
         'unit_type' => $unitType,
         'stock' => $stock,
         'currency' => 'INR',
@@ -127,9 +149,14 @@ function product_feed_build_xml(array $products): string
     $xml[] = '<products generated_at="' . product_feed_xml_escape(date('c')) . '" count="' . count($products) . '">';
     foreach ($products as $product) {
         $xml[] = '  <product>';
-        $xml[] = '    <id>' . (int) ($product['id'] ?? 0) . '</id>';
+        $xml[] = '    <id>' . product_feed_xml_escape((string) ($product['id'] ?? '')) . '</id>';
+        $xml[] = '    <product_id>' . (int) ($product['product_id'] ?? 0) . '</product_id>';
+        if (!empty($product['variant_id'])) $xml[] = '    <variant_id>' . (int) $product['variant_id'] . '</variant_id>';
+        $xml[] = '    <item_group_id>' . product_feed_xml_escape((string) ($product['item_group_id'] ?? '')) . '</item_group_id>';
         $xml[] = '    <title>' . product_feed_xml_escape((string) ($product['title'] ?? '')) . '</title>';
         $xml[] = '    <sku>' . product_feed_xml_escape((string) ($product['sku'] ?? '')) . '</sku>';
+        $xml[] = '    <color>' . product_feed_xml_escape((string) ($product['color'] ?? '')) . '</color>';
+        $xml[] = '    <size>' . product_feed_xml_escape((string) ($product['size'] ?? '')) . '</size>';
         $xml[] = '    <description>' . product_feed_xml_escape((string) ($product['description'] ?? '')) . '</description>';
         $xml[] = '    <category>' . product_feed_xml_escape((string) ($product['category'] ?? '')) . '</category>';
         $xml[] = '    <link>' . product_feed_xml_escape((string) ($product['link'] ?? '')) . '</link>';

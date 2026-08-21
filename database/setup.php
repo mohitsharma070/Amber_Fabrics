@@ -510,11 +510,13 @@ function ensure_tables(mysqli $conn): void
         "CREATE TABLE IF NOT EXISTS inventory_alert_logs (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
             product_id INT NOT NULL,
+            variant_id INT DEFAULT NULL,
             unit_type ENUM('meter','piece','set') NOT NULL DEFAULT 'piece',
             stock_value DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             sent_at DATETIME NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_inventory_alert_product_sent (product_id, sent_at),
+            INDEX idx_inventory_alert_product_variant_sent (product_id, variant_id, sent_at),
             CONSTRAINT fk_inventory_alert_product FOREIGN KEY (product_id) REFERENCES fabrics(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
@@ -547,6 +549,12 @@ function ensure_tables(mysqli $conn): void
             CONSTRAINT fk_bis_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    $ensureColumns($conn, 'inventory_alert_logs', [
+        'variant_id' => 'INT DEFAULT NULL AFTER product_id',
+    ]);
+    if (!$indexExists($conn, 'inventory_alert_logs', 'idx_inventory_alert_product_variant_sent')) {
+        $conn->query("ALTER TABLE inventory_alert_logs ADD INDEX idx_inventory_alert_product_variant_sent (product_id, variant_id, sent_at)");
+    }
 
     $ensureColumns($conn, 'back_in_stock_subscriptions', [
         'delivery_attempts' => 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER status',
@@ -1132,6 +1140,12 @@ function ensure_tables(mysqli $conn): void
             return_id INT NOT NULL,
             order_id INT NOT NULL,
             provider VARCHAR(64) NOT NULL,
+            initialization_status ENUM('idle','claiming','created','failed') NOT NULL DEFAULT 'idle',
+            claim_token CHAR(32) DEFAULT NULL,
+            claimed_at DATETIME DEFAULT NULL,
+            attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+            last_attempt_at DATETIME DEFAULT NULL,
+            last_error VARCHAR(1000) DEFAULT NULL,
             provider_order_id VARCHAR(191) DEFAULT NULL,
             provider_pickup_id VARCHAR(191) DEFAULT NULL,
             provider_status VARCHAR(80) DEFAULT NULL,
@@ -1146,6 +1160,38 @@ function ensure_tables(mysqli $conn): void
             INDEX idx_shipping_courier_reverse_provider_order (provider, provider_order_id),
             INDEX idx_shipping_courier_reverse_pickup (provider, provider_pickup_id),
             INDEX idx_shipping_courier_reverse_status (provider, provider_status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    $ensureColumns($conn, 'shipping_courier_reverse_pickups', [
+        'initialization_status' => "ENUM('idle','claiming','created','failed') NOT NULL DEFAULT 'idle' AFTER provider",
+        'claim_token' => 'CHAR(32) DEFAULT NULL AFTER initialization_status',
+        'claimed_at' => 'DATETIME DEFAULT NULL AFTER claim_token',
+        'attempt_count' => 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER claimed_at',
+        'last_attempt_at' => 'DATETIME DEFAULT NULL AFTER attempt_count',
+        'last_error' => 'VARCHAR(1000) DEFAULT NULL AFTER last_attempt_at',
+    ]);
+    if (!$indexExists($conn, 'shipping_courier_reverse_pickups', 'idx_shipping_courier_reverse_claim')) {
+        $conn->query("ALTER TABLE shipping_courier_reverse_pickups ADD INDEX idx_shipping_courier_reverse_claim (initialization_status, claimed_at)");
+    }
+    if (!$indexExists($conn, 'shipping_courier_reverse_pickups', 'idx_shipping_courier_reverse_sync')) {
+        $conn->query("ALTER TABLE shipping_courier_reverse_pickups ADD INDEX idx_shipping_courier_reverse_sync (provider, provider_status, updated_at)");
+    }
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS cron_run_history (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            started_at DATETIME NOT NULL,
+            finished_at DATETIME NOT NULL,
+            duration_ms INT UNSIGNED NOT NULL DEFAULT 0,
+            status ENUM('success','degraded','failed','skipped') NOT NULL,
+            jobs_total INT UNSIGNED NOT NULL DEFAULT 0,
+            jobs_failed INT UNSIGNED NOT NULL DEFAULT 0,
+            jobs_degraded INT UNSIGNED NOT NULL DEFAULT 0,
+            critical_jobs_failed INT UNSIGNED NOT NULL DEFAULT 0,
+            summary_json JSON DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_cron_run_history_started (started_at),
+            INDEX idx_cron_run_history_status_started (status, started_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 

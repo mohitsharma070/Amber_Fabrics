@@ -346,6 +346,53 @@ final class EmailService
         }
     }
 
+    public static function send_return_status_update_email(mysqli $conn, int $returnId): bool
+    {
+        $stmt = $conn->prepare(
+            "SELECT r.return_number, r.status, r.admin_note, r.refund_amount,
+                    o.id order_id, o.order_number, o.customer_id,
+                    COALESCE(NULLIF(o.customer_name,''), c.name) recipient_name,
+                    COALESCE(NULLIF(o.customer_email,''), c.email) recipient_email
+             FROM returns r JOIN orders o ON o.id=r.order_id
+             LEFT JOIN customers c ON c.id=o.customer_id
+             WHERE r.id=? LIMIT 1"
+        );
+        $stmt->bind_param('i', $returnId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row || !filter_var((string) ($row['recipient_email'] ?? ''), FILTER_VALIDATE_EMAIL)) return false;
+        $lines = [
+            'Dear ' . ((string) ($row['recipient_name'] ?? '') ?: 'Customer') . ',', '',
+            'Return ' . (string) $row['return_number'] . ' for order ' . (string) $row['order_number']
+                . ' is now ' . strtoupper(str_replace('_', ' ', (string) $row['status'])) . '.',
+        ];
+        if (trim((string) ($row['admin_note'] ?? '')) !== '') $lines[] = 'Update: ' . trim((string) $row['admin_note']);
+        if ((float) ($row['refund_amount'] ?? 0) > 0) $lines[] = 'Refund amount: ' . money((float) $row['refund_amount']);
+        $lines[] = '';
+        if ((int) ($row['customer_id'] ?? 0) > 0) {
+            $lines[] = 'View your order: ' . app_url('/customer/order-view?id=' . (int) $row['order_id']);
+        } else {
+            try {
+                $token = OrderAccessService::createToken($conn, (int) $row['order_id'], 'manage');
+                $lines[] = 'View your order: ' . app_url('/guest/order-auth?token=' . urlencode($token));
+            } catch (Throwable $ignored) {
+                $lines[] = 'Visit our website to request a secure order access link.';
+            }
+        }
+        $template = email_template_build('return_status_update', [
+            'return_number' => (string) $row['return_number'], 'status' => (string) $row['status'], 'lines' => $lines,
+        ]);
+        try {
+            $mail = self::_mailer_base();
+            $mail->addAddress((string) $row['recipient_email'], (string) ($row['recipient_name'] ?? ''));
+            self::applyTemplate($mail, $template);
+            return self::deliver($mail);
+        } catch (Throwable $e) {
+            error_log('[email] return status update failed: ' . CronService::sanitizeError($e->getMessage()));
+            return false;
+        }
+    }
+
     /**
      * Send password reset link to a customer.
      */
