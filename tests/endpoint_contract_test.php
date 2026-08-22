@@ -72,7 +72,9 @@ if ($warehouseSegmentMethod->invoke($overrideService) !== 'hyperlocal') {
     $failures[] = 'Warehouse segment override is not honored.';
 }
 
-$pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/plugin.php');
+$pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/modules/reference-and-rates.php')
+    . (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/modules/bigship-payloads.php')
+    . (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/modules/shipment-lifecycle.php');
 if (!str_contains($pluginSource, "'awb_assigned'")) {
     $failures[] = 'Bigship awb_assigned mapping is missing.';
 }

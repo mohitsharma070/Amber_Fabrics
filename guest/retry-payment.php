@@ -15,7 +15,7 @@ if (!OrderAccessService::canAccess($orderId)) {
 $conn->begin_transaction();
 try {
     $stmt = $conn->prepare(
-        "SELECT id, order_number, order_notes
+        "SELECT id, order_number, order_notes, customer_email, customer_phone
          FROM orders
          WHERE id = ?
            AND payment_status IN ('pending', 'failed')
@@ -34,7 +34,11 @@ try {
     InventoryService::reserve_order_inventory($conn, $orderId);
     $resolvedCouponId = PaymentService::resolve_coupon_id_for_order($conn, $orderId, (string) ($order['order_notes'] ?? ''));
     if ($resolvedCouponId > 0) {
-        reserve_coupon_for_order($conn, $resolvedCouponId, 0, $orderId);
+        $guestIdentityHash = coupon_guest_identity_hash(
+            (string) ($order['customer_email'] ?? ''),
+            (string) ($order['customer_phone'] ?? '')
+        );
+        reserve_coupon_for_order($conn, $resolvedCouponId, 0, $orderId, $guestIdentityHash);
     }
     $stmt = $conn->prepare(
         "UPDATE orders SET payment_status = 'pending', updated_at = NOW()

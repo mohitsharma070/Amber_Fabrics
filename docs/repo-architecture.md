@@ -28,7 +28,7 @@ MySQL, session state, email, Razorpay, Bigship, generated feeds
 
 ## Bootstrap and shared layers
 
-- `config/db.php` selects local/production mode, loads server-only config/environment variables, validates production settings, and opens the database connection.
+- `config/db.php` selects local/production mode, loads server-only config/environment variables, optionally imports the two required identity secrets from a mode-`0600` file outside the application root on shared hosting, validates production settings, and opens the database connection.
 - `includes/init.php` loads common functions, customer auth, plugins, security headers/CSP, error policy, cart/wishlist session state, and production fatal logging.
 - `includes/functions.php` loads services and narrowly grouped helpers.
 - `includes/services/` owns cart, inventory, delivery estimate, email, payment, order access, product admin/import/variants, and site settings operations.
@@ -54,7 +54,7 @@ Clean routes and explicit handler routes coexist. Machine callbacks and mutation
 
 - PHP sessions carry admin/customer identity, CSRF token, cart, wishlist, flash data, and checkout state.
 - `require_admin()` enforces explicit route capabilities in addition to session validity. Viewers are read-only, catalog managers mutate catalog/review/coupon/feed data, operations managers mutate order/payment/return/customer/support/courier/expense data, and super administrators alone manage administrators, settings, sensitive configuration, and audit records. Navigation filtering is convenience only; every mutation is protected server-side.
-- Admin login uses email/passphrase gating plus OTP verification; customer login has concurrency-safe rate limiting and session fingerprint/expiry checks. Every customer-aware storefront request also verifies that the account remains active and that the session `auth_version` matches the customer row. Password resets increment this version to revoke every session; an authenticated password change advances the version while updating only the current session.
+- Admin login uses `AdminOtpService` to issue, resend, verify, limit, and atomically consume OTPs under database row locks. Production requires both the emailed OTP and an `ADMIN_LOGIN_PASSPHRASE` of at least 16 characters supplied by the server environment or protected shared-hosting runtime secret file; local mode may omit the passphrase and use the log-mail driver. Customer login has concurrency-safe rate limiting and session fingerprint/expiry checks. Every customer-aware storefront request also verifies that the account remains active and that the session `auth_version` matches the customer row. Password resets increment this version to revoke every session; an authenticated password change advances the version while updating only the current session.
 - Browser mutations use `verify_csrf()`.
 - When WhatsApp Cloud API and its approved utility template are configured, COD checkout requires explicit order-scoped consent only when the final amount selects WhatsApp or call confirmation; low-value auto-confirmed COD orders are not gated. The consent timestamp and copy version are stored with `cod_confirmations`; it never authorizes marketing messages. The template contains Confirm and Cancel quick-reply buttons whose per-order payload is checked against the stored response token and originating customer phone; typed YES/NO replies remain supported.
 - Guest order operations use database-backed, expiring, hashed access tokens.
@@ -76,7 +76,9 @@ The cart is session-backed and can persist for authenticated customers. Checkout
 
 ### Orders and payments
 
-`place-order.php` owns transaction-scoped order creation, inventory reservation, and coupon-capacity reservation. `coupon_usages` is the per-order reservation ledger for customers and guests, while `coupons.used_count` includes reserved and completed usage. Authoritative cancellation, signed payment failure, or expiry deletes that reservation and decrements capacity idempotently; a retry must reacquire capacity.
+`place-order.php` owns transaction-scoped order creation, inventory reservation, and coupon-capacity reservation. `coupon_usages` is the per-order reservation ledger for customers and guests, while `coupons.used_count` includes reserved and completed usage. Authenticated reuse remains keyed by customer. Guest reuse is keyed by the unique `(coupon_id, guest_identity_hash)` pair, where `guest_identity_hash` is an HMAC-SHA256 of normalized email and canonical phone digits using the immutable, environment-managed `APP_IDENTITY_HASH_KEY`. The key must not be rotated without a rehash migration. Authoritative cancellation, signed payment failure, or expiry deletes that reservation and decrements capacity idempotently; a retry must reacquire capacity with the same identity.
+
+Order-commit, payment-success, confirmation-email, activation-email, COD, courier, and server integration work is recorded in the transactional outbox before the business transaction commits. The request attempts delivery after commit, but delivery failure never rolls the customer back to checkout. `commerce_outbox` provides deterministic event deduplication, claims, stale-claim recovery, one immediate attempt plus five bounded retries, and sanitized errors; `commerce_outbox_deliveries` records each hook callback independently so a successful handler is not rerun when another handler fails. Cron retries after 1, 5, 15, 60, and 240 minutes. Browser callbacks and Razorpay webhooks enqueue the same deterministic payment-success events.
 
 COD can support guests. Online payment proceeds through a claimed, reusable Razorpay order initialization, browser verification/failure callbacks, and the signed webhook. Browser failure or modal cancellation is informational only because a successful capture may arrive later; it leaves the order pending and keeps inventory and coupon reservations. Signed failure webhooks, explicit cancellation, and the 30-minute stale-order expiry perform transactional state changes, inventory restoration, coupon release, and activity logging. Capture records payment success independently of coupon bookkeeping.
 
@@ -86,7 +88,7 @@ Authenticated customers access their own orders. Guests receive expiring managem
 
 ### Courier lifecycle
 
-The shipping plugin authenticates to Bigship server-side, caches reference/auth data, requests rates, creates and places shipments, stores AWB/courier metadata, and synchronizes tracking from cron. Credentials and bearer tokens never belong in browser responses. Reverse pickup is capability-gated: creation is claimed atomically and only a registered adapter may execute create/sync/webhook operations. Bigship Unified Outbound declares no verified reverse-pickup capability, so approved Bigship returns clearly remain manual.
+The shipping plugin authenticates to Bigship server-side, caches reference/auth data, requests rates, creates and places shipments, stores AWB/courier metadata, and synchronizes tracking from cron. Its existing entry point remains the compatibility layer while configuration, lifecycle callbacks, and hook registration live in focused modules; all existing function and hook names remain stable. Credentials and bearer tokens never belong in browser responses. Reverse pickup is capability-gated: creation is claimed atomically and only a registered adapter may execute create/sync/webhook operations. Bigship Unified Outbound declares no verified reverse-pickup capability, so approved Bigship returns clearly remain manual.
 
 ### Scheduled operations
 
@@ -94,7 +96,7 @@ The shipping plugin authenticates to Bigship server-side, caches reference/auth 
 
 Cron callbacks return structured success, skipped, degraded, or failed results. Razorpay expiry and COD expiry are critical and produce a nonzero exit when any record cannot be finalized. Recoverable mail, feed, courier, inventory, RTO, and support errors continue the remaining batch and mark the run degraded. The latest run status, last fully successful time, duration, and sanitized failure summary are persisted in `site_settings` and surfaced on the admin dashboard. Compact sanitized histories are retained for 30 days in `cron_run_history`; bounded cleanup removes at most 500 expired rows per run. The Operations Center exposes cron callbacks, payment attempts, refund and stock ledgers, and super-admin audit records without raw payloads or secrets.
 
-Abandoned-cart and back-in-stock mail use atomic claims, recover claims older than 15 minutes, and retry five times with 15, 30, 60, 120, and 240 minute delays. Product feeds are written to verified same-directory temporary files and atomically renamed so readers cannot observe partial files.
+The readiness check validates the priority-remediation migration checksum, required outbox/coupon fields, production secret presence without returning secret values, and aggregate outbox health. Abandoned-cart and back-in-stock mail use atomic claims, recover claims older than 15 minutes, and retry five times with 15, 30, 60, 120, and 240 minute delays. Product feeds are written to verified same-directory temporary files and atomically renamed so readers cannot observe partial files.
 
 COD Guard inbound WhatsApp messages are claimed by provider message ID in `cod_guard_webhook_events`. Processed or ignored IDs cannot change an order twice; active processing claims return a retryable failure instead of being acknowledged as complete, while failed or stale claims can be safely reclaimed without retaining raw webhook payloads. The order sidebar shows the latest matched customer reply and receipt time after removing the internal quick-reply payload/token. Cron deletes at most 5,000 ledger rows older than 90 days per run.
 
@@ -112,7 +114,7 @@ COD Guard inbound WhatsApp messages are claimed by provider message ID in `cod_g
 
 Tests are standalone PHP programs invoked by `composer test`. They are source and invariant contracts so they can run without database credentials or third-party networks. They cover routing, shipping payloads, checkout state, product editing/import/variants, backend integrity, frontend regression markers, and compatibility-safe cleanup boundaries.
 
-`composer test:integration` runs the live product-schema cleanup and cron named-lock/schema tests and therefore requires an authorized local MySQL database. It must not be pointed at production.
+`composer test:integration` runs live schema, named-lock, and concurrency tests and therefore requires an authorized disposable MySQL database. It must not be pointed at production. The guest coupon history tool `database/backfill-guest-coupon-identities.php` is dry-run by default; production apply additionally requires `--apply --confirm-production` after operator authorization.
 
 This suite should be supplemented with database integration, browser, Razorpay test-mode, courier sandbox, mail-delivery, cron, and production smoke tests.
 

@@ -80,7 +80,7 @@ function cron_readiness_check(mysqli $conn): array
     $requiredTables = [
         'orders', 'payments', 'public_form_attempts', 'site_settings', 'cod_confirmations', 'cod_guard_webhook_events',
         'abandoned_cart_reminders', 'inventory_alert_logs', 'back_in_stock_subscriptions',
-        'shipping_rto_risks', 'support_tickets', 'cron_run_history',
+        'shipping_rto_risks', 'support_tickets', 'cron_run_history', 'commerce_outbox', 'commerce_outbox_deliveries',
     ];
     $missing = [];
     foreach ($requiredTables as $table) {
@@ -102,6 +102,9 @@ function cron_readiness_check(mysqli $conn): array
         'inventory_alert_logs' => ['variant_id'],
         'shipping_courier_reverse_pickups' => ['initialization_status', 'claim_token', 'attempt_count', 'last_error'],
         'cod_confirmations' => ['whatsapp_consent_at', 'whatsapp_consent_version'],
+        'coupon_usages' => ['guest_identity_hash'],
+        'commerce_outbox' => ['dedupe_key', 'status', 'attempts', 'available_at', 'claim_token', 'claimed_at'],
+        'commerce_outbox_deliveries' => ['outbox_id', 'handler_key', 'status', 'claim_token', 'claimed_at'],
     ];
     foreach ($requiredColumns as $table => $columns) {
         foreach ($columns as $column) {
@@ -131,9 +134,50 @@ function cron_readiness_check(mysqli $conn): array
         && function_exists('shipping_courier_provider_configured') && !shipping_courier_provider_configured()) {
         $issues[] = 'Shipping courier is enabled but provider credentials are incomplete.';
     }
+    foreach (['ADMIN_LOGIN_PASSPHRASE' => 16, 'APP_IDENTITY_HASH_KEY' => 32] as $key => $minimumLength) {
+        $value = trim((string) _cfg($key, ''));
+        if (strlen($value) < $minimumLength || app_config_is_placeholder($value)) {
+            $issues[] = 'Required production secret is missing or unsafe: ' . $key;
+        }
+    }
+
+    $migrationName = '2026-08-24-priority-findings-remediation.sql';
+    $migrationPath = __DIR__ . '/../database/migrations/' . $migrationName;
+    $migrationChecksum = is_file($migrationPath) ? hash_file('sha256', $migrationPath) : false;
+    $migrationReady = false;
+    if (is_string($migrationChecksum) && $migrationChecksum !== '') {
+        $stmt = $conn->prepare('SELECT checksum FROM schema_migrations WHERE migration = ? LIMIT 1');
+        $stmt->bind_param('s', $migrationName);
+        $stmt->execute();
+        $migrationReady = hash_equals($migrationChecksum, (string) ($stmt->get_result()->fetch_assoc()['checksum'] ?? ''));
+    }
+    if (!$migrationReady) {
+        $issues[] = 'Priority remediation migration is missing or has a checksum mismatch.';
+    }
+
+    $outboxHealth = ['ready' => 0, 'stale_claims' => 0, 'exhausted' => 0];
+    if (!in_array('commerce_outbox', $missing, true)) {
+        $healthResult = $conn->query(
+            "SELECT
+                SUM(CASE WHEN attempts < 6 AND status IN ('pending','failed') AND available_at <= NOW() THEN 1 ELSE 0 END) AS ready,
+                SUM(CASE WHEN status = 'processing' AND claimed_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END) AS stale_claims,
+                SUM(CASE WHEN status = 'failed' AND attempts >= 6 THEN 1 ELSE 0 END) AS exhausted
+             FROM commerce_outbox"
+        );
+        $health = $healthResult->fetch_assoc() ?: [];
+        $outboxHealth = [
+            'ready' => (int) ($health['ready'] ?? 0),
+            'stale_claims' => (int) ($health['stale_claims'] ?? 0),
+            'exhausted' => (int) ($health['exhausted'] ?? 0),
+        ];
+        if ($outboxHealth['exhausted'] > 0) {
+            $issues[] = 'Commerce outbox contains exhausted deliveries requiring operator review.';
+        }
+    }
     $checkCount = count($requiredTables) + array_sum(array_map('count', $requiredColumns));
     return CronService::result($issues === [] ? 'success' : 'failed', $checkCount, max(0, $checkCount - count($issues)), count($issues), [
         'issues' => array_map([CronService::class, 'sanitizeError'], $issues),
+        'outbox' => $outboxHealth,
     ]);
 }
 
@@ -248,6 +292,7 @@ try {
         $jobs[] = CronService::runJob('readiness_check', true, static fn(): array => cron_readiness_check($conn), $logger);
     } else {
         $jobs[] = CronService::runJob('stale_razorpay_release', !$isLocalSmoke, static fn(): array => PaymentService::release_stale_pending_razorpay_orders_global_report($conn, 30, 200), $logger);
+        $jobs[] = CronService::runJob('commerce_outbox', false, static fn(): array => OutboxService::processBatch($conn, 100), $logger);
         $jobs[] = CronService::runJob('public_form_rate_limit_cleanup', false, static function () use ($conn): array {
             $stmt = $conn->prepare('DELETE FROM public_form_attempts WHERE updated_at < (NOW() - INTERVAL 7 DAY) ORDER BY updated_at ASC LIMIT 5000');
             $stmt->execute();

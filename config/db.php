@@ -4,9 +4,12 @@
  *
  * Runtime config precedence, lowest to highest:
  * 1. secure-config.<mode>.php from a server-only location
- * 2. server environment variables
+ * 2. protected host secret file (production-only fallback)
+ * 3. server environment variables
  */
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+require_once __DIR__ . '/production-secret-policy.php';
+require_once __DIR__ . '/private-env-loader.php';
 
 function app_bootstrap_fail(string $publicMessage, ?string $logMessage = null, int $cliExitCode = 1): void
 {
@@ -56,7 +59,8 @@ function app_config_apply_env_overrides(array $config): array
         'APP_ENV', 'APP_DEBUG', 'APP_URL', 'APP_FORCE_HTTPS',
         'DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
         'ADMIN_NOTIFICATION_EMAIL', 'CRON_RUN_TOKEN', 'CRON_EXPECTED_INTERVAL_MINUTES',
-        'ADMIN_LOGIN_PASSPHRASE', 'ADMIN_SESSION_IDLE_TIMEOUT_SEC', 'ADMIN_SESSION_ABSOLUTE_TIMEOUT_SEC',
+        'ADMIN_LOGIN_PASSPHRASE', 'APP_IDENTITY_HASH_KEY',
+        'ADMIN_SESSION_IDLE_TIMEOUT_SEC', 'ADMIN_SESSION_ABSOLUTE_TIMEOUT_SEC',
         'CUSTOMER_SESSION_IDLE_TIMEOUT_SEC', 'CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_SEC',
         'MAIL_DRIVER', 'MAIL_FROM', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_PASSWORD',
         'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET',
@@ -116,23 +120,6 @@ function app_config_apply_env_overrides(array $config): array
     return $config;
 }
 
-function app_config_is_placeholder(string $value): bool
-{
-    $value = trim($value);
-    if ($value === '') {
-        return false;
-    }
-
-    $lower = strtolower($value);
-    foreach (['replace-with', 'your-', 'your_', 'xxxxx', 'example.com', 'yourdomain', 'db-host-from-provider', 'db-username', 'db-name'] as $needle) {
-        if (strpos($lower, $needle) !== false) {
-            return true;
-        }
-    }
-
-    return in_array($value, ['YOUR_ACCESS_TOKEN', 'YOUR_APP_SECRET', 'YOUR_PHONE_NUMBER_ID'], true);
-}
-
 function app_config_validate_production(array $config): void
 {
     $required = [
@@ -148,6 +135,8 @@ function app_config_validate_production(array $config): void
         'RAZORPAY_KEY_ID',
         'RAZORPAY_KEY_SECRET',
         'RAZORPAY_WEBHOOK_SECRET',
+        'ADMIN_LOGIN_PASSPHRASE',
+        'APP_IDENTITY_HASH_KEY',
     ];
 
     if (strtolower(trim((string) ($config['MAIL_DRIVER'] ?? 'smtp'))) !== 'mail') {
@@ -275,6 +264,28 @@ function app_config_validate_production(array $config): void
         );
     }
 
+    $secretPolicyIssues = app_config_production_secret_issues($config);
+    if ($secretPolicyIssues !== []) {
+        app_bootstrap_fail(
+            'Server configuration error. Production configuration is invalid.',
+            '[fabric-export] FATAL: invalid production secret policy keys: ' . implode(', ', $secretPolicyIssues),
+            2
+        );
+    }
+    $nonEnvironmentSecrets = [];
+    foreach (['ADMIN_LOGIN_PASSPHRASE', 'APP_IDENTITY_HASH_KEY'] as $secretKey) {
+        if (app_config_env($secretKey) === null) {
+            $nonEnvironmentSecrets[] = $secretKey;
+        }
+    }
+    if ($nonEnvironmentSecrets !== []) {
+        app_bootstrap_fail(
+            'Server configuration error. Production configuration is invalid.',
+            '[fabric-export] FATAL: production secrets must be environment-managed or loaded from the protected runtime secret file: ' . implode(', ', $nonEnvironmentSecrets),
+            2
+        );
+    }
+
     if ($bigshipEnabled) {
         $baseUrl = trim((string) ($config['BIGSHIP_BASE_URL'] ?? ''));
         $segment = strtolower(trim((string) ($config['BIGSHIP_SEGMENT'] ?? '')));
@@ -335,6 +346,22 @@ if ($modeOverride !== '') {
     }
     $mode = $modeOverride;
 }
+
+if ($mode === 'production') {
+    try {
+        app_private_env_load(
+            ['ADMIN_LOGIN_PASSPHRASE', 'APP_IDENTITY_HASH_KEY'],
+            dirname(__DIR__)
+        );
+    } catch (Throwable $e) {
+        app_bootstrap_fail(
+            'Server configuration error. Private secret configuration is invalid.',
+            '[fabric-export] FATAL: private secret configuration rejected: ' . $e->getMessage(),
+            2
+        );
+    }
+}
+
 $activeConfig = $allConfig[$mode] ?? [];
 if (!is_array($activeConfig)) {
     app_bootstrap_fail('Server configuration error. Missing mode config.');
@@ -355,7 +382,7 @@ $activeConfig['APP_ENV'] = (string) ($activeConfig['APP_ENV'] ?? $mode);
 if ($mode === 'production') {
     // Warn if any secret is loaded from the config file rather than an environment variable.
     // Move secrets to server env vars (SetEnv / IIS app settings) before going live.
-    foreach (['DB_PASSWORD', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'SMTP_PASSWORD', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY'] as $_warnKey) {
+    foreach (['DB_PASSWORD', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'SMTP_PASSWORD', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY', 'ADMIN_LOGIN_PASSPHRASE', 'APP_IDENTITY_HASH_KEY'] as $_warnKey) {
         $_warnVal = trim((string) ($activeConfig[$_warnKey] ?? ''));
         if ($_warnVal !== '' && app_config_env($_warnKey) === null && !app_config_is_placeholder($_warnVal)) {
             error_log('[amber] WARNING: production secret "' . $_warnKey . '" is loaded from the config file, not an environment variable. Move secrets to server environment variables.');

@@ -35,7 +35,7 @@ $deadFunctionsByFile = [
         'get_site_settings',
     ],
     'plugins/meta-pixel/plugin.php' => ['meta_pixel_track_script'],
-    'plugins/shipping-courier/plugin.php' => ['shipping_courier_http_post_multipart'],
+    'plugins/shipping-courier/modules/reference-and-rates.php' => ['shipping_courier_http_post_multipart'],
     'plugins/recommendations/plugin.php' => ['recommendations_render_product_grid'],
 ];
 

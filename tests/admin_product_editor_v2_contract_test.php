@@ -10,7 +10,7 @@ $editorForm=(string)file_get_contents($root.'/admin/partials/fabric-product-form
 $media=(string)file_get_contents($root.'/admin/product-media.php');
 $fabric=(string)file_get_contents($root.'/fabric.php');
 $order=(string)file_get_contents($root.'/place-order.php');
-$parcel=(string)file_get_contents($root.'/plugins/shipping-courier/plugin.php');
+$parcel=(string)file_get_contents($root.'/plugins/shipping-courier/modules/bigship-payloads.php');
 $assert(str_contains($migration,"ENUM('draft','active','inactive')")&&str_contains($migration,'fabric_media'),'Draft status or gallery migration missing.');
 $assert(str_contains($migration,'CREATE UNIQUE INDEX uq_fabrics_slug')&&str_contains($migration,'product_type'),'Slug uniqueness or product type migration missing.');
 $assert(str_contains($service,'function readiness')&&str_contains($service,'function publish')&&str_contains($service,'function createDraft'),'Shared draft/readiness/publish service contract missing.');

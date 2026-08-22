@@ -285,10 +285,17 @@ try {
     }
 
     if (($order['payment_status'] ?? '') === 'paid') {
+        OutboxService::enqueuePaidOrderSideEffects($conn, $orderId, [
+            'order_id' => $orderId,
+            'order_number' => (string) ($order['order_number'] ?? ''),
+            'customer_id' => (int) ($order['customer_id'] ?? 0),
+            'payment_method' => 'razorpay',
+            'payment_status' => 'paid',
+        ]);
         PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
         $conn->commit();
         error_log('[razorpay-webhook] replay business-idempotent paid event_id=' . $eventId . ' order_id=' . $orderId);
-        EmailService::send_requested_account_activation_email($conn, $orderId);
+        OutboxService::safeDrainForOrder($conn, $orderId);
         http_response_code(200);
         echo 'Already processed';
         exit;
@@ -366,23 +373,19 @@ try {
         'razorpay',
         'Event: ' . $eventType . ' | Payment: ' . $paymentId
     );
-    PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
-
-    $conn->commit();
-    $businessCommitted = true;
-    error_log('[razorpay-webhook] processed capture event_id=' . $eventId . ' order_id=' . $orderId . ' payment_id=' . $paymentId);
-
-    do_action('order.after_payment_success', [
-        'conn' => $conn,
+    OutboxService::enqueuePaidOrderSideEffects($conn, $orderId, [
         'order_id' => $orderId,
         'order_number' => (string) ($order['order_number'] ?? ''),
         'customer_id' => (int) ($order['customer_id'] ?? 0),
         'payment_method' => 'razorpay',
         'payment_status' => 'paid',
     ]);
+    PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
 
-    EmailService::send_requested_account_activation_email($conn, $orderId);
-    EmailService::send_order_confirmation_email($conn, $orderId);
+    $conn->commit();
+    $businessCommitted = true;
+    error_log('[razorpay-webhook] processed capture event_id=' . $eventId . ' order_id=' . $orderId . ' payment_id=' . $paymentId);
+    OutboxService::safeDrainForOrder($conn, $orderId);
     http_response_code(200);
     echo 'OK';
 } catch (Throwable $e) {

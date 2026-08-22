@@ -55,6 +55,7 @@ return [
     'MAIL_DRIVER' => 'mail',
     'MAIL_FROM' => 'local@example.test',
     'ADMIN_NOTIFICATION_EMAIL' => 'admin@example.test',
+    'APP_IDENTITY_HASH_KEY' => 'local-development-identity-key-32-chars',
     'CRON_RUN_TOKEN' => 'local-only-token',
     'RAZORPAY_KEY_ID' => 'rzp_test_example',
     'RAZORPAY_KEY_SECRET' => 'test-secret',
@@ -89,9 +90,10 @@ Then open `http://localhost:8000/`. The development router mirrors the productio
 Runtime configuration precedence is:
 
 1. `secure-config.<mode>.php` from an allowed server-only location
-2. environment variables
+2. `/home/<account>/.app-secrets` for the two required production identity secrets
+3. environment variables
 
-CLI defaults to local mode. Production-only CLI commands must explicitly set `APP_MODE=production`. Production validates required database, mail, Razorpay, and enabled courier settings at bootstrap.
+CLI defaults to local mode. Production-only CLI commands must explicitly set `APP_MODE=production`. Production validates required database, mail, Razorpay, enabled courier settings, `ADMIN_LOGIN_PASSPHRASE` (minimum 16 characters), and immutable `APP_IDENTITY_HASH_KEY` (minimum 32 characters) at bootstrap. Prefer server environment variables. On shared hosting, these two keys may instead be stored as `NAME=value` lines in `/home/<account>/.app-secrets`, outside the application root with Unix mode `0600`; the bootstrap loads only this allowlist into the current PHP process before validation. `APP_SECRETS_FILE` may select a different outside-root path. Never print the values. See `config/secure-config.production.example.php` for placeholders.
 
 ## Tests and validation
 
@@ -144,6 +146,8 @@ The runner uses filesystem and MySQL locks, returns nonzero for payment/COD inte
 `2026-08-22-ecommerce-operations-completion.sql` removes the retired, empty newsletter subscriber table and adds per-variant alert history, cron run history, and reverse-pickup claim metadata. Bigship reverse pickup remains a manual operation until a documented and sandbox-tested provider adapter declares the required capability.
 
 `2026-08-23-whatsapp-consent-webhook-idempotency.sql` adds order-scoped transactional WhatsApp consent fields and the unique COD Guard webhook-event ledger. Apply it before enabling WhatsApp Cloud API credentials and an approved utility template. COD checkout requires consent only for amounts routed to WhatsApp/call confirmation; terminal duplicate message IDs are acknowledged without changing an order twice, active claims remain retryable, and the ledger is cleaned in bounded 90-day batches.
+
+`2026-08-24-priority-findings-remediation.sql` adds privacy-safe guest coupon identity enforcement and the transactional outbox/delivery ledger. Deployment order is: configure the two new secrets through the server environment or protected runtime secret file, apply the migration, deploy matching code, dry-run and then explicitly apply the guest coupon backfill, run `php cron/run-plugins.php --check`, and enable the updated cron worker. Do not rotate `APP_IDENTITY_HASH_KEY` without a rehash migration.
 
 Deployment should back up files and database, apply backward-compatible migrations, deploy the matching commit, and smoke-test authentication, catalog, cart, checkout, payment, order, and admin workflows.
 

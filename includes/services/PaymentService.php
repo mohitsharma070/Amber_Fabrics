@@ -996,9 +996,9 @@ final class PaymentService
      */
     public static function admin_mark_order_paid(mysqli $conn, int $orderId): array
     {
-        $shouldSendConfirmationEmail = false;
         $orderNumber = '';
         $paymentMethod = '';
+        $confirmationEventId = 0;
         try {
             $conn->begin_transaction();
 
@@ -1085,10 +1085,7 @@ final class PaymentService
             }
             log_order_activity($conn, $orderId, 'payment_marked_paid', 'admin', $adminId, $adminName, $activityDetails);
 
-            $shouldSendConfirmationEmail = true;
-            $conn->commit();
-
-            do_action('order.after_payment_success', [
+            $events = OutboxService::enqueuePaidOrderSideEffects($conn, $orderId, [
                 'order_id' => $orderId,
                 'order_number' => $orderNumber,
                 'payment_method' => $paymentMethod,
@@ -1096,11 +1093,11 @@ final class PaymentService
                 'source' => 'admin_mark_paid',
                 'payment_row_id' => $paymentRowId,
             ]);
+            $confirmationEventId = (int) ($events['confirmation_email'] ?? 0);
+            $conn->commit();
 
-            $emailSent = false;
-            if ($shouldSendConfirmationEmail) {
-                $emailSent = EmailService::send_order_confirmation_email($conn, $orderId);
-            }
+            OutboxService::safeDrainForOrder($conn, $orderId);
+            $emailSent = OutboxService::isCompleted($conn, $confirmationEventId);
 
             return [
                 'ok' => true,

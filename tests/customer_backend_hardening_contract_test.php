@@ -46,7 +46,7 @@ $assert(str_contains($setupCoupon, 'customer_id INT DEFAULT NULL'), 'Fresh setup
 
 $assert(str_contains($coupons, 'function reserve_coupon_for_order') && str_contains($coupons, 'FOR UPDATE'), 'Coupon reservation must lock capacity transactionally.');
 $assert(str_contains($coupons, 'function release_coupon_usage_for_order') && str_contains($coupons, 'affected_rows'), 'Coupon release must be idempotent.');
-$assert(str_contains($placeOrder, 'reserve_coupon_for_order($conn, $couponId, $customerId, $orderId)'), 'Order creation must reserve coupon capacity for customer and guest orders.');
+$assert(str_contains($placeOrder, 'reserve_coupon_for_order($conn, $couponId, $customerId, $orderId, $guestIdentityHash)'), 'Order creation must reserve coupon capacity for customer and guest orders.');
 $assert(str_contains($retry, 'reserve_coupon_for_order') && str_contains($guestRetry, 'reserve_coupon_for_order'), 'Both retry paths must reacquire released coupon capacity.');
 $assert(!str_contains($verify, 'consume_coupon_after_razorpay_capture'), 'Browser capture verification must not perform coupon bookkeeping.');
 $assert(!str_contains($webhook, 'consume_coupon_after_razorpay_capture'), 'Webhook capture must not perform coupon bookkeeping.');

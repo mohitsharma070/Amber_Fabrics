@@ -664,7 +664,16 @@ function cod_guard_send_confirmation_after_commit(array $context): void
     if (!$conn instanceof mysqli || $orderId <= 0 || $paymentMethod !== 'cod') {
         return;
     }
-    cod_guard_send_confirmation_message($conn, $orderId);
+    $result = cod_guard_send_confirmation_message($conn, $orderId);
+    if (!empty($result['ok'])) {
+        return;
+    }
+    $confirmation = cod_guard_get_confirmation($conn, $orderId) ?: [];
+    $messageStatus = strtolower((string) ($confirmation['message_status'] ?? ''));
+    if (in_array($messageStatus, ['sent', 'consent_missing'], true)) {
+        return;
+    }
+    throw new RuntimeException((string) ($result['message'] ?? 'COD confirmation delivery failed.'));
 }
 
 function cod_guard_send_pending_confirmation_messages(array $context): array

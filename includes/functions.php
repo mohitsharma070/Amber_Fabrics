@@ -12,6 +12,8 @@ require_once __DIR__ . '/services/ProductImportService.php';
 require_once __DIR__ . '/services/ProductVariantService.php';
 require_once __DIR__ . '/services/EmailService.php';
 require_once __DIR__ . '/services/CronService.php';
+require_once __DIR__ . '/services/AdminOtpService.php';
+require_once __DIR__ . '/services/OutboxService.php';
 
 $helperFiles = [
     'helpers/core.php',

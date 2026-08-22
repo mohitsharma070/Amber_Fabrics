@@ -100,8 +100,15 @@ try {
     }
 
     if (($order['payment_status'] ?? '') === 'paid') {
+        OutboxService::enqueuePaidOrderSideEffects($conn, $orderId, [
+            'order_id' => $orderId,
+            'order_number' => $orderNumber,
+            'customer_id' => $customerId,
+            'payment_method' => 'razorpay',
+            'payment_status' => 'paid',
+        ]);
+        OutboxService::safeDrainForOrder($conn, $orderId);
         CartService::checkout_session_clear_after_order($conn, $customerId);
-        EmailService::send_requested_account_activation_email($conn, $orderId);
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
 
@@ -171,9 +178,16 @@ try {
         throw new RuntimeException('Razorpay order ID mismatch during finalize.');
     }
     if (($lockedOrder['payment_status'] ?? '') === 'paid') {
+        OutboxService::enqueuePaidOrderSideEffects($conn, $orderId, [
+            'order_id' => $orderId,
+            'order_number' => $orderNumber,
+            'customer_id' => $customerId,
+            'payment_method' => 'razorpay',
+            'payment_status' => 'paid',
+        ]);
         $conn->commit();
+        OutboxService::safeDrainForOrder($conn, $orderId);
         CartService::checkout_session_clear_after_order($conn, $customerId);
-        EmailService::send_requested_account_activation_email($conn, $orderId);
         redirect('/order-success.php?order=' . urlencode($orderNumber));
     }
     if (!in_array((string) ($lockedOrder['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
@@ -249,12 +263,7 @@ try {
         'Razorpay payment id: ' . $paymentId
     );
 
-    $conn->commit();
-
-    CartService::checkout_session_clear_after_order($conn, $customerId);
-
-    do_action('order.after_payment_success', [
-        'conn' => $conn,
+    OutboxService::enqueuePaidOrderSideEffects($conn, $orderId, [
         'order_id' => $orderId,
         'order_number' => $orderNumber,
         'customer_id' => $customerId,
@@ -262,8 +271,10 @@ try {
         'payment_status' => 'paid',
     ]);
 
-    EmailService::send_requested_account_activation_email($conn, $orderId);
-    EmailService::send_order_confirmation_email($conn, $orderId);
+    $conn->commit();
+
+    OutboxService::safeDrainForOrder($conn, $orderId);
+    CartService::checkout_session_clear_after_order($conn, $customerId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {
     try {

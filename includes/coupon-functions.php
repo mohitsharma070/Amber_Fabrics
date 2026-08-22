@@ -5,6 +5,49 @@ function normalize_coupon_code(string $code): string
     return strtoupper(trim($code));
 }
 
+function normalize_coupon_guest_email(string $email): string
+{
+    $email = trim($email);
+    return function_exists('mb_strtolower') ? mb_strtolower($email, 'UTF-8') : strtolower($email);
+}
+
+function normalize_coupon_guest_phone(string $phone): string
+{
+    $digits = preg_replace('/\D+/', '', $phone) ?? '';
+    if (str_starts_with($digits, '00')) {
+        $digits = substr($digits, 2);
+    }
+    if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+        $digits = substr($digits, 2);
+    } elseif (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+        $digits = substr($digits, 1);
+    }
+    return $digits;
+}
+
+function coupon_guest_identity_hash(string $email, string $phone): string
+{
+    $key = function_exists('_cfg') ? trim((string) _cfg('APP_IDENTITY_HASH_KEY', '')) : '';
+    if ($key === '') {
+        $key = trim((string) (getenv('APP_IDENTITY_HASH_KEY') ?: ''));
+    }
+    if ($key === '' && strtolower((string) ($GLOBALS['_app_mode'] ?? 'local')) !== 'production') {
+        // Stable only for local fixtures. Production boot validation requires an
+        // environment-managed key and never reaches this fallback.
+        $key = 'local-development-identity-key-not-for-production';
+    }
+    if (strlen($key) < 32) {
+        throw new RuntimeException('Guest coupon identity configuration is unavailable.');
+    }
+
+    $normalizedEmail = normalize_coupon_guest_email($email);
+    $normalizedPhone = normalize_coupon_guest_phone($phone);
+    if ($normalizedEmail === '' || $normalizedPhone === '') {
+        throw new InvalidArgumentException('Guest email and phone are required for coupon reservation.');
+    }
+    return hash_hmac('sha256', 'v1|' . $normalizedEmail . '|' . $normalizedPhone, $key);
+}
+
 function coupon_redirect_target(string $fallback = '/cart.php'): string
 {
     $target = (string) ($_POST['redirect_to'] ?? '');
@@ -83,7 +126,13 @@ function has_customer_used_coupon(mysqli $conn, int $couponId, int $customerId):
 }
 
 /** Reserve one global coupon slot for an order inside the caller transaction. */
-function reserve_coupon_for_order(mysqli $conn, int $couponId, int $customerId, int $orderId): bool
+function reserve_coupon_for_order(
+    mysqli $conn,
+    int $couponId,
+    int $customerId,
+    int $orderId,
+    ?string $guestIdentityHash = null
+): bool
 {
     if ($couponId <= 0 || $orderId <= 0) {
         return false;
@@ -113,6 +162,24 @@ function reserve_coupon_for_order(mysqli $conn, int $couponId, int $customerId, 
     if ($customerId > 0 && has_customer_used_coupon($conn, $couponId, $customerId)) {
         throw new RuntimeException('You have already used this coupon.');
     }
+    if ($customerId <= 0) {
+        $guestIdentityHash = strtolower(trim((string) $guestIdentityHash));
+        if (!preg_match('/^[a-f0-9]{64}$/', $guestIdentityHash)) {
+            throw new RuntimeException('Guest coupon identity is unavailable.');
+        }
+        $guestStmt = $conn->prepare(
+            "SELECT 1 FROM coupon_usages
+             WHERE coupon_id = ? AND guest_identity_hash = ?
+             LIMIT 1"
+        );
+        $guestStmt->bind_param('is', $couponId, $guestIdentityHash);
+        $guestStmt->execute();
+        if ($guestStmt->get_result()->fetch_assoc()) {
+            throw new RuntimeException('You have already used this coupon.');
+        }
+    } else {
+        $guestIdentityHash = null;
+    }
 
     $reserve = $conn->prepare(
         "UPDATE coupons
@@ -127,9 +194,9 @@ function reserve_coupon_for_order(mysqli $conn, int $couponId, int $customerId, 
 
     $reservationCustomerId = $customerId > 0 ? $customerId : null;
     $insert = $conn->prepare(
-        "INSERT INTO coupon_usages (coupon_id, customer_id, order_id) VALUES (?, ?, ?)"
+        "INSERT INTO coupon_usages (coupon_id, customer_id, guest_identity_hash, order_id) VALUES (?, ?, ?, ?)"
     );
-    $insert->bind_param('iii', $couponId, $reservationCustomerId, $orderId);
+    $insert->bind_param('iisi', $couponId, $reservationCustomerId, $guestIdentityHash, $orderId);
     $insert->execute();
     return true;
 }

@@ -34,7 +34,7 @@ $assert(($state['country'] ?? '') === 'India', 'Coupon redirect did not enforce 
 
 $rateSource = (string) file_get_contents(__DIR__ . '/../shipping-rate.php');
 $checkoutSource = (string) file_get_contents(__DIR__ . '/../checkout.php');
-$pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/plugin.php');
+$pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/modules/reference-and-rates.php');
 $emailServiceSource = (string) file_get_contents(__DIR__ . '/../includes/services/EmailService.php');
 $placeOrderSource = (string) file_get_contents(__DIR__ . '/../place-order.php');
 $applySource = (string) file_get_contents(__DIR__ . '/../apply-coupon.php');

@@ -180,6 +180,7 @@ function meta_capi_post_event(string $eventName, array $customData, array $userD
             }
         }
         error_log('[meta-capi] event failed (' . $eventName . '): ' . $reason);
+        throw new RuntimeException('Meta CAPI event delivery failed: ' . $reason);
     }
 }
 

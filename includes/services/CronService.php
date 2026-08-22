@@ -62,6 +62,7 @@ final class CronService
                 'RAZORPAY_WEBHOOK_SECRET', 'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
                 'COD_GUARD_WHATSAPP_APP_SECRET', 'COD_GUARD_WEBHOOK_TOKEN',
                 'SHIPPING_COURIER_WEBHOOK_SECRET', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY',
+                'ADMIN_LOGIN_PASSPHRASE', 'APP_IDENTITY_HASH_KEY',
             ] as $key) {
                 $secret = trim((string) _cfg($key, ''));
                 if ($secret !== '') {

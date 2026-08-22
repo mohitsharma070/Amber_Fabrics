@@ -23,6 +23,7 @@ $guestAccess = (string) file_get_contents($root . '/guest/order-access.php');
 $guestRetry = (string) file_get_contents($root . '/guest/retry-payment.php');
 $razorpayVerify = (string) file_get_contents($root . '/payment/razorpay-verify.php');
 $razorpayWebhook = (string) file_get_contents($root . '/payment/razorpay-webhook.php');
+$outbox = (string) file_get_contents($root . '/includes/services/OutboxService.php');
 $adminHelpers = (string) file_get_contents($root . '/includes/helpers/admin.php');
 $fabric = (string) file_get_contents($root . '/fabric.php');
 
@@ -45,7 +46,7 @@ $assert(str_contains($checkout, '$hasCompleteDelivery') && str_contains($checkou
 $assert(str_contains($rate, "'serviceability_status'"), 'Shipping response lacks serviceability.');
 $assert(str_contains($email, 'send_guest_manage_link') && str_contains($email, 'send_account_activation_email'), 'Transactional guest email methods missing.');
 $assert(str_contains($backendFixMigration, 'account_activation_requested') && str_contains($email, 'send_requested_account_activation_email'), 'Asynchronous activation intent persistence missing.');
-$assert(str_contains($razorpayVerify, 'send_requested_account_activation_email') && str_contains($razorpayWebhook, 'send_requested_account_activation_email'), 'Razorpay completion must deliver requested activation email.');
+$assert(str_contains($razorpayVerify, 'enqueuePaidOrderSideEffects') && str_contains($razorpayWebhook, 'enqueuePaidOrderSideEffects') && str_contains($outbox, 'send_requested_account_activation_email'), 'Razorpay completion must durably deliver requested activation email.');
 $estimateUpdatePosition = strpos($placeOrder, '$estimateUpdate = $conn->prepare');
 $razorpayRedirectPosition = strpos($placeOrder, "redirect('/payment/razorpay-create.php')");
 $assert($estimateUpdatePosition !== false && $razorpayRedirectPosition !== false && $estimateUpdatePosition < $razorpayRedirectPosition, 'Order estimate must be saved before the Razorpay redirect.');

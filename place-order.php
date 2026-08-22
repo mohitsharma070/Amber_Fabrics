@@ -157,6 +157,7 @@ if (empty($ids)) {
     redirect('/cart.php');
 }
 
+$businessCommitted = false;
 try {
     $conn->begin_transaction();
 
@@ -877,12 +878,28 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
     // Coupon capacity is part of the order reservation and is committed atomically
     // with inventory for both COD and Razorpay orders.
     if ($couponId > 0) {
-        reserve_coupon_for_order($conn, $couponId, $customerId, $orderId);
+        $guestIdentityHash = $customerId > 0 ? null : coupon_guest_identity_hash($email, $phone);
+        reserve_coupon_for_order($conn, $couponId, $customerId, $orderId, $guestIdentityHash);
         log_order_activity($conn, $orderId, 'coupon_reserved', 'system', 0, 'system', 'Coupon capacity reserved with order creation.');
     }
 
+    OutboxService::enqueueOrderAfterCommit($conn, $orderId, $orderHookContext);
+    if ($paymentMethod === 'cod') {
+        OutboxService::enqueueOrderConfirmation($conn, $orderId);
+        OutboxService::enqueueAccountActivation($conn, $orderId);
+    } elseif ($isZeroAmountOrder) {
+        OutboxService::enqueuePaidOrderSideEffects($conn, $orderId, [
+            'order_id' => $orderId,
+            'order_number' => $orderNumber,
+            'customer_id' => $customerId,
+            'payment_method' => $paymentMethod,
+            'payment_status' => 'paid',
+        ]);
+    }
+
     $conn->commit();
-    do_action('order.after_commit', $orderHookContext);
+    $businessCommitted = true;
+    OutboxService::safeDrainForOrder($conn, $orderId);
     foreach ($orderItems as $item) {
         log_ecommerce_event(
             $conn,
@@ -929,16 +946,7 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
     ];
 
     if ($paymentMethod === 'razorpay') {
-        if ($isZeroAmountOrder) {
-            do_action('order.after_payment_success', [
-                'conn' => $conn,
-                'order_id' => $orderId,
-                'order_number' => $orderNumber,
-                'customer_id' => $customerId,
-                'payment_method' => $paymentMethod,
-                'payment_status' => 'paid',
-            ]);
-        } else {
+        if (!$isZeroAmountOrder) {
             $_SESSION['pending_order_id'] = $orderId;
             $_SESSION['pending_order_number'] = $orderNumber;
             $_SESSION['pending_coupon_id'] = $couponId;
@@ -948,14 +956,31 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
     }
 
     CartService::checkout_session_clear_after_order($conn, $customerId);
-    EmailService::send_requested_account_activation_email($conn, $orderId);
-    EmailService::send_order_confirmation_email($conn, $orderId);
     redirect('/order-success.php?order=' . urlencode($orderNumber));
 } catch (Throwable $e) {
     try {
         $conn->rollback();
     } catch (Throwable $rollbackException) {
         // ignore rollback failure
+    }
+
+    if ($businessCommitted) {
+        error_log('[app] place-order post-commit work failed: ' . CronService::sanitizeError($e->getMessage()));
+        $_SESSION['last_order'] = [
+            'id' => (int) ($orderId ?? 0),
+            'order_number' => (string) ($orderNumber ?? ''),
+            'customer_name' => (string) ($fullName ?? ''),
+            'total_amount' => (float) ($totalAmount ?? 0),
+        ];
+        if (($paymentMethod ?? '') === 'razorpay' && empty($isZeroAmountOrder)) {
+            $_SESSION['pending_order_id'] = (int) ($orderId ?? 0);
+            $_SESSION['pending_order_number'] = (string) ($orderNumber ?? '');
+            $_SESSION['pending_coupon_id'] = (int) ($couponId ?? 0);
+            $_SESSION['pending_online_method'] = (string) ($onlineMethod ?? '');
+            redirect('/payment/razorpay-create.php');
+        }
+        CartService::checkout_session_clear_after_order($conn, (int) ($customerId ?? 0));
+        redirect('/order-success.php?order=' . urlencode((string) ($orderNumber ?? '')));
     }
 
     error_log('[app] place-order failed: ' . $e->getMessage());
