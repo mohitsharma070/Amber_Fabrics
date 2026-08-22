@@ -118,12 +118,12 @@ function form_class(array $errors, string $field, string $base = 'form-control')
 /**
  * Returns an invalid-feedback <div> with the field error, or '' if none.
  */
-function form_error(array $errors, string $field): string
+function form_error(array $errors, string $field, string $base = 'invalid-feedback d-block'): string
 {
     if (empty($errors[$field])) {
         return '';
     }
-    return '<div class="invalid-feedback d-block">' . e($errors[$field]) . '</div>';
+    return '<div class="' . e($base) . '">' . e($errors[$field]) . '</div>';
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ function form_error(array $errors, string $field): string
  * @param int    $total      Total records (used for "Showing X-Y of Z" info line)
  * @param int    $perPage    Records per page (used for info line)
  */
-function render_pagination(int $page, int $pages, array $queryState, string $pageKey = 'page', int $total = 0, int $perPage = 0): string
+function render_pagination(int $page, int $pages, array $queryState, string $pageKey = 'page', int $total = 0, int $perPage = 0, string $presentation = 'legacy'): string
 {
     if ($pages <= 1) {
         return '';
@@ -152,7 +152,8 @@ function render_pagination(int $page, int $pages, array $queryState, string $pag
     if ($total > 0 && $perPage > 0) {
         $from = ($page - 1) * $perPage + 1;
         $to   = min($page * $perPage, $total);
-        $info = '<p class="text-muted small text-center mb-1">Showing ' . $from . '&ndash;' . $to . ' of ' . $total . ' results</p>';
+        $infoClass = $presentation === 'ui' ? 'u-text-muted u-text-small u-text-center u-mb-1' : 'text-muted small text-center mb-1';
+        $info = '<p class="' . $infoClass . '">Showing ' . $from . '&ndash;' . $to . ' of ' . $total . ' results</p>';
     }
 
     // Build an even-sized visible window of numeric page links.
@@ -175,46 +176,54 @@ function render_pagination(int $page, int $pages, array $queryState, string $pag
 
     $mkUrl = static fn(int $p): string => '?' . list_build_query(array_merge($queryState, [$pageKey => $p]));
 
-    $html  = '<nav aria-label="Pagination" class="mt-3">';
-    $html .= '<ul class="pagination justify-content-center flex-wrap mb-0">';
+    $isUi = $presentation === 'ui';
+    $navClass = $isUi ? 'u-mt-3' : 'mt-3';
+    $listClass = $isUi ? 'ui-pagination' : 'pagination justify-content-center flex-wrap mb-0';
+    $itemClass = $isUi ? 'ui-pagination__item' : 'page-item';
+    $linkClass = $isUi ? '' : ' class="page-link"';
+    $disabledClass = $itemClass . ($isUi ? ' is-disabled' : ' disabled');
+    $activeClass = $itemClass . ($isUi ? ' is-active' : ' active');
+
+    $html  = '<nav aria-label="Pagination" class="' . $navClass . '">';
+    $html .= '<ul class="' . $listClass . '">';
 
     // Prev button
     if ($page <= 1) {
-        $html .= '<li class="page-item disabled"><span class="page-link">&laquo; Prev</span></li>';
+        $html .= '<li class="' . $disabledClass . '" aria-disabled="true"><span' . $linkClass . '>&laquo; Prev</span></li>';
     } else {
-        $html .= '<li class="page-item"><a class="page-link" href="' . e($mkUrl($page - 1)) . '">&laquo; Prev</a></li>';
+        $html .= '<li class="' . $itemClass . '"><a' . $linkClass . ' href="' . e($mkUrl($page - 1)) . '">&laquo; Prev</a></li>';
     }
 
     // Optional first-page shortcut with ellipsis
     if ($start > 1) {
-        $html .= '<li class="page-item"><a class="page-link" href="' . e($mkUrl(1)) . '">1</a></li>';
+        $html .= '<li class="' . $itemClass . '"><a' . $linkClass . ' href="' . e($mkUrl(1)) . '">1</a></li>';
         if ($start > 2) {
-            $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+            $html .= '<li class="' . $disabledClass . '" aria-disabled="true"><span' . $linkClass . '>&hellip;</span></li>';
         }
     }
 
     // Page numbers in even-sized window
     foreach ($pool as $p) {
         if ($p === $page) {
-            $html .= '<li class="page-item active" aria-current="page"><span class="page-link">' . $p . '</span></li>';
+            $html .= '<li class="' . $activeClass . '"><span' . $linkClass . ' aria-current="page">' . $p . '</span></li>';
         } else {
-            $html .= '<li class="page-item"><a class="page-link" href="' . e($mkUrl($p)) . '">' . $p . '</a></li>';
+            $html .= '<li class="' . $itemClass . '"><a' . $linkClass . ' href="' . e($mkUrl($p)) . '">' . $p . '</a></li>';
         }
     }
 
     // Optional last-page shortcut with ellipsis
     if ($end < $pages) {
         if ($end < $pages - 1) {
-            $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+            $html .= '<li class="' . $disabledClass . '" aria-disabled="true"><span' . $linkClass . '>&hellip;</span></li>';
         }
-        $html .= '<li class="page-item"><a class="page-link" href="' . e($mkUrl($pages)) . '">' . $pages . '</a></li>';
+        $html .= '<li class="' . $itemClass . '"><a' . $linkClass . ' href="' . e($mkUrl($pages)) . '">' . $pages . '</a></li>';
     }
 
     // Next button
     if ($page >= $pages) {
-        $html .= '<li class="page-item disabled"><span class="page-link">Next &raquo;</span></li>';
+        $html .= '<li class="' . $disabledClass . '" aria-disabled="true"><span' . $linkClass . '>Next &raquo;</span></li>';
     } else {
-        $html .= '<li class="page-item"><a class="page-link" href="' . e($mkUrl($page + 1)) . '">Next &raquo;</a></li>';
+        $html .= '<li class="' . $itemClass . '"><a' . $linkClass . ' href="' . e($mkUrl($page + 1)) . '">Next &raquo;</a></li>';
     }
 
     $html .= '</ul></nav>';

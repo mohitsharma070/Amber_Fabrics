@@ -10,14 +10,14 @@ include __DIR__ . '/includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Terms & Conditions</h1>
-        <p class="mb-0"><?php echo e($heroSubtitle); ?></p>
+        <p class="u-mb-0"><?php echo e($heroSubtitle); ?></p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container surface-panel">
+    <div class="l-container surface-panel">
         <?php echo $policyBody; ?>
     </div>
 </section>

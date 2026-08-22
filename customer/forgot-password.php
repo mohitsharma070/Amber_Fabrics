@@ -48,37 +48,37 @@ include __DIR__ . '/../includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Reset Password</h1>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-6 col-lg-4">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-justify-center">
+            <div class="l-col-md-half l-col-lg-third">
                 <?php if ($success): ?>
-                    <div class="alert alert-success">
+                    <div class="ui-alert ui-alert--success">
                         If that email exists, we've sent a password reset link. Check your inbox.
                     </div>
-                    <p class="text-center"><a href="/customer/login" class="app-back-link">&larr; Back to login</a></p>
+                    <p class="u-text-center"><a href="/customer/login" class="app-back-link">&larr; Back to login</a></p>
                 <?php else: ?>
                     <?php if ($errors): ?>
-                        <div class="alert alert-danger">Please fix the errors below.</div>
+                        <div class="ui-alert ui-alert--error">Please fix the errors below.</div>
                     <?php endif; ?>
-                    <div class="surface-panel p-4">
-                        <p class="text-muted mb-3">Enter your email address and we'll send you a reset link.</p>
+                    <div class="surface-panel u-p-4">
+                        <p class="u-text-muted u-mb-3">Enter your email address and we'll send you a reset link.</p>
                         <form method="POST" action="/customer/forgot-password.php">
                             <?php echo csrf_field(); ?>
-                            <div class="mb-3">
-                                <label class="form-label">Email Address</label>
-                                <input type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" required>
-                                <?php echo form_error($errors, 'email'); ?>
+                            <div class="u-mb-3">
+                                <label class="ui-label">Email Address</label>
+                                <input type="email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" required>
+                                <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                             </div>
-                            <button type="submit" class="btn btn-primary w-100">Send Reset Link</button>
+                            <button type="submit" class="ui-button ui-button--primary u-w-full">Send Reset Link</button>
                         </form>
                     </div>
-                    <p class="text-center mt-3"><a href="/customer/login" class="app-back-link">&larr; Back to login</a></p>
+                    <p class="u-text-center u-mt-3"><a href="/customer/login" class="app-back-link">&larr; Back to login</a></p>
                 <?php endif; ?>
             </div>
         </div>

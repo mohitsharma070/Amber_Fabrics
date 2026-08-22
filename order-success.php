@@ -70,55 +70,55 @@ include __DIR__ . '/includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container text-center">
-        <div class="mb-3" style="font-size:3rem;">&#10003;</div>
+    <div class="l-container u-text-center">
+        <div class="order-success-mark u-mb-3" aria-hidden="true">&#10003;</div>
         <h1>Order Placed Successfully</h1>
-        <p class="mb-0">Thank you for shopping with <?php echo e(SiteContext::name()); ?>.</p>
+        <p class="u-mb-0">Thank you for shopping with <?php echo e(SiteContext::name()); ?>.</p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-7 col-lg-6">
-                <div class="surface-panel p-4 text-center">
-                    <h5 class="mb-1">Order Number</h5>
-                    <p class="fs-4 fw-bold mb-3"><?php echo e($order['order_number']); ?></p>
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-justify-center">
+            <div class="l-col-md-seven l-col-lg-half">
+                <div class="surface-panel u-p-4 u-text-center">
+                    <h5 class="u-mb-1">Order Number</h5>
+                    <p class="u-text-large u-font-bold u-mb-3"><?php echo e($order['order_number']); ?></p>
 
-                    <div class="text-start small mb-3">
-                        <div class="d-flex justify-content-between"><span>Name</span><strong><?php echo e($order['customer_name']); ?></strong></div>
-                        <div class="d-flex justify-content-between"><span>Email</span><strong><?php echo e($order['customer_email']); ?></strong></div>
-                        <div class="d-flex justify-content-between"><span>Total</span><strong><?php echo e(money((float) $order['total_amount'])); ?></strong></div>
-                        <div class="d-flex justify-content-between"><span>Payment</span><strong><?php echo e($paymentLabel); ?> (<?php echo e(ucfirst($paymentStatus)); ?>)</strong></div>
-                        <div class="d-flex justify-content-between"><span>Order Status</span><strong><?php echo e(ucfirst((string) $order['order_status'])); ?></strong></div>
+                    <div class="u-text-start u-text-small u-mb-3">
+                        <div class="u-flex u-justify-between"><span>Name</span><strong><?php echo e($order['customer_name']); ?></strong></div>
+                        <div class="u-flex u-justify-between"><span>Email</span><strong><?php echo e($order['customer_email']); ?></strong></div>
+                        <div class="u-flex u-justify-between"><span>Total</span><strong><?php echo e(money((float) $order['total_amount'])); ?></strong></div>
+                        <div class="u-flex u-justify-between"><span>Payment</span><strong><?php echo e($paymentLabel); ?> (<?php echo e(ucfirst($paymentStatus)); ?>)</strong></div>
+                        <div class="u-flex u-justify-between"><span>Order Status</span><strong><?php echo e(ucfirst((string) $order['order_status'])); ?></strong></div>
                     </div>
 
                     <?php if ($paymentMethod === 'cod' && is_array($codConfirmation) && strtolower((string) ($codConfirmation['status'] ?? '')) === 'pending'): ?>
-                    <div class="alert alert-warning text-start mb-3">
+                    <div class="ui-alert ui-alert--warning u-text-start u-mb-3">
                         Please reply YES to the confirmation message to confirm this COD order, or NO to cancel it.
                     </div>
                     <?php elseif ($paymentMethod === 'cod'): ?>
-                    <div class="alert alert-info text-start mb-3">
+                    <div class="ui-alert ui-alert--info u-text-start u-mb-3">
                         COD selected. Please keep exact amount ready at delivery.
                     </div>
                     <?php elseif ($paymentStatus === 'paid'): ?>
-                    <div class="alert alert-success text-start mb-3">
+                    <div class="ui-alert ui-alert--success u-text-start u-mb-3">
                         Online payment received successfully.
                     </div>
                     <?php elseif ($paymentMethod === 'razorpay'): ?>
-                    <div class="alert alert-warning text-start mb-3">
+                    <div class="ui-alert ui-alert--warning u-text-start u-mb-3">
                         Your payment is still being verified. We will email you when its status is updated.
                     </div>
                     <?php endif; ?>
 
                     <?php if ($customerId <= 0): ?>
-                    <div class="alert alert-light border text-start mb-3">
+                    <div class="ui-alert ui-alert--neutral u-border u-text-start u-mb-3">
                         Save your order number. Confirmation and future updates will be sent to <?php echo e((string) $order['customer_email']); ?>.
                     </div>
                     <?php endif; ?>
 
                     <?php if (!empty($shipment)): ?>
-                    <div class="alert alert-light border text-start mb-3">
+                    <div class="ui-alert ui-alert--neutral u-border u-text-start u-mb-3">
                         <strong>Tracking Information</strong><br>
                         Courier: <?php echo e((string) ($shipment['courier_name'] ?? '-')); ?><br>
                         Tracking ID: <?php echo e((string) ($shipment['tracking_id'] ?? '-')); ?><br>
@@ -130,15 +130,15 @@ include __DIR__ . '/includes/header.php';
                     </div>
                     <?php endif; ?>
 
-                    <div class="d-flex gap-2 justify-content-center">
+                    <div class="u-flex u-gap-2 u-justify-center">
                         <?php if ($paymentMethod === 'razorpay' && $paymentStatus !== 'paid' && (int) ($_SESSION['pending_order_id'] ?? 0) === $orderId): ?>
-                            <a href="/payment/razorpay-create.php" class="btn btn-warning">Retry Payment</a>
+                            <a href="/payment/razorpay-create.php" class="ui-button ui-button--warning">Retry Payment</a>
                         <?php endif; ?>
                         <?php if ($customerId > 0): ?>
-                            <a href="/customer/order-view?id=<?php echo (int) $orderId; ?>" class="btn btn-outline-primary">View Order</a>
+                            <a href="/customer/order-view?id=<?php echo (int) $orderId; ?>" class="ui-button ui-button--outline">View Order</a>
                         <?php endif; ?>
-                        <a href="/catalog.php" class="btn btn-primary">Continue Shopping</a>
-                        <a href="/contact.php" class="btn btn-outline-secondary">Need Help?</a>
+                        <a href="/catalog.php" class="ui-button ui-button--primary">Continue Shopping</a>
+                        <a href="/contact.php" class="ui-button ui-button--secondary">Need Help?</a>
                     </div>
                 </div>
             </div>

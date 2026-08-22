@@ -67,33 +67,33 @@ include __DIR__ . '/includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Your Cart</h1>
-        <p class="mb-0"><?php echo count($items); ?> item<?php echo count($items) !== 1 ? 's' : ''; ?> in your cart</p>
+        <p class="u-mb-0"><?php echo count($items); ?> item<?php echo count($items) !== 1 ? 's' : ''; ?> in your cart</p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container">
+    <div class="l-container">
         <?php if (empty($items)): ?>
-            <div class="row g-4">
-                <div class="col-lg-8">
-                    <div class="text-center py-5">
-                        <p class="text-muted fs-5">Your cart is empty.</p>
-                        <a href="/catalog.php" class="btn btn-primary">Shop Collection</a>
+            <div class="l-grid l-grid--12 u-gap-4">
+                <div class="l-col-lg-eight">
+                    <div class="u-text-center u-py-5">
+                        <p class="u-text-muted fs-5">Your cart is empty.</p>
+                        <a href="/catalog.php" class="ui-button ui-button--primary">Shop Collection</a>
                     </div>
 
-                    <div class="surface-panel p-3 mt-4">
-                        <h5 class="mb-3">Saved for Later</h5>
+                    <div class="surface-panel u-p-3 u-mt-4">
+                        <h5 class="u-mb-3">Saved for Later</h5>
                         <?php if (empty($wishlistItems)): ?>
-                            <p class="text-muted small mb-0">No products saved yet. Use "Move to Wishlist" on any cart item.</p>
+                            <p class="u-text-muted u-text-small u-mb-0">No products saved yet. Use "Move to Wishlist" on any cart item.</p>
                         <?php else: ?>
                             <?php foreach ($wishlistItems as $w): ?>
-                                <div class="saved-cart-item d-flex justify-content-between align-items-center py-2 border-bottom">
+                                <div class="saved-cart-item u-flex u-justify-between u-items-center u-py-2 u-border-bottom">
                                     <div class="saved-cart-item__details">
-                                        <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
-                                        <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
-                                        <div class="small text-muted">
+                                        <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="u-font-semibold u-no-underline"><?php echo e($w['name']); ?></a>
+                                        <div class="u-text-small u-text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
+                                        <div class="u-text-small u-text-muted">
                                             <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
                                                 Qty: <?php echo e((string) $w['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $w['meter_length'])); ?>m = <?php echo e($w['quantity_text']); ?>m
                                             <?php else: ?>
@@ -101,16 +101,16 @@ include __DIR__ . '/includes/header.php';
                                             <?php endif; ?>
                                         </div>
                                     </div>
-                                    <div class="saved-cart-item__actions d-flex gap-2">
-                                        <form method="POST" action="/move-to-cart.php" class="d-inline">
+                                    <div class="saved-cart-item__actions u-flex u-gap-2">
+                                        <form method="POST" action="/move-to-cart.php" class="u-inline">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
-                                            <button class="btn btn-sm btn-primary">Move to Cart</button>
+                                            <button class="ui-button ui-button--small ui-button--primary">Move to Cart</button>
                                         </form>
-                                        <form method="POST" action="/remove-wishlist.php" class="d-inline" data-confirm-modal data-confirm-title="Remove Saved Item?" data-confirm-message="Remove this product from your saved items?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
+                                        <form method="POST" action="/remove-wishlist.php" class="u-inline" data-confirm-modal data-confirm-title="Remove Saved Item?" data-confirm-message="Remove this product from your saved items?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
-                                            <button class="btn btn-sm btn-outline-danger">Remove</button>
+                                            <button class="ui-button ui-button--small ui-button--danger-outline">Remove</button>
                                         </form>
                                     </div>
                                 </div>
@@ -119,45 +119,45 @@ include __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="col-lg-4">
-                    <div class="surface-panel p-4 cart-summary-card">
-                        <h5 class="mb-3">Cart Summary</h5>
-                        <div class="d-flex justify-content-between mb-2"><span>Subtotal</span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
-                        <div class="d-flex justify-content-between mb-2"><span>Shipping <small class="text-muted">(est.)</small></span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
-                        <div class="d-flex justify-content-between mb-2"><span>Total</span><span class="fw-semibold"><?php echo e(money(0)); ?></span></div>
-                        <div class="small text-muted mb-3">Coupon can be applied at checkout.</div>
+                <div class="l-col-lg-third">
+                    <div class="surface-panel u-p-4 cart-summary-card">
+                        <h5 class="u-mb-3">Cart Summary</h5>
+                        <div class="u-flex u-justify-between u-mb-2"><span>Subtotal</span><span class="u-font-semibold"><?php echo e(money(0)); ?></span></div>
+                        <div class="u-flex u-justify-between u-mb-2"><span>Shipping <small class="u-text-muted">(est.)</small></span><span class="u-font-semibold"><?php echo e(money(0)); ?></span></div>
+                        <div class="u-flex u-justify-between u-mb-2"><span>Total</span><span class="u-font-semibold"><?php echo e(money(0)); ?></span></div>
+                        <div class="u-text-small u-text-muted u-mb-3">Coupon can be applied at checkout.</div>
                         <hr>
-                        <button type="button" class="btn btn-primary w-100 btn-lg" disabled aria-disabled="true">Proceed to Checkout</button>
-                        <div class="trust-badge-block mt-3" aria-label="Checkout trust badges">
+                        <button type="button" class="ui-button ui-button--primary u-w-full ui-button--large" disabled aria-disabled="true">Proceed to Checkout</button>
+                        <div class="trust-badge-block u-mt-3" aria-label="Checkout trust badges">
                             <span class="trust-badge-pill">COD Available</span>
                             <span class="trust-badge-pill">Secure Payment</span>
                             <span class="trust-badge-pill">Fast Dispatch</span>
                             <span class="trust-badge-pill">Easy Returns</span>
                         </div>
-                        <a href="/catalog.php" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
+                        <a href="/catalog.php" class="ui-button ui-button--secondary u-w-full u-mt-2">Continue Shopping</a>
                     </div>
                 </div>
             </div>
         <?php else: ?>
-            <div class="row g-4">
-                <div class="col-lg-8">
+            <div class="l-grid l-grid--12 u-gap-4">
+                <div class="l-col-lg-eight">
                     <?php foreach ($items as $item): ?>
                     <?php $cartImageAsset = ($item['image'] !== '') ? fabric_image_asset_data((string) $item['image']) : null; ?>
-                    <div class="surface-panel p-3 mb-3">
-                        <div class="d-flex gap-3 align-items-start cart-line-item">
+                    <div class="surface-panel u-p-3 u-mb-3">
+                        <div class="u-flex u-gap-3 u-items-start cart-line-item">
                             <?php if ($item['image'] !== ''): ?>
                                 <a href="/fabric.php?id=<?php echo $item['id']; ?>">
-                                    <img src="<?php echo e((string) ($cartImageAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($item['name']); ?>" class="rounded cart-item-img" loading="lazy">
+                                    <img src="<?php echo e((string) ($cartImageAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($item['name']); ?>" class="u-rounded cart-item-img" loading="lazy">
                                 </a>
                             <?php else: ?>
-                                <div class="rounded cart-item-img bg-light"></div>
+                                <div class="u-rounded cart-item-img ui-surface-soft"></div>
                             <?php endif; ?>
 
-                            <div class="flex-grow-1">
-                                <div class="d-flex justify-content-between align-items-start">
+                            <div class="u-grow">
+                                <div class="u-flex u-justify-between u-items-start">
                                     <div>
-                                        <a href="/fabric.php?id=<?php echo $item['id']; ?>" class="fw-semibold text-decoration-none d-block"><?php echo e($item['name']); ?></a>
-                                        <div class="text-muted small">
+                                        <a href="/fabric.php?id=<?php echo $item['id']; ?>" class="u-font-semibold u-no-underline u-block"><?php echo e($item['name']); ?></a>
+                                        <div class="u-text-muted u-text-small">
                                             <?php if ($item['unit_type'] === 'meter' && !empty($item['meter_length']) && !empty($item['bundle_quantity'])): ?>
                                                 Qty: <?php echo e((string) $item['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>m = <?php echo e($item['quantity_text']); ?>m
                                             <?php else: ?>
@@ -170,50 +170,50 @@ include __DIR__ . '/includes/header.php';
                                                 | Size: <strong><?php echo e($item['selected_size']); ?></strong>
                                             <?php endif; ?>
                                         </div>
-                                        <div class="text-muted small mt-1">
+                                        <div class="u-text-muted u-text-small u-mt-1">
                                             <?php if ($item['sale_price'] > 0 && $item['sale_price'] < $item['regular_price']): ?>
-                                                <span class="fw-semibold text-dark"><?php echo e(money($item['sale_price'])); ?></span>
-                                                <span class="ms-1"><del><?php echo e(money($item['regular_price'])); ?></del></span>
+                                                <span class="u-font-semibold u-text-ink"><?php echo e(money($item['sale_price'])); ?></span>
+                                                <span class="u-ms-1"><del><?php echo e(money($item['regular_price'])); ?></del></span>
                                             <?php else: ?>
-                                                <span class="fw-semibold text-dark"><?php echo e(money($item['unit_price'])); ?></span>
+                                                <span class="u-font-semibold u-text-ink"><?php echo e(money($item['unit_price'])); ?></span>
                                             <?php endif; ?>
                                             <span> / <?php echo e($item['quantity_unit_label'] === 'pieces' ? 'piece' : ($item['quantity_unit_label'] === 'sets' ? 'set' : $item['quantity_unit_label'])); ?></span>
                                         </div>
-                                        <div class="small mt-2 text-muted">
+                                        <div class="u-text-small u-mt-2 u-text-muted">
                                             Delivery estimate is calculated from your pincode at checkout.
                                         </div>
                                     </div>
-                                    <div class="text-end">
-                                        <div class="small text-muted">Line Total</div>
-                                        <div class="fw-semibold"><?php echo e(money($item['subtotal'])); ?></div>
+                                    <div class="u-text-end">
+                                        <div class="u-text-small u-text-muted">Line Total</div>
+                                        <div class="u-font-semibold"><?php echo e(money($item['subtotal'])); ?></div>
                                     </div>
                                 </div>
 
-                                <div class="d-flex gap-2 mt-3 align-items-center flex-wrap cart-line-actions">
-                                    <form method="POST" action="/update-cart.php" class="d-flex gap-1 align-items-center cart-qty-form">
+                                <div class="u-flex u-gap-2 u-mt-3 u-items-center u-wrap cart-line-actions">
+                                    <form method="POST" action="/update-cart.php" class="u-flex u-gap-1 u-items-center cart-qty-form" data-ui-cart-quantity>
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
                                         <?php if ($item['unit_type'] === 'meter' && !empty($item['meter_length'])): ?>
                                             <input type="hidden" name="meter_length" value="<?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>">
                                         <?php endif; ?>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary qty-dec" aria-label="Decrease quantity">-</button>
-                                        <input type="number" name="<?php echo ($item['unit_type'] === 'meter') ? 'bundle_quantity' : 'quantity'; ?>" class="form-control form-control-sm cart-qty-input"
+                                        <button type="button" class="ui-button ui-button--small ui-button--secondary qty-dec" aria-label="Decrease quantity">-</button>
+                                        <input type="number" name="<?php echo ($item['unit_type'] === 'meter') ? 'bundle_quantity' : 'quantity'; ?>" class="ui-input ui-input--small cart-qty-input"
                                                value="<?php echo e(($item['unit_type'] === 'meter') ? (string) max(1, (int) ($item['bundle_quantity'] ?? 1)) : $item['quantity_text']); ?>" min="1"
                                                step="<?php echo ($item['unit_type'] === 'piece' || $item['unit_type'] === 'set' || $item['unit_type'] === 'meter') ? '1' : '0.01'; ?>"
                                                <?php echo ($item['unit_type'] === 'meter' && !empty($item['max_bundle_qty'])) ? 'max="' . (int) $item['max_bundle_qty'] . '"' : ($item['stock'] > 0 ? 'max="' . $item['stock'] . '"' : ''); ?>>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary qty-inc" aria-label="Increase quantity">+</button>
+                                        <button type="button" class="ui-button ui-button--small ui-button--secondary qty-inc" aria-label="Increase quantity">+</button>
                                     </form>
 
-                                    <form method="POST" action="/move-to-wishlist.php" class="d-inline">
+                                    <form method="POST" action="/move-to-wishlist.php" class="u-inline">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
-                                        <button class="btn btn-sm btn-outline-primary">Move to Wishlist</button>
+                                        <button class="ui-button ui-button--small ui-button--outline">Move to Wishlist</button>
                                     </form>
 
-                                    <form method="POST" action="/remove-cart.php" class="d-inline" data-confirm-modal data-confirm-title="Remove Item?" data-confirm-message="Remove this product from your cart?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
+                                    <form method="POST" action="/remove-cart.php" class="u-inline" data-confirm-modal data-confirm-title="Remove Item?" data-confirm-message="Remove this product from your cart?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
-                                        <button class="btn btn-sm btn-outline-danger">Remove</button>
+                                        <button class="ui-button ui-button--small ui-button--danger-outline">Remove</button>
                                     </form>
                                 </div>
                             </div>
@@ -221,17 +221,17 @@ include __DIR__ . '/includes/header.php';
                     </div>
                     <?php endforeach; ?>
 
-                    <div class="surface-panel p-3 mt-4">
-                        <h5 class="mb-3">Saved for Later</h5>
+                    <div class="surface-panel u-p-3 u-mt-4">
+                        <h5 class="u-mb-3">Saved for Later</h5>
                         <?php if (empty($wishlistItems)): ?>
-                            <p class="text-muted small mb-0">No products saved yet. Use "Move to Wishlist" on any cart item.</p>
+                            <p class="u-text-muted u-text-small u-mb-0">No products saved yet. Use "Move to Wishlist" on any cart item.</p>
                         <?php else: ?>
                             <?php foreach ($wishlistItems as $w): ?>
-                                <div class="saved-cart-item d-flex justify-content-between align-items-center py-2 border-bottom">
+                                <div class="saved-cart-item u-flex u-justify-between u-items-center u-py-2 u-border-bottom">
                                     <div class="saved-cart-item__details">
-                                        <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
-                                        <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
-                                        <div class="small text-muted">
+                                        <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="u-font-semibold u-no-underline"><?php echo e($w['name']); ?></a>
+                                        <div class="u-text-small u-text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
+                                        <div class="u-text-small u-text-muted">
                                             <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
                                                 Qty: <?php echo e((string) $w['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $w['meter_length'])); ?>m = <?php echo e($w['quantity_text']); ?>m
                                             <?php else: ?>
@@ -239,16 +239,16 @@ include __DIR__ . '/includes/header.php';
                                             <?php endif; ?>
                                         </div>
                                     </div>
-                                    <div class="saved-cart-item__actions d-flex gap-2">
-                                        <form method="POST" action="/move-to-cart.php" class="d-inline">
+                                    <div class="saved-cart-item__actions u-flex u-gap-2">
+                                        <form method="POST" action="/move-to-cart.php" class="u-inline">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
-                                            <button class="btn btn-sm btn-primary">Move to Cart</button>
+                                            <button class="ui-button ui-button--small ui-button--primary">Move to Cart</button>
                                         </form>
-                                        <form method="POST" action="/remove-wishlist.php" class="d-inline" data-confirm-modal data-confirm-title="Remove Saved Item?" data-confirm-message="Remove this product from your saved items?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
+                                        <form method="POST" action="/remove-wishlist.php" class="u-inline" data-confirm-modal data-confirm-title="Remove Saved Item?" data-confirm-message="Remove this product from your saved items?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
-                                            <button class="btn btn-sm btn-outline-danger">Remove</button>
+                                            <button class="ui-button ui-button--small ui-button--danger-outline">Remove</button>
                                         </form>
                                     </div>
                                 </div>
@@ -257,72 +257,26 @@ include __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="col-lg-4">
-                    <div class="surface-panel p-4 cart-summary-card">
-                        <h5 class="mb-3">Cart Summary</h5>
+                <div class="l-col-lg-third">
+                    <div class="surface-panel u-p-4 cart-summary-card">
+                        <h5 class="u-mb-3">Cart Summary</h5>
 
-                        <div class="d-flex justify-content-between mb-2"><span>Subtotal</span><span class="fw-semibold"><?php echo e(money($subtotal)); ?></span></div>
+                        <div class="u-flex u-justify-between u-mb-2"><span>Subtotal</span><span class="u-font-semibold"><?php echo e(money($subtotal)); ?></span></div>
                         <hr>
-                        <a class="btn btn-primary w-100 btn-lg" href="/checkout.php">Proceed to Checkout</a>
-                        <div class="trust-badge-block mt-3" aria-label="Checkout trust badges">
+                        <a class="ui-button ui-button--primary u-w-full ui-button--large" href="/checkout.php">Proceed to Checkout</a>
+                        <div class="trust-badge-block u-mt-3" aria-label="Checkout trust badges">
                             <span class="trust-badge-pill">COD Available</span>
                             <span class="trust-badge-pill">Secure Payment</span>
                             <span class="trust-badge-pill">Fast Dispatch</span>
                             <span class="trust-badge-pill">Easy Returns</span>
                         </div>
-                        <a href="/catalog.php" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
+                        <a href="/catalog.php" class="ui-button ui-button--secondary u-w-full u-mt-2">Continue Shopping</a>
                     </div>
                 </div>
             </div>
         <?php endif; ?>
     </div>
 </section>
-<script nonce="<?php echo $cspNonce; ?>">
-(function () {
-    var forms = document.querySelectorAll('.cart-qty-form');
-    if (!forms.length) return;
-
-    forms.forEach(function (form) {
-        var input = form.querySelector('input[name="quantity"], input[name="bundle_quantity"]');
-        var dec = form.querySelector('.qty-dec');
-        var inc = form.querySelector('.qty-inc');
-        if (!input || !dec || !inc) return;
-
-        function clamp(v) {
-            var min = parseFloat(input.min || '1');
-            var max = parseFloat(input.max || '');
-            if (!Number.isFinite(v) || v < min) v = min;
-            if (Number.isFinite(max) && v > max) v = max;
-            return v;
-        }
-
-        function fmt(v) {
-            var step = parseFloat(input.step || '1');
-            if (step >= 1) return String(Math.round(v));
-            var rounded = Math.round(v * 100) / 100;
-            return rounded.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
-        }
-
-        function bump(dir) {
-            var step = parseFloat(input.step || '1');
-            if (!Number.isFinite(step) || step <= 0) step = 1;
-            var current = parseFloat(input.value || input.min || '1');
-            if (!Number.isFinite(current)) current = parseFloat(input.min || '1');
-            var next = clamp(current + (dir * step));
-            input.value = fmt(next);
-            form.submit();
-        }
-
-        dec.addEventListener('click', function () { bump(-1); });
-        inc.addEventListener('click', function () { bump(1); });
-        input.addEventListener('change', function () {
-            input.value = fmt(clamp(parseFloat(input.value || input.min || '1')));
-            form.submit();
-        });
-    });
-})();
-</script>
-
 <?php do_action('cart.after_items', [
     'conn' => $conn,
     'cart_items' => $items,

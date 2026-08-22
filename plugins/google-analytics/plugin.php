@@ -101,22 +101,16 @@ function google_analytics_render_base(array $context): void
         return;
     }
     $measurementId = google_analytics_measurement_id();
-    $nonce = (string) ($GLOBALS['cspNonce'] ?? '');
     ?>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=<?php echo e(rawurlencode($measurementId)); ?>"></script>
-    <script nonce="<?php echo e($nonce); ?>">
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', <?php echo json_encode($measurementId); ?>, <?php echo json_encode([
-        'debug_mode' => google_analytics_setting_enabled('debug_mode', 0),
-        'send_page_view' => false,
-    ], JSON_UNESCAPED_SLASHES); ?>);
-    window.amberGoogleAnalyticsTrack = function (eventName, payload) {
-        if (typeof gtag !== 'function') return;
-        gtag('event', eventName, payload || {});
-    };
-    </script>
+    <span
+        hidden
+        data-ui-google-analytics
+        data-measurement-id="<?php echo e($measurementId); ?>"
+        data-google-config="<?php echo ui_data_json([
+            'debug_mode' => google_analytics_setting_enabled('debug_mode', 0),
+            'send_page_view' => false,
+        ]); ?>"
+    ></span>
     <?php
 }
 
@@ -442,25 +436,5 @@ function google_analytics_render_page_events(array $context): void
         return;
     }
 
-    $nonce = (string) ($GLOBALS['cspNonce'] ?? '');
-    ?>
-    <script nonce="<?php echo e($nonce); ?>">
-    (function () {
-        var events = <?php echo json_encode($events, JSON_UNESCAPED_SLASHES); ?>;
-        events.forEach(function (event) {
-            if (event.name === 'page_view') {
-                event.payload = event.payload || {};
-                event.payload.page_title = event.payload.page_title || document.title || '';
-            }
-            if (window.amberGoogleAnalyticsTrack) {
-                window.amberGoogleAnalyticsTrack(event.name, event.payload || {});
-                return;
-            }
-            if (typeof gtag === 'function') {
-                gtag('event', event.name, event.payload || {});
-            }
-        });
-    })();
-    </script>
-    <?php
+    ?><span hidden data-ui-google-events="<?php echo ui_data_json($events); ?>"></span><?php
 }

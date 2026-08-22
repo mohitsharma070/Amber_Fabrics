@@ -89,60 +89,60 @@ include __DIR__ . '/../includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Create an Account</h1>
-        <p class="mb-0">Register to browse our catalog and place orders.</p>
+        <p class="u-mb-0">Register to browse our catalog and place orders.</p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-7 col-lg-5">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-justify-center">
+            <div class="l-col-md-seven l-col-lg-five">
                 <?php if ($errors): ?>
-                    <div class="alert alert-danger"><?php echo e((string) ($errors['_register'] ?? 'Please fix the errors below.')); ?></div>
+                    <div class="ui-alert ui-alert--error"><?php echo e((string) ($errors['_register'] ?? 'Please fix the errors below.')); ?></div>
                 <?php endif; ?>
 
-                <div class="surface-panel p-4">
+                <div class="surface-panel u-p-4">
                     <form method="POST" action="/customer/register.php" novalidate>
                         <?php echo csrf_field(); ?>
 
-                        <div class="mb-3">
-                            <label class="form-label">Full Name *</label>
-                            <input type="text" name="name" class="<?php echo form_class($errors, 'name'); ?>" value="<?php echo e($old['name']); ?>" required>
-                            <?php echo form_error($errors, 'name'); ?>
+                        <div class="u-mb-3">
+                            <label class="ui-label">Full Name *</label>
+                            <input type="text" name="name" class="<?php echo form_class($errors, 'name', 'ui-input'); ?>" value="<?php echo e($old['name']); ?>" required>
+                            <?php echo form_error($errors, 'name', 'ui-field-error'); ?>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Email Address *</label>
-                            <input type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" value="<?php echo e($old['email']); ?>" required>
-                            <?php echo form_error($errors, 'email'); ?>
+                        <div class="u-mb-3">
+                            <label class="ui-label">Email Address *</label>
+                            <input type="email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" value="<?php echo e($old['email']); ?>" required>
+                            <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Phone Number</label>
-                            <input type="tel" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" value="<?php echo e($old['phone']); ?>">
-                            <?php echo form_error($errors, 'phone'); ?>
+                        <div class="u-mb-3">
+                            <label class="ui-label">Phone Number</label>
+                            <input type="tel" name="phone" class="<?php echo form_class($errors, 'phone', 'ui-input'); ?>" value="<?php echo e($old['phone']); ?>">
+                            <?php echo form_error($errors, 'phone', 'ui-field-error'); ?>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Country</label>
-                            <input type="text" name="country" class="<?php echo form_class($errors, 'country'); ?>" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
-                            <?php echo form_error($errors, 'country'); ?>
+                        <div class="u-mb-3">
+                            <label class="ui-label">Country</label>
+                            <input type="text" name="country" class="<?php echo form_class($errors, 'country', 'ui-input'); ?>" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
+                            <?php echo form_error($errors, 'country', 'ui-field-error'); ?>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Password * <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
-                            <input type="password" name="password" class="<?php echo form_class($errors, 'password'); ?>" required>
-                            <?php echo form_error($errors, 'password'); ?>
+                        <div class="u-mb-3">
+                            <label class="ui-label">Password * <small class="u-text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
+                            <input type="password" name="password" class="<?php echo form_class($errors, 'password', 'ui-input'); ?>" required>
+                            <?php echo form_error($errors, 'password', 'ui-field-error'); ?>
                         </div>
-                        <div class="mb-4">
-                            <label class="form-label">Confirm Password *</label>
-                            <input type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password'); ?>" required>
-                            <?php echo form_error($errors, 'confirm_password'); ?>
+                        <div class="u-mb-4">
+                            <label class="ui-label">Confirm Password *</label>
+                            <input type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password', 'ui-input'); ?>" required>
+                            <?php echo form_error($errors, 'confirm_password', 'ui-field-error'); ?>
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-100">Create Account</button>
+                        <button type="submit" class="ui-button ui-button--primary u-w-full">Create Account</button>
                     </form>
                 </div>
 
-                <p class="text-center mt-3 text-muted">
+                <p class="u-text-center u-mt-3 u-text-muted">
                     Already have an account? <a href="/customer/login">Log in</a>
                 </p>
             </div>

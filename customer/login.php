@@ -68,18 +68,18 @@ include __DIR__ . '/../includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Log In</h1>
-        <p class="mb-0">Access your account to view orders and shop fabrics.</p>
+        <p class="u-mb-0">Access your account to view orders and shop fabrics.</p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-6 col-lg-4">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-justify-center">
+            <div class="l-col-md-half l-col-lg-third">
                 <?php if (!empty($errors['_login'])): ?>
-                    <div class="alert alert-danger" role="alert">
+                    <div class="ui-alert ui-alert--error" role="alert">
                         <?php echo e($errors['_login']); ?>
                         <?php if (!empty($errors['_login_raw'])): ?>
                             <br><small><?php echo $errors['_login_raw']; ?></small>
@@ -87,28 +87,28 @@ include __DIR__ . '/../includes/header.php';
                     </div>
                 <?php endif; ?>
 
-                <div class="surface-panel p-4">
+                <div class="surface-panel u-p-4">
                     <form method="POST" action="/customer/login.php<?php echo $returnTo ? '?return=' . urlencode($returnTo) : ''; ?>" novalidate>
                         <?php echo csrf_field(); ?>
 
-                        <div class="mb-3">
-                            <label class="form-label" for="customer-email">Email Address</label>
-                            <input id="customer-email" type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" value="<?php echo e($oldEmail); ?>" autocomplete="email" required autofocus>
-                            <?php echo form_error($errors, 'email'); ?>
+                        <div class="u-mb-3">
+                            <label class="ui-label" for="customer-email">Email Address</label>
+                            <input id="customer-email" type="email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" value="<?php echo e($oldEmail); ?>" autocomplete="email" required autofocus>
+                            <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                         </div>
-                        <div class="mb-4">
-                            <label class="form-label" for="customer-password">Password</label>
-                            <input id="customer-password" type="password" name="password" class="form-control" autocomplete="current-password" required>
-                            <div class="mt-2 text-end">
-                                <a href="/customer/forgot-password" class="small">Forgot password?</a>
+                        <div class="u-mb-4">
+                            <label class="ui-label" for="customer-password">Password</label>
+                            <input id="customer-password" type="password" name="password" class="ui-input" autocomplete="current-password" required>
+                            <div class="u-mt-2 u-text-end">
+                                <a href="/customer/forgot-password" class="u-text-small">Forgot password?</a>
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-100">Log In</button>
+                        <button type="submit" class="ui-button ui-button--primary u-w-full">Log In</button>
                     </form>
                 </div>
 
-                <p class="text-center mt-3 text-muted">
+                <p class="u-text-center u-mt-3 u-text-muted">
                     Don't have an account? <a href="/customer/register">Register</a>
                 </p>
             </div>

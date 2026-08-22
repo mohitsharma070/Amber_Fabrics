@@ -169,8 +169,8 @@ function product_card_render(array $card): string
 
     ob_start();
     ?>
-    <div class="animate-in">
-        <article class="card h-100 product-click-card" data-href="<?php echo e($productUrl); ?>">
+    <div class="animate-in" data-slider-item>
+        <article class="ui-card u-h-full product-click-card" data-product-link="<?php echo e($productUrl); ?>">
             <div class="fabric-thumb-wrap">
                 <a href="<?php echo e($productUrl); ?>" class="fabric-thumb-link" aria-label="View <?php echo e($displayName); ?>">
                     <?php if ($cardImage !== ''): ?>
@@ -198,11 +198,11 @@ function product_card_render(array $card): string
                     }
                     $productCardBadgeClass = preg_replace('/[^A-Za-z0-9 _:-]/', '', (string) ($productCardBadge['class'] ?? '')) ?? '';
                     ?>
-                    <div class="<?php echo e(trim('badge bg-secondary product-card-plugin-badge ' . $productCardBadgeClass)); ?>"><?php echo e($productCardBadgeLabel); ?></div>
+                    <div class="<?php echo e(trim('ui-badge ui-badge--neutral product-card-plugin-badge ' . $productCardBadgeClass)); ?>"><?php echo e($productCardBadgeLabel); ?></div>
                 <?php endforeach; ?>
             </div>
 
-            <div class="card-body d-flex flex-column">
+            <div class="ui-card__body u-flex u-flex-column">
                 <?php if (!empty($card['category'])): ?>
                     <p class="fabric-card-category"><?php echo e((string) $card['category']); ?></p>
                 <?php endif; ?>
@@ -210,40 +210,40 @@ function product_card_render(array $card): string
                     <p class="fabric-card-title"><?php echo e($displayName); ?></p>
                 </a>
 
-                <div class="fabric-price mb-2">
+                <div class="fabric-price u-mb-2">
                     <?php if ($showStrikePrice): ?>
-                        <span class="price-inr fw-bold"><?php echo e(money($unitPrice)); ?></span>
-                        <span class="text-muted small ms-1"><del><?php echo e(money($regularPrice)); ?></del></span>
+                        <span class="price-inr u-font-bold"><?php echo e(money($unitPrice)); ?></span>
+                        <span class="u-text-muted u-text-small u-ms-1"><del><?php echo e(money($regularPrice)); ?></del></span>
                     <?php elseif ($unitPrice > 0): ?>
                         <span class="price-inr"><?php echo e(money($unitPrice)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></span>
                     <?php else: ?>
-                        <span class="text-muted small">Price on request</span>
+                        <span class="u-text-muted u-text-small">Price on request</span>
                     <?php endif; ?>
                 </div>
                 <p class="fabric-trust-note">Fast dispatch | Quality checked</p>
 
-                <div class="d-flex gap-1 mt-auto">
+                <div class="u-flex u-gap-1 u-mt-auto">
                     <?php if ($ctaMode === 'view_options'): ?>
-                        <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
+                        <a href="<?php echo e($productUrl); ?>" class="ui-button ui-button--primary ui-button--small u-grow">View Options</a>
                     <?php elseif ($ctaMode === 'add_variant'): ?>
-                        <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
+                        <form method="POST" action="/add-to-cart.php" class="u-grow" data-ajax-cart data-ui-async="true">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="product_id" value="<?php echo (int) ($card['product_id'] ?? 0); ?>">
                             <input type="hidden" name="variant_id" value="<?php echo $variantId; ?>">
                             <input type="hidden" name="selected_color" value="<?php echo e($variantColor); ?>">
                             <input type="hidden" name="selected_size" value="<?php echo e($variantSizeLabel); ?>">
                             <input type="hidden" name="quantity" value="1">
-                            <button type="submit" class="btn btn-primary btn-sm w-100">Add to Cart</button>
+                            <button type="submit" class="ui-button ui-button--primary ui-button--small u-w-full">Add to Cart</button>
                         </form>
                     <?php elseif ($ctaMode === 'add_simple'): ?>
-                        <form method="POST" action="/add-to-cart.php" class="flex-grow-1">
+                        <form method="POST" action="/add-to-cart.php" class="u-grow" data-ajax-cart data-ui-async="true">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="product_id" value="<?php echo (int) ($card['product_id'] ?? 0); ?>">
                             <input type="hidden" name="quantity" value="1">
-                            <button type="submit" class="btn btn-primary btn-sm w-100">Add to Cart</button>
+                            <button type="submit" class="ui-button ui-button--primary ui-button--small u-w-full">Add to Cart</button>
                         </form>
                     <?php else: ?>
-                        <button type="button" class="btn btn-secondary btn-sm flex-grow-1" disabled>Unavailable</button>
+                        <button type="button" class="ui-button ui-button--secondary ui-button--small u-grow" disabled>Unavailable</button>
                     <?php endif; ?>
                 </div>
             </div>

@@ -16,15 +16,15 @@ include __DIR__ . '/includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Refund Return Policy</h1>
-        <p class="mb-0"><?php echo e($heroSubtitle); ?></p>
+        <p class="u-mb-0"><?php echo e($heroSubtitle); ?></p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container surface-panel">
-        <div class="alert alert-info">Refund return requests are accepted for eligible cases within <?php echo return_request_window_days(); ?> calendar days of confirmed delivery. Product exchanges are not offered.</div>
+    <div class="l-container surface-panel">
+        <div class="ui-alert ui-alert--info">Refund return requests are accepted for eligible cases within <?php echo return_request_window_days(); ?> calendar days of confirmed delivery. Product exchanges are not offered.</div>
         <?php echo $policyBody; ?>
     </div>
 </section>

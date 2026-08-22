@@ -379,12 +379,23 @@
   }
 
   function onSubmit(event) {
+    if (event.defaultPrevented) {
+      return;
+    }
     var form = event.target;
     if (!(form instanceof HTMLFormElement)) {
       return;
     }
+    if (form.hasAttribute("data-ui-async")) {
+      return;
+    }
     var submitter = event.submitter || select("button[type='submit']:focus, input[type='submit']:focus", form);
     if (submittingForms.has(form)) {
+      event.preventDefault();
+      return;
+    }
+    var validationEvent = new CustomEvent("amber:validate", { bubbles: false, cancelable: true, detail: { submitter: submitter } });
+    if (!form.dispatchEvent(validationEvent)) {
       event.preventDefault();
       return;
     }
@@ -586,22 +597,84 @@
     }
   }
 
+  function loadExternalScript(source, marker) {
+    if (select("script[data-ui-provider='" + marker + "']")) {
+      return;
+    }
+    var script = document.createElement("script");
+    script.async = true;
+    script.src = source;
+    script.setAttribute("data-ui-provider", marker);
+    document.head.appendChild(script);
+  }
+
   function initializeAnalytics() {
-    selectAll("[data-ui-analytics]").forEach(function (node) {
-      if (node.getAttribute("data-ui-ready") === "true") {
-        return;
+    var google = select("[data-ui-google-analytics]");
+    if (google && google.getAttribute("data-ui-ready") !== "true") {
+      google.setAttribute("data-ui-ready", "true");
+      var measurementId = google.getAttribute("data-measurement-id") || "";
+      var googleConfig = parseData(google, "google-config", {});
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
+      window.amberGoogleAnalyticsTrack = function (eventName, payload) {
+        window.gtag("event", eventName, payload || {});
+      };
+      if (measurementId) {
+        window.gtag("js", new Date());
+        window.gtag("config", measurementId, googleConfig || {});
+        loadExternalScript("https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(measurementId), "google-analytics");
       }
+    }
+
+    selectAll("[data-ui-google-events]").forEach(function (node) {
+      if (node.getAttribute("data-ui-ready") === "true") { return; }
       node.setAttribute("data-ui-ready", "true");
-      var config = parseData(node, "ui-analytics", null);
-      if (!config || typeof config !== "object") {
-        return;
+      var events = parseData(node, "ui-google-events", []);
+      if (!Array.isArray(events)) { return; }
+      events.forEach(function (event) {
+        var payload = event && event.payload && typeof event.payload === "object" ? event.payload : {};
+        if (event && event.name === "page_view" && !payload.page_title) { payload.page_title = document.title; }
+        if (event && event.name && typeof window.amberGoogleAnalyticsTrack === "function") {
+          window.amberGoogleAnalyticsTrack(event.name, payload);
+        }
+      });
+    });
+
+    var meta = select("[data-ui-meta-pixel]");
+    if (meta && meta.getAttribute("data-ui-ready") !== "true") {
+      meta.setAttribute("data-ui-ready", "true");
+      var pixelId = meta.getAttribute("data-pixel-id") || "";
+      if (typeof window.fbq !== "function") {
+        var queue = function () {
+          if (queue.callMethod) { queue.callMethod.apply(queue, arguments); }
+          else { queue.queue.push(arguments); }
+        };
+        queue.queue = [];
+        queue.loaded = false;
+        queue.version = "2.0";
+        window.fbq = queue;
+        window._fbq = queue;
       }
-      if (config.provider === "google" && typeof window.gtag === "function") {
-        window.gtag("event", config.event, config.parameters || {});
+      window.amberMetaPixelTrack = function (eventName, payload, eventId) {
+        window.fbq("track", eventName, payload || {}, eventId ? { eventID: eventId } : {});
+      };
+      if (pixelId) {
+        window.fbq("init", pixelId);
+        window.fbq("track", "PageView");
+        loadExternalScript("https://connect.facebook.net/en_US/fbevents.js", "meta-pixel");
       }
-      if (config.provider === "meta" && typeof window.fbq === "function") {
-        window.fbq("track", config.event, config.parameters || {});
-      }
+    }
+
+    selectAll("[data-ui-meta-events]").forEach(function (node) {
+      if (node.getAttribute("data-ui-ready") === "true") { return; }
+      node.setAttribute("data-ui-ready", "true");
+      var events = parseData(node, "ui-meta-events", []);
+      if (!Array.isArray(events)) { return; }
+      events.forEach(function (event) {
+        if (event && event.name && typeof window.amberMetaPixelTrack === "function") {
+          window.amberMetaPixelTrack(event.name, event.payload || {}, event.event_id || "");
+        }
+      });
     });
   }
 

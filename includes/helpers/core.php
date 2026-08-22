@@ -303,6 +303,17 @@ function ui_icon(string $name, ?string $label = null, string $className = ''): s
         . '</svg>';
 }
 
+function ui_tone(string $tone): string
+{
+    return match (strtolower(trim($tone))) {
+        'success' => 'success',
+        'warning' => 'warning',
+        'danger', 'error' => 'error',
+        'primary', 'info' => 'info',
+        default => 'neutral',
+    };
+}
+
 function site_name(): string
 {
     return SiteContext::name();

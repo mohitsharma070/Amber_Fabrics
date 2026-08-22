@@ -265,21 +265,42 @@ $metaTitle = SiteContext::title('Razorpay Payment');
 include __DIR__ . '/../includes/header.php';
 ?>
 
-<section class="page-hero"><div class="container"><h1>Complete Payment</h1></div></section>
+<section class="page-hero"><div class="l-container"><h1>Complete Payment</h1></div></section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-6">
-                <div class="surface-panel p-4 text-center">
-                    <p class="mb-1 text-muted">Order</p>
-                    <h5 class="mb-3"><?php echo e((string) $order['order_number']); ?></h5>
-                    <p class="fs-4 fw-bold mb-4"><?php echo e(money((float) $order['total_amount'])); ?></p>
-                    <button id="rzpPayBtn" class="btn btn-primary btn-lg w-100">Pay with Razorpay</button>
-                    <p id="rzpPayHint" class="text-muted small mt-3">Your order will be marked paid only after secure verification.</p>
-                    <div id="rzpPayLoading" class="d-none mt-3">
-                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status" aria-hidden="true"></div>
-                        <span class="small text-muted">Verifying payment, please wait...</span>
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-justify-center">
+            <div class="l-col-md-half">
+                <div
+                    class="surface-panel u-p-4 u-text-center"
+                    data-ui-razorpay
+                    data-payment-config="<?php echo ui_data_json([
+                        'key' => $keyId,
+                        'amount' => $amountPaise,
+                        'currency' => 'INR',
+                        'name' => SiteContext::name(),
+                        'description' => 'Order #' . (string) $order['order_number'],
+                        'orderId' => $rzpOrderId,
+                        'prefill' => [
+                            'name' => (string) ($order['customer_name'] ?? ''),
+                            'email' => (string) ($order['customer_email'] ?? ''),
+                            'contact' => (string) ($order['customer_phone'] ?? ''),
+                        ],
+                        'preferredMethod' => $preferredOnlineMethod,
+                        'csrfToken' => csrf_token(),
+                        'verifyUrl' => '/payment/razorpay-verify.php',
+                        'failureUrl' => '/payment/razorpay-failure.php',
+                        'themeColor' => '#0f766e',
+                    ]); ?>"
+                >
+                    <p class="u-mb-1 u-text-muted">Order</p>
+                    <h5 class="u-mb-3"><?php echo e((string) $order['order_number']); ?></h5>
+                    <p class="u-text-large u-font-bold u-mb-4"><?php echo e(money((float) $order['total_amount'])); ?></p>
+                    <button id="rzpPayBtn" class="ui-button ui-button--primary ui-button--large u-w-full">Pay with Razorpay</button>
+                    <p id="rzpPayHint" class="u-text-muted u-text-small u-mt-3">Your order will be marked paid only after secure verification.</p>
+                    <div id="rzpPayLoading" class="u-hidden u-mt-3">
+                        <div class="ui-spinner ui-spinner--small u-text-primary u-me-2" role="status" aria-hidden="true"></div>
+                        <span class="u-text-small u-text-muted">Verifying payment, please wait...</span>
                     </div>
                 </div>
             </div>
@@ -287,127 +308,6 @@ include __DIR__ . '/../includes/header.php';
     </div>
 </section>
 
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-<script nonce="<?php echo $cspNonce; ?>">
-var isSubmitting = false;
-
-function setPayLoadingState(on) {
-    var btn = document.getElementById('rzpPayBtn');
-    var hint = document.getElementById('rzpPayHint');
-    var loading = document.getElementById('rzpPayLoading');
-    if (!btn || !hint || !loading) {
-        return;
-    }
-    btn.disabled = !!on;
-    btn.textContent = on ? 'Processing Payment...' : 'Pay with Razorpay';
-    hint.classList.toggle('d-none', !!on);
-    loading.classList.toggle('d-none', !on);
-}
-
-function postTo(url, payload) {
-    if (isSubmitting) {
-        return;
-    }
-    isSubmitting = true;
-    setPayLoadingState(true);
-
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-
-    Object.keys(payload).forEach(function (key) {
-        var input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = payload[key] == null ? '' : String(payload[key]);
-        form.appendChild(input);
-    });
-
-    var csrf = document.createElement('input');
-    csrf.type = 'hidden';
-    csrf.name = 'csrf_token';
-    csrf.value = <?php echo json_encode(csrf_token()); ?>;
-    form.appendChild(csrf);
-
-    document.body.appendChild(form);
-    form.submit();
-}
-
-var options = {
-    key: <?php echo json_encode($keyId); ?>,
-    amount: <?php echo $amountPaise; ?>,
-    currency: 'INR',
-    name: <?php echo json_encode(SiteContext::name()); ?>,
-    description: 'Order #<?php echo e((string) $order['order_number']); ?>',
-    order_id: <?php echo json_encode($rzpOrderId); ?>,
-    prefill: {
-        name: <?php echo json_encode((string) ($order['customer_name'] ?? '')); ?>,
-        email: <?php echo json_encode((string) ($order['customer_email'] ?? '')); ?>,
-        contact: <?php echo json_encode((string) ($order['customer_phone'] ?? '')); ?>
-    },
-    method: (function () {
-        var pref = <?php echo json_encode($preferredOnlineMethod); ?>;
-        if (pref === 'upi') {
-            return { upi: true, card: false, netbanking: false, wallet: false, emi: false, paylater: false };
-        }
-        if (pref === 'card') {
-            return { upi: false, card: true, netbanking: false, wallet: false, emi: false, paylater: false };
-        }
-        if (pref === 'emi') {
-            return { upi: false, card: false, netbanking: false, wallet: false, emi: true, paylater: false };
-        }
-        return undefined;
-    })(),
-    theme: { color: '#0f766e' },
-    handler: function (response) {
-        postTo('/payment/razorpay-verify.php', {
-            razorpay_payment_id: response.razorpay_payment_id || '',
-            razorpay_order_id: response.razorpay_order_id || '',
-            razorpay_signature: response.razorpay_signature || ''
-        });
-    },
-    modal: {
-        ondismiss: function () {
-            if (isSubmitting) {
-                return;
-            }
-            postTo('/payment/razorpay-failure.php', {
-                event_type: 'cancelled',
-                razorpay_order_id: <?php echo json_encode($rzpOrderId); ?>
-            });
-        }
-    }
-};
-
-function openRazorpayCheckout() {
-    if (isSubmitting) {
-        return;
-    }
-    var rzp = new Razorpay(options);
-    rzp.on('payment.failed', function (response) {
-        if (isSubmitting) {
-            return;
-        }
-        var err = response && response.error ? response.error : {};
-        postTo('/payment/razorpay-failure.php', {
-            event_type: 'failed',
-            razorpay_payment_id: err.metadata && err.metadata.payment_id ? err.metadata.payment_id : '',
-            razorpay_order_id: err.metadata && err.metadata.order_id ? err.metadata.order_id : <?php echo json_encode($rzpOrderId); ?>,
-            error_code: err.code || '',
-            error_description: err.description || ''
-        });
-    });
-    rzp.open();
-}
-
-document.getElementById('rzpPayBtn').addEventListener('click', function () {
-    openRazorpayCheckout();
-});
-
-window.addEventListener('load', function () {
-    // Auto-open for smoother flow after redirect from checkout.
-    setTimeout(openRazorpayCheckout, 250);
-});
-</script>
+<script src="https://checkout.razorpay.com/v1/checkout.js" defer data-razorpay-sdk></script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

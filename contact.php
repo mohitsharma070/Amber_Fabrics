@@ -58,47 +58,47 @@ include __DIR__ . '/includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
-        <h1 class="mb-2">International / Bulk Inquiry</h1>
+    <div class="l-container">
+        <h1 class="u-mb-2">International / Bulk Inquiry</h1>
         <p>For international buying and bulk textile requirements, share your details and our team will respond.</p>
     </div>
 </section>
 
-<section class="section-block pt-0">
-    <div class="container">
-        <div class="row g-4 justify-content-center">
-            <div class="col-lg-6 animate-in">
+<section class="section-block u-pt-0">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-gap-4 u-justify-center">
+            <div class="l-col-lg-half animate-in">
                 <div class="surface-panel">
                     <form method="POST" novalidate>
                         <?php echo csrf_field(); ?>
-                        <div class="row g-3">
-                            <div class="col-sm-6">
-                                <label class="form-label">Name *</label>
-                                <input class="<?php echo form_class($errors, 'name'); ?>" required name="name" value="<?php echo e($prefill['name']); ?>" placeholder="Your full name">
-                                <?php echo form_error($errors, 'name'); ?>
+                        <div class="l-grid l-grid--12 u-gap-3">
+                            <div class="l-col-sm-half">
+                                <label class="ui-label">Name *</label>
+                                <input class="<?php echo form_class($errors, 'name', 'ui-input'); ?>" required name="name" value="<?php echo e($prefill['name']); ?>" placeholder="Your full name">
+                                <?php echo form_error($errors, 'name', 'ui-field-error'); ?>
                             </div>
-                            <div class="col-sm-6">
-                                <label class="form-label">Email *</label>
-                                <input class="<?php echo form_class($errors, 'email'); ?>" required type="email" name="email" value="<?php echo e($prefill['email']); ?>" placeholder="name@company.com">
-                                <?php echo form_error($errors, 'email'); ?>
+                            <div class="l-col-sm-half">
+                                <label class="ui-label">Email *</label>
+                                <input class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" required type="email" name="email" value="<?php echo e($prefill['email']); ?>" placeholder="name@company.com">
+                                <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                             </div>
-                            <div class="col-sm-6">
-                                <label class="form-label">Country</label>
-                                <input class="<?php echo form_class($errors, 'country'); ?>" name="country" value="<?php echo e($prefill['country']); ?>" placeholder="Country">
-                                <?php echo form_error($errors, 'country'); ?>
+                            <div class="l-col-sm-half">
+                                <label class="ui-label">Country</label>
+                                <input class="<?php echo form_class($errors, 'country', 'ui-input'); ?>" name="country" value="<?php echo e($prefill['country']); ?>" placeholder="Country">
+                                <?php echo form_error($errors, 'country', 'ui-field-error'); ?>
                             </div>
-                            <div class="col-sm-6">
-                                <label class="form-label">Phone</label>
-                                <input class="<?php echo form_class($errors, 'phone'); ?>" name="phone" type="tel" value="<?php echo e($prefill['phone']); ?>" placeholder="+91 98765 43210">
-                                <?php echo form_error($errors, 'phone'); ?>
+                            <div class="l-col-sm-half">
+                                <label class="ui-label">Phone</label>
+                                <input class="<?php echo form_class($errors, 'phone', 'ui-input'); ?>" name="phone" type="tel" value="<?php echo e($prefill['phone']); ?>" placeholder="+91 98765 43210">
+                                <?php echo form_error($errors, 'phone', 'ui-field-error'); ?>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Message</label>
-                                <textarea class="<?php echo form_class($errors, 'message'); ?>" name="message" rows="5" placeholder="How can we help you?"><?php echo e($prefill['message']); ?></textarea>
-                                <?php echo form_error($errors, 'message'); ?>
+                            <div class="l-col-full">
+                                <label class="ui-label">Message</label>
+                                <textarea class="<?php echo form_class($errors, 'message', 'ui-input'); ?>" name="message" rows="5" placeholder="How can we help you?"><?php echo e($prefill['message']); ?></textarea>
+                                <?php echo form_error($errors, 'message', 'ui-field-error'); ?>
                             </div>
-                            <div class="col-12">
-                                <button name="submit" class="btn btn-primary w-100">Submit Inquiry</button>
+                            <div class="l-col-full">
+                                <button name="submit" class="ui-button ui-button--primary u-w-full">Submit Inquiry</button>
                             </div>
                         </div>
                     </form>

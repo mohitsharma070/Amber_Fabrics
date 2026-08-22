@@ -58,46 +58,46 @@ include __DIR__ . '/../includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Resend Verification Email</h1>
-        <p class="mb-0">Enter the email address you registered with and we'll send a new verification link.</p>
+        <p class="u-mb-0">Enter the email address you registered with and we'll send a new verification link.</p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-7 col-lg-5">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-justify-center">
+            <div class="l-col-md-seven l-col-lg-five">
 
                 <?php if ($sent): ?>
-                    <div class="alert alert-success">
+                    <div class="ui-alert ui-alert--success">
                         If that email address has an unverified account, a new verification link has been sent.
                         Please check your inbox (and spam folder).
                     </div>
-                    <p class="text-center"><a href="/customer/login" class="app-back-link">&larr; Back to Login</a></p>
+                    <p class="u-text-center"><a href="/customer/login" class="app-back-link">&larr; Back to Login</a></p>
                 <?php else: ?>
                     <?php if (!empty($errors['_rate_limit'])): ?>
-                        <div class="alert alert-danger"><?php echo e($errors['_rate_limit']); ?></div>
+                        <div class="ui-alert ui-alert--error"><?php echo e($errors['_rate_limit']); ?></div>
                     <?php endif; ?>
 
-                    <div class="surface-panel p-4">
+                    <div class="surface-panel u-p-4">
                         <form method="POST" action="/customer/resend-verification.php" novalidate>
                             <?php echo csrf_field(); ?>
 
-                            <div class="mb-3">
-                                <label class="form-label">Email Address *</label>
+                            <div class="u-mb-3">
+                                <label class="ui-label">Email Address *</label>
                                 <input type="email" name="email"
-                                    class="<?php echo form_class($errors, 'email'); ?>"
+                                    class="<?php echo form_class($errors, 'email', 'ui-input'); ?>"
                                     value="<?php echo e($_POST['email'] ?? ''); ?>"
                                     required autofocus>
-                                <?php echo form_error($errors, 'email'); ?>
+                                <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                             </div>
 
-                            <button type="submit" class="btn btn-primary w-100">Send Verification Email</button>
+                            <button type="submit" class="ui-button ui-button--primary u-w-full">Send Verification Email</button>
                         </form>
                     </div>
 
-                    <p class="text-center mt-3 text-muted">
+                    <p class="u-text-center u-mt-3 u-text-muted">
                         Already verified? <a href="/customer/login">Log in</a>
                     </p>
                 <?php endif; ?>

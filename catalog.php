@@ -321,17 +321,17 @@ function catalog_query(array $params): string {
 ?>
 
 <section class="page-hero">
-    <div class="container">
-        <h1 class="mb-2">Shop Collection</h1>
-        <p class="mb-1">Discover authentic Indian textiles curated for everyday elegance.</p>
+    <div class="l-container">
+        <h1 class="u-mb-2">Shop Collection</h1>
+        <p class="u-mb-1">Discover authentic Indian textiles curated for everyday elegance.</p>
     </div>
 </section>
 
-<section class="section-block pt-0">
-    <div class="container">
-        <div class="surface-panel catalog-utility-row mb-3">
+<section class="section-block u-pt-0">
+    <div class="l-container">
+        <div class="surface-panel catalog-utility-row u-mb-3">
             <div class="catalog-utility-main">
-                <p class="catalog-results-count mb-0" aria-live="polite">Showing <?php echo count($rows); ?> of <?php echo $total; ?> products</p>
+                <p class="catalog-results-count u-mb-0" aria-live="polite">Showing <?php echo count($rows); ?> of <?php echo $total; ?> products</p>
                 <?php if (!empty($activeFilters)): ?>
                     <div class="catalog-active-filters" aria-label="Active filters">
                         <?php foreach ($activeFilters as $chip): ?>
@@ -356,20 +356,20 @@ function catalog_query(array $params): string {
                 <input type="hidden" name="sort" value="<?php echo e($sort); ?>">
                 <input type="hidden" name="per_page" value="<?php echo $perPage; ?>">
                 <input type="hidden" name="page" value="1">
-                <input class="form-control" type="search" name="q" value="<?php echo e($search); ?>" placeholder="Search products..." aria-label="Search products">
-                <button class="btn btn-primary" type="submit">Search</button>
+                <input class="ui-input" type="search" name="q" value="<?php echo e($search); ?>" placeholder="Search products..." aria-label="Search products">
+                <button class="ui-button ui-button--primary" type="submit">Search</button>
             </form>
         </div>
 
         <div class="catalog-layout">
             <aside class="catalog-filters">
                 <div class="surface-panel catalog-filter-panel">
-                    <h2 class="h5 mb-3">Filters</h2>
-                    <form class="row g-2" method="GET" action="/catalog">
+                    <h2 class="h5 u-mb-3">Filters</h2>
+                    <form class="l-grid l-grid--12 u-gap-2" method="GET" action="/catalog">
                             <input type="hidden" name="q" value="<?php echo e($search); ?>">
-                            <div class="col-12">
-                                <label class="form-label">Category</label>
-                                <select class="form-select" name="category">
+                            <div class="l-col-full">
+                                <label class="ui-label">Category</label>
+                                <select class="ui-select" name="category">
                                     <option value="">All Categories</option>
                                     <?php foreach ($categories as $cat): ?>
                                         <option value="<?php echo e($cat['slug']); ?>" <?php echo $category === $cat['slug'] ? 'selected' : ''; ?>>
@@ -378,36 +378,36 @@ function catalog_query(array $params): string {
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Price Range (Rs)</label>
-                                <div class="row g-2">
-                                    <div class="col-6"><input type="number" min="0" name="min_price" class="form-control" value="<?php echo (int) $minPrice; ?>" placeholder="Min"></div>
-                                    <div class="col-6"><input type="number" min="0" name="max_price" class="form-control" value="<?php echo (int) $maxPrice; ?>" placeholder="Max"></div>
+                            <div class="l-col-full">
+                                <label class="ui-label">Price Range (Rs)</label>
+                                <div class="l-grid l-grid--12 u-gap-2">
+                                    <div class="l-col-half"><input type="number" min="0" name="min_price" class="ui-input" value="<?php echo (int) $minPrice; ?>" placeholder="Min"></div>
+                                    <div class="l-col-half"><input type="number" min="0" name="max_price" class="ui-input" value="<?php echo (int) $maxPrice; ?>" placeholder="Max"></div>
                                 </div>
                             </div>
-                            <div class="col-12 form-check mt-2 ms-1">
-                                <input class="form-check-input" type="checkbox" value="1" id="in_stock_only" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="in_stock_only">In Stock Only</label>
+                            <div class="l-col-full ui-check u-mt-2 u-ms-1">
+                                <input class="ui-check__input" type="checkbox" value="1" id="in_stock_only" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
+                                <label class="ui-check__label" for="in_stock_only">In Stock Only</label>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Material</label>
-                                <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>" placeholder="Cotton, Linen...">
+                            <div class="l-col-full">
+                                <label class="ui-label">Material</label>
+                                <input type="text" class="ui-input" name="material" value="<?php echo e($materialFilter); ?>" placeholder="Cotton, Linen...">
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Color</label>
-                                <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>" placeholder="Indigo, Red...">
+                            <div class="l-col-full">
+                                <label class="ui-label">Color</label>
+                                <input type="text" class="ui-input" name="color" value="<?php echo e($colorFilter); ?>" placeholder="Indigo, Red...">
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Size / Pack</label>
-                                <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>" placeholder="L, Queen, Pack of 2...">
+                            <div class="l-col-full">
+                                <label class="ui-label">Size / Pack</label>
+                                <input type="text" class="ui-input" name="size" value="<?php echo e($sizeFilter); ?>" placeholder="L, Queen, Pack of 2...">
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Dispatch Time</label>
-                                <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>" placeholder="2-3 days, 1 week...">
+                            <div class="l-col-full">
+                                <label class="ui-label">Dispatch Time</label>
+                                <input type="text" class="ui-input" name="dispatch" value="<?php echo e($dispatchFilter); ?>" placeholder="2-3 days, 1 week...">
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Sort</label>
-                                <select class="form-select" name="sort">
+                            <div class="l-col-full">
+                                <label class="ui-label">Sort</label>
+                                <select class="ui-select" name="sort">
                                     <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
                                     <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
                                     <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
@@ -416,19 +416,19 @@ function catalog_query(array $params): string {
                                     <option value="price_desc" <?php echo $sort === 'price_desc' ? 'selected' : ''; ?>>Price High-Low</option>
                                 </select>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Per Page</label>
-                                <select class="form-select" name="per_page">
+                            <div class="l-col-full">
+                                <label class="ui-label">Per Page</label>
+                                <select class="ui-select" name="per_page">
                                     <?php foreach ($perPageOptions as $size): ?>
                                         <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-12">
-                                <button class="btn btn-primary w-100" type="submit">Apply Filters</button>
+                            <div class="l-col-full">
+                                <button class="ui-button ui-button--primary u-w-full" type="submit">Apply Filters</button>
                             </div>
-                            <div class="col-12">
-                                <a href="/catalog" class="btn btn-outline-primary w-100">Reset All</a>
+                            <div class="l-col-full">
+                                <a href="/catalog" class="ui-button ui-button--outline u-w-full">Reset All</a>
                             </div>
                         </form>
                 </div>
@@ -438,8 +438,8 @@ function catalog_query(array $params): string {
 
                 <?php $activeFilterCount = count($activeFilters); ?>
                 <!-- Mobile filter bar (hidden on desktop) -->
-                <div class="d-lg-none mobile-filter-bar mb-3">
-                    <button type="button" class="mobile-filter-btn" data-bs-toggle="offcanvas" data-bs-target="#catalogFiltersDrawer" aria-controls="catalogFiltersDrawer">
+                <div class="u-hide-desktop mobile-filter-bar u-mb-3">
+                    <button type="button" class="mobile-filter-btn" data-ui-drawer-open="catalogFiltersDrawer" aria-controls="catalogFiltersDrawer" aria-expanded="false">
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16"><path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2z"/></svg>
                         Filters
                         <?php if ($activeFilterCount > 0): ?>
@@ -450,7 +450,7 @@ function catalog_query(array $params): string {
 
                 <div class="catalog-products-grid">
                     <?php if (count($rows) === 0): ?>
-                        <div class="surface-panel text-center text-muted">No products found for your current filters.</div>
+                        <div class="surface-panel u-text-center u-text-muted">No products found for your current filters.</div>
                     <?php endif; ?>
 
                     <?php foreach ($rows as $row): ?>
@@ -502,21 +502,21 @@ function catalog_query(array $params): string {
 </section>
 
 <?php if ($debugExplain): ?>
-<section class="section-block pt-0">
-    <div class="container">
+<section class="section-block u-pt-0">
+    <div class="l-container">
         <div class="surface-panel">
-            <h5 class="mb-2">EXPLAIN (Catalog)</h5>
-            <pre class="small mb-0"><?php echo e(json_encode($explainRows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
+            <h5 class="u-mb-2">EXPLAIN (Catalog)</h5>
+            <pre class="u-text-small u-mb-0"><?php echo e(json_encode($explainRows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
         </div>
     </div>
 </section>
 <?php endif; ?>
 
-<?php echo render_pagination($page, $pages, $state, 'page', $total, $perPage); ?>
+<?php echo render_pagination($page, $pages, $state, 'page', $total, $perPage, 'ui'); ?>
 <?php if ($nextCursor !== '' && ($page >= 3 || $keysetMode)): ?>
-<section class="section-block pt-0">
-    <div class="container text-end">
-        <a class="btn btn-outline-primary" href="<?php echo e(catalog_query(array_merge($state, ['cursor' => $nextCursor, 'page' => 1]))); ?>">Next Page (Fast)</a>
+<section class="section-block u-pt-0">
+    <div class="l-container u-text-end">
+        <a class="ui-button ui-button--outline" href="<?php echo e(catalog_query(array_merge($state, ['cursor' => $nextCursor, 'page' => 1]))); ?>">Next Page (Fast)</a>
     </div>
 </section>
 <?php endif; ?>
@@ -535,27 +535,27 @@ function catalog_query(array $params): string {
 ]); ?>
 
 <section class="section-block">
-    <div class="container">
-        <div class="surface-panel text-center">
-            <h5 class="mb-2">Need International Shipping or Bulk Quantities?</h5>
-            <p class="text-muted mb-3">For overseas buyers and large-volume orders, contact us through International Inquiry.</p>
-            <a href="/international-buyers" class="btn btn-outline-primary">International Inquiry</a>
+    <div class="l-container">
+        <div class="surface-panel u-text-center">
+            <h5 class="u-mb-2">Need International Shipping or Bulk Quantities?</h5>
+            <p class="u-text-muted u-mb-3">For overseas buyers and large-volume orders, contact us through International Inquiry.</p>
+            <a href="/international-buyers" class="ui-button ui-button--outline">International Inquiry</a>
         </div>
     </div>
 </section>
 
 <!-- Offcanvas filter drawer (mobile only) -->
-<div class="offcanvas offcanvas-bottom filter-offcanvas d-lg-none" tabindex="-1" id="catalogFiltersDrawer" aria-labelledby="catalogFiltersDrawerLabel">
-    <div class="offcanvas-header">
-        <h5 class="offcanvas-title" id="catalogFiltersDrawerLabel">Filters &amp; Sort</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+<aside class="ui-drawer filter-drawer u-hide-desktop" data-ui-drawer data-ui-edge="right" tabindex="-1" id="catalogFiltersDrawer" aria-labelledby="catalogFiltersDrawerLabel" aria-hidden="true">
+    <div class="ui-drawer__header">
+        <h2 id="catalogFiltersDrawerLabel">Filters &amp; Sort</h2>
+        <button type="button" class="ui-button ui-button--secondary ui-button--icon" data-ui-drawer-close aria-label="Close filters"><?php echo ui_icon('x-lg'); ?></button>
     </div>
-    <div class="offcanvas-body">
-        <form class="row g-3" method="GET" action="/catalog">
+    <div class="ui-drawer__body">
+        <form class="l-grid l-grid--12 u-gap-3" method="GET" action="/catalog">
             <input type="hidden" name="q" value="<?php echo e($search); ?>">
-            <div class="col-12">
-                <label class="form-label fw-semibold">Category</label>
-                <select class="form-select" name="category">
+            <div class="l-col-full">
+                <label class="ui-label u-font-semibold">Category</label>
+                <select class="ui-select" name="category">
                     <option value="">All Categories</option>
                     <?php foreach ($categories as $cat): ?>
                         <option value="<?php echo e($cat['slug']); ?>" <?php echo $category === $cat['slug'] ? 'selected' : ''; ?>>
@@ -564,9 +564,9 @@ function catalog_query(array $params): string {
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Sort</label>
-                <select class="form-select" name="sort">
+            <div class="l-col-half">
+                <label class="ui-label u-font-semibold">Sort</label>
+                <select class="ui-select" name="sort">
                     <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
                     <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
                     <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
@@ -575,64 +575,63 @@ function catalog_query(array $params): string {
                     <option value="price_desc" <?php echo $sort === 'price_desc' ? 'selected' : ''; ?>>Price High-Low</option>
                 </select>
             </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Min Price</label>
-                <input type="number" min="0" name="min_price" class="form-control" value="<?php echo (int) $minPrice; ?>">
+            <div class="l-col-half">
+                <label class="ui-label u-font-semibold">Min Price</label>
+                <input type="number" min="0" name="min_price" class="ui-input" value="<?php echo (int) $minPrice; ?>">
             </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Max Price</label>
-                <input type="number" min="0" name="max_price" class="form-control" value="<?php echo (int) $maxPrice; ?>">
+            <div class="l-col-half">
+                <label class="ui-label u-font-semibold">Max Price</label>
+                <input type="number" min="0" name="max_price" class="ui-input" value="<?php echo (int) $maxPrice; ?>">
             </div>
-            <div class="col-12 form-check ms-1">
-                <input class="form-check-input" type="checkbox" value="1" id="in_stock_only_mobile" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
-                <label class="form-check-label" for="in_stock_only_mobile">In Stock Only</label>
+            <div class="l-col-full ui-check u-ms-1">
+                <input class="ui-check__input" type="checkbox" value="1" id="in_stock_only_mobile" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
+                <label class="ui-check__label" for="in_stock_only_mobile">In Stock Only</label>
             </div>
-            <div class="col-12">
+            <div class="l-col-full">
                 <button
                     type="button"
-                    class="btn btn-outline-secondary w-100 mobile-advanced-toggle"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#mobileAdvancedFilters"
+                    class="ui-button ui-button--secondary u-w-full mobile-advanced-toggle"
+                    data-ui-disclosure="mobileAdvancedFilters"
                     aria-expanded="<?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? 'true' : 'false'; ?>"
                     aria-controls="mobileAdvancedFilters"
                 >
                     Advanced Filters
                 </button>
             </div>
-            <div class="col-12 collapse <?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? 'show' : ''; ?>" id="mobileAdvancedFilters">
-                <div class="row g-3 mobile-advanced-group">
-                    <div class="col-12">
-                        <label class="form-label fw-semibold">Per Page</label>
-                        <select class="form-select" name="per_page">
+            <div class="l-col-full" id="mobileAdvancedFilters" <?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? '' : 'hidden'; ?>>
+                <div class="l-grid l-grid--12 u-gap-3 mobile-advanced-group">
+                    <div class="l-col-full">
+                        <label class="ui-label u-font-semibold">Per Page</label>
+                        <select class="ui-select" name="per_page">
                             <?php foreach ($perPageOptions as $size): ?>
                                 <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?> items</option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Material</label>
-                        <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>">
+                    <div class="l-col-half">
+                        <label class="ui-label u-font-semibold">Material</label>
+                        <input type="text" class="ui-input" name="material" value="<?php echo e($materialFilter); ?>">
                     </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Color</label>
-                        <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>">
+                    <div class="l-col-half">
+                        <label class="ui-label u-font-semibold">Color</label>
+                        <input type="text" class="ui-input" name="color" value="<?php echo e($colorFilter); ?>">
                     </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Size/Pack</label>
-                        <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>">
+                    <div class="l-col-half">
+                        <label class="ui-label u-font-semibold">Size/Pack</label>
+                        <input type="text" class="ui-input" name="size" value="<?php echo e($sizeFilter); ?>">
                     </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Dispatch</label>
-                        <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
+                    <div class="l-col-half">
+                        <label class="ui-label u-font-semibold">Dispatch</label>
+                        <input type="text" class="ui-input" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
                     </div>
                 </div>
             </div>
-            <div class="col-12 d-flex gap-2">
-                <button type="submit" class="btn btn-primary flex-grow-1" data-bs-dismiss="offcanvas">Apply Filters</button>
-                <a href="/catalog" class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Reset</a>
+            <div class="l-col-full u-flex u-gap-2">
+                <button type="submit" class="ui-button ui-button--primary u-grow">Apply Filters</button>
+                <a href="/catalog" class="ui-button ui-button--secondary">Reset</a>
             </div>
         </form>
     </div>
-</div>
+</aside>
 
 <?php include 'includes/footer.php'; ?>

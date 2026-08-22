@@ -109,23 +109,23 @@ include __DIR__ . '/../includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>Order <?php echo e($order['order_number']); ?></h1>
-        <p class="mb-0 text-muted">Placed on <?php echo date('d M Y, H:i', strtotime($order['created_at'])); ?></p>
+        <p class="u-mb-0 u-text-muted">Placed on <?php echo date('d M Y, H:i', strtotime($order['created_at'])); ?></p>
     </div>
 </section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="mb-3">
+    <div class="l-container">
+        <div class="u-mb-3">
             <a href="/customer/orders" class="app-back-link">&larr; Back to My Orders</a>
         </div>
 
-        <div class="row g-4">
-            <div class="col-lg-8">
+        <div class="l-grid l-grid--12 u-gap-4">
+            <div class="l-col-lg-eight">
                 <!-- Order items -->
-                <div class="surface-panel p-4 mb-4">
-                    <h5 class="mb-3">Items Ordered</h5>
+                <div class="surface-panel u-p-4 u-mb-4">
+                    <h5 class="u-mb-3">Items Ordered</h5>
                     <?php foreach ($items as $item): ?>
                     <?php
                         $unitType = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $item['unit_type'] : 'meter';
@@ -133,100 +133,100 @@ include __DIR__ . '/../includes/header.php';
                         $unitPrice = (float) (($item['price'] ?? 0) > 0 ? $item['price'] : ($item['price_per_meter'] ?? 0));
                         $lineTotal = (float) (($item['total'] ?? 0) > 0 ? $item['total'] : ($item['line_total'] ?? 0));
                     ?>
-                    <div class="d-flex gap-3 align-items-start mb-3 pb-3 border-bottom">
+                    <div class="u-flex u-gap-3 u-items-start u-mb-3 u-pb-3 u-border-bottom">
                         <?php if (!empty($item['product_image'])): ?>
                             <img src="/images/fabrics/<?php echo e((string) $item['product_image']); ?>"
                                  alt="<?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Product')); ?>"
-                                 style="width:60px;height:60px;object-fit:cover;border-radius:4px;flex-shrink:0;">
+                                 class="order-item-image">
                         <?php else: ?>
-                            <div style="width:60px;height:60px;background:#eee;border-radius:4px;flex-shrink:0;"></div>
+                            <div class="order-item-image order-item-image--placeholder"></div>
                         <?php endif; ?>
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold"><?php echo e($item['fabric_name_snapshot']); ?></div>
+                        <div class="u-grow">
+                            <div class="u-font-semibold"><?php echo e($item['fabric_name_snapshot']); ?></div>
                             <?php if ($item['fabric_sku_snapshot']): ?>
-                                <div class="text-muted small">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></div>
+                                <div class="u-text-muted u-text-small">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></div>
                             <?php endif; ?>
-                            <div class="text-muted small">
+                            <div class="u-text-muted u-text-small">
                                 <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($unitType); ?> x <?php echo e(money($unitPrice, $currency)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?>
                                 <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
                                     | <?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <div class="fw-semibold"><?php echo e(money($lineTotal, $currency)); ?></div>
+                        <div class="u-font-semibold"><?php echo e(money($lineTotal, $currency)); ?></div>
                     </div>
                     <?php endforeach; ?>
 
-                    <div class="d-flex justify-content-between text-muted small">
+                    <div class="u-flex u-justify-between u-text-muted u-text-small">
                         <span>Subtotal</span>
                         <span><?php echo e(money((float) $order['subtotal'], $currency)); ?></span>
                     </div>
-                    <div class="d-flex justify-content-between text-muted small">
+                    <div class="u-flex u-justify-between u-text-muted u-text-small">
                         <span>Shipping</span>
                         <span><?php echo e(money($displayShipping, $currency)); ?></span>
                     </div>
-                    <div class="d-flex justify-content-between text-muted small">
+                    <div class="u-flex u-justify-between u-text-muted u-text-small">
                         <span>Discount</span>
                         <span>- <?php echo e(money($displayDiscount, $currency)); ?></span>
                     </div>
                     <?php if (!empty($gst['enabled'])): ?>
-                    <div class="d-flex justify-content-between text-muted small">
+                    <div class="u-flex u-justify-between u-text-muted u-text-small">
                         <span>Including GST</span>
                         <span><?php echo e(money((float) $gst['gst_amount'], $currency)); ?></span>
                     </div>
                     <?php endif; ?>
-                    <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
+                    <div class="u-flex u-justify-between u-font-bold u-mt-2 u-pt-2 u-border-top">
                         <span>Total</span>
                         <span><?php echo e(money($displayTotal, $currency, true)); ?></span>
                     </div>
                 </div>
 
                 <?php if ($customerVisibleNotes !== ''): ?>
-                <div class="surface-panel p-4 mb-4">
-                    <h6 class="mb-2">Your Notes</h6>
-                    <p class="mb-0 text-muted"><?php echo nl2br(e($customerVisibleNotes)); ?></p>
+                <div class="surface-panel u-p-4 u-mb-4">
+                    <h6 class="u-mb-2">Your Notes</h6>
+                    <p class="u-mb-0 u-text-muted"><?php echo nl2br(e($customerVisibleNotes)); ?></p>
                 </div>
                 <?php endif; ?>
 
-                <div class="surface-panel p-4 mb-4">
-                    <h6 class="mb-2">Shipment Details</h6>
+                <div class="surface-panel u-p-4 u-mb-4">
+                    <h6 class="u-mb-2">Shipment Details</h6>
                     <?php if (empty($shipment)): ?>
-                        <p class="mb-0 text-muted small">Not shipped yet. Tracking details will appear here after dispatch.</p>
+                        <p class="u-mb-0 u-text-muted u-text-small">Not shipped yet. Tracking details will appear here after dispatch.</p>
                     <?php else: ?>
-                    <div class="text-muted small">
+                    <div class="u-text-muted u-text-small">
                         <div>Courier: <strong><?php echo !empty($shipment['courier_name']) ? e((string) $shipment['courier_name']) : '-'; ?></strong></div>
                         <div>Tracking ID: <strong><?php echo !empty($shipment['tracking_id']) ? e((string) $shipment['tracking_id']) : '-'; ?></strong></div>
                         <div>Shipped At: <strong><?php echo !empty($shipment['shipped_at']) ? e((string) $shipment['shipped_at']) : '-'; ?></strong></div>
                         <div>Delivered At: <strong><?php echo !empty($shipment['delivered_at']) ? e((string) $shipment['delivered_at']) : '-'; ?></strong></div>
                     </div>
                     <?php if ($trackingUrl !== ''): ?>
-                        <a href="<?php echo e($trackingUrl); ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm mt-3">Track Package</a>
+                        <a href="<?php echo e($trackingUrl); ?>" target="_blank" rel="noopener noreferrer" class="ui-button ui-button--outline ui-button--small u-mt-3">Track Package</a>
                     <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>
 
-            <div class="col-lg-4">
+            <div class="l-col-lg-third">
                 <!-- Status -->
-                <div class="surface-panel p-4 mb-4">
-                    <h6 class="mb-2">Order Status</h6>
-                    <span class="badge bg-<?php echo $s['class']; ?> fs-6 px-3 py-2"><?php echo $s['label']; ?></span>
-                    <div class="mt-3 text-muted small">
+                <div class="surface-panel u-p-4 u-mb-4">
+                    <h6 class="u-mb-2">Order Status</h6>
+                    <span class="ui-badge ui-badge--<?php echo e(ui_tone((string) $s['class'])); ?> u-px-3 u-py-2"><?php echo e((string) $s['label']); ?></span>
+                    <div class="u-mt-3 u-text-muted u-text-small">
                         Payment: <strong><?php echo e($payMeta['label']); ?></strong><br>
                         Method: <?php echo ucfirst(str_replace('_', ' ', $order['payment_method'])); ?>
                     </div>
                     <?php if ($isRefundInitiated): ?>
-                    <div class="alert alert-info mt-3 mb-0 py-2 small">
+                    <div class="ui-alert ui-alert--info u-mt-3 u-mb-0 u-py-2 u-text-small">
                         Refund initiated. Amount will be returned to your original payment method as per bank/payment timelines.
                     </div>
                     <?php endif; ?>
                     <?php if ($latestShipmentEvent): ?>
-                    <div class="alert alert-primary mt-3 mb-0 py-2 small">
+                    <div class="ui-alert ui-alert--info u-mt-3 u-mb-0 u-py-2 u-text-small">
                         Shipment Update: <?php echo e((string) ($latestShipmentEvent['display_details'] ?? $latestShipmentEvent['details'] ?? 'Your shipment has been updated.')); ?>
                     </div>
                     <?php endif; ?>
                     <?php if (strtolower((string) ($order['payment_status'] ?? '')) === 'refunded'): ?>
-                    <div class="alert alert-success mt-3 mb-0 py-2 small">
+                    <div class="ui-alert ui-alert--success u-mt-3 u-mb-0 u-py-2 u-text-small">
                         Refund processed on payment gateway. Bank/card/UPI credit can take 2-7 working days (sometimes up to 10 working days).
                     </div>
                     <?php endif; ?>
@@ -235,17 +235,17 @@ include __DIR__ . '/../includes/header.php';
                     $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
                     ?>
                     <?php if ($canRetry): ?>
-                    <form method="POST" action="/retry-payment.php" class="mt-3">
+                    <form method="POST" action="/retry-payment.php" class="u-mt-3">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
-                        <button type="submit" class="btn btn-warning w-100">Retry Payment</button>
+                        <button type="submit" class="ui-button ui-button--warning u-w-full">Retry Payment</button>
                     </form>
                     <?php endif; ?>
                     <?php if ($canCancel): ?>
-                    <form method="POST" action="/customer/cancel-order.php" class="mt-2" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
+                    <form method="POST" action="/customer/cancel-order.php" class="u-mt-2" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
-                        <button type="submit" class="btn btn-outline-danger w-100">Cancel Order</button>
+                        <button type="submit" class="ui-button ui-button--danger-outline u-w-full">Cancel Order</button>
                     </form>
                     <?php endif; ?>
                     <?php
@@ -253,17 +253,17 @@ include __DIR__ . '/../includes/header.php';
                     ?>
                     <?php if ($showInvoice): ?>
                     <a href="/invoice.php?order=<?php echo e($order['order_number']); ?>" target="_blank"
-                       class="btn btn-outline-secondary w-100 mt-2">
+                       class="ui-button ui-button--secondary u-w-full u-mt-2">
                         View / Download Invoice
                     </a>
                     <?php endif; ?>
                     <?php if ($canRequestReturn): ?>
-                    <form method="POST" action="/customer/request-return.php" class="mt-2" enctype="multipart/form-data">
+                    <form method="POST" action="/customer/request-return.php" class="u-mt-2" enctype="multipart/form-data">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="order_id" value="<?php echo (int) $order['id']; ?>">
-                        <div class="small text-muted mb-2">Step 1: Select items and quantities</div>
-                        <div class="mb-2 p-2 border rounded bg-light">
-                            <div class="small fw-semibold mb-2">Select items/qty to return</div>
+                        <div class="u-text-small u-text-muted u-mb-2">Step 1: Select items and quantities</div>
+                        <div class="u-mb-2 u-p-2 u-border u-rounded ui-surface-soft">
+                            <div class="u-text-small u-font-semibold u-mb-2">Select items/qty to return</div>
                             <?php foreach ($items as $item): ?>
                                 <?php
                                 $riOrderItemId = (int) ($item['id'] ?? 0);
@@ -276,23 +276,22 @@ include __DIR__ . '/../includes/header.php';
                                     $riDefaultQty = '1';
                                 }
                                 ?>
-                                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                                    <div class="small text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($riUnitType); ?>)</div>
+                                <div class="u-flex u-justify-between u-items-center u-gap-2 u-mb-2">
+                                    <div class="u-text-small u-text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($riUnitType); ?>)</div>
                                     <input type="number"
-                                           class="form-control form-control-sm"
+                                           class="ui-input ui-input--small return-quantity-input"
                                            name="return_qty[<?php echo $riOrderItemId; ?>]"
                                            min="0"
                                            max="<?php echo e((string) $riQty); ?>"
                                            step="<?php echo $riUnitType === 'meter' ? '0.01' : '1'; ?>"
                                            value="<?php echo e($riDefaultQty); ?>"
-                                           <?php echo $riIsFixedSingleQty ? 'readonly aria-readonly="true"' : ''; ?>
-                                           style="max-width:110px;">
+                                           <?php echo $riIsFixedSingleQty ? 'readonly aria-readonly="true"' : ''; ?>>
                                 </div>
                             <?php endforeach; ?>
                         </div>
-                        <div class="small text-muted mb-2">Step 2: Tell us why</div>
-                        <div class="mb-2">
-                            <select name="reason" class="form-select form-select-sm" required>
+                        <div class="u-text-small u-text-muted u-mb-2">Step 2: Tell us why</div>
+                        <div class="u-mb-2">
+                            <select name="reason" class="ui-select ui-select--small" required>
                                 <option value="">Select return reason</option>
                                 <option value="Damaged Item">Damaged Item</option>
                                 <option value="Wrong Item Delivered">Wrong Item Delivered</option>
@@ -301,33 +300,33 @@ include __DIR__ . '/../includes/header.php';
                                 <option value="Other">Other</option>
                             </select>
                         </div>
-                        <div class="mb-2">
-                            <textarea name="customer_note" class="form-control form-control-sm" rows="2" placeholder="Optional note"></textarea>
+                        <div class="u-mb-2">
+                            <textarea name="customer_note" class="ui-input ui-input--small" rows="2" placeholder="Optional note"></textarea>
                         </div>
-                        <div class="small text-muted mb-2">Step 3: Upload issue photos</div>
-                        <div class="mb-2">
-                            <label class="form-label small mb-1">Image 1 (required)</label>
-                            <input type="file" name="image_1" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
+                        <div class="u-text-small u-text-muted u-mb-2">Step 3: Upload issue photos</div>
+                        <div class="u-mb-2">
+                            <label class="ui-label u-text-small u-mb-1">Image 1 (required)</label>
+                            <input type="file" name="image_1" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp" required>
                         </div>
-                        <div class="mb-2">
-                            <label class="form-label small mb-1">Image 2 (required)</label>
-                            <input type="file" name="image_2" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
+                        <div class="u-mb-2">
+                            <label class="ui-label u-text-small u-mb-1">Image 2 (required)</label>
+                            <input type="file" name="image_2" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp" required>
                         </div>
-                        <div class="small text-muted mb-2">Step 4: Review and submit. Refund returns are allowed within <?php echo return_request_window_days(); ?> calendar days of delivery.</div>
-                        <button type="submit" class="btn btn-outline-secondary w-100">Submit Return Request</button>
+                        <div class="u-text-small u-text-muted u-mb-2">Step 4: Review and submit. Refund returns are allowed within <?php echo return_request_window_days(); ?> calendar days of delivery.</div>
+                        <button type="submit" class="ui-button ui-button--secondary u-w-full">Submit Return Request</button>
                     </form>
                     <?php endif; ?>
                     <?php if (strtolower($effectiveOrderStatus) === 'delivered' && !$returnRequest && !$isWithinReturnWindow): ?>
-                    <div class="alert alert-secondary mt-2 mb-0 py-2 small">
+                    <div class="ui-alert ui-alert--neutral u-mt-2 u-mb-0 u-py-2 u-text-small">
                         Refund return window closed (<?php echo return_request_window_days(); ?> calendar days from delivery).
                     </div>
                     <?php endif; ?>
                 </div>
 
                 <?php if ($returnRequest): ?>
-                <div class="surface-panel p-4 mb-4">
-                    <h6 class="mb-2">Return Request</h6>
-                    <div class="small text-muted">
+                <div class="surface-panel u-p-4 u-mb-4">
+                    <h6 class="u-mb-2">Return Request</h6>
+                    <div class="u-text-small u-text-muted">
                         <div>Return #: <strong><?php echo e((string) $returnRequest['return_number']); ?></strong></div>
                         <div>Status: <strong><?php echo e(strtoupper(str_replace('_', ' ', (string) $returnRequest['status']))); ?></strong></div>
                         <div>Reason: <strong><?php echo e((string) $returnRequest['reason']); ?></strong></div>
@@ -339,13 +338,13 @@ include __DIR__ . '/../includes/header.php';
                             <div>Admin Note: <?php echo e((string) $returnRequest['admin_note']); ?></div>
                         <?php endif; ?>
                         <?php if (!empty($returnItems)): ?>
-                            <div class="mt-2">Items:</div>
+                            <div class="u-mt-2">Items:</div>
                             <?php foreach ($returnItems as $ri): ?>
                                 <div>- <?php echo e((string) ($ri['product_name'] ?? 'Item')); ?>: <?php echo e(format_quantity_by_unit((float) ($ri['quantity'] ?? 0), (string) ($ri['unit_type'] ?? 'meter'))); ?><?php echo CommercePresenter::quantityUnitSuffix((string) ($ri['unit_type'] ?? 'meter')); ?> (<?php echo e(money((float) ($ri['line_total'] ?? 0), $currency)); ?>)</div>
                             <?php endforeach; ?>
                         <?php endif; ?>
                         <?php if (!empty($returnRequest['image_1'])): ?>
-                            <div class="mt-2">Image 1: <a href="/<?php echo e((string) $returnRequest['image_1']); ?>" target="_blank" rel="noopener noreferrer">View</a></div>
+                            <div class="u-mt-2">Image 1: <a href="/<?php echo e((string) $returnRequest['image_1']); ?>" target="_blank" rel="noopener noreferrer">View</a></div>
                         <?php endif; ?>
                         <?php if (!empty($returnRequest['image_2'])): ?>
                             <div>Image 2: <a href="/<?php echo e((string) $returnRequest['image_2']); ?>" target="_blank" rel="noopener noreferrer">View</a></div>
@@ -355,20 +354,20 @@ include __DIR__ . '/../includes/header.php';
                 <?php endif; ?>
 
                 <?php if (!empty($orderActivity)): ?>
-                <div class="surface-panel p-4 mb-4">
-                    <h6 class="mb-3">Order Timeline</h6>
+                <div class="surface-panel u-p-4 u-mb-4">
+                    <h6 class="u-mb-3">Order Timeline</h6>
                     <div class="order-timeline">
                         <?php foreach ($orderActivity as $ev): ?>
                         <div class="order-timeline-item">
                             <div class="order-timeline-dot"></div>
                             <div class="order-timeline-body">
                                 <?php $timelineActionLabel = (string) ($ev['display_action'] ?? ucwords(str_replace('_', ' ', (string) ($ev['action'] ?? 'update')))); ?>
-                                <div class="d-flex justify-content-between gap-2 flex-wrap">
+                                <div class="u-flex u-justify-between u-gap-2 u-wrap">
                                     <strong><?php echo e($timelineActionLabel); ?></strong>
-                                    <span class="text-muted small"><?php echo date('d M Y, h:i A', strtotime((string) ($ev['created_at'] ?? 'now'))); ?></span>
+                                    <span class="u-text-muted u-text-small"><?php echo date('d M Y, h:i A', strtotime((string) ($ev['created_at'] ?? 'now'))); ?></span>
                                 </div>
                                 <?php if (!empty($ev['display_details']) || !empty($ev['details'])): ?>
-                                    <div class="text-muted small"><?php echo e((string) ($ev['display_details'] ?? $ev['details'])); ?></div>
+                                    <div class="u-text-muted u-text-small"><?php echo e((string) ($ev['display_details'] ?? $ev['details'])); ?></div>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -379,9 +378,9 @@ include __DIR__ . '/../includes/header.php';
 
                 <!-- Shipping address -->
                 <?php if (!empty($shipping)): ?>
-                <div class="surface-panel p-4">
-                    <h6 class="mb-2">Shipping Address</h6>
-                    <address class="mb-0 text-muted small" style="font-style:normal;">
+                <div class="surface-panel u-p-4">
+                    <h6 class="u-mb-2">Shipping Address</h6>
+                    <address class="u-mb-0 u-text-muted u-text-small address-plain">
                         <?php echo e($shipping['name']    ?? ''); ?><br>
                         <?php echo e($shipping['address'] ?? ''); ?><br>
                         <?php echo e($shipping['city']    ?? ''); ?>

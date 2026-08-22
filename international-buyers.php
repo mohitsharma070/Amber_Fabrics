@@ -133,54 +133,54 @@ include __DIR__ . '/includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container">
+    <div class="l-container">
         <h1>International / Bulk Inquiry</h1>
-        <p class="mb-0">Tell us your requirement and our export team will respond with pricing and lead time.</p>
+        <p class="u-mb-0">Tell us your requirement and our export team will respond with pricing and lead time.</p>
     </div>
 </section>
 
-<section class="section-block pt-0">
-    <div class="container">
-        <div class="row g-4 justify-content-center">
-            <div class="col-lg-8">
+<section class="section-block u-pt-0">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-gap-4 u-justify-center">
+            <div class="l-col-lg-eight">
                 <div class="surface-panel">
                     <form method="POST" action="/export-inquiry.php" novalidate>
                         <?php echo csrf_field(); ?>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Name *</label>
-                                <input class="form-control" name="name" required value="<?php echo e($old['name']); ?>">
+                        <div class="l-grid l-grid--12 u-gap-3">
+                            <div class="l-col-md-half">
+                                <label class="ui-label">Name *</label>
+                                <input class="ui-input" name="name" required value="<?php echo e($old['name']); ?>">
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Company Name</label>
-                                <input class="form-control" name="company_name" value="<?php echo e($old['company_name']); ?>">
+                            <div class="l-col-md-half">
+                                <label class="ui-label">Company Name</label>
+                                <input class="ui-input" name="company_name" value="<?php echo e($old['company_name']); ?>">
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Email *</label>
-                                <input class="form-control" type="email" name="email" required value="<?php echo e($old['email']); ?>">
+                            <div class="l-col-md-half">
+                                <label class="ui-label">Email *</label>
+                                <input class="ui-input" type="email" name="email" required value="<?php echo e($old['email']); ?>">
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">WhatsApp Number *</label>
-                                <input class="form-control" name="whatsapp_number" required value="<?php echo e($old['whatsapp_number']); ?>" placeholder="+91...">
+                            <div class="l-col-md-half">
+                                <label class="ui-label">WhatsApp Number *</label>
+                                <input class="ui-input" name="whatsapp_number" required value="<?php echo e($old['whatsapp_number']); ?>" placeholder="+91...">
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Country *</label>
-                                <input class="form-control" name="country" required value="<?php echo e($old['country']); ?>">
+                            <div class="l-col-md-half">
+                                <label class="ui-label">Country *</label>
+                                <input class="ui-input" name="country" required value="<?php echo e($old['country']); ?>">
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Product *</label>
-                                <input class="form-control" name="product_interested" required value="<?php echo e($old['product_interested']); ?>">
+                            <div class="l-col-md-half">
+                                <label class="ui-label">Product *</label>
+                                <input class="ui-input" name="product_interested" required value="<?php echo e($old['product_interested']); ?>">
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Quantity *</label>
-                                <input class="form-control" name="quantity" required value="<?php echo e($old['quantity']); ?>" placeholder="e.g. 500 pcs / 2000 meters">
+                            <div class="l-col-full">
+                                <label class="ui-label">Quantity *</label>
+                                <input class="ui-input" name="quantity" required value="<?php echo e($old['quantity']); ?>" placeholder="e.g. 500 pcs / 2000 meters">
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Message</label>
-                                <textarea class="form-control" name="message" rows="4"><?php echo e($old['message']); ?></textarea>
+                            <div class="l-col-full">
+                                <label class="ui-label">Message</label>
+                                <textarea class="ui-input" name="message" rows="4"><?php echo e($old['message']); ?></textarea>
                             </div>
-                            <div class="col-12">
-                                <button class="btn btn-primary w-100" type="submit">Request International Quote</button>
+                            <div class="l-col-full">
+                                <button class="ui-button ui-button--primary u-w-full" type="submit">Request International Quote</button>
                             </div>
                         </div>
                     </form>

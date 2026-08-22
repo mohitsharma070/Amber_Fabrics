@@ -92,22 +92,22 @@ include __DIR__ . '/../includes/header.php';
 ?>
 
 <section class="page-hero">
-    <div class="container"><h1>My Orders</h1></div>
+    <div class="l-container"><h1>My Orders</h1></div>
 </section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <p class="text-muted mb-0"><?php echo count($orders); ?> order<?php echo count($orders) !== 1 ? 's' : ''; ?></p>
+    <div class="l-container">
+        <div class="u-flex u-justify-between u-items-center u-mb-4">
+            <p class="u-text-muted u-mb-0"><?php echo count($orders); ?> order<?php echo count($orders) !== 1 ? 's' : ''; ?></p>
         </div>
 
         <?php if (empty($orders)): ?>
-            <div class="text-center py-5">
-                <p class="text-muted">You haven't placed any orders yet.</p>
-                <a href="/catalog.php" class="btn btn-primary">Browse Fabrics</a>
+            <div class="u-text-center u-py-5">
+                <p class="u-text-muted">You haven't placed any orders yet.</p>
+                <a href="/catalog.php" class="ui-button ui-button--primary">Browse Fabrics</a>
             </div>
         <?php else: ?>
-            <div class="d-md-none">
+            <div class="u-hide-tablet-up">
                 <?php foreach ($orders as $o):
                     $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
                     $s = CommercePresenter::orderStatus($effectiveOrderStatus);
@@ -116,50 +116,50 @@ include __DIR__ . '/../includes/header.php';
                     $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
                     $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
                 ?>
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="ui-card u-mb-3">
+                    <div class="ui-card__body">
+                        <div class="u-flex u-justify-between u-items-start u-mb-2">
                             <div>
-                                <div class="fw-semibold"><?php echo e($o['order_number']); ?></div>
-                                <div class="small text-muted"><?php echo date('d M Y', strtotime($o['created_at'])); ?></div>
+                                <div class="u-font-semibold"><?php echo e($o['order_number']); ?></div>
+                                <div class="u-text-small u-text-muted"><?php echo date('d M Y', strtotime($o['created_at'])); ?></div>
                             </div>
-                            <div class="text-end">
-                                <div><span class="badge bg-<?php echo e($s['class']); ?>"><?php echo e($s['label']); ?></span></div>
-                                <div class="mt-1"><span class="badge bg-<?php echo e($payMeta['class']); ?>"><?php echo e($payMeta['label']); ?></span></div>
+                            <div class="u-text-end">
+                                <div><span class="ui-badge ui-badge--<?php echo e(ui_tone((string) $s['class'])); ?>"><?php echo e($s['label']); ?></span></div>
+                                <div class="u-mt-1"><span class="ui-badge ui-badge--<?php echo e(ui_tone((string) $payMeta['class'])); ?>"><?php echo e($payMeta['label']); ?></span></div>
                             </div>
                         </div>
-                        <div class="small mb-2">
+                        <div class="u-text-small u-mb-2">
                             <div>Items: <?php echo e(format_meter_quantity($totalQty)); ?></div>
                             <div>Total: <strong><?php echo e(money((float) $o['total'], (string) ($o['currency'] ?? 'INR'), true)); ?></strong></div>
                             <div>Payment: <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?></div>
                         </div>
-                        <div class="d-flex gap-2 flex-wrap">
-                            <a href="/customer/order-view?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
+                        <div class="u-flex u-gap-2 u-wrap">
+                            <a href="/customer/order-view?id=<?php echo $o['id']; ?>" class="ui-button ui-button--small ui-button--outline">View</a>
                             <?php if ($canRetry): ?>
-                            <form method="POST" action="/retry-payment.php" class="d-inline">
+                            <form method="POST" action="/retry-payment.php" class="u-inline">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
-                                <button type="submit" class="btn btn-sm btn-warning">Retry Payment</button>
+                                <button type="submit" class="ui-button ui-button--small ui-button--warning">Retry Payment</button>
                             </form>
                             <?php endif; ?>
                             <?php if ($canCancel): ?>
-                            <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
+                            <form method="POST" action="/customer/cancel-order.php" class="u-inline" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                                <button type="submit" class="ui-button ui-button--small ui-button--danger-outline">Cancel</button>
                             </form>
                             <?php endif; ?>
                         </div>
                         <?php foreach (($o['_customer_status_messages'] ?? []) as $message): ?>
-                            <div class="alert alert-<?php echo e((string) $message['class']); ?> py-2 px-3 mt-2 mb-0 small" role="alert"><?php echo e((string) $message['text']); ?></div>
+                            <div class="ui-alert ui-alert--<?php echo e(ui_tone((string) $message['class'])); ?> u-py-2 u-px-3 u-mt-2 u-mb-0 u-text-small" role="alert"><?php echo e((string) $message['text']); ?></div>
                         <?php endforeach; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
             </div>
 
-            <div class="table-responsive d-none d-md-block">
-                <table class="table table-hover align-middle">
+            <div class="ui-table-wrap u-hidden u-show-tablet">
+                <table class="ui-table ui-table--hover u-align-middle">
                     <thead>
                         <tr>
                             <th>Order #</th>
@@ -181,39 +181,39 @@ include __DIR__ . '/../includes/header.php';
                         $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
                     ?>
                         <tr>
-                            <td class="fw-semibold"><?php echo e($o['order_number']); ?></td>
-                            <td class="text-muted small"><?php echo date('d M Y', strtotime($o['created_at'])); ?></td>
-                            <td class="text-muted small"><?php echo e(format_meter_quantity($totalQty)); ?> total</td>
+                            <td class="u-font-semibold"><?php echo e($o['order_number']); ?></td>
+                            <td class="u-text-muted u-text-small"><?php echo date('d M Y', strtotime($o['created_at'])); ?></td>
+                            <td class="u-text-muted u-text-small"><?php echo e(format_meter_quantity($totalQty)); ?> total</td>
                             <td><?php echo e(money((float) $o['total'], (string) ($o['currency'] ?? 'INR'), true)); ?></td>
-                            <td class="text-muted small">
+                            <td class="u-text-muted u-text-small">
                                 <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?>
-                                <div class="mt-1">
-                                    <span class="badge bg-<?php echo e($payMeta['class']); ?>"><?php echo e($payMeta['label']); ?></span>
+                                <div class="u-mt-1">
+                                    <span class="ui-badge ui-badge--<?php echo e(ui_tone((string) $payMeta['class'])); ?>"><?php echo e($payMeta['label']); ?></span>
                                 </div>
                             </td>
-                            <td><span class="badge bg-<?php echo e($s['class']); ?>"><?php echo e($s['label']); ?></span></td>
-                            <td class="d-flex gap-2 flex-wrap">
-                                <a href="/customer/order-view?id=<?php echo $o['id']; ?>" class="btn btn-sm btn-outline-primary">View</a>
+                            <td><span class="ui-badge ui-badge--<?php echo e(ui_tone((string) $s['class'])); ?>"><?php echo e($s['label']); ?></span></td>
+                            <td class="u-flex u-gap-2 u-wrap">
+                                <a href="/customer/order-view?id=<?php echo $o['id']; ?>" class="ui-button ui-button--small ui-button--outline">View</a>
                                 <?php if ($canRetry): ?>
-                                <form method="POST" action="/retry-payment.php" class="d-inline">
+                                <form method="POST" action="/retry-payment.php" class="u-inline">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
-                                    <button type="submit" class="btn btn-sm btn-warning">Retry Payment</button>
+                                    <button type="submit" class="ui-button ui-button--small ui-button--warning">Retry Payment</button>
                                 </form>
                                 <?php endif; ?>
                                 <?php if ($canCancel): ?>
-                                <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
+                                <form method="POST" action="/customer/cancel-order.php" class="u-inline" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Cancel Order</button>
+                                    <button type="submit" class="ui-button ui-button--small ui-button--danger-outline">Cancel Order</button>
                                 </form>
                                 <?php endif; ?>
                             </td>
                         </tr>
                         <?php foreach (($o['_customer_status_messages'] ?? []) as $message): ?>
                         <tr>
-                            <td colspan="7" class="small pt-0 border-0">
-                                <div class="alert alert-<?php echo e((string) $message['class']); ?> py-2 px-3 mb-0" role="alert">
+                            <td colspan="7" class="u-text-small u-pt-0 u-border-0">
+                                <div class="ui-alert ui-alert--<?php echo e(ui_tone((string) $message['class'])); ?> u-py-2 u-px-3 u-mb-0" role="alert">
                                     <?php echo e((string) $message['text']); ?>
                                 </div>
                             </td>

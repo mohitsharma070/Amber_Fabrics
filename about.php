@@ -22,14 +22,14 @@ try {
 include 'includes/header.php'; ?>
 
 <section class="about-hero">
-    <div class="container">
+    <div class="l-container">
         <div class="about-hero-inner animate-in">
-            <p class="about-kicker mb-2">Trusted Textile Partner</p>
-            <h1 class="mb-3">Built for Reliable Quality, Fast Fulfillment, and Scalable Growth</h1>
+            <p class="about-kicker u-mb-2">Trusted Textile Partner</p>
+            <h1 class="u-mb-3">Built for Reliable Quality, Fast Fulfillment, and Scalable Growth</h1>
             <p class="about-hero-desc"><?php echo e(SiteContext::name()); ?> helps growing brands and buyers source premium home textiles with practical MOQ, quality-first processes, and dependable dispatch.</p>
             <div class="about-hero-actions">
-                <a href="/catalog" class="btn btn-light btn-lg">Shop Collection</a>
-                <a href="/international-buyers" class="btn btn-outline-light btn-lg">Bulk Inquiry</a>
+                <a href="/catalog" class="ui-button ui-button--light ui-button--large">Shop Collection</a>
+                <a href="/international-buyers" class="ui-button ui-button--light-outline ui-button--large">Bulk Inquiry</a>
             </div>
             <div class="about-trust-points">
                 <span>Quality-Checked Batches</span>
@@ -41,25 +41,25 @@ include 'includes/header.php'; ?>
 </section>
 
 <section class="section-block">
-    <div class="container">
+    <div class="l-container">
         <div class="surface-panel about-story animate-in">
             <div class="about-story-head">
-                <h2 class="mb-2">Our Story</h2>
-                <p class="mb-0 text-muted">A modern textile brand combining traditional fabric sensibility with ecommerce speed.</p>
+                <h2 class="u-mb-2">Our Story</h2>
+                <p class="u-mb-0 u-text-muted">A modern textile brand combining traditional fabric sensibility with ecommerce speed.</p>
             </div>
             <div class="about-story-body">
                 <p>We started <?php echo e(SiteContext::name()); ?> to solve a common buyer challenge: finding reliable textile quality at practical order quantities without slow communication or delayed dispatch.</p>
-                <p class="mb-0">From daily-use bedsheets and towels to scalable bulk programs, our team focuses on consistency, transparent coordination, and long-term buyer trust.</p>
+                <p class="u-mb-0">From daily-use bedsheets and towels to scalable bulk programs, our team focuses on consistency, transparent coordination, and long-term buyer trust.</p>
             </div>
         </div>
     </div>
 </section>
 
-<section class="section-block pt-0">
-    <div class="container">
-        <div class="section-head text-center mb-4">
-            <h2 class="mb-2">Inside <?php echo e(SiteContext::name()); ?></h2>
-            <p class="text-muted mb-0">A quick look at our fabric quality, production mood, and dispatch-ready process.</p>
+<section class="section-block u-pt-0">
+    <div class="l-container">
+        <div class="section-head u-text-center u-mb-4">
+            <h2 class="u-mb-2">Inside <?php echo e(SiteContext::name()); ?></h2>
+            <p class="u-text-muted u-mb-0">A quick look at our fabric quality, production mood, and dispatch-ready process.</p>
         </div>
         <div class="about-media-grid">
             <?php if (!empty($aboutMediaItems)): ?>
@@ -99,62 +99,62 @@ include 'includes/header.php'; ?>
     </div>
 </section>
 
-<section class="section-block pt-0">
-    <div class="container">
+<section class="section-block u-pt-0">
+    <div class="l-container">
         <div class="about-metrics-grid">
             <article class="about-metric-card animate-in">
                 <h3>Quality Process</h3>
-                <p class="mb-0">Structured checks for fabric feel, finish, and consistency before dispatch.</p>
+                <p class="u-mb-0">Structured checks for fabric feel, finish, and consistency before dispatch.</p>
             </article>
             <article class="about-metric-card animate-in">
                 <h3>MOQ Friendly</h3>
-                <p class="mb-0">Flexible order quantities designed for growing ecommerce sellers.</p>
+                <p class="u-mb-0">Flexible order quantities designed for growing ecommerce sellers.</p>
             </article>
             <article class="about-metric-card animate-in">
                 <h3>Fast Dispatch</h3>
-                <p class="mb-0">Ready stock and production planning aligned to reduce lead-time friction.</p>
+                <p class="u-mb-0">Ready stock and production planning aligned to reduce lead-time friction.</p>
             </article>
             <article class="about-metric-card animate-in">
                 <h3>B2B Ready</h3>
-                <p class="mb-0">International and bulk support for repeat purchase programs.</p>
+                <p class="u-mb-0">International and bulk support for repeat purchase programs.</p>
             </article>
         </div>
     </div>
 </section>
 
-<section class="section-block pt-0">
-    <div class="container">
-        <div class="section-head text-center mb-4">
-            <h2 class="mb-2">Capabilities for Growing Buyers</h2>
-            <p class="text-muted mb-0">Operational support built for both D2C growth and wholesale scale.</p>
+<section class="section-block u-pt-0">
+    <div class="l-container">
+        <div class="section-head u-text-center u-mb-4">
+            <h2 class="u-mb-2">Capabilities for Growing Buyers</h2>
+            <p class="u-text-muted u-mb-0">Operational support built for both D2C growth and wholesale scale.</p>
         </div>
         <div class="about-capability-grid">
             <article class="about-capability-card animate-in">
                 <h3>Sampling Support</h3>
-                <p class="mb-0">Quick sample coordination for approvals and pilot launches.</p>
+                <p class="u-mb-0">Quick sample coordination for approvals and pilot launches.</p>
             </article>
             <article class="about-capability-card animate-in">
                 <h3>Scale Capacity</h3>
-                <p class="mb-0">Structured production plans for repeat and seasonal demand.</p>
+                <p class="u-mb-0">Structured production plans for repeat and seasonal demand.</p>
             </article>
             <article class="about-capability-card animate-in">
                 <h3>International Programs</h3>
-                <p class="mb-0">Dedicated support for export-focused and overseas buyers.</p>
+                <p class="u-mb-0">Dedicated support for export-focused and overseas buyers.</p>
             </article>
             <article class="about-capability-card animate-in">
                 <h3>Account Coordination</h3>
-                <p class="mb-0">Clear communication on MOQ, lead times, and shipment readiness.</p>
+                <p class="u-mb-0">Clear communication on MOQ, lead times, and shipment readiness.</p>
             </article>
         </div>
     </div>
 </section>
 
-<section class="section-block pt-0">
-    <div class="container">
-        <div class="row g-4 align-items-stretch">
-            <div class="col-lg-6 animate-in">
-                <div class="surface-panel about-cert-panel h-100">
-                    <h2 class="mb-3">Compliance & Certifications</h2>
+<section class="section-block u-pt-0">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-gap-4 u-items-stretch">
+            <div class="l-col-lg-half animate-in">
+                <div class="surface-panel about-cert-panel u-h-full">
+                    <h2 class="u-mb-3">Compliance & Certifications</h2>
                     <div class="about-cert-list">
                         <div class="about-cert-card">ISO Certified Manufacturing</div>
                         <div class="about-cert-card">OEKO-TEX Aligned Processes</div>
@@ -162,9 +162,9 @@ include 'includes/header.php'; ?>
                     </div>
                 </div>
             </div>
-            <div class="col-lg-6 animate-in">
-                <div class="surface-panel about-confidence h-100">
-                    <h2 class="mb-3">Why Buyers Stay With Us</h2>
+            <div class="l-col-lg-half animate-in">
+                <div class="surface-panel about-confidence u-h-full">
+                    <h2 class="u-mb-3">Why Buyers Stay With Us</h2>
                     <div class="about-quote-list">
                         <blockquote class="about-quote">“Quality is consistent, and dispatch timelines are predictable for our storefront planning.”</blockquote>
                         <blockquote class="about-quote">“MOQ flexibility helped us test and scale without inventory stress.”</blockquote>
@@ -177,13 +177,13 @@ include 'includes/header.php'; ?>
 </section>
 
 <section class="about-final-cta">
-    <div class="container">
+    <div class="l-container">
         <div class="about-final-cta-inner animate-in">
-            <h2 class="mb-2">Ready to Explore the Collection?</h2>
-            <p class="mb-0">Browse our latest range or connect with us for bulk and international requirements.</p>
+            <h2 class="u-mb-2">Ready to Explore the Collection?</h2>
+            <p class="u-mb-0">Browse our latest range or connect with us for bulk and international requirements.</p>
             <div class="about-final-actions">
-                <a href="/catalog" class="btn btn-light btn-lg">Shop Collection</a>
-                <a href="/contact" class="btn btn-outline-light btn-lg">Talk to Our Team</a>
+                <a href="/catalog" class="ui-button ui-button--light ui-button--large">Shop Collection</a>
+                <a href="/contact" class="ui-button ui-button--light-outline ui-button--large">Talk to Our Team</a>
             </div>
         </div>
     </div>

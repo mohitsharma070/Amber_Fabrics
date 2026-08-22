@@ -47,22 +47,9 @@ function meta_pixel_render_base(array $context): void
         return;
     }
     $pixelId = meta_pixel_id();
-    $nonce = (string) ($GLOBALS['cspNonce'] ?? '');
     ?>
-    <script nonce="<?php echo e($nonce); ?>">
-    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
-    (window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init', <?php echo json_encode($pixelId); ?>);
-    fbq('track', 'PageView');
-    window.amberMetaPixelTrack = function (eventName, payload, eventId) {
-        if (typeof fbq !== 'function') return;
-        fbq('track', eventName, payload || {}, eventId ? {eventID: eventId} : {});
-    };
-    </script>
-    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=<?php echo e($pixelId); ?>&ev=PageView&noscript=1"></noscript>
+    <span hidden data-ui-meta-pixel data-pixel-id="<?php echo e($pixelId); ?>"></span>
+    <noscript><img height="1" width="1" hidden alt="" src="https://www.facebook.com/tr?id=<?php echo e($pixelId); ?>&amp;ev=PageView&amp;noscript=1"></noscript>
     <?php
 }
 
@@ -253,21 +240,5 @@ function meta_pixel_render_page_events(array $context): void
         return;
     }
 
-    $nonce = (string) ($GLOBALS['cspNonce'] ?? '');
-    ?>
-    <script nonce="<?php echo e($nonce); ?>">
-    (function () {
-        var events = <?php echo json_encode($events, JSON_UNESCAPED_SLASHES); ?>;
-        events.forEach(function (event) {
-            if (window.amberMetaPixelTrack) {
-                window.amberMetaPixelTrack(event.name, event.payload || {}, event.event_id || '');
-                return;
-            }
-            if (typeof fbq === 'function') {
-                fbq('track', event.name, event.payload || {}, event.event_id ? {eventID: event.event_id} : {});
-            }
-        });
-    })();
-    </script>
-    <?php
+    ?><span hidden data-ui-meta-events="<?php echo ui_data_json($events); ?>"></span><?php
 }

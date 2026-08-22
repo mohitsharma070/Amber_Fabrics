@@ -42,21 +42,21 @@ $metaTitle = SiteContext::title('Verify Email');
 include __DIR__ . '/../includes/header.php';
 ?>
 
-<section class="page-hero"><div class="container"><h1>Email Verification</h1></div></section>
+<section class="page-hero"><div class="l-container"><h1>Email Verification</h1></div></section>
 
 <section class="section-block">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-6 col-lg-4 text-center">
+    <div class="l-container">
+        <div class="l-grid l-grid--12 u-justify-center">
+            <div class="l-col-md-half l-col-lg-third u-text-center">
                 <?php if ($invalid): ?>
-                    <div class="alert alert-danger">This verification link is invalid or has expired.</div>
+                    <div class="ui-alert ui-alert--error">This verification link is invalid or has expired.</div>
                     <p><a href="/customer/register">Register again</a> or <a href="/customer/login">log in</a>.</p>
                 <?php elseif ($already): ?>
-                    <div class="alert alert-info">Your email is already verified.</div>
-                    <a href="/customer/login" class="btn btn-primary">Log In</a>
+                    <div class="ui-alert ui-alert--info">Your email is already verified.</div>
+                    <a href="/customer/login" class="ui-button ui-button--primary">Log In</a>
                 <?php else: ?>
-                    <div class="alert alert-success">Your email has been verified successfully!</div>
-                    <a href="/customer/login" class="btn btn-primary">Log In Now</a>
+                    <div class="ui-alert ui-alert--success">Your email has been verified successfully!</div>
+                    <a href="/customer/login" class="ui-button ui-button--primary">Log In Now</a>
                 <?php endif; ?>
             </div>
         </div>

@@ -251,13 +251,14 @@ function back_in_stock_alert_render_unsubscribe_page(string $title, string $mess
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8">';
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
     echo '<title>' . $safeTitle . ' | ' . $siteName . '</title>';
-    echo '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">';
-    echo '</head><body class="bg-light">';
-    echo '<main class="container py-5">';
-    echo '<div class="mx-auto bg-white border rounded p-4 shadow-sm" style="max-width:560px">';
-    echo '<h1 class="h4 mb-3">' . $safeTitle . '</h1>';
-    echo '<p class="text-muted mb-4">' . $safeMessage . '</p>';
-    echo '<a class="btn btn-primary" href="' . $homeUrl . '">Continue shopping</a>';
+    echo '<link rel="stylesheet" href="' . e(ui_asset('/css/foundation.css')) . '">';
+    echo '<link rel="stylesheet" href="' . e(ui_asset('/css/storefront.css')) . '">';
+    echo '</head><body data-ui-area="storefront" data-ui-page="stock-alert">';
+    echo '<main class="auth-shell">';
+    echo '<div class="ui-card ui-card__body auth-card">';
+    echo '<h1 class="u-mb-3">' . $safeTitle . '</h1>';
+    echo '<p class="u-text-muted u-mb-4">' . $safeMessage . '</p>';
+    echo '<a class="ui-button ui-button--primary" href="' . $homeUrl . '">Continue shopping</a>';
     echo '</div></main></body></html>';
     exit;
 }
@@ -421,77 +422,28 @@ function back_in_stock_alert_render_signup_form(array $context): void
     if ($customerId > 0) {
         $defaultEmail = CustomerReadService::emailById($conn, $customerId);
     }
-    $initialDisplay = $productOutOfStock ? '' : ' style="display:none"';
-    $nonce = (string) ($GLOBALS['cspNonce'] ?? '');
+    $initialHidden = $productOutOfStock ? '' : ' hidden';
     ?>
-    <div class="mt-4 border-top pt-4" id="back-in-stock-alert-block"<?php echo $initialDisplay; ?>>
-        <h5 class="mb-2">Notify me when available</h5>
-        <form method="POST" action="/fabric.php?id=<?php echo (int) $productId; ?>" class="row g-2 align-items-end">
+    <div class="u-mt-4 u-border-top u-pt-3" id="back-in-stock-alert-block" data-ui-back-in-stock data-unit-type="<?php echo e($unitType); ?>"<?php echo $initialHidden; ?>>
+        <h5 class="u-mb-2">Notify me when available</h5>
+        <form method="POST" action="/fabric.php?id=<?php echo (int) $productId; ?>" class="l-grid l-grid--12 u-gap-2 u-items-end">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="back_in_stock_alert_action" value="subscribe">
             <input type="hidden" name="product_id" value="<?php echo (int) $productId; ?>">
             <input type="hidden" name="variant_id" id="back_in_stock_alert_variant_id" value="0">
-            <div class="d-none" aria-hidden="true">
+            <div class="u-hidden" aria-hidden="true">
                 <label for="back_in_stock_alert_company_website">Website</label>
                 <input type="text" name="company_website" id="back_in_stock_alert_company_website" tabindex="-1" autocomplete="off">
             </div>
-            <div class="col-md-8">
-                <label class="form-label">Email</label>
-                <input type="email" name="email" class="form-control" value="<?php echo e($defaultEmail); ?>" required>
+            <div class="l-col-lg-eight">
+                <label class="ui-label">Email</label>
+                <input type="email" name="email" class="ui-input" value="<?php echo e($defaultEmail); ?>" required>
             </div>
-            <div class="col-md-4">
-                <button type="submit" class="btn btn-outline-primary w-100">Notify me when available</button>
+            <div class="l-col-lg-third">
+                <button type="submit" class="ui-button ui-button--outline u-w-full">Notify me when available</button>
             </div>
         </form>
     </div>
-    <?php if (!empty($variantOptions)): ?>
-        <script nonce="<?php echo e($nonce); ?>">
-            (function () {
-                var block = document.getElementById('back-in-stock-alert-block');
-                var variantInput = document.getElementById('back_in_stock_alert_variant_id');
-                var selectedVariantInput = document.getElementById('selected_variant_id_add');
-                var variants = Array.isArray(window.FABRIC_VARIANTS) ? window.FABRIC_VARIANTS : [];
-                var unitType = <?php echo json_encode($unitType); ?>;
-                if (!block || !variantInput || variants.length === 0) return;
-
-                function findVariant(id) {
-                    id = parseInt(String(id || '0'), 10);
-                    if (!Number.isFinite(id) || id <= 0) return null;
-                    for (var i = 0; i < variants.length; i++) {
-                        if (parseInt(String(variants[i].id || '0'), 10) === id) {
-                            return variants[i];
-                        }
-                    }
-                    return null;
-                }
-
-                function isInStock(v) {
-                    if (!v || parseInt(String(v.is_active || '0'), 10) !== 1) return true;
-                    var stock = unitType === 'meter' ? parseFloat(v.stock_meters || 0) : parseFloat(v.stock || 0);
-                    return Number.isFinite(stock) && stock > 0;
-                }
-
-                function sync() {
-                    var selectedId = selectedVariantInput ? selectedVariantInput.value : '0';
-                    var selectedVariant = findVariant(selectedId);
-                    if (!selectedVariant || isInStock(selectedVariant)) {
-                        block.style.display = 'none';
-                        variantInput.value = '0';
-                        return;
-                    }
-                    variantInput.value = String(selectedVariant.id || '0');
-                    block.style.display = '';
-                }
-
-                sync();
-                document.querySelectorAll('.color-swatch-btn, .size-option-btn').forEach(function (button) {
-                    button.addEventListener('click', function () {
-                        window.setTimeout(sync, 0);
-                    });
-                });
-            })();
-        </script>
-    <?php endif; ?>
     <?php
 }
 
