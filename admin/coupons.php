@@ -317,7 +317,7 @@ include 'partials/header.php';
                                         data-status="<?php echo e($coupon['status']); ?>">
                                     Edit
                                 </button>
-                                <form method="POST" action="/admin/coupons" class="m-0" data-confirm-modal data-confirm-title="Delete Coupon" data-confirm-message="Delete this coupon?" data-confirm-ok="Delete">
+                                <form method="POST" action="/admin/coupons" class="m-0" data-confirm-modal data-confirm-title="Delete Coupon" data-confirm-message="Delete this coupon?" data-confirm-ok="Delete" data-confirm-variant="danger">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">

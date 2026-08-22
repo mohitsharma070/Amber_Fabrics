@@ -699,20 +699,7 @@ final class InventoryService
      */
     public static function can_transition_order_status(string $currentStatus, string $nextStatus): bool
     {
-        $current = strtolower(trim($currentStatus));
-        $next = strtolower(trim($nextStatus));
-        $map = [
-            'pending' => ['pending', 'confirmed', 'packed', 'cancelled'],
-            'confirmed' => ['confirmed', 'packed', 'shipped', 'cancelled'],
-            'packed' => ['packed', 'shipped', 'cancelled'],
-            'shipped' => ['shipped', 'delivered', 'returned'],
-            'delivered' => ['delivered', 'returned'],
-            'cancelled' => ['cancelled', 'refunded'],
-            'returned' => ['returned', 'refunded'],
-            'refunded' => ['refunded'],
-        ];
-        $allowed = $map[$current] ?? [$current];
-        return in_array($next, $allowed, true);
+        return OrderLifecycle::canTransition($currentStatus, $nextStatus);
     }
 
     /**
@@ -720,19 +707,7 @@ final class InventoryService
      */
     public static function order_status_meta(string $status): array
     {
-        $status = strtolower(trim($status));
-        $map = [
-            'pending' => ['label' => 'Pending', 'class' => 'warning'],
-            'confirmed' => ['label' => 'Confirmed', 'class' => 'info'],
-            'processing' => ['label' => 'Processing', 'class' => 'primary'],
-            'packed' => ['label' => 'Packed', 'class' => 'primary'],
-            'shipped' => ['label' => 'Shipped', 'class' => 'primary'],
-            'delivered' => ['label' => 'Delivered', 'class' => 'success'],
-            'cancelled' => ['label' => 'Cancelled', 'class' => 'danger'],
-            'returned' => ['label' => 'Returned', 'class' => 'secondary'],
-            'refunded' => ['label' => 'Refunded', 'class' => 'dark'],
-        ];
-        return $map[$status] ?? ['label' => ucfirst($status), 'class' => 'secondary'];
+        return CommercePresenter::orderStatus($status);
     }
 
     /**
@@ -740,14 +715,7 @@ final class InventoryService
      */
     public static function payment_status_meta(string $status): array
     {
-        $status = strtolower(trim($status));
-        $map = [
-            'pending' => ['label' => 'Pending', 'class' => 'secondary'],
-            'paid' => ['label' => 'Paid', 'class' => 'success'],
-            'failed' => ['label' => 'Failed', 'class' => 'danger'],
-            'refunded' => ['label' => 'Refunded', 'class' => 'dark'],
-        ];
-        return $map[$status] ?? ['label' => ucfirst($status), 'class' => 'secondary'];
+        return CommercePresenter::paymentStatus($status);
     }
 
     /**
@@ -755,8 +723,7 @@ final class InventoryService
      */
     public static function sanitize_online_payment_method(?string $value): string
     {
-        $method = strtolower(trim((string) $value));
-        return in_array($method, ['upi', 'card', 'emi'], true) ? $method : '';
+        return OnlinePaymentMethod::normalize($value);
     }
 
     /**
@@ -764,9 +731,7 @@ final class InventoryService
      */
     public static function quantity_unit_suffix(string $unitType): string
     {
-        if ($unitType === 'piece') return ' pc';
-        if ($unitType === 'set') return ' set';
-        return 'm';
+        return CommercePresenter::quantityUnitSuffix($unitType);
     }
 
     /**
@@ -774,15 +739,7 @@ final class InventoryService
      */
     public static function safe_external_url(?string $value): string
     {
-        $url = trim((string) $value);
-        if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
-            return '';
-        }
-        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-        if (!in_array($scheme, ['http', 'https'], true)) {
-            return '';
-        }
-        return $url;
+        return ExternalUrlPolicy::sanitize($value);
     }
 
     public static function log_stock_ledger(

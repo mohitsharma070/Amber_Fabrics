@@ -231,7 +231,7 @@ final class EmailService
             $unitPrice = (($it['price'] ?? 0) > 0) ? $it['price'] : ($it['price_per_meter'] ?? 0);
             $lineTotal = (($it['total'] ?? 0) > 0) ? $it['total'] : ($it['line_total'] ?? 0);
             $lines[] = '- ' . $it['fabric_name_snapshot'] . ' - ' . format_quantity_by_unit($qty, $unitType)
-                . InventoryService::quantity_unit_suffix($unitType) . ' x '
+                . CommercePresenter::quantityUnitSuffix($unitType) . ' x '
                 . money((float) $unitPrice, $currency)
                 . (($unitType === 'piece' || $unitType === 'set') ? ' each = ' : '/m = ')
                 . money((float) $lineTotal, $currency);
@@ -308,7 +308,7 @@ final class EmailService
 
             $courier = trim((string) ($shipment['courier_name'] ?? ''));
             $trackingId = trim((string) ($shipment['tracking_id'] ?? ''));
-            $trackingUrl = InventoryService::safe_external_url((string) ($shipment['tracking_url'] ?? ''));
+            $trackingUrl = ExternalUrlPolicy::sanitize((string) ($shipment['tracking_url'] ?? ''));
             $shippedAt = trim((string) ($shipment['shipped_at'] ?? ''));
             $deliveredAt = trim((string) ($shipment['delivered_at'] ?? ''));
 

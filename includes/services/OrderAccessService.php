@@ -82,8 +82,7 @@ final class OrderAccessService
     public static function order(mysqli $conn, int $orderId): ?array
     {
         if (!self::canAccess($orderId)) { return null; }
-        $stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? LIMIT 1"); $stmt->bind_param('i', $orderId); $stmt->execute();
-        return $stmt->get_result()->fetch_assoc() ?: null;
+        return OrderReadService::orderById($conn, $orderId);
     }
 
     public static function actor(): array

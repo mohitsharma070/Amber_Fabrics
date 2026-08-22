@@ -331,7 +331,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1
                 </td>
                 <td style="color:#555"><?php echo $sku; ?></td>
                 <td style="color:#555"><?php echo $sku; ?></td>
-                <td><?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo e(InventoryService::quantity_unit_suffix($unitType)); ?></td>
+                <td><?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo e(CommercePresenter::quantityUnitSuffix($unitType)); ?></td>
             </tr>
             <?php endforeach; ?>
             </tbody>

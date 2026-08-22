@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/CronService.php';
+require_once __DIR__ . '/../integrations/JsonHttpClient.php';
 
 final class PaymentService
 {
@@ -226,73 +227,34 @@ final class PaymentService
         if ($keyId === '' || $keySecret === '') {
             return ['ok' => false, 'error' => 'razorpay_credentials_missing', 'status' => 0, 'duration_ms' => 0];
         }
-        if (!function_exists('curl_init')) {
-            return ['ok' => false, 'error' => 'curl_missing', 'status' => 0, 'duration_ms' => 0];
-        }
-
         $timeoutSec = max(5, (int) _cfg('RAZORPAY_HTTP_TIMEOUT_SEC', '15'));
         $connectTimeoutSec = max(2, (int) _cfg('RAZORPAY_HTTP_CONNECT_TIMEOUT_SEC', '5'));
         $url = 'https://api.razorpay.com' . $path;
-        $ch = curl_init($url);
-        if ($ch === false) {
-            return ['ok' => false, 'error' => 'curl_init_failed', 'status' => 0, 'duration_ms' => 0];
-        }
-
-        $headers = ['Accept: application/json'];
-        $json = null;
-        if ($payload !== null) {
-            $json = json_encode($payload);
-            if ($json === false) {
-                curl_close($ch);
-                return ['ok' => false, 'error' => 'payload_encode_failed', 'status' => 0, 'duration_ms' => 0];
-            }
-            $headers[] = 'Content-Type: application/json';
-        }
-
-        $started = microtime(true);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => $timeoutSec,
-            CURLOPT_CONNECTTIMEOUT => $connectTimeoutSec,
-            CURLOPT_CUSTOMREQUEST => strtoupper($method),
-            CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
-            CURLOPT_USERPWD => $keyId . ':' . $keySecret,
-            CURLOPT_HTTPHEADER => $headers,
-        ]);
-        $caBundlePath = trim((string) _cfg('RAZORPAY_HTTP_CA_BUNDLE', ''));
-        if ($caBundlePath !== '' && is_file($caBundlePath)) {
-            curl_setopt($ch, CURLOPT_CAINFO, $caBundlePath);
-        }
         $skipTlsVerify = strtolower(trim((string) _cfg('RAZORPAY_HTTP_SKIP_TLS_VERIFY', '0')));
-        if (in_array($skipTlsVerify, ['1', 'true', 'yes', 'on'], true)) {
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-        }
-        if ($json !== null) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
-        }
-
-        $raw = curl_exec($ch);
-        $errno = curl_errno($ch);
-        $err = curl_error($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
-        $durationMs = (int) round((microtime(true) - $started) * 1000);
-
-        if ($errno !== 0) {
-            $suffix = $err !== '' ? $err : (string) $errno;
-            return ['ok' => false, 'error' => 'curl_error:' . $suffix, 'status' => $status, 'duration_ms' => $durationMs];
-        }
-        if ($status < 200 || $status >= 300) {
-            return ['ok' => false, 'error' => 'gateway_http_' . $status, 'status' => $status, 'duration_ms' => $durationMs];
+        $response = JsonHttpClient::request($method, $url, [], $payload, [
+            'allowed_hosts' => ['api.razorpay.com'],
+            'timeout_sec' => $timeoutSec,
+            'connect_timeout_sec' => $connectTimeoutSec,
+            'basic_auth' => $keyId . ':' . $keySecret,
+            'ca_bundle' => trim((string) _cfg('RAZORPAY_HTTP_CA_BUNDLE', '')),
+            'skip_tls_verify' => in_array($skipTlsVerify, ['1', 'true', 'yes', 'on'], true),
+        ]);
+        if (!empty($response['ok'])) {
+            return $response;
         }
 
-        $decoded = json_decode((string) $raw, true);
-        if (!is_array($decoded)) {
-            return ['ok' => false, 'error' => 'invalid_gateway_json', 'status' => $status, 'duration_ms' => $durationMs];
+        $errorCode = (string) ($response['error_code'] ?? '');
+        $status = (int) ($response['status'] ?? 0);
+        if ($errorCode === 'http_error') {
+            $response['error'] = 'gateway_http_' . $status;
+        } elseif ($errorCode === 'invalid_json') {
+            $response['error'] = 'invalid_gateway_json';
+        } elseif ($errorCode === 'curl_error') {
+            $response['error'] = 'curl_error';
+        } else {
+            $response['error'] = $errorCode !== '' ? $errorCode : 'gateway_call_failed';
         }
-
-        return ['ok' => true, 'status' => $status, 'duration_ms' => $durationMs, 'body' => $decoded];
+        return $response;
     }
 
     public static function razorpay_create_order_remote(int $orderId, string $orderNumber, int $amountPaise): array

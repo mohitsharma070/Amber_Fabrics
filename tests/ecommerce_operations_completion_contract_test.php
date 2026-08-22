@@ -22,6 +22,7 @@ $adminJs = $read('js/admin.js');
 $operations = $read('admin/operations.php');
 $returns = $read('admin/returns.php');
 $guestOrder = $read('guest/order.php');
+$orderReadService = $read('includes/services/OrderReadService.php');
 $eligibility = $read('includes/helpers/inventory-orders.php');
 $feed = $read('plugins/product-feed/plugin.php');
 $alerts = $read('plugins/inventory-alert/plugin.php');
@@ -34,7 +35,7 @@ $migration = $read($migrationPath);
 $schema = $read('database/schema.sql');
 $setup = $read('database/setup.php');
 $config = $read('config/plugins.php');
-$footer = $read('includes/footer.php');
+$footer = $read('includes/views/layouts/footer.php');
 $openapi = $read('openapi.yaml');
 $readme = $read('README.md');
 $siteSettings = $read('includes/services/SiteSettingsService.php');
@@ -49,7 +50,7 @@ $assert(str_contains($operations, 'cron_run_history') && str_contains($operation
 
 $assert(str_contains($eligibility, 'return_request_eligibility') && str_contains($eligibility, "DateTimeZone('UTC')") && str_contains($eligibility, "return_request_window_days() . ' days'"), 'Return eligibility must use one inclusive UTC seven-day policy.');
 $assert(str_contains($returns, 'LEFT JOIN customers') && str_contains($returns, 'send_return_status_update_email'), 'Admin returns must include guests and send non-blocking status mail.');
-$assert(str_contains($guestOrder, 'reverse_pickup') && str_contains($guestOrder, '&& !$returnRequest'), 'Guest order pages must show existing return information and suppress duplicate forms.');
+$assert(str_contains($orderReadService, 'shipping_courier_reverse_pickups') && str_contains($guestOrder, 'OrderReadService::latestReversePickup') && str_contains($guestOrder, '&& !$returnRequest'), 'Guest order pages must show existing return information and suppress duplicate forms.');
 
 $assert(str_contains($feed, "CONCAT('p-', f.id, '-v-', fv.id)") && str_contains($feed, 'variant_id') && str_contains($feed, 'price_override'), 'Variable product feeds must emit stable variant offers with override pricing.');
 $assert(str_contains($alerts, 'variant_id <=> ?') && str_contains($alerts, "'color'"), 'Inventory alerts must use a variant-aware cooldown and email context.');

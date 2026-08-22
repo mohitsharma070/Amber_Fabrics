@@ -63,7 +63,10 @@ function app_config_apply_env_overrides(array $config): array
         'ADMIN_SESSION_IDLE_TIMEOUT_SEC', 'ADMIN_SESSION_ABSOLUTE_TIMEOUT_SEC',
         'CUSTOMER_SESSION_IDLE_TIMEOUT_SEC', 'CUSTOMER_SESSION_ABSOLUTE_TIMEOUT_SEC',
         'MAIL_DRIVER', 'MAIL_FROM', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_PASSWORD',
+        'APP_HTTP_TIMEOUT_SEC', 'APP_HTTP_CONNECT_TIMEOUT_SEC',
         'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET',
+        'RAZORPAY_HTTP_TIMEOUT_SEC', 'RAZORPAY_HTTP_CONNECT_TIMEOUT_SEC',
+        'RAZORPAY_HTTP_CA_BUNDLE', 'RAZORPAY_HTTP_SKIP_TLS_VERIFY',
         'COD_GUARD_WHATSAPP_THRESHOLD', 'COD_GUARD_CALL_THRESHOLD',
         'COD_GUARD_CONFIRMATION_HOURS', 'COD_GUARD_MESSAGE_MAX_ATTEMPTS',
         'COD_GUARD_WHATSAPP_PROVIDER', 'COD_GUARD_WHATSAPP_API_BASE_URL',
@@ -118,6 +121,11 @@ function app_config_apply_env_overrides(array $config): array
     }
 
     return $config;
+}
+
+function app_config_flag_enabled(mixed $value): bool
+{
+    return in_array(strtolower(trim((string) $value)), ['1', 'true', 'yes', 'on'], true);
 }
 
 function app_config_validate_production(array $config): void
@@ -256,10 +264,18 @@ function app_config_validate_production(array $config): void
         );
     }
 
-    if ((int) trim((string) ($config['BIGSHIP_HTTP_SKIP_TLS_VERIFY'] ?? '0')) === 1) {
+    if (app_config_flag_enabled($config['BIGSHIP_HTTP_SKIP_TLS_VERIFY'] ?? '0')) {
         app_bootstrap_fail(
             'Server configuration error. Production configuration is invalid.',
             '[fabric-export] FATAL: BIGSHIP_HTTP_SKIP_TLS_VERIFY must be 0 in production.',
+            2
+        );
+    }
+
+    if (app_config_flag_enabled($config['RAZORPAY_HTTP_SKIP_TLS_VERIFY'] ?? '0')) {
+        app_bootstrap_fail(
+            'Server configuration error. Production configuration is invalid.',
+            '[fabric-export] FATAL: RAZORPAY_HTTP_SKIP_TLS_VERIFY must be 0 in production.',
             2
         );
     }

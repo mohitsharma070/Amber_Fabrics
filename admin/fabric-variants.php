@@ -87,24 +87,15 @@ if ($action === 'save') {
         $allowedExt = ['mp4', 'webm', 'ogg'];
         $allowedMime = ['video/mp4', 'video/webm', 'video/ogg'];
         $maxSize = 25 * 1024 * 1024;
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('Variant video upload failed.');
-        }
-        $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-        $mime = mime_content_type((string) ($file['tmp_name'] ?? '')) ?: '';
-        if (($file['size'] ?? 0) > $maxSize) {
-            throw new RuntimeException('Variant video must be under 25MB.');
-        }
-        if (!in_array($ext, $allowedExt, true) || !in_array($mime, $allowedMime, true)) {
-            throw new RuntimeException('Variant video must be MP4, WEBM or OGG.');
+        try {
+            UploadPolicy::validate($file, $allowedExt, $allowedMime, $maxSize);
+        } catch (Throwable $e) {
+            throw new RuntimeException('Variant video must be a valid MP4, WEBM or OGG under 25MB.');
         }
         $saved = random_filename((string) ($file['name'] ?? 'variant.mp4'));
         try {
-            $target = fabric_upload_path($saved);
+            UploadPolicy::move($file, fabric_upload_directory(), $saved);
         } catch (Throwable $e) {
-            throw new RuntimeException($e->getMessage(), 0, $e);
-        }
-        if (!move_uploaded_file((string) ($file['tmp_name'] ?? ''), $target)) {
             throw new RuntimeException('Could not save variant video.');
         }
         return $saved;

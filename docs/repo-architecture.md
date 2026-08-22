@@ -1,5 +1,9 @@
 # Repository architecture
 
+The modernization principles, target boundaries, diagrams, and incremental roadmap
+are maintained in [`ARCHITECTURE.md`](ARCHITECTURE.md). This document remains the
+detailed inventory of current routes and business behavior.
+
 ## System shape
 
 Amber Fabrics is a file-routed PHP ecommerce application. Apache rewrites clean browser URLs to PHP handlers; `router.php` mirrors those routes for PHP's built-in development server. There is no framework router or dependency-injection container.
@@ -29,11 +33,14 @@ MySQL, session state, email, Razorpay, Bigship, generated feeds
 ## Bootstrap and shared layers
 
 - `config/db.php` selects local/production mode, loads server-only config/environment variables, optionally imports the two required identity secrets from a mode-`0600` file outside the application root on shared hosting, validates production settings, and opens the database connection.
-- `includes/init.php` loads common functions, customer auth, plugins, security headers/CSP, error policy, cart/wishlist session state, and production fatal logging.
-- `includes/functions.php` loads services and narrowly grouped helpers.
-- `includes/services/` owns cart, inventory, delivery estimate, email, payment, order access, product admin/import/variants, and site settings operations.
+- `includes/init.php` loads common functions, customer auth from `includes/security/customer-auth.php`, plugins, security headers/CSP, error policy, cart/wishlist session state, and production fatal logging. Each response carries an `X-Request-ID`; structured application logs reuse that ID and recursively redact secret-bearing context keys. `includes/customer-auth.php` remains a compatibility include for older callers.
+- `includes/functions.php` loads domain policy, security, integration, presentation, services, and narrowly grouped compatibility helpers.
+- `includes/services/` owns cart, inventory, checkout reads/pricing/item snapshots, transaction-neutral order/order-item/payment/estimate/shipment persistence, access-scoped order read models, repeated product/customer reads, coupon policy and locked reservation/release, delivery estimate, email, payment, order access, product admin/import/variants, site settings, customer credential verification/session merging, customer account/address mutations, and category administration. Login, profile, checkout, order-detail, and category endpoint files coordinate HTTP/access concerns and delegate those domain, read, or persistence workflows.
+- `includes/domain/`, `includes/security/`, and `includes/presentation/` own pure order-transition policy, online-payment preference normalization, external-link/upload validation, and commerce display metadata. `InventoryService` retains thin compatibility methods for callers that have not migrated yet.
+- `includes/integrations/` owns provider-independent HTTP method, host, HTTPS, TLS, timeout, retry-status, JSON decoding, and sanitized transport-result policy. Razorpay, Bigship, Meta CAPI, and COD Guard retain their provider payloads and outward error contracts while using this shared boundary.
 - `includes/hooks.php`, `includes/plugin-loader.php`, and `plugins/` provide additive feature hooks.
-- Storefront pages share `includes/header.php` and `includes/footer.php`, which provide the skip link, single `main` landmark, navigation, consent UI, and storefront assets. Admin-only presentation and behavior live in `css/admin.css` and `js/admin.js`; public pages do not load those additions. These first-party assets are served directly without a Node build step, use component-scoped responsive rules, and initialize behavior through guarded, idempotent JavaScript entry points.
+- Storefront pages retain the public-compatible `includes/header.php` and `includes/footer.php` include paths. Those files are thin shims; the layout implementations in `includes/views/layouts/` provide the skip link, single `main` landmark, navigation, consent UI, and storefront assets. Admin-only presentation and behavior live in `css/admin.css` and `js/admin.js`; public pages do not load those additions. These first-party assets are served directly without a Node build step, use component-scoped responsive rules, and initialize behavior through guarded, idempotent JavaScript entry points.
+- Storefront, customer, guest, and admin layouts share `includes/partials/interaction-layer.php` and the `AmberUI` API in `js/script.js`. Existing `data-confirm` and `data-confirm-modal` hooks open the same accessible Bootstrap dialog, preserve the original submitter, and apply loading only after confirmation. `AmberUI.toast()` provides severity-aware queued notifications, while validation failures and durable operational notices remain inline. Destructive dialogs use danger styling and a static backdrop; specialized editor modals keep their existing behavior.
 
 ## Route groups
 
@@ -59,6 +66,7 @@ Clean routes and explicit handler routes coexist. Machine callbacks and mutation
 - When WhatsApp Cloud API and its approved utility template are configured, COD checkout requires explicit order-scoped consent only when the final amount selects WhatsApp or call confirmation; low-value auto-confirmed COD orders are not gated. The consent timestamp and copy version are stored with `cod_confirmations`; it never authorizes marketing messages. The template contains Confirm and Cancel quick-reply buttons whose per-order payload is checked against the stored response token and originating customer phone; typed YES/NO replies remain supported.
 - Guest order operations use database-backed, expiring, hashed access tokens.
 - Razorpay verifies HMAC signatures. Courier and COD webhooks validate configured signature/token modes before processing.
+- Razorpay and Bigship TLS certificate verification cannot be disabled in production. Razorpay connect/total timeouts, optional CA bundle, and the local-only TLS override can be supplied through environment configuration.
 - `includes/init.php` emits CSP, HSTS on HTTPS, frame, MIME, referrer, and permissions headers.
 - `.htaccess` and `router.php` block direct access to config, database, includes, plugins, scripts, temporary files, dependencies, and logs.
 
@@ -66,17 +74,17 @@ Clean routes and explicit handler routes coexist. Machine callbacks and mutation
 
 ### Product and inventory
 
-Products are simple or variable and sell by piece, set, or meter. `ProductAdminService`, `ProductVariantService`, and `InventoryService` coordinate publish readiness, SKU/slug uniqueness, variants, unit-aware stock, media, and availability. Historical variants may be archived instead of deleted when business records reference them. Stock dashboards and alerts count simple-product inventory plus active variant SKUs; unused variable-parent stock is excluded. Alert cooldowns are keyed by product and nullable variant.
+Products are simple or variable and sell by piece, set, or meter. `ProductAdminService`, `ProductVariantService`, and `InventoryService` coordinate publish readiness, SKU/slug uniqueness, variants, unit-aware stock, media, and availability. `ProductReadService` centralizes the repeated active-detail, analytics, and unit-type query contracts used by storefront, cart merging, and Meta integrations. Historical variants may be archived instead of deleted when business records reference them. Stock dashboards and alerts count simple-product inventory plus active variant SKUs; unused variable-parent stock is excluded. Alert cooldowns are keyed by product and nullable variant.
 
 Product feeds retain their public XML/JSON locations and base fields. A simple product emits one stable `p-{product_id}` offer. A variable product emits one offer per active variant using `p-{product_id}-v-{variant_id}`, parent/item-group and variant identifiers, SKU, color, size, variant-image fallback, price-override fallback, unit type, and variant stock. Active zero-stock variants remain present as out-of-stock offers for restock consumers; archived variants are omitted.
 
 ### Cart and checkout
 
-The cart is session-backed and can persist for authenticated customers. Checkout validates delivery details, coupon state, payment method, inventory, and a short-lived shipping quote token. `shipping-rate.php` calculates manual or courier-filtered rates; delivery estimates are snapshotted on orders.
+The cart is session-backed and can persist for authenticated customers. `CheckoutInput` owns checkout request normalization and validation, `CheckoutReadService` owns customer/last-order prefill and saved-address selection, `OrderItemSnapshotService` locks and snapshots canonical product/variant state, and `CheckoutPricingService` owns tax jurisdiction and inclusive-GST allocation. `OrderPersistenceService` owns the order, item, delivery-estimate, initial-payment, zero-amount, and quoted-shipment statements without starting or completing transactions. `CouponService` owns coupon normalization, validation, guest identity hashing, locked checkout resolution, reservation, and release; the established global coupon functions remain compatibility wrappers. `place-order.php` deliberately remains the transaction owner for order creation, inventory and coupon reservation, outbox enqueue, and commit. Checkout validates delivery details, coupon state, payment method, inventory, and a short-lived shipping quote token. `shipping-rate.php` calculates manual or courier-filtered rates; delivery estimates are snapshotted on orders.
 
 ### Orders and payments
 
-`place-order.php` owns transaction-scoped order creation, inventory reservation, and coupon-capacity reservation. `coupon_usages` is the per-order reservation ledger for customers and guests, while `coupons.used_count` includes reserved and completed usage. Authenticated reuse remains keyed by customer. Guest reuse is keyed by the unique `(coupon_id, guest_identity_hash)` pair, where `guest_identity_hash` is an HMAC-SHA256 of normalized email and canonical phone digits using the immutable, environment-managed `APP_IDENTITY_HASH_KEY`. The key must not be rotated without a rehash migration. Authoritative cancellation, signed payment failure, or expiry deletes that reservation and decrements capacity idempotently; a retry must reacquire capacity with the same identity.
+`place-order.php` owns transaction-scoped order creation, inventory reservation, and coupon-capacity reservation while delegating order writes to `OrderPersistenceService` and coupon locks/writes to transaction-neutral `CouponService`. `coupon_usages` is the per-order reservation ledger for customers and guests, while `coupons.used_count` includes reserved and completed usage. Authenticated reuse remains keyed by customer. Guest reuse is keyed by the unique `(coupon_id, guest_identity_hash)` pair, where `guest_identity_hash` is an HMAC-SHA256 of normalized email and canonical phone digits using the immutable, environment-managed `APP_IDENTITY_HASH_KEY`. The key must not be rotated without a rehash migration. Authoritative cancellation, signed payment failure, or expiry deletes that reservation and decrements capacity idempotently; a retry must reacquire capacity with the same identity.
 
 Order-commit, payment-success, confirmation-email, activation-email, COD, courier, and server integration work is recorded in the transactional outbox before the business transaction commits. The request attempts delivery after commit, but delivery failure never rolls the customer back to checkout. `commerce_outbox` provides deterministic event deduplication, claims, stale-claim recovery, one immediate attempt plus five bounded retries, and sanitized errors; `commerce_outbox_deliveries` records each hook callback independently so a successful handler is not rerun when another handler fails. Cron retries after 1, 5, 15, 60, and 240 minutes. Browser callbacks and Razorpay webhooks enqueue the same deterministic payment-success events.
 
@@ -84,7 +92,7 @@ COD can support guests. Online payment proceeds through a claimed, reusable Razo
 
 ### Order access and after-sales
 
-Authenticated customers access their own orders. Guests receive expiring management/activation tokens. Cancellation, return, support, invoice, activation-email, and retry-payment flows retain order ownership or token checks. Returns are refund-only and share one inclusive seven-calendar-day eligibility calculation from `shipments.delivered_at` in UTC. Guest order pages show the existing return, items, status, refund state, administrator message, and reverse-pickup tracking without permitting a duplicate request.
+Authenticated customers access their own orders. Guests receive expiring management/activation tokens. `OrderReadService` supplies shared order, item, shipment, return, reverse-pickup, and activity read models after the caller's customer predicate, guest grant, or admin gate has been enforced. Cancellation, return, support, invoice, activation-email, and retry-payment flows retain order ownership or token checks. Returns are refund-only and share one inclusive seven-calendar-day eligibility calculation from `shipments.delivered_at` in UTC. Guest order pages show the existing return, items, status, refund state, administrator message, and reverse-pickup tracking without permitting a duplicate request.
 
 ### Courier lifecycle
 
@@ -96,7 +104,7 @@ The shipping plugin authenticates to Bigship server-side, caches reference/auth 
 
 Cron callbacks return structured success, skipped, degraded, or failed results. Razorpay expiry and COD expiry are critical and produce a nonzero exit when any record cannot be finalized. Recoverable mail, feed, courier, inventory, RTO, and support errors continue the remaining batch and mark the run degraded. The latest run status, last fully successful time, duration, and sanitized failure summary are persisted in `site_settings` and surfaced on the admin dashboard. Compact sanitized histories are retained for 30 days in `cron_run_history`; bounded cleanup removes at most 500 expired rows per run. The Operations Center exposes cron callbacks, payment attempts, refund and stock ledgers, and super-admin audit records without raw payloads or secrets.
 
-The readiness check validates the priority-remediation migration checksum, required outbox/coupon fields, production secret presence without returning secret values, and aggregate outbox health. Abandoned-cart and back-in-stock mail use atomic claims, recover claims older than 15 minutes, and retry five times with 15, 30, 60, 120, and 240 minute delays. Product feeds are written to verified same-directory temporary files and atomically renamed so readers cannot observe partial files.
+The readiness check validates the priority-remediation and architecture-hardening migration checksums, required category/outbox/coupon fields, production secret presence without returning secret values, and aggregate outbox health. Abandoned-cart and back-in-stock mail use atomic claims, recover claims older than 15 minutes, and retry five times with 15, 30, 60, 120, and 240 minute delays. Product feeds are written to verified same-directory temporary files and atomically renamed so readers cannot observe partial files.
 
 COD Guard inbound WhatsApp messages are claimed by provider message ID in `cod_guard_webhook_events`. Processed or ignored IDs cannot change an order twice; active processing claims return a retryable failure instead of being acknowledged as complete, while failed or stale claims can be safely reclaimed without retaining raw webhook payloads. The order sidebar shows the latest matched customer reply and receipt time after removing the internal quick-reply payload/token. Cron deletes at most 5,000 ledger rows older than 90 days per run.
 
@@ -109,6 +117,7 @@ COD Guard inbound WhatsApp messages are claimed by provider message ID in `cod_g
 - Important workflows use transactions and ledger/history tables to preserve order and inventory integrity.
 - Newsletter runtime code and the fresh-install subscriber table have been retired. The 2026-08-22 migration removes the retired empty table; the historical newsletter migration remains immutable.
 - Public form and customer login limits use pre-created tables and row locks/atomic writes. Normal requests perform no DDL or global cleanup; bounded stale public-form cleanup runs from cron.
+- `categories.uses_variant_size` is defined in fresh schema/setup and by the idempotent 2026-08-25 migration. The admin Categories request no longer attempts schema changes; the migration tolerates hosts where that legacy request already created the column.
 
 ## Testing
 

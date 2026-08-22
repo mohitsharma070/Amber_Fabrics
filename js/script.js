@@ -32,18 +32,143 @@
             });
     }
 
+    var AmberUI = window.AmberUI = window.AmberUI || {};
+    var activeConfirmation = null;
+
+    function confirmationAttribute(form, submitter, name) {
+        var submitterValue = submitter && typeof submitter.getAttribute === "function"
+            ? submitter.getAttribute(name)
+            : "";
+        return submitterValue || form.getAttribute(name) || "";
+    }
+
+    function confirmationOptions(form, submitter) {
+        var message = confirmationAttribute(form, submitter, "data-confirm-message")
+            || confirmationAttribute(form, submitter, "data-confirm");
+        var requiresModal = form.hasAttribute("data-confirm-modal")
+            || (submitter && submitter.hasAttribute && submitter.hasAttribute("data-confirm-modal"));
+        if (!message && !requiresModal) return null;
+
+        var context = confirmationAttribute(form, submitter, "data-confirm-context");
+        var variant = confirmationAttribute(form, submitter, "data-confirm-variant");
+        var okText = confirmationAttribute(form, submitter, "data-confirm-ok");
+        var title = confirmationAttribute(form, submitter, "data-confirm-title");
+        var cancelText = confirmationAttribute(form, submitter, "data-confirm-cancel");
+
+        if (context === "checkout") {
+            var payment = form.querySelector('[name="payment_method"]:checked');
+            var total = document.getElementById("summary_total");
+            var isCod = !payment || payment.value === "cod";
+            title = title || (isCod ? "Confirm COD Order" : "Continue to Secure Payment");
+            message = "Payment method: " + (isCod ? "Cash on Delivery" : "Online payment")
+                + ". Amount payable: " + (total ? total.textContent.trim() : "shown total") + ".";
+            okText = okText || (isCod ? "Place COD Order" : "Continue to Payment");
+            variant = variant || "primary";
+        }
+
+        if (!variant) {
+            variant = /delete|remove|cancel|archive|refund/i.test((title || "") + " " + (okText || "") + " " + message)
+                ? "danger"
+                : "primary";
+        }
+
+        return {
+            title: title || (variant === "danger" ? "Confirm action" : "Please confirm"),
+            message: message || "Are you sure you want to continue?",
+            okText: okText || "Confirm",
+            cancelText: cancelText || "Cancel",
+            variant: variant,
+            trigger: submitter || document.activeElement
+        };
+    }
+
+    AmberUI.confirm = function (options) {
+        options = options || {};
+        var dialog = document.getElementById("uiConfirmDialog");
+        var Modal = window.bootstrap && window.bootstrap.Modal;
+        if (!dialog || !Modal || activeConfirmation) return Promise.resolve(false);
+
+        var title = document.getElementById("uiConfirmDialogTitle");
+        var message = document.getElementById("uiConfirmDialogMessage");
+        var icon = document.getElementById("uiConfirmDialogIcon");
+        var cancel = document.getElementById("uiConfirmDialogCancel");
+        var confirm = document.getElementById("uiConfirmDialogOk");
+        var requestedVariant = options.variant || (/delete|remove|cancel|archive|refund/i.test(
+            (options.title || "") + " " + (options.okText || "") + " " + (options.message || "")
+        ) ? "danger" : "primary");
+        var variant = requestedVariant === "danger" ? "danger" : (requestedVariant === "warning" ? "warning" : "primary");
+
+        title.textContent = options.title || "Please confirm";
+        message.textContent = options.message || "Are you sure you want to continue?";
+        icon.hidden = options.icon === false;
+        cancel.textContent = options.cancelText || "Cancel";
+        confirm.textContent = options.okText || "Confirm";
+        confirm.className = "btn btn-" + (variant === "warning" ? "warning" : variant);
+        dialog.dataset.variant = variant;
+
+        var modal = Modal.getOrCreateInstance(dialog, { backdrop: "static", keyboard: true, focus: true });
+        return new Promise(function (resolve) {
+            activeConfirmation = {
+                accepted: false,
+                resolve: resolve,
+                trigger: options.trigger instanceof HTMLElement ? options.trigger : document.activeElement
+            };
+            modal.show();
+        });
+    };
+
+    window.adminConfirm = function (options) {
+        return AmberUI.confirm(options);
+    };
+
     function initConfirmations() {
+        var dialog = document.getElementById("uiConfirmDialog");
+        var okButton = document.getElementById("uiConfirmDialogOk");
+        if (dialog && okButton) {
+            okButton.addEventListener("click", function () {
+                if (!activeConfirmation) return;
+                activeConfirmation.accepted = true;
+                window.bootstrap.Modal.getOrCreateInstance(dialog).hide();
+            });
+            dialog.addEventListener("shown.bs.modal", function () { okButton.focus(); });
+            dialog.addEventListener("hidden.bs.modal", function () {
+                if (!activeConfirmation) return;
+                var result = activeConfirmation.accepted;
+                var resolve = activeConfirmation.resolve;
+                var trigger = activeConfirmation.trigger;
+                activeConfirmation = null;
+                resolve(result);
+                if (trigger && document.contains(trigger)) trigger.focus({ preventScroll: true });
+            });
+        }
+
         document.addEventListener("submit", function (event) {
             var form = event.target;
             if (!(form instanceof HTMLFormElement)) return;
-            var submitter = event.submitter;
-            var message = submitter && typeof submitter.getAttribute === "function"
-                ? submitter.getAttribute("data-confirm")
-                : "";
-            message = message || form.getAttribute("data-confirm");
-            if (message && !window.confirm(message)) {
-                event.preventDefault();
+            if (event.defaultPrevented) return;
+            if (form.dataset.confirmed === "1") {
+                delete form.dataset.confirmed;
+                return;
             }
+
+            var submitter = event.submitter;
+            var options = confirmationOptions(form, submitter);
+            if (!options) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (form.dataset.confirmPending === "1") return;
+            form.dataset.confirmPending = "1";
+            AmberUI.confirm(options).then(function (confirmed) {
+                delete form.dataset.confirmPending;
+                if (!confirmed) return;
+                form.dataset.confirmed = "1";
+                if (typeof form.requestSubmit === "function") {
+                    form.requestSubmit(submitter || undefined);
+                } else {
+                    form.submit();
+                }
+            });
         });
     }
 
@@ -66,14 +191,35 @@
         });
     }
 
-    function restoreLoadingButton(button) {
+    AmberUI.setButtonLoading = function (button, loading, label) {
         if (!button) return;
+        if (loading) {
+            if (!button.dataset.originalLabel) button.dataset.originalLabel = button.innerHTML;
+            button.dataset.originalDisabled = button.disabled ? "1" : "0";
+            button.dataset.originalAriaLabel = button.hasAttribute("aria-label") ? button.getAttribute("aria-label") : "";
+            button.dataset.hadAriaLabel = button.hasAttribute("aria-label") ? "1" : "0";
+            button.classList.add("is-loading");
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+            if (label) button.setAttribute("aria-label", label);
+            return;
+        }
         button.classList.remove("is-loading");
-        button.disabled = false;
+        button.disabled = button.dataset.originalDisabled === "1";
+        button.removeAttribute("aria-busy");
+        if (button.dataset.hadAriaLabel === "1") button.setAttribute("aria-label", button.dataset.originalAriaLabel || "");
+        else button.removeAttribute("aria-label");
         if (button.dataset.originalLabel) {
             button.innerHTML = button.dataset.originalLabel;
             delete button.dataset.originalLabel;
         }
+        delete button.dataset.originalDisabled;
+        delete button.dataset.originalAriaLabel;
+        delete button.dataset.hadAriaLabel;
+    };
+
+    function restoreLoadingButton(button) {
+        AmberUI.setButtonLoading(button, false, button.getAttribute("aria-label") || "");
     }
 
     function initFormLoading() {
@@ -88,9 +234,7 @@
                 : form.querySelector('[type="submit"]:not(.js-no-loading)');
             if (!submitBtn || submitBtn.disabled || submitBtn.classList.contains("js-no-loading")) return;
 
-            submitBtn.dataset.originalLabel = submitBtn.innerHTML;
-            submitBtn.classList.add("is-loading");
-            submitBtn.disabled = true;
+            AmberUI.setButtonLoading(submitBtn, true, "Processing");
             window.setTimeout(function () {
                 restoreLoadingButton(submitBtn);
             }, 12000);
@@ -106,20 +250,6 @@
         document.addEventListener("click", function (event) {
             var target = eventElement(event);
             if (!target) return;
-
-            var button = target.closest(".btn");
-            if (button && !button.disabled && !button.classList.contains("is-loading") && event.detail !== 0) {
-                var rect = button.getBoundingClientRect();
-                var size = Math.max(rect.width, rect.height);
-                var ripple = document.createElement("span");
-                ripple.className = "btn-ripple";
-                ripple.style.width = size + "px";
-                ripple.style.height = size + "px";
-                ripple.style.left = (event.clientX - rect.left - size / 2) + "px";
-                ripple.style.top = (event.clientY - rect.top - size / 2) + "px";
-                button.appendChild(ripple);
-                ripple.addEventListener("animationend", function () { ripple.remove(); }, { once: true });
-            }
 
             var productCard = target.closest(".product-click-card");
             if (productCard && !target.closest("a, button, input, select, textarea, label, form")) {
@@ -499,7 +629,10 @@
         var buttons = banner.querySelectorAll("[data-consent-choice]");
         if (!buttons.length) return;
 
-        function setVisible(visible) { banner.classList.toggle("d-none", !visible); }
+        function setVisible(visible) {
+            banner.classList.toggle("d-none", !visible);
+            positionToastRegion();
+        }
         function setBusy(busy) {
             buttons.forEach(function (button) { button.disabled = busy; });
             banner.classList.toggle("is-busy", busy);
@@ -562,35 +695,72 @@
         });
     }
 
-    function showToast(message, type) {
-        var existing = document.getElementById("cart-toast");
-        if (existing) existing.remove();
+    function positionToastRegion() {
+        var region = document.getElementById("siteToastRegion");
+        if (!region) return;
+        var offset = 16;
+        var nav = document.querySelector(".mobile-bottom-nav");
+        var consent = document.getElementById("cookieConsentBanner");
+        if (nav && window.getComputedStyle(nav).display !== "none") offset += nav.getBoundingClientRect().height;
+        if (consent && !consent.classList.contains("d-none")) offset += consent.getBoundingClientRect().height;
+        region.style.setProperty("--site-toast-bottom", offset + "px");
+    }
+
+    AmberUI.toast = function (options) {
+        if (typeof options === "string") options = { message: options };
+        options = options || {};
+        var region = document.getElementById("siteToastRegion");
+        if (!region || !options.message) return null;
+
+        var type = ["success", "error", "warning", "info"].indexOf(options.type) >= 0 ? options.type : "info";
         var toast = document.createElement("div");
-        toast.id = "cart-toast";
-        toast.className = "site-toast site-toast--" + (type === "error" ? "error" : "success");
-        toast.setAttribute('role', 'status');
-        toast.setAttribute("aria-live", "polite");
-        toast.textContent = message;
-        document.body.appendChild(toast);
+        var message = document.createElement("span");
+        var close = document.createElement("button");
+        var duration = Math.max(2000, Number(options.duration) || (type === "error" ? 6000 : 4000));
+        var remaining = duration;
+        var startedAt = 0;
+        var timer = 0;
 
-        function position() {
-            var offset = 16;
-            var nav = document.querySelector(".mobile-bottom-nav");
-            var consent = document.getElementById("cookieConsentBanner");
-            if (nav && window.getComputedStyle(nav).display !== "none") offset += nav.getBoundingClientRect().height;
-            if (consent && !consent.classList.contains("d-none")) offset += consent.getBoundingClientRect().height;
-            toast.style.setProperty("--site-toast-bottom", offset + "px");
-        }
+        toast.className = "site-toast site-toast--" + type;
+        toast.setAttribute("role", type === "error" ? "alert" : "status");
+        toast.setAttribute("aria-live", type === "error" ? "assertive" : "polite");
+        message.className = "site-toast__message";
+        message.textContent = String(options.message);
+        close.type = "button";
+        close.className = "site-toast__close";
+        close.setAttribute("aria-label", "Dismiss notification");
+        close.textContent = "\u00d7";
+        toast.appendChild(message);
+        toast.appendChild(close);
+        region.appendChild(toast);
+        positionToastRegion();
 
-        position();
-        window.addEventListener("resize", position, { passive: true });
-        window.setTimeout(function () {
+        function dismiss() {
+            window.clearTimeout(timer);
+            if (!toast.isConnected || toast.classList.contains("is-leaving")) return;
             toast.classList.add("is-leaving");
-            window.setTimeout(function () {
-                window.removeEventListener("resize", position);
-                toast.remove();
-            }, 300);
-        }, 3000);
+            window.setTimeout(function () { toast.remove(); }, 200);
+        }
+        function startTimer() {
+            window.clearTimeout(timer);
+            startedAt = Date.now();
+            timer = window.setTimeout(dismiss, remaining);
+        }
+        function pauseTimer() {
+            window.clearTimeout(timer);
+            remaining = Math.max(0, remaining - (Date.now() - startedAt));
+        }
+        close.addEventListener("click", dismiss);
+        toast.addEventListener("mouseenter", pauseTimer);
+        toast.addEventListener("mouseleave", startTimer);
+        toast.addEventListener("focusin", pauseTimer);
+        toast.addEventListener("focusout", startTimer);
+        startTimer();
+        return toast;
+    };
+
+    function showToast(message, type) {
+        return AmberUI.toast({ message: message, type: type });
     }
 
     function initAjaxCart() {
@@ -610,8 +780,7 @@
             }
 
             var originalText = button.textContent;
-            button.disabled = true;
-            button.textContent = "Adding\u2026";
+            AmberUI.setButtonLoading(button, true, "Adding to cart");
             var body = new URLSearchParams({ action: "add", fabric_id: String(fabricId), quantity: String(quantity) });
             var token = csrfToken();
             if (token) body.append("csrf_token", token);
@@ -631,6 +800,7 @@
                     window.amberGoogleAnalyticsTrack(data.google_analytics_event.name, data.google_analytics_event.payload || {});
                 }
                 showToast(data.message || "Added to cart!", "success");
+                AmberUI.setButtonLoading(button, false, "Adding to cart");
                 button.textContent = "Added \u2713";
                 window.setTimeout(function () {
                     button.textContent = originalText;
@@ -641,8 +811,7 @@
                     ? "Request timed out. Please try again."
                     : (error instanceof TypeError ? "Network error. Please try again." : error.message);
                 showToast(message || "Network error. Please try again.", "error");
-                button.textContent = originalText;
-                button.disabled = false;
+                AmberUI.setButtonLoading(button, false, "Adding to cart");
             });
         });
     }
@@ -662,6 +831,8 @@
         initGoTop();
         initCookieConsent();
         initAjaxCart();
+        positionToastRegion();
+        window.addEventListener("resize", positionToastRegion, { passive: true });
     }
 
     if (document.readyState === "loading") {

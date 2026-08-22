@@ -11,7 +11,8 @@ $read = static fn(string $path): string => (string) file_get_contents($root . '/
 $migration = $read('database/migrations/2026-08-20-customer-backend-hardening.sql');
 $schema = $read('database/schema.sql');
 $setup = $read('database/setup.php');
-$coupons = $read('includes/coupon-functions.php');
+$coupons = $read('includes/helpers/coupon-functions.php');
+$couponService = $read('includes/services/CouponService.php');
 $placeOrder = $read('place-order.php');
 $failure = $read('payment/razorpay-failure.php');
 $verify = $read('payment/razorpay-verify.php');
@@ -20,7 +21,7 @@ $create = $read('payment/razorpay-create.php');
 $paymentService = $read('includes/services/PaymentService.php');
 $retry = $read('retry-payment.php');
 $guestRetry = $read('guest/retry-payment.php');
-$auth = $read('includes/customer-auth.php');
+$auth = $read('includes/security/customer-auth.php');
 $init = $read('includes/init.php');
 $login = $read('customer/login.php');
 $reset = $read('customer/reset-password.php');
@@ -30,6 +31,8 @@ $cancelOrder = $read('customer/cancel-order.php');
 $adminHelpers = $read('includes/helpers/admin.php');
 $cron = $read('cron/run-plugins.php');
 $cartService = $read('includes/services/CartService.php');
+$addressService = $read('includes/services/CustomerAddressService.php');
+$accountService = $read('includes/services/CustomerAccountService.php');
 
 foreach ([$migration, $schema, $setup] as $source) {
     $assert(str_contains($source, 'auth_version'), 'Migration, schema, and setup must include customer auth_version.');
@@ -44,9 +47,10 @@ $setupCouponStart = strpos($setup, 'CREATE TABLE IF NOT EXISTS coupon_usages');
 $setupCoupon = $setupCouponStart === false ? '' : substr($setup, $setupCouponStart, 900);
 $assert(str_contains($setupCoupon, 'customer_id INT DEFAULT NULL'), 'Fresh setup must allow guest coupon reservations.');
 
-$assert(str_contains($coupons, 'function reserve_coupon_for_order') && str_contains($coupons, 'FOR UPDATE'), 'Coupon reservation must lock capacity transactionally.');
-$assert(str_contains($coupons, 'function release_coupon_usage_for_order') && str_contains($coupons, 'affected_rows'), 'Coupon release must be idempotent.');
-$assert(str_contains($placeOrder, 'reserve_coupon_for_order($conn, $couponId, $customerId, $orderId, $guestIdentityHash)'), 'Order creation must reserve coupon capacity for customer and guest orders.');
+$assert(str_contains($coupons, 'function reserve_coupon_for_order') && str_contains($coupons, 'CouponService::reserveForOrder'), 'Legacy coupon reservation callers must retain a compatibility wrapper.');
+$assert(str_contains($couponService, 'public static function reserveForOrder') && str_contains($couponService, 'FOR UPDATE'), 'Coupon reservation must lock capacity transactionally.');
+$assert(str_contains($coupons, 'function release_coupon_usage_for_order') && str_contains($couponService, 'affected_rows'), 'Coupon release must remain idempotent behind its compatibility wrapper.');
+$assert(str_contains($placeOrder, 'CouponService::reserveForOrder($conn, $couponId, $customerId, $orderId, $guestIdentityHash)'), 'Order creation must reserve coupon capacity for customer and guest orders.');
 $assert(str_contains($retry, 'reserve_coupon_for_order') && str_contains($guestRetry, 'reserve_coupon_for_order'), 'Both retry paths must reacquire released coupon capacity.');
 $assert(!str_contains($verify, 'consume_coupon_after_razorpay_capture'), 'Browser capture verification must not perform coupon bookkeeping.');
 $assert(!str_contains($webhook, 'consume_coupon_after_razorpay_capture'), 'Webhook capture must not perform coupon bookkeeping.');
@@ -70,7 +74,7 @@ $assert(str_contains($auth, 'SELECT is_active, auth_version FROM customers') && 
 $assert(str_contains($auth, 'customer_clear_auth_session') && !str_contains($auth, 'session_destroy()'), 'Invalid auth must clear only auth state and preserve the session cart.');
 $assert(str_contains($login, "\$_SESSION['customer_auth_version']"), 'Login must store auth_version in the session.');
 $assert(str_contains($reset, 'auth_version = auth_version + 1') && str_contains($reset, 'reset_token = ?') && str_contains($reset, 'affected_rows !== 1'), 'Password reset must atomically consume the token and revoke sessions.');
-$assert(str_contains($profile, 'auth_version = auth_version + 1') && str_contains($profile, "\$_SESSION['customer_auth_version'] = \$currentAuthVersion + 1") && str_contains($profile, 'session_regenerate_id(true)'), 'Password change must preserve only the current browser session.');
+$assert(str_contains($accountService, 'auth_version = auth_version + 1') && str_contains($accountService, '$update->affected_rows !== 1') && str_contains($profile, "\$_SESSION['customer_auth_version']") && str_contains($profile, 'session_regenerate_id(true)'), 'Password change must preserve only the current browser session.');
 
 $customerLimitStart = strpos($auth, 'function customer_check_rate_limit');
 $customerLimitEnd = strpos($auth, 'function customer_record_attempt', $customerLimitStart === false ? 0 : $customerLimitStart);
@@ -88,14 +92,15 @@ $cartEnd = strpos($cartService, 'public static function cart_load_from_db', $car
 $cartSave = $cartStart === false ? '' : substr($cartService, $cartStart, $cartEnd === false ? null : $cartEnd - $cartStart);
 $assert(str_contains($cartSave, 'begin_transaction') && str_contains($cartSave, 'DELETE FROM cart_items') && str_contains($cartSave, 'rollback()'), 'Saved-cart replacement must roll back delete-and-reinsert failures.');
 
-$defaultStart = strpos($profile, "\$action === 'set_default_address'");
-$defaultFlow = $defaultStart === false ? '' : substr($profile, $defaultStart, 2500);
+$defaultStart = strpos($addressService, 'public static function setDefault');
+$defaultFlow = $defaultStart === false ? '' : substr($addressService, $defaultStart, 2500);
 $ownershipPos = strpos($defaultFlow, 'LIMIT 1 FOR UPDATE');
 $clearPos = strpos($defaultFlow, 'SET is_default_shipping = 0');
 $assert($ownershipPos !== false && $clearPos !== false && $ownershipPos < $clearPos, 'Default-address ownership must be locked before clearing the old default.');
 $assert(str_contains($defaultFlow, '$set->affected_rows !== 1'), 'Default-address update results must be checked.');
+$assert(str_contains($profile, 'CustomerAddressService::save') && str_contains($profile, 'CustomerAddressService::delete') && str_contains($profile, 'CustomerAddressService::setDefault'), 'Profile address mutations must delegate to the focused service.');
 $assert(str_contains($register, 'mb_strlen($name)') && str_contains($register, '$e->getCode() === 1062'), 'Registration must enforce DB lengths and handle duplicate-email races.');
-$assert(str_contains($profile, 'mb_strlen($name)') && str_contains($profile, 'Unable to update your profile right now.'), 'Profile updates must validate lengths and return generic database errors.');
+$assert(str_contains($accountService, 'mb_strlen($name)') && str_contains($profile, 'Unable to update your profile right now.') && str_contains($profile, 'CustomerAccountService::updateProfile'), 'Profile updates must validate lengths, delegate persistence, and return generic database errors.');
 $assert(str_contains($cancelOrder, '$e instanceof mysqli_sql_exception') && str_contains($cancelOrder, "flash('error', 'Unable to cancel order right now.')"), 'Customer cancellation must not expose database exceptions.');
 
 if ($failures) {

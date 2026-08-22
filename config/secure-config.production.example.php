@@ -29,4 +29,8 @@ return [
     'RAZORPAY_KEY_ID' => 'replace-with-razorpay-key-id',
     'RAZORPAY_KEY_SECRET' => 'replace-with-razorpay-key-secret',
     'RAZORPAY_WEBHOOK_SECRET' => 'replace-with-razorpay-webhook-secret',
+    'RAZORPAY_HTTP_TIMEOUT_SEC' => '15',
+    'RAZORPAY_HTTP_CONNECT_TIMEOUT_SEC' => '5',
+    'RAZORPAY_HTTP_CA_BUNDLE' => '',
+    'RAZORPAY_HTTP_SKIP_TLS_VERIFY' => '0',
 ];

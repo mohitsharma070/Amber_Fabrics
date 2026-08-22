@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
-require_once __DIR__ . '/includes/customer-auth.php';
+require_once __DIR__ . '/includes/security/customer-auth.php';
 
 $old = [
     'name' => '',
@@ -30,11 +30,8 @@ foreach ($checkoutPrefill as $field => $value) {
 // Prefill with logged-in customer profile when available.
 $customerId = current_customer_id();
 if ($customerId !== null) {
-    $custStmt = $conn->prepare("SELECT name, email, phone, country FROM customers WHERE id = ? LIMIT 1");
-    if ($custStmt) {
-        $custStmt->bind_param('i', $customerId);
-        $custStmt->execute();
-        $customer = $custStmt->get_result()->fetch_assoc() ?: [];
+    $customer = CustomerReadService::contactById($conn, $customerId) ?: [];
+    if ($customer !== []) {
         if ($old['name'] === '' && !empty($customer['name'])) {
             $old['name'] = (string) $customer['name'];
         }

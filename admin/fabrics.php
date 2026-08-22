@@ -232,7 +232,7 @@ include 'partials/header.php';
                 </td>
                 <td data-label="Quantity">
                     <span class="<?php echo $isLowStock ? 'text-danger fw-bold' : ''; ?>">
-                        <?php echo e(format_quantity_by_unit($stockVal, $unitType)); ?><?php echo InventoryService::quantity_unit_suffix($unitType); ?>
+                        <?php echo e(format_quantity_by_unit($stockVal, $unitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($unitType); ?>
                     </span>
                     <?php if ($isLowStock): ?>
                         <div class="small text-danger">Low stock</div>
@@ -252,7 +252,7 @@ include 'partials/header.php';
                 </td>
                 <td data-label="Actions" class="text-end">
                     <a class="btn btn-sm btn-outline-secondary" href="edit-fabric.php?id=<?php echo (int) $p['id']; ?>"><i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit</a>
-                    <form action="delete-fabric.php" method="POST" class="d-inline" data-confirm-modal data-confirm-title="Archive Product" data-confirm-message="Archive this product and hide it from storefront?" data-confirm-ok="Archive">
+                    <form action="delete-fabric.php" method="POST" class="d-inline" data-confirm-modal data-confirm-title="Archive Product" data-confirm-message="Archive this product and hide it from storefront?" data-confirm-ok="Archive" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="id" value="<?php echo (int) $p['id']; ?>">
                         <button class="btn btn-sm btn-outline-danger"><i class="bi bi-archive me-1" aria-hidden="true"></i>Archive</button>

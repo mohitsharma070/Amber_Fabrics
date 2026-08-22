@@ -148,70 +148,17 @@ function wishlist_bootstrap_session(mysqli $conn): void
 
 function customer_addresses_table_ready(mysqli $conn): bool
 {
-    static $checked = false;
-    static $ready = false;
-    if ($checked) {
-        return $ready;
-    }
-    $checked = true;
-    try {
-        $stmt = $conn->prepare(
-            "SELECT COUNT(*) AS total
-             FROM information_schema.TABLES
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME = 'customer_addresses'"
-        );
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $ready = ((int) ($row['total'] ?? 0)) > 0;
-    } catch (Throwable $e) {
-        $ready = false;
-    }
-    return $ready;
+    return CustomerAddressService::tableReady($conn);
 }
 
 function customer_addresses_list(mysqli $conn, int $customerId): array
 {
-    if ($customerId <= 0 || !customer_addresses_table_ready($conn)) {
-        return [];
-    }
-    try {
-        $stmt = $conn->prepare(
-            "SELECT id, label, full_name, phone, address_line, city, state, pincode, country, is_default_shipping, created_at, updated_at
-             FROM customer_addresses
-             WHERE customer_id = ?
-             ORDER BY is_default_shipping DESC, id DESC"
-        );
-        $stmt->bind_param('i', $customerId);
-        $stmt->execute();
-        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        return is_array($rows) ? $rows : [];
-    } catch (Throwable $e) {
-        error_log('[app] customer_addresses_list failed: ' . $e->getMessage());
-        return [];
-    }
+    return CustomerAddressService::list($conn, $customerId);
 }
 
 function customer_address_get(mysqli $conn, int $customerId, int $addressId): ?array
 {
-    if ($customerId <= 0 || $addressId <= 0 || !customer_addresses_table_ready($conn)) {
-        return null;
-    }
-    try {
-        $stmt = $conn->prepare(
-            "SELECT id, label, full_name, phone, address_line, city, state, pincode, country, is_default_shipping
-             FROM customer_addresses
-             WHERE id = ? AND customer_id = ?
-             LIMIT 1"
-        );
-        $stmt->bind_param('ii', $addressId, $customerId);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        return $row ?: null;
-    } catch (Throwable $e) {
-        error_log('[app] customer_address_get failed: ' . $e->getMessage());
-        return null;
-    }
+    return CustomerAddressService::get($conn, $customerId, $addressId);
 }
 
 function cart_get_or_create_db_cart(mysqli $conn, int $customerId) : int

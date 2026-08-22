@@ -30,10 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $del->bind_param('i', $id);
             $del->execute();
             if (!empty($row['file_name'])) {
-                @unlink(__DIR__ . '/../images/about/' . $row['file_name']);
+                UploadPolicy::deleteStoredFile(__DIR__ . '/../images/about', (string) $row['file_name']);
             }
             if (!empty($row['poster_image'])) {
-                @unlink(__DIR__ . '/../images/about/' . $row['poster_image']);
+                UploadPolicy::deleteStoredFile(__DIR__ . '/../images/about', (string) $row['poster_image']);
             }
             flash('success', 'About media deleted.');
         } else {
@@ -63,9 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $uploadDir = __DIR__ . '/../images/about';
-    if (!is_dir($uploadDir)) {
-        @mkdir($uploadDir, 0775, true);
-    }
+    UploadPolicy::ensureDirectory($uploadDir, 0775);
 
     $fileName = null;
     $posterName = null;
@@ -75,32 +73,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             $errors['media_file'] = 'Media upload failed. Please try again.';
         } else {
-            $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            if ($mediaType === 'image') {
-                $allowedExt = ['jpg', 'jpeg', 'png', 'webp'];
-                $allowedMime = ['image/jpeg', 'image/png', 'image/webp'];
-                $mime = mime_content_type($file['tmp_name']) ?: '';
-                if ($file['size'] > 5 * 1024 * 1024) {
-                    $errors['media_file'] = 'Image must be under 5MB.';
-                } elseif (!in_array($ext, $allowedExt, true) || !in_array($mime, $allowedMime, true) || !@getimagesize($file['tmp_name'])) {
-                    $errors['media_file'] = 'Image must be JPG, PNG or WEBP.';
+            try {
+                if ($mediaType === 'image') {
+                    UploadPolicy::validate($file, ['jpg', 'jpeg', 'png', 'webp'], ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024, true);
+                } else {
+                    UploadPolicy::validate($file, ['mp4', 'webm', 'ogg'], ['video/mp4', 'video/webm', 'video/ogg'], 25 * 1024 * 1024);
                 }
-            } else {
-                $allowedExt = ['mp4', 'webm', 'ogg'];
-                $allowedMime = ['video/mp4', 'video/webm', 'video/ogg'];
-                $mime = mime_content_type($file['tmp_name']) ?: '';
-                if ($file['size'] > 25 * 1024 * 1024) {
-                    $errors['media_file'] = 'Video must be under 25MB.';
-                } elseif (!in_array($ext, $allowedExt, true) || !in_array($mime, $allowedMime, true)) {
-                    $errors['media_file'] = 'Video must be MP4, WEBM or OGG.';
-                }
-            }
-
-            if (empty($errors)) {
                 $fileName = random_filename($file['name']);
-                if (!move_uploaded_file($file['tmp_name'], $uploadDir . '/' . $fileName)) {
-                    $errors['media_file'] = 'Media upload failed.';
-                }
+                UploadPolicy::move($file, $uploadDir, $fileName);
+            } catch (Throwable $e) {
+                $errors['media_file'] = $mediaType === 'image' ? 'Image must be a valid JPG, PNG or WEBP under 5MB.' : 'Video must be a valid MP4, WEBM or OGG under 25MB.';
             }
         }
     }
@@ -110,19 +92,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (($poster['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             $errors['poster_image'] = 'Poster image upload failed.';
         } else {
-            $posterExt = strtolower(pathinfo($poster['name'], PATHINFO_EXTENSION));
-            $posterMime = mime_content_type($poster['tmp_name']) ?: '';
-            $allowedPosterExt = ['jpg', 'jpeg', 'png', 'webp'];
-            $allowedPosterMime = ['image/jpeg', 'image/png', 'image/webp'];
-            if ($poster['size'] > 5 * 1024 * 1024) {
-                $errors['poster_image'] = 'Poster image must be under 5MB.';
-            } elseif (!in_array($posterExt, $allowedPosterExt, true) || !in_array($posterMime, $allowedPosterMime, true) || !@getimagesize($poster['tmp_name'])) {
-                $errors['poster_image'] = 'Poster image must be JPG, PNG or WEBP.';
-            } else {
+            try {
+                UploadPolicy::validate($poster, ['jpg', 'jpeg', 'png', 'webp'], ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024, true);
                 $posterName = random_filename($poster['name']);
-                if (!move_uploaded_file($poster['tmp_name'], $uploadDir . '/' . $posterName)) {
-                    $errors['poster_image'] = 'Poster image upload failed.';
-                }
+                UploadPolicy::move($poster, $uploadDir, $posterName);
+            } catch (Throwable $e) {
+                $errors['poster_image'] = 'Poster image must be a valid JPG, PNG or WEBP under 5MB.';
             }
         }
     }
@@ -252,7 +227,7 @@ include 'partials/header.php';
                 </td>
                 <td data-label="Added"><?php echo e(date('d M Y', strtotime((string) $item['created_at']))); ?></td>
                 <td data-label="Actions" class="text-end">
-                    <form method="POST" class="d-inline" data-confirm="Delete this media item?">
+                    <form method="POST" class="d-inline" data-confirm="Delete this media item?" data-confirm-title="Delete Media Item?" data-confirm-ok="Delete" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id" value="<?php echo (int) $item['id']; ?>">

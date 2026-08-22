@@ -1,5 +1,8 @@
 <?php
 
+require_once __DIR__ . '/../security/ExternalUrlPolicy.php';
+require_once __DIR__ . '/../integrations/HttpClientPolicy.php';
+
 final class BigshipService
 {
     private array $settings;
@@ -86,7 +89,8 @@ final class BigshipService
 
         $base = rtrim(trim((string) ($this->settings['api_base_url'] ?? '')), '/');
         $url = preg_match('/^https?:\/\//i', $path) ? $path : $base . '/' . ltrim($path, '/');
-        if ($base === '' || (class_exists('InventoryService') && InventoryService::safe_external_url($url) === '')) {
+        $baseHost = HttpClientPolicy::hostFromUrl($base);
+        if ($base === '' || $baseHost === '' || !HttpClientPolicy::urlAllowed($url, [$baseHost])) {
             return self::result(false, 'Bigship API URL is invalid.');
         }
         if ($method === 'GET' && $payload !== [] && !$getPayloadInBody) {
@@ -115,7 +119,7 @@ final class BigshipService
             $this->throttle();
             $last = $this->execute($method, $url, $payload, $requestHeaders, $multipart, $getPayloadInBody);
             $status = (int) ($last['status'] ?? 0);
-            if (!in_array($status, [429, 500, 502, 503, 504], true) || $attempt === 3) {
+            if (!HttpClientPolicy::retryableStatus($status) || $attempt === 3) {
                 return $last;
             }
             usleep(150000 * $attempt);
@@ -207,15 +211,9 @@ final class BigshipService
             return self::result(false, 'Unable to initialize Bigship request.');
         }
         $skipTls = (($GLOBALS['_app_mode'] ?? '') === 'local') && (int) ($this->settings['bigship_http_skip_tls_verify'] ?? 0) === 1;
-        $options = [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT => 25,
-            CURLOPT_CUSTOMREQUEST => $method,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_SSL_VERIFYPEER => !$skipTls,
-            CURLOPT_SSL_VERIFYHOST => $skipTls ? 0 : 2,
-        ];
+        $options = HttpClientPolicy::curlOptions(25, 5, $skipTls);
+        $options[CURLOPT_CUSTOMREQUEST] = $method;
+        $options[CURLOPT_HTTPHEADER] = $headers;
         if ($method !== 'GET' || $getPayloadInBody) {
             if ($multipart) {
                 $options[CURLOPT_POSTFIELDS] = $this->multipart($payload);
@@ -231,11 +229,10 @@ final class BigshipService
         curl_setopt_array($ch, $options);
         $raw = curl_exec($ch);
         $errno = curl_errno($ch);
-        $error = curl_error($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
         if ($errno !== 0) {
-            return self::result(false, 'Bigship request failed: ' . $error, $status);
+            return self::result(false, 'Bigship request failed with transport error ' . $errno . '.', $status);
         }
         $decoded = json_decode((string) $raw, true);
         $body = is_array($decoded) ? $decoded : null;

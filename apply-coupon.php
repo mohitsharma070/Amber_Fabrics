@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
-require_once __DIR__ . '/includes/coupon-functions.php';
+require_once __DIR__ . '/includes/helpers/coupon-functions.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/cart.php');

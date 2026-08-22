@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 
 require_customer();
 
@@ -21,10 +21,7 @@ $addressForm = [
     'is_default_shipping' => 0,
 ];
 
-$custStmt = $conn->prepare("SELECT name, email, phone, country FROM customers WHERE id = ?");
-$custStmt->bind_param('i', $customerId);
-$custStmt->execute();
-$cust = $custStmt->get_result()->fetch_assoc();
+$cust = CustomerAccountService::profile($conn, $customerId) ?: [];
 $addressList = customer_addresses_list($conn, $customerId);
 foreach ($addressList as $row) {
     if ((int) ($row['id'] ?? 0) === $addressEditId) {
@@ -54,22 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'update_info') {
         $activeForm = 'info';
-        $name    = trim($_POST['name']    ?? '');
-        $phone   = trim($_POST['phone']   ?? '');
-        $country = trim($_POST['country'] ?? '');
-        $cust['name'] = $name;
-        $cust['phone'] = $phone;
-        $cust['country'] = $country;
-        if ($name === '') { $errors['name'] = 'Name is required.'; }
-        if (mb_strlen($name) > 255) { $errors['name'] = 'Name must be 255 characters or fewer.'; }
-        if ($phone !== '' && (mb_strlen($phone) > 30 || !preg_match('/^[0-9+\-\s()]{7,30}$/', $phone))) { $errors['phone'] = 'Enter a valid phone number.'; }
-        if (mb_strlen($country) > 100) { $errors['country'] = 'Country must be 100 characters or fewer.'; }
+        $profileValues = CustomerAccountService::profileValues($_POST);
+        $cust = array_merge($cust, $profileValues);
+        $errors = CustomerAccountService::validateProfile($profileValues);
         if (empty($errors)) {
             try {
-                $upd = $conn->prepare("UPDATE customers SET name = ?, phone = ?, country = ? WHERE id = ?");
-                $upd->bind_param('sssi', $name, $phone, $country, $customerId);
-                $upd->execute();
-                $_SESSION['customer_name'] = $name;
+                CustomerAccountService::updateProfile($conn, $customerId, $profileValues);
+                $_SESSION['customer_name'] = (string) $profileValues['name'];
                 flash('success', 'Profile updated.');
                 redirect('/customer/profile.php');
             } catch (Throwable $e) {
@@ -83,120 +71,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newPass = $_POST['new_password']       ?? '';
         $confirm = $_POST['confirm_password']   ?? '';
 
-        $hashStmt = $conn->prepare("SELECT password_hash, auth_version FROM customers WHERE id = ?");
-        $hashStmt->bind_param('i', $customerId);
-        $hashStmt->execute();
-        $hashRow = $hashStmt->get_result()->fetch_assoc() ?: [];
-        $hash = (string) ($hashRow['password_hash'] ?? '');
-
-        if (!password_verify($current, $hash)) {
-            $errors['current_password'] = 'Current password is incorrect.';
-        } elseif (($passwordError = password_strength_error($newPass)) !== null) {
-            $errors['new_password'] = $passwordError;
-        } elseif ($newPass !== $confirm) {
-            $errors['confirm_password'] = 'New passwords do not match.';
-        } else {
-            $newHash = password_hash($newPass, PASSWORD_DEFAULT);
-            $currentAuthVersion = max(1, (int) ($hashRow['auth_version'] ?? 1));
-            $upd = $conn->prepare("UPDATE customers SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ? AND auth_version = ?");
-            $upd->bind_param('sii', $newHash, $customerId, $currentAuthVersion);
-            $upd->execute();
-            if ($upd->affected_rows !== 1) {
-                $errors['current_password'] = 'Your account changed in another session. Please try again.';
-            } else {
-                $_SESSION['customer_auth_version'] = $currentAuthVersion + 1;
-                session_regenerate_id(true);
-                flash('success', 'Password changed successfully.');
-                redirect('/customer/profile.php');
-            }
+        $result = CustomerAccountService::changePassword($conn, $customerId, $current, $newPass, $confirm);
+        $errors = is_array($result['errors'] ?? null) ? $result['errors'] : [];
+        if ($errors === []) {
+            $_SESSION['customer_auth_version'] = (int) $result['auth_version'];
+            session_regenerate_id(true);
+            flash('success', 'Password changed successfully.');
+            redirect('/customer/profile.php');
         }
     } elseif ($action === 'save_address') {
         $activeForm = 'address';
         if (!customer_addresses_table_ready($conn)) {
             $errors['_address'] = 'Address book is not available right now.';
         } else {
-            $addressId = (int) ($_POST['address_id'] ?? 0);
-            $label = trim((string) ($_POST['label'] ?? ''));
-            $fullName = trim((string) ($_POST['full_name'] ?? ''));
-            $addrPhone = trim((string) ($_POST['address_phone'] ?? ''));
-            $addressLine = trim((string) ($_POST['address_line'] ?? ''));
-            $addrCity = trim((string) ($_POST['address_city'] ?? ''));
-            $addrState = trim((string) ($_POST['address_state'] ?? ''));
-            $addrPincode = trim((string) ($_POST['address_pincode'] ?? ''));
-            $addrCountry = trim((string) ($_POST['address_country'] ?? 'India'));
-            $isDefault = isset($_POST['is_default_shipping']) ? 1 : 0;
-
-            $addressForm = [
-                'id' => $addressId,
-                'label' => $label,
-                'full_name' => $fullName,
-                'phone' => $addrPhone,
-                'address_line' => $addressLine,
-                'city' => $addrCity,
-                'state' => $addrState,
-                'pincode' => $addrPincode,
-                'country' => $addrCountry,
-                'is_default_shipping' => $isDefault,
-            ];
-
-            if ($fullName === '') { $errors['full_name'] = 'Full name is required.'; }
-            if ($addressLine === '') { $errors['address_line'] = 'Address is required.'; }
-            if ($addrCity === '') { $errors['address_city'] = 'City is required.'; }
-            if ($addrCountry === '') { $errors['address_country'] = 'Country is required.'; }
-            if (mb_strlen($label) > 80) { $errors['label'] = 'Label must be 80 characters or fewer.'; }
-            if (mb_strlen($fullName) > 255) { $errors['full_name'] = 'Full name must be 255 characters or fewer.'; }
-            if ($addrPhone !== '' && (mb_strlen($addrPhone) > 30 || !preg_match('/^[0-9+\-\s()]{7,30}$/', $addrPhone))) { $errors['address_phone'] = 'Enter a valid phone number.'; }
-            if (mb_strlen($addrCity) > 120) { $errors['address_city'] = 'City must be 120 characters or fewer.'; }
-            if (mb_strlen($addrState) > 120) { $errors['address_state'] = 'State must be 120 characters or fewer.'; }
-            if (mb_strlen($addrPincode) > 20) { $errors['address_pincode'] = 'Pincode must be 20 characters or fewer.'; }
-            if (mb_strlen($addrCountry) > 120) { $errors['address_country'] = 'Country must be 120 characters or fewer.'; }
+            $addressForm = CustomerAddressService::formValues($_POST);
+            $errors = array_merge($errors, CustomerAddressService::validate($addressForm));
 
             if (empty($errors)) {
                 try {
-                    $conn->begin_transaction();
-                    if ($addressId > 0) {
-                        $check = $conn->prepare("SELECT id FROM customer_addresses WHERE id = ? AND customer_id = ? LIMIT 1 FOR UPDATE");
-                        $check->bind_param('ii', $addressId, $customerId);
-                        $check->execute();
-                        if (!$check->get_result()->fetch_assoc()) {
-                            throw new RuntimeException('Address not found.');
-                        }
-                    }
-                    if ($isDefault === 1) {
-                        $resetDefault = $conn->prepare("UPDATE customer_addresses SET is_default_shipping = 0 WHERE customer_id = ?");
-                        $resetDefault->bind_param('i', $customerId);
-                        $resetDefault->execute();
-                    }
-
-                    if ($addressId > 0) {
-                        $upd = $conn->prepare(
-                            "UPDATE customer_addresses
-                             SET label = ?, full_name = ?, phone = ?, address_line = ?, city = ?, state = ?, pincode = ?, country = ?, is_default_shipping = ?, updated_at = NOW()
-                             WHERE id = ? AND customer_id = ?"
-                        );
-                        $upd->bind_param('ssssssssiii', $label, $fullName, $addrPhone, $addressLine, $addrCity, $addrState, $addrPincode, $addrCountry, $isDefault, $addressId, $customerId);
-                        $upd->execute();
-                    } else {
-                        $cntStmt = $conn->prepare("SELECT COUNT(*) AS total FROM customer_addresses WHERE customer_id = ?");
-                        $cntStmt->bind_param('i', $customerId);
-                        $cntStmt->execute();
-                        $total = (int) ($cntStmt->get_result()->fetch_assoc()['total'] ?? 0);
-                        if ($total === 0) {
-                            $isDefault = 1;
-                        }
-                        $ins = $conn->prepare(
-                            "INSERT INTO customer_addresses (customer_id, label, full_name, phone, address_line, city, state, pincode, country, is_default_shipping)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                        );
-                        $ins->bind_param('issssssssi', $customerId, $label, $fullName, $addrPhone, $addressLine, $addrCity, $addrState, $addrPincode, $addrCountry, $isDefault);
-                        $ins->execute();
-                    }
-                    $conn->commit();
+                    CustomerAddressService::save($conn, $customerId, $addressForm);
                     flash('success', 'Address saved.');
                     redirect('/customer/profile.php');
                 } catch (Throwable $e) {
-                    try { $conn->rollback(); } catch (Throwable $ignored) {}
-                    error_log('[customer-profile] Address save failed: ' . $e->getMessage());
+                    app_log('error', 'customer_address_save_failed', ['exception_type' => get_class($e), 'customer_id' => $customerId]);
                     $errors['_address'] = 'Unable to save address right now.';
                 }
             }
@@ -206,35 +103,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $addressId = (int) ($_POST['address_id'] ?? 0);
             if ($addressId > 0) {
                 try {
-                    $conn->begin_transaction();
-                    $rowStmt = $conn->prepare("SELECT is_default_shipping FROM customer_addresses WHERE id = ? AND customer_id = ? LIMIT 1");
-                    $rowStmt->bind_param('ii', $addressId, $customerId);
-                    $rowStmt->execute();
-                    $row = $rowStmt->get_result()->fetch_assoc();
-                    if ($row) {
-                        $isDefault = (int) ($row['is_default_shipping'] ?? 0) === 1;
-                        $del = $conn->prepare("DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?");
-                        $del->bind_param('ii', $addressId, $customerId);
-                        $del->execute();
-                        if ($isDefault) {
-                            $pick = $conn->prepare("SELECT id FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1");
-                            $pick->bind_param('i', $customerId);
-                            $pick->execute();
-                            $next = $pick->get_result()->fetch_assoc();
-                            if ($next) {
-                                $newDefaultId = (int) ($next['id'] ?? 0);
-                                if ($newDefaultId > 0) {
-                                    $set = $conn->prepare("UPDATE customer_addresses SET is_default_shipping = 1 WHERE id = ? AND customer_id = ?");
-                                    $set->bind_param('ii', $newDefaultId, $customerId);
-                                    $set->execute();
-                                }
-                            }
-                        }
-                    }
-                    $conn->commit();
+                    CustomerAddressService::delete($conn, $customerId, $addressId);
                     flash('success', 'Address deleted.');
                 } catch (Throwable $e) {
-                    try { $conn->rollback(); } catch (Throwable $ignored) {}
                     flash('error', 'Unable to delete address right now.');
                 }
             }
@@ -245,26 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $addressId = (int) ($_POST['address_id'] ?? 0);
             if ($addressId > 0) {
                 try {
-                    $conn->begin_transaction();
-                    $owned = $conn->prepare("SELECT id FROM customer_addresses WHERE id = ? AND customer_id = ? LIMIT 1 FOR UPDATE");
-                    $owned->bind_param('ii', $addressId, $customerId);
-                    $owned->execute();
-                    if (!$owned->get_result()->fetch_assoc()) {
-                        throw new RuntimeException('Address not found.');
-                    }
-                    $reset = $conn->prepare("UPDATE customer_addresses SET is_default_shipping = 0 WHERE customer_id = ?");
-                    $reset->bind_param('i', $customerId);
-                    $reset->execute();
-                    $set = $conn->prepare("UPDATE customer_addresses SET is_default_shipping = 1 WHERE id = ? AND customer_id = ?");
-                    $set->bind_param('ii', $addressId, $customerId);
-                    $set->execute();
-                    if ($set->affected_rows !== 1) {
-                        throw new RuntimeException('Default address update failed.');
-                    }
-                    $conn->commit();
+                    CustomerAddressService::setDefault($conn, $customerId, $addressId);
                     flash('success', 'Default address updated.');
                 } catch (Throwable $e) {
-                    try { $conn->rollback(); } catch (Throwable $ignored) {}
                     flash('error', 'Unable to update default address.');
                 }
             }
@@ -274,8 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Refresh
-$custStmt->execute();
-$cust = $custStmt->get_result()->fetch_assoc();
+$cust = CustomerAccountService::profile($conn, $customerId) ?: [];
 $addressList = customer_addresses_list($conn, $customerId);
 
 $metaTitle = SiteContext::title('My Profile');
@@ -353,7 +206,7 @@ include __DIR__ . '/../includes/header.php';
                                                 <button type="submit" class="btn btn-sm btn-outline-success">Make Default</button>
                                             </form>
                                         <?php endif; ?>
-                                        <form method="POST" action="/customer/profile.php" class="d-inline" data-confirm="Delete this saved address?">
+                                        <form method="POST" action="/customer/profile.php" class="d-inline" data-confirm="Delete this saved address?" data-confirm-title="Delete Saved Address?" data-confirm-ok="Delete Address" data-confirm-cancel="Keep Address" data-confirm-variant="danger">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete_address">
                                             <input type="hidden" name="address_id" value="<?php echo (int) $addr['id']; ?>">

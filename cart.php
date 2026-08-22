@@ -107,7 +107,7 @@ include __DIR__ . '/includes/header.php';
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-primary">Move to Cart</button>
                                         </form>
-                                        <form method="POST" action="/remove-wishlist.php" class="d-inline">
+                                        <form method="POST" action="/remove-wishlist.php" class="d-inline" data-confirm-modal data-confirm-title="Remove Saved Item?" data-confirm-message="Remove this product from your saved items?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-outline-danger">Remove</button>
@@ -210,7 +210,7 @@ include __DIR__ . '/includes/header.php';
                                         <button class="btn btn-sm btn-outline-primary">Move to Wishlist</button>
                                     </form>
 
-                                    <form method="POST" action="/remove-cart.php" class="d-inline">
+                                    <form method="POST" action="/remove-cart.php" class="d-inline" data-confirm-modal data-confirm-title="Remove Item?" data-confirm-message="Remove this product from your cart?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="cart_key" value="<?php echo e($item['cart_key']); ?>">
                                         <button class="btn btn-sm btn-outline-danger">Remove</button>
@@ -245,7 +245,7 @@ include __DIR__ . '/includes/header.php';
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-primary">Move to Cart</button>
                                         </form>
-                                        <form method="POST" action="/remove-wishlist.php" class="d-inline">
+                                        <form method="POST" action="/remove-wishlist.php" class="d-inline" data-confirm-modal data-confirm-title="Remove Saved Item?" data-confirm-message="Remove this product from your saved items?" data-confirm-ok="Remove" data-confirm-cancel="Keep Item" data-confirm-variant="danger">
                                             <?php echo csrf_field(); ?>
                                             <input type="hidden" name="cart_key" value="<?php echo e($w['cart_key']); ?>">
                                             <button class="btn btn-sm btn-outline-danger">Remove</button>

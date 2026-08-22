@@ -376,9 +376,9 @@ include 'partials/header.php';
                                     <div class="return-breakdown-mobile-item">
                                         <div class="small fw-semibold"><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></div>
                                         <div class="small text-muted">
-                                            Returned: <?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?> |
+                                            Returned: <?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?> |
                                             Line: <?php echo e(money((float) ($ri['line_total'] ?? 0))); ?> |
-                                            Restocked: <?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?> |
+                                            Restocked: <?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?> |
                                             Refund: <?php echo e(money((float) ($ri['refund_amount'] ?? 0))); ?>
                                         </div>
                                     </div>
@@ -441,9 +441,9 @@ include 'partials/header.php';
                                             ?>
                                             <tr>
                                                 <td><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></td>
-                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?></td>
+                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?></td>
                                                 <td class="text-end"><?php echo e(money((float) ($ri['line_total'] ?? 0))); ?></td>
-                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(InventoryService::quantity_unit_suffix($riUnit)); ?></td>
+                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?></td>
                                                 <td class="text-end"><?php echo e(money((float) ($ri['refund_amount'] ?? 0))); ?></td>
                                             </tr>
                                         <?php endforeach; ?>

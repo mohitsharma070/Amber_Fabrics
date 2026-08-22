@@ -120,16 +120,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
             $allowedMime = ['image/jpeg', 'image/png', 'image/webp'];
             $processImageUpload = static function (array $file, string $targetDir, string $targetNamePrefix) use ($maxSize, $allowedExt, $allowedMime): ?string {
                 if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) { return null; }
-                $ext  = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-                $mime = mime_content_type((string) ($file['tmp_name'] ?? '')) ?: '';
-                if (($file['size'] ?? 0) > $maxSize) { throw new RuntimeException('Image must be under 2MB.'); }
-                if (!in_array($ext, $allowedExt, true) || !in_array($mime, $allowedMime, true) || !@getimagesize((string) $file['tmp_name'])) {
+                try {
+                    $validated = UploadPolicy::validate($file, $allowedExt, $allowedMime, $maxSize, true);
+                } catch (Throwable $e) {
                     throw new RuntimeException('Only valid JPG, PNG or WEBP images are allowed.');
                 }
-                if (!is_dir($targetDir)) { @mkdir($targetDir, 0755, true); }
+                $ext = (string) $validated['extension'];
                 $filename = $targetNamePrefix . '.' . $ext;
-                $target = rtrim($targetDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $filename;
-                if (!move_uploaded_file((string) $file['tmp_name'], $target)) { throw new RuntimeException('Failed to upload image.'); }
+                try {
+                    UploadPolicy::move($file, $targetDir, $filename);
+                } catch (Throwable $e) {
+                    throw new RuntimeException('Failed to upload image.');
+                }
                 return $filename;
             };
             if (!empty($_FILES['branding_logo']['name']) && ($_FILES['branding_logo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
@@ -458,7 +460,7 @@ elseif ($activeTab === 'announcements'): ?>
     <div class="mb-3">
         <button type="submit" name="reset_announcement_dismissals" value="1"
                 class="btn btn-outline-warning btn-sm"
-                data-confirm="Reset announcement dismissals for all visitors?">
+                data-confirm="Reset announcement dismissals for all visitors?" data-confirm-title="Reset Dismissals?" data-confirm-ok="Reset" data-confirm-variant="warning">
             Reset Announcement Dismissals
         </button>
     </div>

@@ -95,7 +95,7 @@ function abandoned_cart_snapshot(mysqli $conn, array $cart): array
         $lineTotal = round($unitPrice * $qty, 2);
         $subtotal = round($subtotal + $lineTotal, 2);
         $itemsCount++;
-        $line = (string) $row['name'] . ' - ' . format_quantity_by_unit($qty, $unitType) . InventoryService::quantity_unit_suffix($unitType);
+        $line = (string) $row['name'] . ' - ' . format_quantity_by_unit($qty, $unitType) . CommercePresenter::quantityUnitSuffix($unitType);
         if ($size !== '') {
             $line .= ' | Size: ' . $size;
         }
@@ -129,10 +129,7 @@ function abandoned_cart_capture_activity(array $context): void
         return;
     }
 
-    $cStmt = $conn->prepare("SELECT id, name, email FROM customers WHERE id = ? LIMIT 1");
-    $cStmt->bind_param('i', $customerId);
-    $cStmt->execute();
-    $customer = $cStmt->get_result()->fetch_assoc();
+    $customer = CustomerReadService::identityById($conn, $customerId);
     if (!$customer) {
         return;
     }

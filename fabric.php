@@ -7,12 +7,7 @@ if ($id <= 0 && $slug === '') {
     redirect('catalog.php');
 }
 
-$stmt = $slug !== ''
-    ? $conn->prepare("SELECT * FROM fabrics WHERE slug = ? AND status = 'active'")
-    : $conn->prepare("SELECT * FROM fabrics WHERE id = ? AND status = 'active'");
-if ($slug !== '') $stmt->bind_param('s', $slug); else $stmt->bind_param('i', $id);
-$stmt->execute();
-$product = $stmt->get_result()->fetch_assoc();
+$product = ProductReadService::activeByReference($conn, $id, $slug);
 
 if (!$product) {
     header('HTTP/1.1 404 Not Found');

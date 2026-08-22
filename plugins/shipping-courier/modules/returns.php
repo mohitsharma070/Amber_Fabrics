@@ -55,8 +55,8 @@ function shipping_courier_upsert_reverse_pickup(
     $providerPickupId = trim((string) ($metadata['provider_pickup_id'] ?? ''));
     $providerStatus = shipping_courier_normalize_provider_status((string) ($metadata['provider_status'] ?? ''));
     $trackingId = trim((string) ($metadata['tracking_id'] ?? ''));
-    $trackingUrl = InventoryService::safe_external_url((string) ($metadata['tracking_url'] ?? ''));
-    $labelUrl = InventoryService::safe_external_url((string) ($metadata['label_url'] ?? ''));
+    $trackingUrl = ExternalUrlPolicy::sanitize((string) ($metadata['tracking_url'] ?? ''));
+    $labelUrl = ExternalUrlPolicy::sanitize((string) ($metadata['label_url'] ?? ''));
     $rawResponseJson = shipping_courier_json_value($metadata['raw_response_json'] ?? null);
 
     $stmt = $conn->prepare(
@@ -330,8 +330,8 @@ function shipping_courier_render_return_actions(array $context): void
     $reversePickup = $provider !== '' ? shipping_courier_get_reverse_pickup($conn, $returnId, $provider) : null;
     $providerStatus = trim((string) ($reversePickup['provider_status'] ?? ''));
     $trackingId = trim((string) ($reversePickup['tracking_id'] ?? ''));
-    $trackingUrl = InventoryService::safe_external_url((string) ($reversePickup['tracking_url'] ?? ''));
-    $labelUrl = InventoryService::safe_external_url((string) ($reversePickup['label_url'] ?? ''));
+    $trackingUrl = ExternalUrlPolicy::sanitize((string) ($reversePickup['tracking_url'] ?? ''));
+    $labelUrl = ExternalUrlPolicy::sanitize((string) ($reversePickup['label_url'] ?? ''));
     $canCreate = shipping_courier_enabled()
         && shipping_courier_provider_configured()
         && shipping_courier_reverse_supports('create')

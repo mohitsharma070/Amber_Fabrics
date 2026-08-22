@@ -10,6 +10,7 @@ $editorForm=(string)file_get_contents($root.'/admin/partials/fabric-product-form
 $media=(string)file_get_contents($root.'/admin/product-media.php');
 $fabric=(string)file_get_contents($root.'/fabric.php');
 $order=(string)file_get_contents($root.'/place-order.php');
+$orderSnapshot=(string)file_get_contents($root.'/includes/services/OrderItemSnapshotService.php');
 $parcel=(string)file_get_contents($root.'/plugins/shipping-courier/modules/bigship-payloads.php');
 $assert(str_contains($migration,"ENUM('draft','active','inactive')")&&str_contains($migration,'fabric_media'),'Draft status or gallery migration missing.');
 $assert(str_contains($migration,'CREATE UNIQUE INDEX uq_fabrics_slug')&&str_contains($migration,'product_type'),'Slug uniqueness or product type migration missing.');
@@ -18,7 +19,7 @@ $assert(str_contains($service,'skuAvailable')&&str_contains($service,'uniqueSlug
 $assert(str_contains($editor,'check-readiness-btn')&&str_contains($editor,'product-media-upload')&&str_contains($editorScript,'beforeunload'),'Editor readiness, media, or unsaved warning missing.');
 $assert(str_contains($media,"\$action==='reorder'")&&str_contains($media,"\$action==='delete'")&&str_contains($media,'syncLegacyMedia'),'Transactional gallery compatibility actions missing.');
 $assert(str_contains($fabric,"\$_GET['slug']")&&str_contains($fabric,"header('Location: ' . \$target, true, 301)")&&str_contains($fabric,'$metaTitle'),'Clean storefront slug/redirect/SEO behavior missing.');
-$assert(str_contains($order,'effective_gst_rate')&&str_contains($order,'effective_hsn_code'),'Per-product tax snapshots missing.');
+$assert(str_contains($orderSnapshot,'effective_gst_rate')&&str_contains($orderSnapshot,'effective_hsn_code')&&str_contains($order,'OrderItemSnapshotService::build'),'Per-product tax snapshots missing.');
 $assert(str_contains($parcel,"\$item['shipping_weight_kg']")&&str_contains($parcel,"\$item['parcel_length_cm']"),'Per-product parcel overrides missing.');
 $assert(str_contains($catalogMigration,'product_code')&&str_contains($catalogMigration,'amazon_asin')&&str_contains($catalogMigration,'catalog_data'),'Catalogue field migration missing.');
 $assert(str_contains($cleanupMigration,'DROP COLUMN material')&&str_contains($cleanupMigration,'DROP COLUMN price_inr')&&str_contains($cleanupMigration,'INSERT INTO fabric_media'),'Obsolete product field cleanup migration missing or unsafe.');

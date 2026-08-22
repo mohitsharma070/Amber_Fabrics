@@ -21,7 +21,8 @@ $example = $read('config/secure-config.production.example.php');
 $adminService = $read('includes/services/AdminOtpService.php');
 $adminLogin = $read('admin/login.php');
 $adminVerify = $read('admin/verify-otp.php');
-$coupon = $read('includes/coupon-functions.php');
+$coupon = $read('includes/helpers/coupon-functions.php');
+$couponService = $read('includes/services/CouponService.php');
 $placeOrder = $read('place-order.php');
 $guestRetry = $read('guest/retry-payment.php');
 $outbox = $read('includes/services/OutboxService.php');
@@ -114,8 +115,8 @@ $normalizedA = coupon_guest_identity_hash('  GUEST@Example.COM ', '+91 (98765) 4
 $normalizedB = coupon_guest_identity_hash('guest@example.com', '09876543210');
 $assert(hash_equals($normalizedA, $normalizedB), 'Guest identity HMAC must normalize email case/whitespace and canonical Indian phone digits.');
 putenv('APP_IDENTITY_HASH_KEY');
-$assert(str_contains($coupon, "hash_hmac('sha256'") && str_contains($coupon, 'guest_identity_hash = ?'), 'Guest reservations must use keyed HMAC identity and duplicate lookup.');
-$assert(str_contains($placeOrder, 'coupon_guest_identity_hash($email, $phone)') && str_contains($guestRetry, 'customer_email') && str_contains($guestRetry, 'customer_phone'), 'Initial and guest retry reservation paths must pass the same guest identity.');
+$assert(str_contains($couponService, "hash_hmac('sha256'") && str_contains($couponService, 'guest_identity_hash = ?'), 'Guest reservations must use keyed HMAC identity and duplicate lookup.');
+$assert(str_contains($placeOrder, 'CouponService::guestIdentityHash($email, $phone)') && str_contains($guestRetry, 'customer_email') && str_contains($guestRetry, 'customer_phone'), 'Initial and guest retry reservation paths must pass the same guest identity.');
 
 foreach (['guest_identity_hash', 'uq_coupon_usages_coupon_guest', 'commerce_outbox', 'commerce_outbox_deliveries', 'uq_commerce_outbox_dedupe'] as $needle) {
     $assert(str_contains($migration, $needle) && str_contains($schema, $needle) && str_contains($setup, $needle), 'Migration/schema/setup must align for ' . $needle . '.');

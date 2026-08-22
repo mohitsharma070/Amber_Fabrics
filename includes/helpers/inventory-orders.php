@@ -94,30 +94,30 @@ function customer_cancel_order(mysqli $conn, int $orderId, int $customerId, bool
 
 function can_transition_order_status(string $currentStatus, string $nextStatus) : bool
 {
-    return InventoryService::can_transition_order_status($currentStatus, $nextStatus);
+    return OrderLifecycle::canTransition($currentStatus, $nextStatus);
 }
 
 function order_status_meta(string $status) : array
 {
-    return InventoryService::order_status_meta($status);
+    return CommercePresenter::orderStatus($status);
 }
 
 function payment_status_meta(string $status) : array
 {
-    return InventoryService::payment_status_meta($status);
+    return CommercePresenter::paymentStatus($status);
 }
 
 function sanitize_online_payment_method(?string $value) : string
 {
-    return InventoryService::sanitize_online_payment_method($value);
+    return OnlinePaymentMethod::normalize($value);
 }
 
 function quantity_unit_suffix(string $unitType) : string
 {
-    return InventoryService::quantity_unit_suffix($unitType);
+    return CommercePresenter::quantityUnitSuffix($unitType);
 }
 
 function safe_external_url(?string $value) : string
 {
-    return InventoryService::safe_external_url($value);
+    return ExternalUrlPolicy::sanitize($value);
 }

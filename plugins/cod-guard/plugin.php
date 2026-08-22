@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../../includes/coupon-functions.php';
+require_once __DIR__ . '/../../includes/helpers/coupon-functions.php';
 
 add_action('order.after_create', 'cod_guard_after_order_create', 10);
 add_action('order.after_commit', 'cod_guard_send_confirmation_after_commit', 10);
@@ -382,41 +382,13 @@ function cod_guard_whatsapp_text_payload(string $to, string $message): array
 
 function cod_guard_http_post_json(string $url, array $headers, array $payload): array
 {
-    if (!function_exists('curl_init')) {
-        return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'cURL is unavailable'];
-    }
-
-    $json = json_encode($payload);
-    if (!is_string($json)) {
-        return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'Unable to encode request payload'];
-    }
-
-    $ch = curl_init($url);
-    if ($ch === false) {
-        return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'Unable to initialize cURL'];
-    }
-
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json', 'Accept: application/json'], $headers),
-        CURLOPT_POSTFIELDS => $json,
+    $settings = cod_guard_settings();
+    $allowedHost = HttpClientPolicy::hostFromUrl((string) ($settings['whatsapp_api_base_url'] ?? ''));
+    return JsonHttpClient::request('POST', $url, array_merge(['Content-Type: application/json'], $headers), $payload, [
+        'allowed_hosts' => $allowedHost !== '' ? [$allowedHost] : [],
+        'timeout_sec' => 20,
+        'connect_timeout_sec' => 5,
     ]);
-
-    $raw = curl_exec($ch);
-    $errno = curl_errno($ch);
-    $err = curl_error($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
-
-    $body = json_decode((string) $raw, true);
-    return [
-        'ok' => $errno === 0 && $status >= 200 && $status < 300,
-        'status' => $status,
-        'body' => is_array($body) ? $body : null,
-        'error' => $errno !== 0 ? $err : ($status >= 200 && $status < 300 ? '' : ('HTTP ' . $status)),
-    ];
 }
 
 function cod_guard_mark_message_not_configured(mysqli $conn, int $orderId, string $reason): void
@@ -786,7 +758,7 @@ function cod_guard_render_admin_panel(array $context): void
                     <input type="hidden" name="action" value="cod_guard_mark_confirmed">
                     <button class="btn btn-sm btn-success" type="submit">Mark COD Confirmed</button>
                 </form>
-                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="d-grid gap-2 mt-2" data-confirm="Cancel this unconfirmed COD order?">
+                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="d-grid gap-2 mt-2" data-confirm="Cancel this unconfirmed COD order?" data-confirm-title="Cancel COD Order?" data-confirm-ok="Cancel Order" data-confirm-variant="danger">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="cod_guard_mark_cancelled">
                     <button class="btn btn-sm btn-outline-danger" type="submit">Cancel COD Order</button>

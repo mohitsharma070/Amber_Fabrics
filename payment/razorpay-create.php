@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 
 $cancelInvalidRazorpayOrder = static function (mysqli $conn, int $orderId, string $reason): void {
     if ($orderId <= 0) {

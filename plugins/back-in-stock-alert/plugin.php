@@ -331,11 +331,7 @@ function back_in_stock_alert_handle_request(array $context): void
     $customerId = (int) ($_SESSION['customer_id'] ?? 0);
     $email = trim((string) ($_POST['email'] ?? ''));
     if ($email === '' && $customerId > 0) {
-        $stmt = $conn->prepare("SELECT email FROM customers WHERE id = ? LIMIT 1");
-        $stmt->bind_param('i', $customerId);
-        $stmt->execute();
-        $customer = $stmt->get_result()->fetch_assoc() ?: [];
-        $email = (string) ($customer['email'] ?? '');
+        $email = CustomerReadService::emailById($conn, $customerId);
     }
 
     $error = back_in_stock_alert_subscribe($conn, $productId, $variantId, $email, $customerId);
@@ -423,11 +419,7 @@ function back_in_stock_alert_render_signup_form(array $context): void
     $customerId = (int) ($context['customer_id'] ?? 0);
     $defaultEmail = '';
     if ($customerId > 0) {
-        $stmt = $conn->prepare("SELECT email FROM customers WHERE id = ? LIMIT 1");
-        $stmt->bind_param('i', $customerId);
-        $stmt->execute();
-        $customer = $stmt->get_result()->fetch_assoc() ?: [];
-        $defaultEmail = (string) ($customer['email'] ?? '');
+        $defaultEmail = CustomerReadService::emailById($conn, $customerId);
     }
     $initialDisplay = $productOutOfStock ? '' : ' style="display:none"';
     $nonce = (string) ($GLOBALS['cspNonce'] ?? '');
@@ -572,7 +564,7 @@ function back_in_stock_alert_send_one_email(array $row, array $settings): array
         ? ($unitType === 'meter' ? (float) ($row['variant_stock_meters'] ?? 0) : (float) ($row['variant_stock'] ?? 0))
         : ($unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0));
     $availability = $stockValue > 0
-        ? 'In stock (' . format_quantity_by_unit($stockValue, $unitType) . InventoryService::quantity_unit_suffix($unitType) . ' available)'
+        ? 'In stock (' . format_quantity_by_unit($stockValue, $unitType) . CommercePresenter::quantityUnitSuffix($unitType) . ' available)'
         : 'In stock';
     $productUrl = back_in_stock_alert_product_url($productId, $variantId);
     $unsubscribeUrl = app_url('/?back_in_stock_unsubscribe=' . urlencode((string) ($row['unsubscribe_token'] ?? '')));

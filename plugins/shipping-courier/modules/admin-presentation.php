@@ -20,8 +20,8 @@ function shipping_courier_render_admin_panel(array $context): void
     }
     $awbCode = trim((string) ($shipment['awb_code'] ?? ''));
     $trackingId = trim((string) ($shipment['tracking_id'] ?? ''));
-    $trackingUrl = InventoryService::safe_external_url((string) ($shipment['tracking_url'] ?? ''));
-    $labelUrl = InventoryService::safe_external_url((string) ($metadata['label_url'] ?? ''));
+    $trackingUrl = ExternalUrlPolicy::sanitize((string) ($shipment['tracking_url'] ?? ''));
+    $labelUrl = ExternalUrlPolicy::sanitize((string) ($metadata['label_url'] ?? ''));
     $providerStatus = trim((string) ($metadata['provider_status'] ?? ''));
     $lastSync = trim((string) ($metadata['updated_at'] ?? ''));
     $canCreate = $conn instanceof mysqli && $orderId > 0 && shipping_courier_can_create_from_order($order, $metadata);
@@ -78,7 +78,7 @@ function shipping_courier_render_admin_panel(array $context): void
                     </form>
                     <?php endif; ?>
                     <?php if ($canCancel): ?>
-                    <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" data-confirm-modal data-confirm-title="Cancel Courier Shipment" data-confirm-message="Cancel this shipment with the courier provider?" data-confirm-ok="Cancel Shipment">
+                    <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" data-confirm-modal data-confirm-title="Cancel Courier Shipment" data-confirm-message="Cancel this shipment with the courier provider?" data-confirm-ok="Cancel Shipment" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="cancel_courier_shipment">
                         <button class="btn btn-sm btn-outline-danger w-100" type="submit">Cancel Shipment</button>

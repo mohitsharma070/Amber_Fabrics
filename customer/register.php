@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 
 if (is_customer_logged_in()) {
     redirect('/index.php');

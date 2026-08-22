@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/functions.php';
-require_once __DIR__ . '/customer-auth.php';
+$appRequestId = app_request_id();
+require_once __DIR__ . '/security/customer-auth.php';
 require_once __DIR__ . '/plugin-loader.php';
 plugin_load_all();
 
@@ -25,6 +26,7 @@ $cspNonce = base64_encode(random_bytes(16));
 $GLOBALS['cspNonce'] = $cspNonce;
 
 if (!headers_sent()) {
+    header('X-Request-ID: ' . $appRequestId);
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: DENY');
     header('Referrer-Policy: strict-origin-when-cross-origin');
@@ -92,18 +94,25 @@ if ($isProduction) {
             $error['file'] ?? 'unknown',
             (int) ($error['line'] ?? 0)
         );
-        error_log($message);
+        app_log('critical', 'php_fatal', [
+            'error_type' => (int) ($error['type'] ?? 0),
+            'file' => (string) ($error['file'] ?? 'unknown'),
+            'line' => (int) ($error['line'] ?? 0),
+        ]);
         $adminEmail = function_exists('_cfg') ? _cfg('ADMIN_NOTIFICATION_EMAIL') : '';
         if ($adminEmail !== '' && function_exists('send_email')) {
             try {
                 send_email(
                     $adminEmail,
                     'Fatal Error - ' . SiteContext::name(),
-                    $message . "\n\nURL: " . ($_SERVER['REQUEST_URI'] ?? 'cli')
+                    $message . "\n\nRequest ID: " . app_request_id()
+                        . "\nURL: " . ($_SERVER['REQUEST_URI'] ?? 'cli')
                         . "\nServer: " . ($_SERVER['SERVER_NAME'] ?? gethostname())
                 );
             } catch (Throwable $e) {
-                error_log('[amber] Could not send fatal error notification: ' . $e->getMessage());
+                app_log('error', 'fatal_notification_failed', [
+                    'exception_type' => get_class($e),
+                ]);
             }
         }
     });

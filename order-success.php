@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
-require_once __DIR__ . '/includes/customer-auth.php';
+require_once __DIR__ . '/includes/security/customer-auth.php';
 
 $orderNumber = trim($_GET['order'] ?? '');
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
@@ -54,7 +54,7 @@ $orderId = (int) $order['id'];
 $shipmentStmt->bind_param('i', $orderId);
 $shipmentStmt->execute();
 $shipment = $shipmentStmt->get_result()->fetch_assoc();
-$trackingUrl = InventoryService::safe_external_url($shipment['tracking_url'] ?? '');
+$trackingUrl = ExternalUrlPolicy::sanitize($shipment['tracking_url'] ?? '');
 $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
 $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
 $paymentLabel = ucfirst(str_replace('_', ' ', $paymentMethod));

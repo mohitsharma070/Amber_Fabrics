@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS categories (
     parent_id  INT          DEFAULT NULL,
     image      VARCHAR(255) DEFAULT NULL,
     status     ENUM('active','inactive') DEFAULT 'active',
+    uses_variant_size TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE CASCADE
@@ -1143,7 +1144,8 @@ INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-08-21-cron-reliability-hardening.sql',   '015a242297956f84b692491d9f4242e8511618d125aa39032ec34e5ce46508b3'),
 ('2026-08-22-ecommerce-operations-completion.sql','bc0848785dd425bc672b62e72713a59cfbba526a173d9a139daa1b84e696944d'),
 ('2026-08-23-whatsapp-consent-webhook-idempotency.sql','e8fe165d3381970a641d3b8b969cfcbae7a8ad4dfe6f2a58ce5c96b5fd72ee86'),
-('2026-08-24-priority-findings-remediation.sql','224b7a6ef0c8ba68082eb0706817eec13594fe023d80849fc145b695aea2f8af');
+('2026-08-24-priority-findings-remediation.sql','224b7a6ef0c8ba68082eb0706817eec13594fe023d80849fc145b695aea2f8af'),
+('2026-08-25-architecture-hardening.sql','fd33ec7d3cd331c1c32bf451117a49241fcab0f3bb625c256c5f8fe91772cf84');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

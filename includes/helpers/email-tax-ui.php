@@ -95,49 +95,11 @@ function order_gst_breakdown(float $taxableAmount, string $country, ?float $gstR
     ];
 }
 
-function app_http_json(string $method, string $url, array $headers = [], ?array $payload = null): array
+function app_http_json(string $method, string $url, array $headers = [], ?array $payload = null, array $options = []): array
 {
-    if (!function_exists('curl_init')) {
-        return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'cURL is unavailable'];
-    }
-    $ch = curl_init($url);
-    if ($ch === false) {
-        return ['ok' => false, 'status' => 0, 'body' => null, 'error' => 'Unable to initialize cURL'];
-    }
-    $timeoutSec = max(5, (int) _cfg('APP_HTTP_TIMEOUT_SEC', '15'));
-    $connectTimeoutSec = max(2, (int) _cfg('APP_HTTP_CONNECT_TIMEOUT_SEC', '5'));
-    $finalHeaders = array_merge(['Accept: application/json'], $headers);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => $timeoutSec,
-        CURLOPT_CONNECTTIMEOUT => $connectTimeoutSec,
-        CURLOPT_CUSTOMREQUEST => strtoupper($method),
-        CURLOPT_HTTPHEADER => $finalHeaders,
-    ]);
-    if ($payload !== null) {
-        $json = json_encode($payload);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $json === false ? '{}' : $json);
-        if (!array_filter($finalHeaders, static fn($h) => stripos($h, 'Content-Type:') === 0)) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge($finalHeaders, ['Content-Type: application/json']));
-        }
-    }
-
-    $raw = curl_exec($ch);
-    $errno = curl_errno($ch);
-    $err = curl_error($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
-
-    if ($errno !== 0) {
-        return ['ok' => false, 'status' => $status, 'body' => null, 'error' => $err !== '' ? $err : ('cURL error ' . $errno)];
-    }
-    $decoded = json_decode((string) $raw, true);
-    return [
-        'ok' => $status >= 200 && $status < 300,
-        'status' => $status,
-        'body' => is_array($decoded) ? $decoded : [],
-        'error' => ($status >= 200 && $status < 300) ? '' : ('HTTP ' . $status),
-    ];
+    $options['timeout_sec'] = max(5, (int) ($options['timeout_sec'] ?? _cfg('APP_HTTP_TIMEOUT_SEC', '15')));
+    $options['connect_timeout_sec'] = max(2, (int) ($options['connect_timeout_sec'] ?? _cfg('APP_HTTP_CONNECT_TIMEOUT_SEC', '5')));
+    return JsonHttpClient::request($method, $url, $headers, $payload, $options);
 }
 
 // ---------------------------------------------------------------------------

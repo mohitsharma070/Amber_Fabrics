@@ -167,7 +167,9 @@ function meta_capi_post_event(string $eventName, array $customData, array $userD
     }
 
     $endpoint = 'https://graph.facebook.com/v21.0/' . rawurlencode(meta_capi_pixel_id()) . '/events?access_token=' . rawurlencode(meta_capi_access_token());
-    $resp = app_http_json('POST', $endpoint, ['Content-Type: application/json'], $payload);
+    $resp = app_http_json('POST', $endpoint, ['Content-Type: application/json'], $payload, [
+        'allowed_hosts' => ['graph.facebook.com'],
+    ]);
     if (empty($resp['ok'])) {
         $reason = (string) ($resp['error'] ?? $resp['reason'] ?? 'unknown error');
         $body = $resp['body'] ?? [];
@@ -197,10 +199,7 @@ function meta_capi_product_payload(mysqli $conn, int $productId): ?array
     if ($productId <= 0) {
         return null;
     }
-    $stmt = $conn->prepare("SELECT id, name, price, sale_price FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
-    $stmt->bind_param('i', $productId);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
+    $row = ProductReadService::analyticsProduct($conn, $productId);
     if (!$row) {
         return null;
     }

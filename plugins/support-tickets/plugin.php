@@ -103,10 +103,7 @@ function support_tickets_trim_text(string $text, int $maxLength): string
 
 function support_tickets_customer(mysqli $conn, int $customerId): array
 {
-    $stmt = $conn->prepare("SELECT id, name, email FROM customers WHERE id = ? LIMIT 1");
-    $stmt->bind_param('i', $customerId);
-    $stmt->execute();
-    return $stmt->get_result()->fetch_assoc() ?: [];
+    return CustomerReadService::identityById($conn, $customerId) ?: [];
 }
 
 function support_tickets_customer_order(mysqli $conn, int $customerId, int $orderId): array

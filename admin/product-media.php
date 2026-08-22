@@ -17,10 +17,9 @@ try{
    $file=$_FILES['file']??[];$saved='';
    if($type==='image'){$saved=save_fabric_image_upload($file,'Product image');}
    else{
-     if(($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK||($file['size']??0)>25*1024*1024)throw new RuntimeException('Video upload failed or exceeds 25MB.');
-     $ext=strtolower(pathinfo((string)($file['name']??''),PATHINFO_EXTENSION));$mime=mime_content_type((string)($file['tmp_name']??''))?:'';
-     if(!in_array($ext,['mp4','webm','ogg'],true)||!in_array($mime,['video/mp4','video/webm','video/ogg'],true))throw new RuntimeException('Video must be MP4, WEBM or OGG.');
-     $saved=random_filename((string)$file['name']);if(!move_uploaded_file((string)$file['tmp_name'],fabric_upload_path($saved)))throw new RuntimeException('Could not save video.');
+     try{UploadPolicy::validate($file,['mp4','webm','ogg'],['video/mp4','video/webm','video/ogg'],25*1024*1024);}catch(Throwable $e){throw new RuntimeException('Video must be a valid MP4, WEBM or OGG under 25MB.');}
+     $saved=random_filename((string)$file['name']);
+     try{UploadPolicy::move($file,fabric_upload_directory(),$saved);}catch(Throwable $e){throw new RuntimeException('Could not save video.');}
    }
    try{$sort=$type==='image'?$images:$videos;$primary=($type==='image'&&$images===0)?1:0;$alt=substr(trim((string)($_POST['alt_text']??$product['name'])),0,255);$stmt=$conn->prepare('INSERT INTO fabric_media(fabric_id,media_type,filename,alt_text,is_primary,sort_order) VALUES(?,?,?,?,?,?)');$stmt->bind_param('isssii',$id,$type,$saved,$alt,$primary,$sort);$stmt->execute();ProductAdminService::syncLegacyMedia($conn,$id);}catch(Throwable $e){image_pipeline_delete_files(fabric_upload_directory(),$saved);throw $e;}
    log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_media_uploaded','product',$id,'Product media uploaded.','ok');if(function_exists('product_feed_refresh_files'))product_feed_refresh_files(['conn'=>$conn]);$out(['ok'=>true,'media'=>ProductAdminService::media($conn,$id)]);

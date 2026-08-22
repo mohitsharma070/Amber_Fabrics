@@ -1,29 +1,13 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 
 require_customer();
 
 $customerId = (int) $_SESSION['customer_id'];
 $orderId    = (int) ($_GET['id'] ?? 0);
 
-$stmt = $conn->prepare(
-    "SELECT
-        o.*,
-        c.name AS customer_name,
-        c.email AS customer_email,
-        (
-            o.payment_status IN ('pending', 'failed')
-            AND o.order_status IN ('pending', 'confirmed')
-            AND o.payment_method IN ('razorpay', 'upi')
-            AND o.created_at >= (NOW() - INTERVAL 30 MINUTE)
-        ) AS retry_allowed
-     FROM orders o JOIN customers c ON c.id = o.customer_id
-     WHERE o.id = ? AND o.customer_id = ?"
-);
-$stmt->bind_param('ii', $orderId, $customerId);
-$stmt->execute();
-$order = $stmt->get_result()->fetch_assoc();
+$order = OrderReadService::customerOrder($conn, $orderId, $customerId);
 
 if (!$order) {
     flash('error', 'Order not found.');
@@ -54,70 +38,18 @@ function customer_visible_order_notes(string $notes): string
 
 $customerVisibleNotes = customer_visible_order_notes((string) ($order['notes'] ?? ''));
 
-$variantImageJoin = order_items_supports_variant($conn)
-    ? "LEFT JOIN fabric_variants fv ON fv.id = oi.variant_id"
-    : "LEFT JOIN fabric_variants fv ON fv.fabric_id = COALESCE(oi.fabric_id, oi.product_id)
-        AND fv.color = oi.color
-        AND fv.size = oi.size
-        AND fv.is_active = 1";
-$itemStmt = $conn->prepare(
-    "SELECT oi.*,
-            COALESCE(NULLIF(fv.image, ''), (SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1)) AS product_image
-     FROM order_items oi
-     LEFT JOIN fabrics f ON f.id = COALESCE(oi.fabric_id, oi.product_id)
-     {$variantImageJoin}
-     WHERE oi.order_id = ?"
-);
-$itemStmt->bind_param('i', $orderId);
-$itemStmt->execute();
-$items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$items = OrderReadService::itemsWithImages($conn, $orderId, false);
+$shipment = OrderReadService::customerShipment($conn, $orderId);
+$trackingUrl = ExternalUrlPolicy::sanitize((string) ($shipment['tracking_url'] ?? ''));
 
-$shipmentSelect = "SELECT courier_name,
-                          COALESCE(NULLIF(tracking_id, ''), NULLIF(awb_code, ''), '') AS tracking_id,
-                          tracking_url, shipping_cost, shipped_at, delivered_at
-                   FROM shipments
-                   WHERE order_id = ?
-                   LIMIT 1";
-$shipmentStmt = $conn->prepare($shipmentSelect);
-$shipmentStmt->bind_param('i', $orderId);
-$shipmentStmt->execute();
-$shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [];
-$trackingUrl = InventoryService::safe_external_url((string) ($shipment['tracking_url'] ?? ''));
-
-$returnStmt = $conn->prepare(
-    "SELECT id, return_number, status, reason, customer_note, image_1, image_2, admin_note, requested_at, updated_at
-     FROM returns
-     WHERE order_id = ?
-     ORDER BY id DESC
-     LIMIT 1"
-);
-$returnStmt->bind_param('i', $orderId);
-$returnStmt->execute();
-$returnRequest = $returnStmt->get_result()->fetch_assoc() ?: null;
+$returnRequest = OrderReadService::latestCustomerReturn($conn, $orderId);
 $returnItems = [];
 if ($returnRequest) {
-    $riStmt = $conn->prepare(
-        "SELECT product_name, unit_type, quantity, line_total, refund_amount
-         FROM return_items
-         WHERE return_id = ?
-         ORDER BY id ASC"
-    );
     $rid = (int) ($returnRequest['id'] ?? 0);
-    $riStmt->bind_param('i', $rid);
-    $riStmt->execute();
-    $returnItems = $riStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $returnItems = OrderReadService::returnItems($conn, $rid);
 }
 
-$activityStmt = $conn->prepare(
-    "SELECT action, actor_type, actor_name, details, created_at
-     FROM order_activity_logs
-     WHERE order_id = ?
-     ORDER BY id DESC
-     LIMIT 12"
-);
-$activityStmt->bind_param('i', $orderId);
-$activityStmt->execute();
-$orderActivity = $activityStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$orderActivity = OrderReadService::activity($conn, $orderId, 12);
 $orderActivity = apply_filters('order.timeline.events', is_array($orderActivity) ? $orderActivity : [], [
     'audience' => 'customer',
     'order_id' => $orderId,
@@ -163,8 +95,8 @@ $displayTotal = (float) (($order['total_amount'] ?? 0) > 0 ? $order['total_amoun
 $displayDiscount = (float) ($order['discount_amount'] ?? 0);
 
 $effectiveOrderStatus = (string) ($order['order_status'] ?? $order['status'] ?? '');
-$s = InventoryService::order_status_meta($effectiveOrderStatus);
-$payMeta = InventoryService::payment_status_meta((string) ($order['payment_status'] ?? 'pending'));
+$s = CommercePresenter::orderStatus($effectiveOrderStatus);
+$payMeta = CommercePresenter::paymentStatus((string) ($order['payment_status'] ?? 'pending'));
 $isRefundInitiated = in_array(strtolower($effectiveOrderStatus), ['cancelled', 'refunded'], true)
     && in_array(strtolower((string) ($order['payment_method'] ?? '')), ['razorpay', 'upi'], true)
     && strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
@@ -215,7 +147,7 @@ include __DIR__ . '/../includes/header.php';
                                 <div class="text-muted small">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></div>
                             <?php endif; ?>
                             <div class="text-muted small">
-                                <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo InventoryService::quantity_unit_suffix($unitType); ?> x <?php echo e(money($unitPrice, $currency)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?>
+                                <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($unitType); ?> x <?php echo e(money($unitPrice, $currency)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?>
                                 <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
                                     | <?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces
                                 <?php endif; ?>
@@ -310,7 +242,7 @@ include __DIR__ . '/../includes/header.php';
                     </form>
                     <?php endif; ?>
                     <?php if ($canCancel): ?>
-                    <form method="POST" action="/customer/cancel-order.php" class="mt-2" data-confirm="Cancel this order?">
+                    <form method="POST" action="/customer/cancel-order.php" class="mt-2" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                         <button type="submit" class="btn btn-outline-danger w-100">Cancel Order</button>
@@ -345,7 +277,7 @@ include __DIR__ . '/../includes/header.php';
                                 }
                                 ?>
                                 <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                                    <div class="small text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo InventoryService::quantity_unit_suffix($riUnitType); ?>)</div>
+                                    <div class="small text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($riUnitType); ?>)</div>
                                     <input type="number"
                                            class="form-control form-control-sm"
                                            name="return_qty[<?php echo $riOrderItemId; ?>]"
@@ -409,7 +341,7 @@ include __DIR__ . '/../includes/header.php';
                         <?php if (!empty($returnItems)): ?>
                             <div class="mt-2">Items:</div>
                             <?php foreach ($returnItems as $ri): ?>
-                                <div>- <?php echo e((string) ($ri['product_name'] ?? 'Item')); ?>: <?php echo e(format_quantity_by_unit((float) ($ri['quantity'] ?? 0), (string) ($ri['unit_type'] ?? 'meter'))); ?><?php echo InventoryService::quantity_unit_suffix((string) ($ri['unit_type'] ?? 'meter')); ?> (<?php echo e(money((float) ($ri['line_total'] ?? 0), $currency)); ?>)</div>
+                                <div>- <?php echo e((string) ($ri['product_name'] ?? 'Item')); ?>: <?php echo e(format_quantity_by_unit((float) ($ri['quantity'] ?? 0), (string) ($ri['unit_type'] ?? 'meter'))); ?><?php echo CommercePresenter::quantityUnitSuffix((string) ($ri['unit_type'] ?? 'meter')); ?> (<?php echo e(money((float) ($ri['line_total'] ?? 0), $currency)); ?>)</div>
                             <?php endforeach; ?>
                         <?php endif; ?>
                         <?php if (!empty($returnRequest['image_1'])): ?>

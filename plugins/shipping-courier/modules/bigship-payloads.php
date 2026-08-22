@@ -508,7 +508,7 @@ function shipping_courier_bigship_download_document_url(string $customGlobalOrde
         return '';
     }
 
-    return InventoryService::safe_external_url(
+    return ExternalUrlPolicy::sanitize(
         shipping_courier_response_value((array) $response['body'], ['AttachmentData', 'attachment_data'])
     );
 }

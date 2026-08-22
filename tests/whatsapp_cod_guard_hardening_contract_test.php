@@ -16,7 +16,7 @@ $read = static function (string $path) use ($root, $assert): string {
 
 $checkout = $read('checkout.php');
 $placeOrder = $read('place-order.php');
-$coupon = $read('includes/coupon-functions.php');
+$coupon = $read('includes/helpers/coupon-functions.php');
 $plugin = $read('plugins/cod-guard/plugin.php');
 $endpoint = $read('cod-guard-webhook.php');
 $cron = $read('cron/run-plugins.php');

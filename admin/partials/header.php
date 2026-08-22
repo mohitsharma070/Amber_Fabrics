@@ -125,8 +125,8 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
     <link rel="apple-touch-icon" href="../images/favicon-light.svg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260815b">
-    <link rel="stylesheet" href="../css/admin.css?v=20260821a">
+    <link rel="stylesheet" href="../css/style.css?v=20260822a">
+    <link rel="stylesheet" href="../css/admin.css?v=20260822a">
 </head>
 <body class="admin-shell<?php echo $adminCanMutateCurrentPage ? '' : ' admin-read-only'; ?>" data-admin-can-mutate="<?php echo $adminCanMutateCurrentPage ? '1' : '0'; ?>">
 <nav class="navbar navbar-expand-lg navbar-dark">

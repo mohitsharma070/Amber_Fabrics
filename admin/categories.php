@@ -9,13 +9,6 @@ $allowedMime = ['image/jpeg', 'image/png', 'image/webp'];
 $lockedAllowedSlugs = locked_storefront_category_slugs();
 $lockedSlugListText = implode(', ', $lockedAllowedSlugs);
 
-// Dynamic category flag to control whether variant size is used.
-try {
-    $conn->query("ALTER TABLE categories ADD COLUMN uses_variant_size TINYINT(1) NOT NULL DEFAULT 0");
-} catch (Throwable $e) {
-    // Ignore if already exists or ALTER is unavailable in this environment.
-}
-
 $processCategoryImageUpload = static function (array $file, string $slug) use ($maxSize, $allowedExt, $allowedMime): ?string {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return null;
@@ -24,14 +17,12 @@ $processCategoryImageUpload = static function (array $file, string $slug) use ($
         throw new RuntimeException('Image upload failed.');
     }
 
-    $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-    $mime = mime_content_type((string) ($file['tmp_name'] ?? '')) ?: '';
-    if (($file['size'] ?? 0) > $maxSize) {
-        throw new RuntimeException('Image must be under 2MB.');
-    }
-    if (!in_array($ext, $allowedExt, true) || !in_array($mime, $allowedMime, true) || !@getimagesize((string) $file['tmp_name'])) {
+    try {
+        $validated = UploadPolicy::validate($file, $allowedExt, $allowedMime, $maxSize, true);
+    } catch (Throwable $e) {
         throw new RuntimeException('Only valid JPG, PNG or WEBP images are allowed.');
     }
+    $ext = (string) $validated['extension'];
 
     $safeSlug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $slug));
     $safeSlug = trim($safeSlug, '-');
@@ -39,12 +30,10 @@ $processCategoryImageUpload = static function (array $file, string $slug) use ($
         $safeSlug = 'category';
     }
     $uploadDir = __DIR__ . '/../images/categories/';
-    if (!is_dir($uploadDir)) {
-        @mkdir($uploadDir, 0755, true);
-    }
     $filename = $safeSlug . '.' . $ext;
-    $target = rtrim($uploadDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $filename;
-    if (!move_uploaded_file((string) $file['tmp_name'], $target)) {
+    try {
+        UploadPolicy::move($file, $uploadDir, $filename);
+    } catch (Throwable $e) {
         throw new RuntimeException('Failed to save uploaded image.');
     }
     return '/images/categories/' . $filename;
@@ -86,10 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($_FILES['image']['name'])) {
                     $imagePath = $processCategoryImageUpload($_FILES['image'], $slug);
                 }
-                $stmt = $conn->prepare("INSERT INTO categories (name, slug, parent_id, image, status, uses_variant_size) VALUES (?, ?, ?, ?, ?, ?)");
-                $parentIdNull = null;
-                $stmt->bind_param('ssissi', $name, $slug, $parentIdNull, $imagePath, $status, $usesVariantSize);
-                $stmt->execute();
+                CategoryAdminService::create($conn, $name, $slug, $imagePath, $status, $usesVariantSize);
                 flash('success', 'Category added successfully.');
             } catch (Throwable $e) {
                 error_log('[categories] create failed: ' . $e->getMessage());
@@ -122,11 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-            $stmtCurrent = $conn->prepare("SELECT image FROM categories WHERE id = ? LIMIT 1");
-            $stmtCurrent->bind_param('i', $id);
-            $stmtCurrent->execute();
-            $current = $stmtCurrent->get_result()->fetch_assoc();
-            $imagePath = (string) ($current['image'] ?? '');
+            $imagePath = CategoryAdminService::image($conn, $id);
 
             if (!empty($_FILES['image']['name'])) {
                 $uploaded = $processCategoryImageUpload($_FILES['image'], $slug);
@@ -135,10 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $parentIdNull = null;
-            $stmt = $conn->prepare("UPDATE categories SET name = ?, slug = ?, parent_id = ?, image = ?, status = ?, uses_variant_size = ? WHERE id = ?");
-            $stmt->bind_param('ssissii', $name, $slug, $parentIdNull, $imagePath, $status, $usesVariantSize, $id);
-            $stmt->execute();
+            CategoryAdminService::update($conn, $id, $name, $slug, $imagePath, $status, $usesVariantSize);
             flash('success', 'Category updated.');
         } catch (Throwable $e) {
             error_log('[categories] update failed: ' . $e->getMessage());
@@ -154,34 +133,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('categories.php');
         }
 
-        $slug = '';
-        $catStmt = $conn->prepare("SELECT slug FROM categories WHERE id = ? LIMIT 1");
-        $catStmt->bind_param('i', $id);
-        $catStmt->execute();
-        $cat = $catStmt->get_result()->fetch_assoc();
-        if ($cat) {
-            $slug = (string) ($cat['slug'] ?? '');
+        try {
+            CategoryAdminService::delete($conn, $id, $lockedAllowedSlugs);
+            flash('success', 'Category deleted.');
+        } catch (InvalidArgumentException $e) {
+            flash('error', $e->getMessage());
+        } catch (Throwable $e) {
+            app_log('error', 'category_delete_failed', ['category_id' => $id, 'exception_type' => get_class($e)]);
+            flash('error', 'Could not delete category right now.');
         }
-
-        if ($slug !== '') {
-            if (in_array($slug, $lockedAllowedSlugs, true)) {
-                flash('error', 'Locked taxonomy categories cannot be deleted.');
-                redirect('categories.php');
-            }
-            $usedStmt = $conn->prepare("SELECT COUNT(*) AS total FROM fabrics WHERE category = ?");
-            $usedStmt->bind_param('s', $slug);
-            $usedStmt->execute();
-            $usedCount = (int) ($usedStmt->get_result()->fetch_assoc()['total'] ?? 0);
-            if ($usedCount > 0) {
-                flash('error', 'Cannot delete this category because products are using it.');
-                redirect('categories.php');
-            }
-        }
-
-        $del = $conn->prepare("DELETE FROM categories WHERE id = ?");
-        $del->bind_param('i', $id);
-        $del->execute();
-        flash('success', 'Category deleted.');
         redirect('categories.php');
     }
 }
@@ -189,9 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $categories = [];
 $parentCategories = [];
 try {
-    $stmt = $conn->prepare("SELECT id, name, slug, parent_id, image, status, uses_variant_size, created_at FROM categories ORDER BY parent_id ASC, name ASC");
-    $stmt->execute();
-    $allCats = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $allCats = CategoryAdminService::all($conn);
     
     foreach ($allCats as $cat) {
         $categories[] = $cat;
@@ -344,7 +302,7 @@ include 'partials/header.php';
                                 </div>
                             </form>
                         </details>
-                        <form method="post" class="d-inline-block mt-2" data-confirm="Delete category <?php echo e((string) $cat['name']); ?>?">
+                        <form method="post" class="d-inline-block mt-2" data-confirm="Delete category <?php echo e((string) $cat['name']); ?>?" data-confirm-title="Delete Category?" data-confirm-ok="Delete" data-confirm-variant="danger">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?php echo (int) $cat['id']; ?>">

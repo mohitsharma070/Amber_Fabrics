@@ -257,7 +257,7 @@ log_ecommerce_event(
 if ($isAjax) {
     $cartCount = count($_SESSION['cart']);
     $msg = $cappedByStock
-        ? 'Added to cart (only ' . format_quantity_by_unit($stock, $unitType) . InventoryService::quantity_unit_suffix($unitType) . ' in stock - quantity adjusted).'
+        ? 'Added to cart (only ' . format_quantity_by_unit($stock, $unitType) . CommercePresenter::quantityUnitSuffix($unitType) . ' in stock - quantity adjusted).'
         : 'Added to cart: ' . ($product['name'] ?? 'Product');
     header('Content-Type: application/json');
     echo json_encode([
@@ -272,7 +272,7 @@ if ($isAjax) {
 }
 
 $flashMsg = $cappedByStock
-    ? 'Added to cart. Only ' . format_quantity_by_unit($stock, $unitType) . InventoryService::quantity_unit_suffix($unitType) . ' available - quantity has been adjusted.'
+    ? 'Added to cart. Only ' . format_quantity_by_unit($stock, $unitType) . CommercePresenter::quantityUnitSuffix($unitType) . ' available - quantity has been adjusted.'
     : 'Added to cart: ' . ($product['name'] ?? 'Product');
 flash('success', $flashMsg);
 $target = ($redirectTo === 'checkout') ? '/checkout.php' : '/cart.php';

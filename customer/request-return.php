@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 $customerId=(int)($_SESSION['customer_id']??0);$orderId=(int)($_POST['order_id']??0);$returnUrl=$customerId>0?'/customer/order-view.php?id='.$orderId:'/guest/order?id='.$orderId;
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -72,12 +72,7 @@ try {
     }
 
     $uploadDir = dirname(__DIR__) . '/images/returns';
-    if (!is_dir($uploadDir)) {
-        @mkdir($uploadDir, 0755, true);
-    }
-    if (!is_dir($uploadDir)) {
-        throw new RuntimeException('Unable to create return image directory.');
-    }
+    UploadPolicy::ensureDirectory($uploadDir);
 
     $allowedMimes = [
         'image/jpeg' => 'jpg',
@@ -90,43 +85,17 @@ try {
     $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
     $maxBytes = 5 * 1024 * 1024;
     foreach (['image_1', 'image_2'] as $field) {
-        $tmp = (string) ($_FILES[$field]['tmp_name'] ?? '');
-        $originalName = (string) ($_FILES[$field]['name'] ?? '');
-        $size = (int) ($_FILES[$field]['size'] ?? 0);
-        if ($tmp === '' || $size <= 0 || $size > $maxBytes) {
-            throw new RuntimeException('Each image must be valid and up to 5MB.');
-        }
-        $mime = '';
-        if (function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            if ($finfo !== false) {
-                $mime = (string) (finfo_file($finfo, $tmp) ?: '');
-                finfo_close($finfo);
-            }
-        }
-        if ($mime === '' && function_exists('mime_content_type')) {
-            $mime = (string) (mime_content_type($tmp) ?: '');
-        }
-
-        $detectedExt = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
-        $extFromMime = $allowedMimes[strtolower($mime)] ?? '';
-        $imageInfo = @getimagesize($tmp);
-        if ($imageInfo === false) {
-            throw new RuntimeException('Only valid image files are allowed.');
-        }
-        if ($extFromMime === '' || !in_array($detectedExt, $allowedExts, true)) {
+        try {
+            $validated = UploadPolicy::validate($_FILES[$field], $allowedExts, $allowedMimes, $maxBytes, true);
+        } catch (Throwable $e) {
             throw new RuntimeException('Only JPG, PNG, or WEBP images are allowed.');
         }
-
-        // Use MIME-based extension for normalized storage.
-        $targetExt = $extFromMime;
-        if ($targetExt === '') {
-            throw new RuntimeException('Only JPG, PNG, or WEBP images are allowed.');
-        }
+        $targetExt = (string) $validated['storage_extension'];
 
         $filename = 'return_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $targetExt;
-        $target = $uploadDir . '/' . $filename;
-        if (!move_uploaded_file($tmp, $target)) {
+        try {
+            UploadPolicy::move($_FILES[$field], $uploadDir, $filename);
+        } catch (Throwable $e) {
             throw new RuntimeException('Failed to upload return image.');
         }
         $saved[$field] = 'images/returns/' . $filename;
@@ -204,10 +173,7 @@ try {
     }
     if (!empty($saved)) {
         foreach ($saved as $path) {
-            $rel = ltrim((string) $path, '/\\');
-            if ($rel !== '') {
-                @unlink(dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $rel));
-            }
+            UploadPolicy::deleteStoredFile(dirname(__DIR__) . '/images/returns', basename((string) $path));
         }
     }
     error_log('[return-request] submit failed: ' . $e->getMessage());

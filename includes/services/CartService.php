@@ -522,13 +522,7 @@ final class CartService
             $variantIds = array_values(array_unique($variantIds));
             $productUnitMap = [];
             if (!empty($productIds)) {
-                $ph = implode(',', array_fill(0, count($productIds), '?'));
-                $typ = str_repeat('i', count($productIds));
-                $uStmt = $conn->prepare("SELECT id, unit_type FROM fabrics WHERE id IN ($ph)");
-                $uStmt->bind_param($typ, ...$productIds);
-                $uStmt->execute();
-                $uRows = $uStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-                foreach ($uRows as $ur) {
+                foreach (ProductReadService::unitTypeRows($conn, $productIds) as $ur) {
                     $productUnitMap[(int) ($ur['id'] ?? 0)] = (string) ($ur['unit_type'] ?? 'meter');
                 }
             }

@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
-require_once __DIR__ . '/includes/coupon-functions.php';
-require_once __DIR__ . '/includes/customer-auth.php';
+require_once __DIR__ . '/includes/helpers/coupon-functions.php';
+require_once __DIR__ . '/includes/security/customer-auth.php';
 
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
@@ -32,74 +32,9 @@ if (empty($items)) {
 }
 
 $errors = [];
-$old = [
-    'full_name' => '',
-    'phone' => '',
-    'email' => '',
-    'address' => '',
-    'city' => '',
-    'state' => '',
-    'pincode' => '',
-    'country' => 'India',
-    'order_notes' => '',
-    'payment_method' => 'cod',
-    'cod_whatsapp_consent' => 0,
-    'cod_fee_apply' => 1,
-    'shipping_address_id' => 0,
-    'create_account' => 0,
-];
-
-// Prefill checkout form from customer profile + latest order address when available.
+$old = CheckoutInput::defaults();
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
-if ($customerId > 0) {
-    try {
-        $prefill = [
-            'full_name' => '',
-            'phone' => '',
-            'email' => '',
-            'address' => '',
-            'city' => '',
-            'state' => '',
-            'pincode' => '',
-            'country' => '',
-        ];
-
-        $cStmt = $conn->prepare("SELECT name, email, phone, country FROM customers WHERE id = ? LIMIT 1");
-        $cStmt->bind_param('i', $customerId);
-        $cStmt->execute();
-        $customer = $cStmt->get_result()->fetch_assoc() ?: [];
-
-        $prefill['full_name'] = (string) ($customer['name'] ?? '');
-        $prefill['email'] = (string) ($customer['email'] ?? '');
-        $prefill['phone'] = (string) ($customer['phone'] ?? '');
-        $prefill['country'] = (string) ($customer['country'] ?? '');
-
-        $oStmt = $conn->prepare(
-            "SELECT customer_name, customer_phone, customer_email, address, city, state, pincode, country
-             FROM orders
-             WHERE customer_id = ?
-             ORDER BY id DESC
-             LIMIT 1"
-        );
-        $oStmt->bind_param('i', $customerId);
-        $oStmt->execute();
-        $lastOrder = $oStmt->get_result()->fetch_assoc() ?: [];
-
-        foreach (['full_name' => 'customer_name', 'phone' => 'customer_phone', 'email' => 'customer_email', 'address' => 'address', 'city' => 'city', 'state' => 'state', 'pincode' => 'pincode', 'country' => 'country'] as $dst => $src) {
-            if ($prefill[$dst] === '' && !empty($lastOrder[$src])) {
-                $prefill[$dst] = (string) $lastOrder[$src];
-            }
-        }
-
-        foreach ($prefill as $k => $v) {
-            if ($v !== '') {
-                $old[$k] = $v;
-            }
-        }
-    } catch (Throwable $e) {
-        error_log('[checkout] prefill load failed: ' . $e->getMessage());
-    }
-}
+$old = array_merge($old, CheckoutReadService::customerPrefill($conn, $customerId));
 
 if (!empty($_SESSION['checkout_old']) && is_array($_SESSION['checkout_old'])) {
     $old = array_merge($old, $_SESSION['checkout_old']);
@@ -113,50 +48,15 @@ if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'
 // India-only checkout path: keep country fixed for consistent pricing/shipping rules.
 $old['country'] = 'India';
 
-$savedAddresses = [];
-$selectedAddressId = (int) ($old['shipping_address_id'] ?? 0);
-if ($customerId > 0 && customer_addresses_table_ready($conn)) {
-    $savedAddresses = customer_addresses_list($conn, $customerId);
-    $addressMap = [];
-    foreach ($savedAddresses as $addr) {
-        $aid = (int) ($addr['id'] ?? 0);
-        if ($aid > 0) {
-            $addressMap[$aid] = $addr;
-        }
-    }
-
-    $applyAddress = static function (array $addr, array &$target): void {
-        $target['full_name'] = (string) ($addr['full_name'] ?? $target['full_name']);
-        $target['phone'] = (string) ($addr['phone'] ?? $target['phone']);
-        $target['address'] = (string) ($addr['address_line'] ?? $target['address']);
-        $target['city'] = (string) ($addr['city'] ?? $target['city']);
-        $target['state'] = (string) ($addr['state'] ?? $target['state']);
-        $target['pincode'] = (string) ($addr['pincode'] ?? $target['pincode']);
-        $target['country'] = 'India';
-    };
-
-    $requestedAddressId = (int) ($_GET['address_id'] ?? 0);
-    if ($requestedAddressId > 0 && isset($addressMap[$requestedAddressId])) {
-        $selectedAddressId = $requestedAddressId;
-        $applyAddress($addressMap[$requestedAddressId], $old);
-    } elseif ($selectedAddressId > 0 && isset($addressMap[$selectedAddressId])) {
-        $applyAddress($addressMap[$selectedAddressId], $old);
-    } else {
-        $hasAnyAddressInput = trim((string) ($old['address'] ?? '')) !== ''
-            || trim((string) ($old['city'] ?? '')) !== ''
-            || trim((string) ($old['pincode'] ?? '')) !== '';
-        if (!$hasAnyAddressInput) {
-            foreach ($savedAddresses as $addr) {
-                if ((int) ($addr['is_default_shipping'] ?? 0) === 1) {
-                    $selectedAddressId = (int) ($addr['id'] ?? 0);
-                    $applyAddress($addr, $old);
-                    break;
-                }
-            }
-        }
-    }
-}
-$old['shipping_address_id'] = $selectedAddressId;
+$addressState = CheckoutReadService::savedAddressState(
+    $conn,
+    $customerId,
+    $old,
+    (int) ($_GET['address_id'] ?? 0)
+);
+$old = $addressState['form'];
+$savedAddresses = $addressState['addresses'];
+$selectedAddressId = (int) $addressState['selected_address_id'];
 
 $selectedPayment = in_array((string) ($old['payment_method'] ?? 'cod'), ['cod', 'razorpay'], true)
     ? (string) $old['payment_method']
@@ -180,13 +80,7 @@ if (!$couponInfo['valid'] && $couponCode !== '') {
 $discountAmount = $couponInfo['valid'] ? (float) $couponInfo['discount'] : 0.00;
 $discountAmount = min($discountAmount, $subtotal); // discount applies to product subtotal only - shipping is never discounted
 $taxableAmount = max(0.0, $subtotal - $discountAmount);
-$hasCompleteDelivery = trim((string) ($old['full_name'] ?? '')) !== ''
-    && trim((string) ($old['phone'] ?? '')) !== ''
-    && filter_var(trim((string) ($old['email'] ?? '')), FILTER_VALIDATE_EMAIL)
-    && trim((string) ($old['address'] ?? '')) !== ''
-    && trim((string) ($old['city'] ?? '')) !== ''
-    && trim((string) ($old['state'] ?? '')) !== ''
-    && preg_match('/^[1-9][0-9]{5}$/', trim((string) ($old['pincode'] ?? '')));
+$hasCompleteDelivery = CheckoutInput::hasCompleteDelivery($old);
 
 $shipping = CartService::checkout_shipping_breakdown((float) $subtotal, $countryForCalc, $selectedPayment, $codFeeApply === 1);
 $isIndia = (bool) $shipping['is_india'];
@@ -289,7 +183,7 @@ include __DIR__ . '/includes/header.php';
 
         <div class="row g-4 checkout-layout">
             <div class="col-lg-7 order-0 checkout-form-column">
-                <form id="checkout_form" method="POST" action="/place-order.php" novalidate>
+                <form id="checkout_form" method="POST" action="/place-order.php" novalidate data-confirm-modal data-confirm-context="checkout">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="order_nonce" value="<?php echo e($_SESSION['order_nonce']); ?>">
                     <input type="hidden" name="online_method" id="online_method" value="<?php echo e($selectedOnlineMethod); ?>">

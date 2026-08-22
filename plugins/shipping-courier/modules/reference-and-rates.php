@@ -368,7 +368,7 @@ function shipping_courier_normalize_shipment_value(string $key, $value)
     }
 
     if ($key === 'tracking_url') {
-        return InventoryService::safe_external_url((string) $value);
+        return ExternalUrlPolicy::sanitize((string) $value);
     }
 
     if ($key === 'shipping_cost') {
@@ -500,7 +500,7 @@ function shipping_courier_upsert_metadata(mysqli $conn, int $orderId, int $shipm
     $providerOrderId = trim((string) ($metadata['provider_order_id'] ?? ''));
     $providerShipmentId = trim((string) ($metadata['provider_shipment_id'] ?? ''));
     $providerStatus = trim((string) ($metadata['provider_status'] ?? ''));
-    $labelUrl = InventoryService::safe_external_url((string) ($metadata['label_url'] ?? ''));
+    $labelUrl = ExternalUrlPolicy::sanitize((string) ($metadata['label_url'] ?? ''));
     $rawResponseJson = shipping_courier_json_value($metadata['raw_response_json'] ?? null);
 
     $stmt = $conn->prepare(
@@ -736,30 +736,21 @@ function shipping_courier_bigship_save_document_upload(int $orderId, string $typ
     if ($orderId <= 0 || !in_array($type, ['invoice', 'eway_bill'], true)) {
         return shipping_courier_result(false, 'Invalid courier document request.');
     }
-    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-        return shipping_courier_result(false, 'Select a PDF document to upload.');
-    }
-    if ((int) ($file['size'] ?? 0) <= 0 || (int) ($file['size'] ?? 0) > 5 * 1024 * 1024) {
-        return shipping_courier_result(false, 'Courier documents must be PDF files no larger than 5 MB.');
-    }
-    $tmp = (string) ($file['tmp_name'] ?? '');
-    $mime = '';
-    if ($tmp !== '' && function_exists('finfo_open')) {
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        if ($finfo !== false) {
-            $mime = (string) finfo_file($finfo, $tmp);
-            finfo_close($finfo);
-        }
-    }
-    if ($mime !== 'application/pdf') {
+    try {
+        UploadPolicy::validate($file, ['pdf'], ['application/pdf'], 5 * 1024 * 1024);
+    } catch (Throwable $e) {
         return shipping_courier_result(false, 'Courier documents must be valid PDF files.');
     }
     $target = shipping_courier_bigship_document_path($orderId, $type);
     $directory = dirname($target);
-    if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
+    try {
+        UploadPolicy::ensureDirectory($directory, 0750);
+    } catch (Throwable $e) {
         return shipping_courier_result(false, 'Unable to create private courier document storage.');
     }
-    if (!move_uploaded_file($tmp, $target)) {
+    try {
+        UploadPolicy::move($file, $directory, basename($target));
+    } catch (Throwable $e) {
         return shipping_courier_result(false, 'Unable to save the courier document.');
     }
     return shipping_courier_result(true, ucfirst(str_replace('_', ' ', $type)) . ' uploaded.');

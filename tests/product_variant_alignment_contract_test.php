@@ -12,11 +12,14 @@ $editor = (string) file_get_contents($root . '/admin/edit-fabric.php');
 $addToCart = (string) file_get_contents($root . '/add-to-cart.php');
 $cart = (string) file_get_contents($root . '/includes/services/CartService.php');
 $order = (string) file_get_contents($root . '/place-order.php');
+$orderItemSnapshot = (string) file_get_contents($root . '/includes/services/OrderItemSnapshotService.php');
 $estimate = (string) file_get_contents($root . '/delivery-estimate.php');
 $setup = (string) file_get_contents($root . '/database/setup.php');
 $legacyCleanup = (string) file_get_contents($root . '/database/migrations/2026-08-17-remove-legacy-placeholder-variants.sql');
 $legacyPurge = (string) file_get_contents($root . '/database/migrations/2026-08-18-purge-legacy-placeholder-variants.sql');
 $adminFooter = (string) file_get_contents($root . '/admin/partials/footer.php');
+$sharedScript = (string) file_get_contents($root . '/js/script.js');
+$interactionLayer = (string) file_get_contents($root . '/includes/partials/interaction-layer.php');
 
 $assert(str_contains($service, "product_type'] ?? 'simple') !== 'variable'"), 'Variant service must reject variants on simple products.');
 $assert(str_contains($service, 'skuAvailable') && str_contains($service, 'SELECT sku FROM fabrics'), 'Variant SKU must be unique across products and variants.');
@@ -28,7 +31,7 @@ $assert(str_contains($endpoint, '[variant-save]') && str_contains($endpoint, '$u
 $assert(str_contains($actions, "action==='enable-variants'") && str_contains($actions, "action==='disable-variants'"), 'Safe simple/variable conversion actions are missing.');
 $assert(str_contains($editor, 'Base gallery') && str_contains($editor, 'Inherited') && str_contains($editor, 'effective_stock'), 'Variant editor must show inherited media, pricing, and unit-aware stock.');
 $assert(str_contains($editor, 'variant-save-btn') && str_contains($editor, '.finally(function ()'), 'Variant editor must prevent double saves and restore the save state.');
-foreach ([$addToCart, $cart, $order, $estimate] as $source) {
+foreach ([$addToCart, $cart, $order . $orderItemSnapshot, $estimate] as $source) {
     $assert(str_contains($source, 'product_type') && str_contains($source, 'requiresVariant'), 'Storefront, cart, order, and delivery flows must enforce product variant mode.');
 }
 $assert(!str_contains($setup, 'Seed one default active variant') && !str_contains($setup, 'INSERT IGNORE INTO fabric_variants (fabric_id, color, size, stock'), 'Fresh setup must not create legacy placeholder variants.');
@@ -37,7 +40,7 @@ $assert(str_contains($legacyCleanup, 'DELETE fv') && str_contains($legacyCleanup
 $assert(str_contains($legacyPurge, 'SET oi.variant_id = NULL') && str_contains($legacyPurge, 'DELETE fv'), 'Testing cleanup must fully purge remaining placeholder variants.');
 $assert(str_contains($editor, 'variant-editor-modal') && str_contains($editor, 'modal-xl') && str_contains($editor, "fd.append('sort_order'"), 'Variant add/edit must use a complete modal editor.');
 $assert(str_contains($editor, 'document.body.appendChild(modalElement)') && !str_contains($editor, 'modal-dialog-scrollable'), 'Variant modal must be mounted at document level without the unstable nested scroll dialog.');
-$assert(str_contains($adminFooter, '<script nonce=') && !str_contains($editor, "Promise.resolve(confirm("), 'Admin confirmations must use the CSP-authorized branded modal.');
+$assert(str_contains($adminFooter, 'includes/partials/interaction-layer.php') && str_contains($interactionLayer, 'id="uiConfirmDialog"') && str_contains($sharedScript, 'window.adminConfirm = function') && !str_contains($editor, "Promise.resolve(confirm("), 'Admin confirmations must use the shared CSP-safe branded modal.');
 
 if ($failures) {
     foreach ($failures as $failure) fwrite(STDERR, "FAIL: {$failure}\n");

@@ -95,10 +95,7 @@ function meta_pixel_product_payload(mysqli $conn, int $productId): ?array
     if ($productId <= 0) {
         return null;
     }
-    $stmt = $conn->prepare("SELECT id, name, price, sale_price FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
-    $stmt->bind_param('i', $productId);
-    $stmt->execute();
-    $product = $stmt->get_result()->fetch_assoc();
+    $product = ProductReadService::analyticsProduct($conn, $productId);
     if (!$product) {
         return null;
     }

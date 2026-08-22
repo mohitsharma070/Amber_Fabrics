@@ -8,40 +8,20 @@ if (!$order) {
     redirect('/guest/order-access');
 }
 
-$stmt = $conn->prepare('SELECT * FROM order_items WHERE order_id=? ORDER BY id');
-$stmt->bind_param('i', $orderId);
-$stmt->execute();
-$items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt = $conn->prepare("SELECT courier_name, COALESCE(NULLIF(tracking_id,''),NULLIF(awb_code,''),'') tracking_id, tracking_url, delivered_at FROM shipments WHERE order_id=? LIMIT 1");
-$stmt->bind_param('i', $orderId);
-$stmt->execute();
-$shipment = $stmt->get_result()->fetch_assoc() ?: [];
-
-$returnStmt = $conn->prepare('SELECT id, return_number, status, reason, customer_note, admin_note, refund_amount, requested_at, updated_at FROM returns WHERE order_id=? ORDER BY id DESC LIMIT 1');
-$returnStmt->bind_param('i', $orderId);
-$returnStmt->execute();
-$returnRequest = $returnStmt->get_result()->fetch_assoc() ?: null;
+$items = OrderReadService::items($conn, $orderId);
+$shipment = OrderReadService::guestShipment($conn, $orderId);
+$returnRequest = OrderReadService::latestGuestReturn($conn, $orderId);
 $returnItems = [];
 $reversePickup = null;
 if ($returnRequest) {
     $returnId = (int) $returnRequest['id'];
-    $stmt = $conn->prepare('SELECT product_name, unit_type, quantity, line_total, refund_amount FROM return_items WHERE return_id=? ORDER BY id');
-    $stmt->bind_param('i', $returnId);
-    $stmt->execute();
-    $returnItems = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    try {
-        $stmt = $conn->prepare('SELECT provider, provider_status, tracking_id, tracking_url, label_url, initialization_status, last_error FROM shipping_courier_reverse_pickups WHERE return_id=? ORDER BY id DESC LIMIT 1');
-        $stmt->bind_param('i', $returnId);
-        $stmt->execute();
-        $reversePickup = $stmt->get_result()->fetch_assoc() ?: null;
-    } catch (Throwable $e) {
-        $reversePickup = null;
-    }
+    $returnItems = OrderReadService::returnItems($conn, $returnId);
+    $reversePickup = OrderReadService::latestReversePickup($conn, $returnId);
 }
 
-$tracking = InventoryService::safe_external_url((string) ($shipment['tracking_url'] ?? ''));
-$reverseTracking = InventoryService::safe_external_url((string) ($reversePickup['tracking_url'] ?? ''));
-$status = InventoryService::order_status_meta((string) $order['order_status']);
+$tracking = ExternalUrlPolicy::sanitize((string) ($shipment['tracking_url'] ?? ''));
+$reverseTracking = ExternalUrlPolicy::sanitize((string) ($reversePickup['tracking_url'] ?? ''));
+$status = CommercePresenter::orderStatus((string) $order['order_status']);
 $canCancel = in_array((string) $order['order_status'], ['pending', 'confirmed'], true);
 $canRetry = in_array((string) $order['payment_status'], ['pending', 'failed'], true)
     && $order['payment_method'] === 'razorpay' && strtotime((string) $order['created_at']) >= time() - 1800;
@@ -57,7 +37,7 @@ include __DIR__ . '/../includes/header.php';
 
 <?php if ($returnRequest): ?>
 <div class="surface-panel p-4 mt-4"><h5>Refund Return</h5><dl class="row small mb-3"><dt class="col-sm-4">Return number</dt><dd class="col-sm-8"><?php echo e((string) $returnRequest['return_number']); ?></dd><dt class="col-sm-4">Status</dt><dd class="col-sm-8"><?php echo e(strtoupper(str_replace('_', ' ', (string) $returnRequest['status']))); ?></dd><dt class="col-sm-4">Reason</dt><dd class="col-sm-8"><?php echo e((string) $returnRequest['reason']); ?></dd><?php if (!empty($returnRequest['admin_note'])): ?><dt class="col-sm-4">Store update</dt><dd class="col-sm-8"><?php echo e((string) $returnRequest['admin_note']); ?></dd><?php endif; ?><?php if ((float) $returnRequest['refund_amount'] > 0): ?><dt class="col-sm-4">Refund amount</dt><dd class="col-sm-8"><?php echo e(money((float) $returnRequest['refund_amount'])); ?></dd><?php endif; ?></dl>
-<?php foreach ($returnItems as $returnItem): ?><div class="d-flex justify-content-between border-top py-2 small"><span><?php echo e((string) $returnItem['product_name']); ?> × <?php echo e(format_quantity_by_unit((float) $returnItem['quantity'], (string) $returnItem['unit_type'])); ?><?php echo e(InventoryService::quantity_unit_suffix((string) $returnItem['unit_type'])); ?></span><span><?php echo e(money((float) $returnItem['line_total'])); ?></span></div><?php endforeach; ?>
+<?php foreach ($returnItems as $returnItem): ?><div class="d-flex justify-content-between border-top py-2 small"><span><?php echo e((string) $returnItem['product_name']); ?> × <?php echo e(format_quantity_by_unit((float) $returnItem['quantity'], (string) $returnItem['unit_type'])); ?><?php echo e(CommercePresenter::quantityUnitSuffix((string) $returnItem['unit_type'])); ?></span><span><?php echo e(money((float) $returnItem['line_total'])); ?></span></div><?php endforeach; ?>
 <?php if ($reversePickup): ?><div class="alert alert-light border mt-3 mb-0 small"><strong>Pickup:</strong> <?php echo e(strtoupper(str_replace('_', ' ', (string) ($reversePickup['provider_status'] ?: $reversePickup['initialization_status'])))); ?><?php if (!empty($reversePickup['tracking_id'])): ?><br>Tracking: <?php echo e((string) $reversePickup['tracking_id']); ?><?php endif; ?><?php if ($reverseTracking): ?><br><a href="<?php echo e($reverseTracking); ?>" target="_blank" rel="noopener noreferrer">Track return pickup</a><?php endif; ?></div><?php endif; ?></div>
 <?php elseif ($returnEligible): ?>
 <div class="surface-panel p-4 mt-4"><h5>Request a Refund Return</h5><p class="small text-muted">Available within <?php echo return_request_window_days(); ?> calendar days of confirmed delivery.</p><form method="post" action="/customer/request-return.php" enctype="multipart/form-data"><?php echo csrf_field(); ?><input type="hidden" name="order_id" value="<?php echo $orderId; ?>"><?php foreach ($items as $item): ?><label class="form-label small"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Product')); ?> quantity</label><input class="form-control mb-2" type="number" step="<?php echo ($item['unit_type'] ?? 'meter') === 'meter' ? '0.01' : '1'; ?>" min="0" max="<?php echo e((string) (($item['quantity'] ?? 0) > 0 ? $item['quantity'] : $item['quantity_meters'])); ?>" name="return_qty[<?php echo (int) $item['id']; ?>]" value="0"><?php endforeach; ?><select class="form-select mb-2" name="reason" required><option value="">Reason</option><option>Damaged Item</option><option>Wrong Item Delivered</option><option>Quality Not as Expected</option><option>Other</option></select><textarea class="form-control mb-2" name="customer_note" placeholder="Optional note"></textarea><input class="form-control mb-2" type="file" name="image_1" accept="image/jpeg,image/png,image/webp" required><input class="form-control mb-2" type="file" name="image_2" accept="image/jpeg,image/png,image/webp" required><button class="btn btn-outline-secondary">Submit Refund Return</button></form></div>

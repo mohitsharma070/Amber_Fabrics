@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
 if(!empty($_SESSION['pending_order_id'])){log_ecommerce_event($conn,'payment_failure',(int)($_SESSION['customer_id']??0)?:null,(int)$_SESSION['pending_order_id'],null,null,null,null,['payment_method'=>'razorpay']);}
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/checkout.php');

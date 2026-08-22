@@ -24,7 +24,7 @@ $read = static function (string $relative) use ($root, $assert): string {
 $deadFunctionsByFile = [
     'catalog.php' => ['catalog_fulltext_available', 'catalog_build_boolean_search'],
     'config/db.php' => ['db_connected'],
-    'includes/coupon-functions.php' => ['mark_coupon_used_once', 'validate_coupon_for_subtotal'],
+    'includes/helpers/coupon-functions.php' => ['mark_coupon_used_once', 'validate_coupon_for_subtotal'],
     'includes/helpers/media.php' => ['image_pipeline_low_resolution_fabric_images'],
     'includes/helpers/persistence.php' => ['get_variant_size_policy_by_category'],
     'includes/helpers/site-settings.php' => [
@@ -49,7 +49,7 @@ foreach ($deadFunctionsByFile as $relative => $functionNames) {
     }
 }
 
-$couponFunctions = $read('includes/coupon-functions.php');
+$couponFunctions = $read('includes/helpers/coupon-functions.php');
 $applyCoupon = $read('apply-coupon.php');
 $removeCoupon = $read('remove-coupon.php');
 $assert(substr_count($couponFunctions, 'function coupon_redirect_target(') === 1, 'Coupon redirects must have one shared implementation.');

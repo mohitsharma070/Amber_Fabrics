@@ -304,11 +304,11 @@ include 'partials/header.php';
                     <td data-label="Total"><?php echo e(money((float) ($order['total_amount'] ?? 0))); ?></td>
                     <td data-label="Payment"><?php echo strtoupper(e((string) $order['payment_method'])); ?></td>
                     <td data-label="Payment Status">
-                        <?php $pb = InventoryService::payment_status_meta((string) ($order['payment_status'] ?? 'pending')); ?>
+                        <?php $pb = CommercePresenter::paymentStatus((string) ($order['payment_status'] ?? 'pending')); ?>
                         <span class="badge bg-<?php echo e($pb['class']); ?>"><?php echo e($pb['label']); ?></span>
                     </td>
                     <td data-label="Order Status">
-                        <?php $sb = InventoryService::order_status_meta((string) ($order['order_status'] ?? 'pending')); ?>
+                        <?php $sb = CommercePresenter::orderStatus((string) ($order['order_status'] ?? 'pending')); ?>
                         <span class="badge bg-<?php echo e($sb['class']); ?>"><?php echo e($sb['label']); ?></span>
                     </td>
                     <td data-label="Tracking"><?php echo $trackingId !== '' ? e($trackingId) : '-'; ?></td>
@@ -316,7 +316,7 @@ include 'partials/header.php';
                     <td data-label="Action" class="admin-row-actions">
                         <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View</a>
                         <?php if (($order['order_status'] ?? '') === 'cancelled' && ($order['payment_status'] ?? '') === 'paid'): ?>
-                            <form method="POST" action="orders.php?refund_queue=1" class="d-inline" data-confirm-modal data-confirm-title="Mark Refunded" data-confirm-message="Mark this cancelled paid order as refunded?" data-confirm-ok="Mark Refunded">
+                            <form method="POST" action="orders.php?refund_queue=1" class="d-inline" data-confirm-modal data-confirm-title="Mark Refunded" data-confirm-message="Mark this cancelled paid order as refunded?" data-confirm-ok="Mark Refunded" data-confirm-variant="danger">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="mark_refunded">
                                 <input type="hidden" name="order_id" value="<?php echo (int) $order['id']; ?>">

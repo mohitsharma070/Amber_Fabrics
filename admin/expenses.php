@@ -187,7 +187,7 @@ include 'partials/header.php';
                             <td><?php echo e((string) $row['note']); ?></td>
                             <td class="text-end admin-row-actions">
                                 <a class="btn btn-sm btn-outline-primary" href="expenses.php?edit=<?php echo (int) $row['id']; ?><?php echo $month ? '&month=' . urlencode($month) : ''; ?>"><i class="bi bi-pencil me-1"></i>Edit</a>
-                                <form method="POST" action="expenses.php<?php echo $month ? '?month=' . urlencode($month) : ''; ?>" class="d-inline" data-confirm-modal data-confirm-title="Delete Expense" data-confirm-message="Delete this expense entry?" data-confirm-ok="Delete">
+                                <form method="POST" action="expenses.php<?php echo $month ? '?month=' . urlencode($month) : ''; ?>" class="d-inline" data-confirm-modal data-confirm-title="Delete Expense" data-confirm-message="Delete this expense entry?" data-confirm-ok="Delete" data-confirm-variant="danger">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?php echo (int) $row['id']; ?>">

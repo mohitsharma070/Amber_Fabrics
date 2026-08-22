@@ -329,27 +329,23 @@ function save_fabric_image_upload(array $file, string $label = 'Image'): string
         throw new RuntimeException($label . ' upload failed. Please try again.');
     }
 
-    $tmpName = (string) ($file['tmp_name'] ?? '');
-    $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-    $mime = function_exists('mime_content_type') ? (mime_content_type($tmpName) ?: '') : '';
-    $size = (int) ($file['size'] ?? 0);
-    $imageInfo = @getimagesize($tmpName);
-
-    if ($size > $maxImageSize) {
-        throw new RuntimeException($label . ' must be under ' . image_upload_max_mb() . 'MB.');
-    }
-
-    if (!in_array($ext, $allowedImageExt, true) || !in_array($mime, $allowedImageMime, true) || !is_array($imageInfo)) {
+    try {
+        $validated = UploadPolicy::validate($file, $allowedImageExt, $allowedImageMime, $maxImageSize, true);
+    } catch (Throwable $e) {
         throw new RuntimeException($label . ' must be JPG, PNG or WEBP.');
     }
+    $tmpName = (string) $validated['tmp_name'];
+    $mime = (string) $validated['mime'];
+    $imageInfo = @getimagesize($tmpName);
 
     $imgWidth = (int) ($imageInfo[0] ?? 0);
     $imgHeight = (int) ($imageInfo[1] ?? 0);
     // No minimum image size check
 
     $saved = random_filename((string) ($file['name'] ?? 'image.jpg'));
-    $target = fabric_upload_path($saved);
-    if (!move_uploaded_file($tmpName, $target)) {
+    try {
+        $target = UploadPolicy::move($file, fabric_upload_directory(), $saved);
+    } catch (Throwable $e) {
         throw new RuntimeException($label . ' upload failed.');
     }
 

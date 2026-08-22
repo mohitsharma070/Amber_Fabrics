@@ -4,7 +4,7 @@
  * URL: /invoice.php?order=VT...
  */
 require_once __DIR__ . '/includes/init.php';
-require_once __DIR__ . '/includes/customer-auth.php';
+require_once __DIR__ . '/includes/security/customer-auth.php';
 
 $customerId  = (int) $_SESSION['customer_id'];
 $orderNumber = trim((string) ($_GET['order'] ?? ''));
@@ -416,7 +416,7 @@ a { color: inherit; text-decoration: none; }
                 if ($unitType === 'meter' && $bQtyDisp > 0 && $bMeterDisp > 0) {
                     echo e($bQtyDisp . ' × ' . format_meter_quantity($bMeterDisp) . 'm');
                 } else {
-                    echo e(format_quantity_by_unit($qty, $unitType)) . e(InventoryService::quantity_unit_suffix($unitType));
+                    echo e(format_quantity_by_unit($qty, $unitType)) . e(CommercePresenter::quantityUnitSuffix($unitType));
                 }
             ?></td>
             <td style="text-align:right"><?php echo $itemDiscount > 0 ? e(money($itemDiscount, (string) $order['currency'])) : '-'; ?></td>

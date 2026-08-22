@@ -1,65 +1,13 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 
 require_customer();
 
 $customerId = (int) $_SESSION['customer_id'];
 PaymentService::release_stale_pending_razorpay_orders_for_customer($conn, $customerId, 30);
 
-$stmt = $conn->prepare(
-    "SELECT
-        o.id,
-        o.order_number,
-        o.status,
-        o.order_status,
-        o.payment_status,
-        o.payment_method,
-        o.currency,
-        o.total,
-        o.notes,
-        o.created_at,
-        (
-            SELECT r.status
-            FROM returns r
-            WHERE r.order_id = o.id
-            ORDER BY r.id DESC
-            LIMIT 1
-        ) AS return_status,
-        (
-            SELECT r.return_number
-            FROM returns r
-            WHERE r.order_id = o.id
-            ORDER BY r.id DESC
-            LIMIT 1
-        ) AS return_number,
-        COALESCE(SUM(CASE
-            WHEN oi.quantity IS NOT NULL AND oi.quantity > 0 THEN oi.quantity
-            WHEN oi.quantity_meters IS NOT NULL AND oi.quantity_meters > 0 THEN oi.quantity_meters
-            ELSE 0
-        END), 0) AS total_qty,
-        (
-            o.payment_status IN ('pending', 'failed')
-            AND o.order_status IN ('pending', 'confirmed')
-            AND o.payment_method IN ('razorpay', 'upi')
-            AND o.created_at >= (NOW() - INTERVAL 30 MINUTE)
-        ) AS retry_allowed
-     FROM orders o
-     LEFT JOIN order_items oi ON oi.order_id = o.id
-      WHERE o.customer_id = ?
-        AND NOT (
-            o.order_status = 'pending'
-            AND
-            o.payment_status = 'pending'
-            AND o.payment_method IN ('razorpay', 'upi')
-            AND o.created_at < (NOW() - INTERVAL 30 MINUTE)
-        )
-     GROUP BY o.id, o.order_number, o.status, o.order_status, o.payment_status, o.payment_method, o.currency, o.total, o.notes, o.created_at
-     ORDER BY o.created_at DESC"
-);
-$stmt->bind_param('i', $customerId);
-$stmt->execute();
-$orders = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$orders = OrderReadService::customerOrders($conn, $customerId);
 
 function order_failure_reason(string $notes): string
 {
@@ -162,8 +110,8 @@ include __DIR__ . '/../includes/header.php';
             <div class="d-md-none">
                 <?php foreach ($orders as $o):
                     $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
-                    $s = InventoryService::order_status_meta($effectiveOrderStatus);
-                    $payMeta = InventoryService::payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
+                    $s = CommercePresenter::orderStatus($effectiveOrderStatus);
+                    $payMeta = CommercePresenter::paymentStatus((string) ($o['payment_status'] ?? 'pending'));
                     $totalQty = (float) ($o['total_qty'] ?? 0);
                     $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
                     $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
@@ -195,7 +143,7 @@ include __DIR__ . '/../includes/header.php';
                             </form>
                             <?php endif; ?>
                             <?php if ($canCancel): ?>
-                            <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="Cancel this order?">
+                            <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
@@ -226,8 +174,8 @@ include __DIR__ . '/../includes/header.php';
                     <tbody>
                     <?php foreach ($orders as $o):
                         $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
-                        $s      = InventoryService::order_status_meta($effectiveOrderStatus);
-                        $payMeta = InventoryService::payment_status_meta((string) ($o['payment_status'] ?? 'pending'));
+                        $s      = CommercePresenter::orderStatus($effectiveOrderStatus);
+                        $payMeta = CommercePresenter::paymentStatus((string) ($o['payment_status'] ?? 'pending'));
                         $totalQty = (float) ($o['total_qty'] ?? 0);
                         $canRetry = (int)($o['retry_allowed'] ?? 0) === 1;
                         $canCancel = in_array($effectiveOrderStatus, ['pending', 'confirmed'], true);
@@ -254,7 +202,7 @@ include __DIR__ . '/../includes/header.php';
                                 </form>
                                 <?php endif; ?>
                                 <?php if ($canCancel): ?>
-                                <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="Cancel this order?">
+                                <form method="POST" action="/customer/cancel-order.php" class="d-inline" data-confirm="This will cancel the order and release its reserved items. Continue?" data-confirm-title="Cancel Order?" data-confirm-ok="Cancel Order" data-confirm-cancel="Keep Order" data-confirm-variant="danger">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Cancel Order</button>

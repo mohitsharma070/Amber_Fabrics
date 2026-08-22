@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/coupon-functions.php';
+require_once __DIR__ . '/../includes/helpers/coupon-functions.php';
 require_admin();
 
 $id = (int) ($_GET['id'] ?? 0);
@@ -214,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($shippingCost < 0) {
             $shippingCost = 0;
         }
-        if ($trackingUrl !== '' && InventoryService::safe_external_url($trackingUrl) === '') {
+        if ($trackingUrl !== '' && ExternalUrlPolicy::sanitize($trackingUrl) === '') {
             flash('error', 'Tracking URL must be a valid http/https URL.');
             redirect('order-view.php?id=' . $id);
         }
@@ -324,22 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$financialSelect = PaymentService::orders_structured_financial_columns_ready($conn)
-    ? "coupon_id, coupon_code, coupon_discount, shipping_quote_token, shipping_source, courier_id, courier_name, cod_fee, base_shipping"
-    : "NULL AS coupon_id, NULL AS coupon_code, 0.00 AS coupon_discount, NULL AS shipping_quote_token, NULL AS shipping_source, NULL AS courier_id, NULL AS courier_name, 0.00 AS cod_fee, 0.00 AS base_shipping";
-$orderStmt = $conn->prepare(
-    "SELECT id, order_number, customer_name, customer_phone, customer_email,
-            address, city, state, pincode, country,
-            subtotal, shipping_amount, discount_amount, total_amount,
-            payment_method, payment_status, order_status, order_notes, notes, admin_notes, created_at,
-            {$financialSelect}
-     FROM orders
-     WHERE id = ?
-     LIMIT 1"
-);
-$orderStmt->bind_param('i', $id);
-$orderStmt->execute();
-$order = $orderStmt->get_result()->fetch_assoc();
+$order = OrderReadService::adminOrder($conn, $id);
 
 if (!$order) {
     flash('error', 'Order not found.');
@@ -360,50 +345,9 @@ if ($systemNotes !== '') {
     }
 }
 
-$variantImageJoin = order_items_supports_variant($conn)
-    ? "LEFT JOIN fabric_variants fv ON fv.id = oi.variant_id"
-    : "LEFT JOIN fabric_variants fv ON fv.fabric_id = COALESCE(oi.fabric_id, oi.product_id)
-        AND fv.color = oi.color
-        AND fv.size = oi.size
-        AND fv.is_active = 1";
-$itemStmt = $conn->prepare(
-    "SELECT oi.*,
-            COALESCE(NULLIF(fv.image, ''), (SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1)) AS product_image
-     FROM order_items oi
-     LEFT JOIN fabrics f ON f.id = COALESCE(oi.fabric_id, oi.product_id)
-     {$variantImageJoin}
-     WHERE oi.order_id = ?
-     ORDER BY oi.id ASC"
-);
-$itemStmt->bind_param('i', $id);
-$itemStmt->execute();
-$items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-
-$shipmentSelect = "SELECT id, courier_name, tracking_id, tracking_url, shipping_cost, shipped_at, delivered_at
-                   FROM shipments
-                   WHERE order_id = ?
-                   LIMIT 1";
-$shipmentStmt = $conn->prepare($shipmentSelect);
-$shipmentStmt->bind_param('i', $id);
-$shipmentStmt->execute();
-$shipment = $shipmentStmt->get_result()->fetch_assoc() ?: [
-    'courier_name' => '',
-    'tracking_id' => '',
-    'tracking_url' => '',
-    'shipping_cost' => '0.00',
-    'shipped_at' => null,
-    'delivered_at' => null,
-];
-$activityStmt = $conn->prepare(
-    "SELECT action, actor_type, actor_name, details, created_at
-     FROM order_activity_logs
-     WHERE order_id = ?
-     ORDER BY id DESC
-     LIMIT 25"
-);
-$activityStmt->bind_param('i', $id);
-$activityStmt->execute();
-$orderActivity = $activityStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$items = OrderReadService::itemsWithImages($conn, $id);
+$shipment = OrderReadService::adminShipment($conn, $id);
+$orderActivity = OrderReadService::activity($conn, $id, 25);
 $orderActivity = apply_filters('order.timeline.events', is_array($orderActivity) ? $orderActivity : [], [
     'audience' => 'admin',
     'order_id' => $id,
@@ -479,7 +423,7 @@ include 'partials/header.php';
                         <div class="flex-grow-1">
                             <div class="fw-semibold"><?php echo e($name); ?></div>
                             <div class="text-muted small">
-                                Qty: <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo InventoryService::quantity_unit_suffix($unitType); ?>
+                                Qty: <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($unitType); ?>
                                 <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
                                     (<?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces)
                                 <?php endif; ?>
@@ -665,7 +609,7 @@ include 'partials/header.php';
                     </form>
                 <?php endif; ?>
                 <?php if (($order['order_status'] ?? '') === 'cancelled' && ($order['payment_status'] ?? '') === 'paid'): ?>
-                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" data-confirm-modal data-confirm-title="Confirm Refund" data-confirm-message="Mark this order as refunded now?" data-confirm-ok="Mark Refunded">
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" data-confirm-modal data-confirm-title="Confirm Refund" data-confirm-message="Mark this order as refunded now?" data-confirm-ok="Mark Refunded" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="mark_refunded">
                         <button type="submit" class="btn btn-sm btn-outline-danger w-100"><i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Mark Refunded</button>

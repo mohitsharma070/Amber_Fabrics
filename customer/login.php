@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
-require_once __DIR__ . '/../includes/customer-auth.php';
+require_once __DIR__ . '/../includes/security/customer-auth.php';
 
 if (is_customer_logged_in()) {
     redirect('/index.php');
@@ -34,18 +34,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!customer_check_rate_limit($conn, $email, $ip)) {
         $errors['_login'] = 'Too many failed attempts. Please wait ' . CUSTOMER_LOCK_MINUTES . ' minutes before trying again.';
     } else {
-        $stmt = $conn->prepare("SELECT id, name, password_hash, auth_version, email_verified, is_active FROM customers WHERE email = ?");
-        $stmt->bind_param('s', $email);
-        $stmt->execute();
-        $customer = $stmt->get_result()->fetch_assoc();
+        $authentication = CustomerAuthenticationService::authenticate($conn, $email, $password);
+        $authenticationStatus = (string) ($authentication['status'] ?? 'invalid');
+        $customer = is_array($authentication['customer'] ?? null) ? $authentication['customer'] : [];
 
-        if ($customer && password_verify($password, $customer['password_hash'])) {
-            if (!(int) $customer['email_verified']) {
-                $errors['_login'] = 'Please verify your email address before logging in.';
-                $errors['_login_raw'] = '<a href="/customer/resend-verification.php">Resend verification email &rsaquo;</a>';
-            } elseif (isset($customer['is_active']) && (int) $customer['is_active'] !== 1) {
-                $errors['_login'] = 'Your account is inactive. Please contact support.';
-            } else {
+        if ($authenticationStatus === 'unverified') {
+            $errors['_login'] = 'Please verify your email address before logging in.';
+            $errors['_login_raw'] = '<a href="/customer/resend-verification.php">Resend verification email &rsaquo;</a>';
+        } elseif ($authenticationStatus === 'inactive') {
+            $errors['_login'] = 'Your account is inactive. Please contact support.';
+        } elseif ($authenticationStatus === 'authenticated') {
             customer_record_attempt($conn, $email, $ip, true);
             session_regenerate_id(true);
             $_SESSION['customer_id']   = $customer['id'];
@@ -55,165 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['customer_last_seen_at'] = time();
             $_SESSION['customer_session_fingerprint'] = customer_session_fingerprint();
 
-            // Merge any guest session cart with the customer's saved DB cart.
-            // Quantity normalization must respect each product's unit type.
-            $dbCartBundle = CartService::cart_load_from_db_bundle($conn, (int) $customer['id']);
-            $dbCart = is_array($dbCartBundle['cart'] ?? null) ? $dbCartBundle['cart'] : [];
-            $dbMeterMap = is_array($dbCartBundle['meter_map'] ?? null) ? $dbCartBundle['meter_map'] : [];
-            $sessionCart = isset($_SESSION['cart']) && is_array($_SESSION['cart']) ? $_SESSION['cart'] : [];
-            $sessionMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])
-                ? $_SESSION['cart_meter_length']
-                : [];
-            $mergedIds = array_values(array_filter(array_unique(array_map(
-                static function ($key) {
-                    [$pid] = CartService::cart_parse_key((string) $key);
-                    return $pid;
-                },
-                array_merge(array_keys($dbCart), array_keys($sessionCart))
-            )), static fn($v) => $v > 0));
-            $unitMap = [];
-            if (!empty($mergedIds)) {
-                $ph = implode(',', array_fill(0, count($mergedIds), '?'));
-                $unitStmt = $conn->prepare("SELECT id, unit_type FROM fabrics WHERE id IN ($ph)");
-                $unitStmt->bind_param(str_repeat('i', count($mergedIds)), ...$mergedIds);
-                $unitStmt->execute();
-                $unitRows = $unitStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-                foreach ($unitRows as $ur) {
-                    $uid = (int) ($ur['id'] ?? 0);
-                    $unitMap[$uid] = in_array((string) ($ur['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-                        ? (string) $ur['unit_type']
-                        : 'meter';
-                }
-            }
-            foreach ($sessionCart as $cartKey => $qty) {
-                [$productId] = CartService::cart_parse_key((string) $cartKey);
-                if ($productId <= 0) {
-                    continue;
-                }
-                $unitType = $unitMap[$productId] ?? 'meter';
-                $currentQty = isset($dbCart[$cartKey]) ? normalize_quantity_by_unit($dbCart[$cartKey], $unitType) : 0;
-                $incomingQty = normalize_quantity_by_unit($qty, $unitType);
-                $dbCart[$cartKey] = ($unitType === 'meter')
-                    ? round((float) $currentQty + (float) $incomingQty, 2)
-                    : (int) $currentQty + (int) $incomingQty;
-                if ($unitType === 'meter' && isset($sessionMeterMap[$cartKey]) && is_numeric($sessionMeterMap[$cartKey]) && (float) $sessionMeterMap[$cartKey] > 0) {
-                    $dbMeterMap[$cartKey] = round((float) $sessionMeterMap[$cartKey], 2);
-                }
-            }
-
-            // Cap merged quantities to current stock so we don't end up with
-            // more units in cart than are actually available.
-            if (!empty($dbCart)) {
-                $mergedIds = [];
-                $mergedVariantIds = [];
-                foreach (array_keys($dbCart) as $key) {
-                    [$pid, $variantId] = CartService::cart_parse_key((string) $key);
-                    if ($pid > 0) {
-                        $mergedIds[] = $pid;
-                    }
-                    if ($variantId > 0) {
-                        $mergedVariantIds[] = $variantId;
-                    }
-                }
-                $mergedIds = array_values(array_unique($mergedIds));
-                $mergedVariantIds = array_values(array_unique($mergedVariantIds));
-                if (!empty($mergedIds)) {
-                    $ph   = implode(',', array_fill(0, count($mergedIds), '?'));
-                    $stok = $conn->prepare("SELECT id, unit_type, stock, stock_meters FROM fabrics WHERE id IN ($ph)");
-                    $stok->bind_param(str_repeat('i', count($mergedIds)), ...$mergedIds);
-                    $stok->execute();
-                    $stockRows = $stok->get_result()->fetch_all(MYSQLI_ASSOC);
-                    $productStockMap = [];
-                    foreach ($stockRows as $sr) {
-                        $sid = (int) ($sr['id'] ?? 0);
-                        if ($sid <= 0) {
-                            continue;
-                        }
-                        $productStockMap[$sid] = [
-                            'unit_type' => in_array((string) ($sr['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-                                ? (string) $sr['unit_type']
-                                : 'meter',
-                            'stock' => (float) ($sr['stock'] ?? 0),
-                            'stock_meters' => (float) ($sr['stock_meters'] ?? 0),
-                        ];
-                    }
-
-                    $variantMap = !empty($mergedVariantIds) ? InventoryService::get_variants_by_ids($conn, $mergedVariantIds) : [];
-                    foreach ($dbCart as $key => $qVal) {
-                        [$kPid, $variantId] = CartService::cart_parse_key((string) $key);
-                        if ($kPid <= 0 || !isset($productStockMap[$kPid])) {
-                            unset($dbCart[$key], $dbMeterMap[$key]);
-                            continue;
-                        }
-                        $unitType = (string) $productStockMap[$kPid]['unit_type'];
-                        $avail = ($unitType === 'meter')
-                            ? (float) $productStockMap[$kPid]['stock_meters']
-                            : (float) $productStockMap[$kPid]['stock'];
-
-                        if ($variantId > 0) {
-                            $variant = $variantMap[$variantId] ?? null;
-                            if (!$variant || (int) ($variant['fabric_id'] ?? 0) !== $kPid || (int) ($variant['is_active'] ?? 0) !== 1) {
-                                unset($dbCart[$key], $dbMeterMap[$key]);
-                                continue;
-                            }
-                            $avail = ($unitType === 'meter')
-                                ? (float) ($variant['stock_meters'] ?? 0)
-                                : (float) ($variant['stock'] ?? 0);
-                        }
-
-                        if ($avail <= 0) {
-                            unset($dbCart[$key], $dbMeterMap[$key]);
-                            continue;
-                        }
-                        if ((float) $qVal > $avail) {
-                            $dbCart[$key] = ($unitType === 'meter') ? round($avail, 2) : (int) floor($avail);
-                        }
-                    }
-                }
-            }
-
-            $_SESSION['cart'] = $dbCart;
-            $_SESSION['cart_meter_length'] = $dbMeterMap;
-            if (!empty($dbCart)) {
-                CartService::cart_save_to_db($conn, (int) $customer['id'], $dbCart, $dbMeterMap);
-            }
-
-            // Merge guest wishlist with persisted wishlist and keep it in DB.
-            $dbWishlistBundle = wishlist_load_from_db_bundle($conn, (int) $customer['id']);
-            $dbWishlist = is_array($dbWishlistBundle['wishlist'] ?? null) ? $dbWishlistBundle['wishlist'] : [];
-            $dbWishlistSizeMap = is_array($dbWishlistBundle['size_map'] ?? null) ? $dbWishlistBundle['size_map'] : [];
-            $dbWishlistMeterMap = is_array($dbWishlistBundle['meter_map'] ?? null) ? $dbWishlistBundle['meter_map'] : [];
-            $sessionWishlist = isset($_SESSION['wishlist']) && is_array($_SESSION['wishlist']) ? $_SESSION['wishlist'] : [];
-            $sessionWishlistSizeMap = isset($_SESSION['wishlist_size']) && is_array($_SESSION['wishlist_size'])
-                ? $_SESSION['wishlist_size']
-                : [];
-            $sessionWishlistMeterMap = isset($_SESSION['wishlist_meter_length']) && is_array($_SESSION['wishlist_meter_length'])
-                ? $_SESSION['wishlist_meter_length']
-                : [];
-            foreach ($sessionWishlist as $wishlistKey => $wishlistQty) {
-                [$wishlistPid] = CartService::cart_parse_key((string) $wishlistKey);
-                if ($wishlistPid <= 0) {
-                    continue;
-                }
-                $existingQty = isset($dbWishlist[$wishlistKey]) ? normalize_meter_quantity($dbWishlist[$wishlistKey], 1.0) : 0.0;
-                $incomingQty = normalize_meter_quantity($wishlistQty, 1.0);
-                $dbWishlist[$wishlistKey] = max($existingQty, $incomingQty);
-                if (isset($sessionWishlistSizeMap[$wishlistKey])) {
-                    $dbWishlistSizeMap[$wishlistKey] = (string) $sessionWishlistSizeMap[$wishlistKey];
-                }
-                if (isset($sessionWishlistMeterMap[$wishlistKey]) && is_numeric($sessionWishlistMeterMap[$wishlistKey]) && (float) $sessionWishlistMeterMap[$wishlistKey] > 0) {
-                    $dbWishlistMeterMap[$wishlistKey] = round((float) $sessionWishlistMeterMap[$wishlistKey], 2);
-                }
-            }
-            $_SESSION['wishlist'] = $dbWishlist;
-            $_SESSION['wishlist_size'] = $dbWishlistSizeMap;
-            $_SESSION['wishlist_meter_length'] = $dbWishlistMeterMap;
-            $_SESSION['wishlist_loaded_for'] = (int) $customer['id'];
-            wishlist_save_to_db($conn, (int) $customer['id'], $dbWishlist, $dbWishlistMeterMap, $dbWishlistSizeMap);
+            CustomerSessionMergeService::mergeOnLogin($conn, (int) $customer['id']);
 
             flash('success', 'Welcome back, ' . $customer['name'] . '!');
             redirect($returnTo ?: '/index.php');
-            }
         } else {
             $errors['_login'] = 'Invalid email or password.';
         }
