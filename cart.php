@@ -62,12 +62,6 @@ $items = $cartHydrated['items'];
 $wishlistItems = $wishlistHydrated['items'];
 $subtotal = CartService::cart_items_subtotal($items);
 
-$freeShippingThreshold = 999.00;
-$shippingRemaining = max(0, $freeShippingThreshold - $subtotal);
-$shippingProgress = $freeShippingThreshold > 0 ? min(100, (int) round(($subtotal / $freeShippingThreshold) * 100)) : 100;
-$estimatedShipping = $subtotal < $freeShippingThreshold ? 70.00 : 0.00;
-$total = max(0, $subtotal + $estimatedShipping);
-
 $metaTitle = SiteContext::title('Your Cart');
 include __DIR__ . '/includes/header.php';
 ?>
@@ -267,45 +261,7 @@ include __DIR__ . '/includes/header.php';
                     <div class="surface-panel p-4 cart-summary-card">
                         <h5 class="mb-3">Cart Summary</h5>
 
-                        <div class="mb-3">
-                            <?php if ($shippingRemaining > 0): ?>
-                                <div class="small text-muted mb-1">Add <?php echo e(money($shippingRemaining)); ?> more for free shipping.</div>
-                            <?php else: ?>
-                                <div class="small text-success mb-1">You unlocked free shipping.</div>
-                            <?php endif; ?>
-                            <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo $shippingProgress; ?>" style="height:8px;">
-                                <div class="progress-bar bg-success" style="width: <?php echo $shippingProgress; ?>%;"></div>
-                            </div>
-                        </div>
-
                         <div class="d-flex justify-content-between mb-2"><span>Subtotal</span><span class="fw-semibold"><?php echo e(money($subtotal)); ?></span></div>
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Shipping <small class="text-muted">(est.)</small></span>
-                            <?php if ($estimatedShipping > 0): ?>
-                                <span class="fw-semibold" id="cart_summary_shipping"><?php echo e(money($estimatedShipping)); ?></span>
-                            <?php else: ?>
-                                <span class="fw-semibold text-success" id="cart_summary_shipping">Free</span>
-                            <?php endif; ?>
-                        </div>
-                        <div class="d-flex justify-content-between mb-2"><span>Total</span><span class="fw-semibold" id="cart_summary_total"><?php echo e(money($total)); ?></span></div>
-                        <div class="small text-muted mb-3">Coupon can be applied at checkout.</div>
-                        <form id="cart_delivery_form" class="row g-2 mb-3 js-no-loading">
-                            <?php echo csrf_field(); ?>
-                            <div class="col-12">
-                                <label class="form-label small mb-1" for="cart_delivery_pincode">Check delivery and shipping</label>
-                                <input class="form-control" id="cart_delivery_pincode" name="pincode" inputmode="numeric" maxlength="6" pattern="[1-9][0-9]{5}" placeholder="6-digit pincode" value="<?php echo e((string) ($_SESSION['delivery_pincode'] ?? '')); ?>" required>
-                            </div>
-                            <div class="col-8">
-                                <select class="form-select" name="payment_method" aria-label="Payment method">
-                                    <option value="cod">Cash on delivery</option>
-                                    <option value="razorpay">Prepaid</option>
-                                </select>
-                            </div>
-                            <div class="col-4 d-grid">
-                                <button class="btn btn-outline-primary" type="submit">Check</button>
-                            </div>
-                            <div id="cart_delivery_result" class="small mt-1" aria-live="polite"></div>
-                        </form>
                         <hr>
                         <a class="btn btn-primary w-100 btn-lg" href="/checkout.php">Proceed to Checkout</a>
                         <div class="trust-badge-block mt-3" aria-label="Checkout trust badges">
@@ -321,63 +277,6 @@ include __DIR__ . '/includes/header.php';
         <?php endif; ?>
     </div>
 </section>
-<script nonce="<?php echo e($GLOBALS['cspNonce'] ?? ''); ?>">
-(function () {
-    var form = document.getElementById('cart_delivery_form');
-    if (!form) return;
-    var output = document.getElementById('cart_delivery_result');
-    var shippingTotal = document.getElementById('cart_summary_shipping');
-    var orderTotal = document.getElementById('cart_summary_total');
-    var subtotal = <?php echo json_encode((float) $subtotal); ?>;
-
-    form.addEventListener('submit', async function (event) {
-        event.preventDefault();
-        var submitButton = form.querySelector('[type="submit"]');
-        if (submitButton && submitButton.disabled) return;
-        output.textContent = 'Checking…';
-        if (submitButton) {
-            submitButton.classList.add('is-loading');
-            submitButton.disabled = true;
-        }
-        try {
-            var response = await fetch('/shipping-rate.php', {
-                method: 'POST',
-                headers: {'Accept': 'application/json'},
-                body: new URLSearchParams(new FormData(form))
-            });
-            var data = await response.json();
-            if (!data.ok) {
-                output.textContent = data.message || 'Delivery estimate is unavailable.';
-                return;
-            }
-            var charge = Number(data.shipping_total || 0);
-            var parts = [
-                data.serviceability_status === 'live' ? 'Live courier rate' : 'Estimated shipping',
-                'Delivery ' + data.estimated_delivery_label,
-                charge > 0 ? 'Shipping ₹' + charge.toFixed(2) : 'Free shipping'
-            ];
-            if (String(form.elements.payment_method.value) === 'cod' && Number(data.cod_fee || 0) > 0) {
-                parts.push('includes COD fee ₹' + Number(data.cod_fee).toFixed(2));
-            }
-            if (data.courier_name) parts.push(String(data.courier_name));
-            output.textContent = parts.join(' · ');
-            if (shippingTotal) {
-                shippingTotal.textContent = charge > 0 ? '₹' + charge.toFixed(2) : 'Free';
-                shippingTotal.classList.toggle('text-success', charge <= 0);
-            }
-            if (orderTotal) orderTotal.textContent = '₹' + (subtotal + charge).toFixed(2);
-        } catch (error) {
-            output.textContent = 'Unable to check delivery right now.';
-        } finally {
-            if (submitButton) {
-                submitButton.classList.remove('is-loading');
-                submitButton.disabled = false;
-            }
-        }
-    });
-}());
-</script>
-
 <script nonce="<?php echo $cspNonce; ?>">
 (function () {
     var forms = document.querySelectorAll('.cart-qty-form');

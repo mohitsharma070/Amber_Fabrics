@@ -43,6 +43,7 @@ $old = [
     'country' => 'India',
     'order_notes' => '',
     'payment_method' => 'cod',
+    'cod_whatsapp_consent' => 0,
     'cod_fee_apply' => 1,
     'shipping_address_id' => 0,
     'create_account' => 0,
@@ -165,6 +166,11 @@ if ($selectedOnlineMethod === '') {
     $selectedOnlineMethod = 'upi';
 }
 $codFeeApply = ($selectedPayment === 'cod') ? 1 : 0;
+$codGuardSettings = function_exists('cod_guard_settings') ? cod_guard_settings() : [];
+$codWhatsappConsentAvailable = function_exists('cod_guard_whatsapp_configured')
+    && cod_guard_whatsapp_configured($codGuardSettings);
+$codWhatsappThreshold = max(0.0, (float) ($codGuardSettings['whatsapp_threshold'] ?? PHP_FLOAT_MAX));
+$codWhatsappConsentChecked = (int) ($old['cod_whatsapp_consent'] ?? 0) === 1;
 $countryForCalc = trim((string) ($old['country'] ?? ''));
 $couponCode = (string) ($_SESSION['applied_coupon_code'] ?? '');
 $couponInfo = get_active_coupon_discount_for_customer($conn, $couponCode, (float) $subtotal, $customerId);
@@ -228,6 +234,9 @@ $shippingQuoteToken = $hasCompleteDelivery
 // Tax-inclusive pricing: GST is already embedded in product prices.
 // Total = (subtotal - discount) + shipping. No extra GST added.
 $totalAmount    = round($taxableAmount + ($hasCompleteDelivery ? $shippingAmount : 0), 2);
+$codWhatsappConsentRequiredInitially = $codWhatsappConsentAvailable
+    && $selectedPayment === 'cod'
+    && $totalAmount >= $codWhatsappThreshold;
 // Back-calculate GST included in price (for display info only)
 $gstRate        = (float) configured_gst_rate();
 $gstInclAmount  = ($isIndia && $gstRate > 0) ? round($taxableAmount * $gstRate / (100 + $gstRate), 2) : 0.0;
@@ -426,6 +435,15 @@ include __DIR__ . '/includes/header.php';
                                 <div class="small text-muted">
                                     COD handling fee of Rs 50 is applied for India orders.
                                 </div>
+                                <?php if ($codWhatsappConsentAvailable): ?>
+                                    <div class="form-check mt-3 checkout-whatsapp-consent<?php echo !$codWhatsappConsentRequiredInitially ? ' d-none' : ''; ?><?php echo isset($errors['cod_whatsapp_consent']) ? ' is-invalid' : ''; ?>" id="cod_whatsapp_consent_wrap">
+                                        <input class="form-check-input<?php echo isset($errors['cod_whatsapp_consent']) ? ' is-invalid' : ''; ?>" type="checkbox" name="cod_whatsapp_consent" id="cod_whatsapp_consent" value="1" <?php echo $codWhatsappConsentChecked ? 'checked' : ''; ?> <?php echo $codWhatsappConsentRequiredInitially ? 'required aria-required="true"' : 'aria-required="false"'; ?>>
+                                        <label class="form-check-label small" for="cod_whatsapp_consent">
+                                            I agree to receive transactional WhatsApp messages for COD confirmation and updates about this order. This does not include marketing messages.
+                                        </label>
+                                        <?php echo form_error($errors, 'cod_whatsapp_consent'); ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
 
                             <label class="checkout-pay-option" for="payment_razorpay" data-pay-option="razorpay">
@@ -620,6 +638,8 @@ include __DIR__ . '/includes/header.php';
     var subtotal = <?php echo json_encode((float) $subtotal); ?>;
     var discount = <?php echo json_encode((float) $discountAmount); ?>;
     var gstRate  = <?php echo json_encode((float) $gstRate); ?>;
+    var codWhatsappThreshold = <?php echo json_encode((float) $codWhatsappThreshold); ?>;
+    var checkoutCurrentTotal = <?php echo json_encode((float) $totalAmount); ?>;
 
     var shippingEl = document.getElementById('summary_shipping');
     var codFeeEl = document.getElementById('summary_cod_fee');
@@ -635,6 +655,8 @@ include __DIR__ . '/includes/header.php';
 
     var payOptionCards = document.querySelectorAll('[data-pay-option]');
     var codPanel = document.getElementById('cod-panel');
+    var codWhatsappConsentWrap = document.getElementById('cod_whatsapp_consent_wrap');
+    var codWhatsappConsent = document.getElementById('cod_whatsapp_consent');
     var razorpayPanel = document.getElementById('razorpay-panel');
     var onlineMethodButtons = document.querySelectorAll('.checkout-online-method');
     var onlinePanels = document.querySelectorAll('.checkout-online-panel');
@@ -692,6 +714,19 @@ include __DIR__ . '/includes/header.php';
         return 'Rs ' + Number(v).toFixed(2);
     }
 
+    function codRequiresWhatsappConsent() {
+        return !!(codWhatsappConsent && codRadio.checked && checkoutCurrentTotal >= codWhatsappThreshold);
+    }
+
+    function syncWhatsappConsentRequirement() {
+        var required = codRequiresWhatsappConsent();
+        if (codWhatsappConsentWrap) codWhatsappConsentWrap.classList.toggle('d-none', !required);
+        if (!codWhatsappConsent) return;
+        codWhatsappConsent.required = required;
+        codWhatsappConsent.setAttribute('aria-required', required ? 'true' : 'false');
+        if (!required) codWhatsappConsent.classList.remove('is-invalid');
+    }
+
     function setCouponStateField(form, name, value) {
         var input = form.querySelector('input[type="hidden"][name="' + name + '"]');
         if (!input) {
@@ -721,6 +756,7 @@ include __DIR__ . '/includes/header.php';
             online_method: onlineMethodInput ? onlineMethodInput.value : '',
             shipping_address_id: shippingAddressIdInput ? shippingAddressIdInput.value : '0'
         };
+        state.cod_whatsapp_consent = codWhatsappConsent && codWhatsappConsent.checked ? '1' : '0';
         Object.keys(state).forEach(function (name) {
             setCouponStateField(form, name, state[name]);
         });
@@ -761,15 +797,19 @@ include __DIR__ . '/includes/header.php';
         var paymentMethod = codRadio.checked ? 'cod' : 'razorpay';
         var taxable = Math.max(0, subtotal - discount);
         if (!deliveryUnlocked) {
+            checkoutCurrentTotal = taxable;
             shippingEl.textContent = '—';
             codFeeEl.textContent = '—';
             totalEl.textContent = toMoney(taxable);
             if (mobileTotalEl) mobileTotalEl.textContent = toMoney(taxable);
             if (checkoutDeliveryEstimate) checkoutDeliveryEstimate.textContent = '';
             if (shippingNoteEl) shippingNoteEl.textContent = 'Enter your delivery address and pincode to calculate shipping.';
+            syncWhatsappConsentRequirement();
             return;
         }
         var currentTotal = Number(String(totalEl.textContent || '').replace(/[^0-9.]/g, '')) || taxable;
+        checkoutCurrentTotal = currentTotal;
+        syncWhatsappConsentRequirement();
         if (checkoutSubmit) checkoutSubmit.textContent = (paymentMethod === 'cod' ? 'Place COD Order — ' : 'Pay Securely — ') + toMoney(currentTotal);
         if (mobileSubmitLabel) mobileSubmitLabel.textContent = paymentMethod === 'cod' ? 'Place COD Order — ' : 'Pay Securely — ';
     }
@@ -940,6 +980,7 @@ include __DIR__ . '/includes/header.php';
             shippingDebugMessage = String(data.debug_message || '');
             var taxable = Math.max(0, subtotal - discount);
             var total = taxable + liveShipping + liveCodFee;
+            checkoutCurrentTotal = total;
             shippingEl.textContent = toMoney(liveShipping);
             codFeeEl.textContent = toMoney(liveCodFee);
             totalEl.textContent = toMoney(total);
@@ -951,6 +992,7 @@ include __DIR__ . '/includes/header.php';
             if(checkoutDeliveryEstimate&&data.estimated_delivery_label){checkoutDeliveryEstimate.textContent='Estimated delivery: '+String(data.estimated_delivery_label);}
             if(typeof window.gtag==='function'){window.gtag('event','add_shipping_info',{currency:'INR',value:total,shipping_tier:shippingSource});}
             setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
+            syncWhatsappConsentRequirement();
             setCheckoutUnlocked(true);
             if (deliveryStatusEl) deliveryStatusEl.textContent = data.serviceability_status === 'live'
                 ? 'Delivery address verified with a live courier rate.'
@@ -986,6 +1028,7 @@ include __DIR__ . '/includes/header.php';
         if (codPanel) {
             codPanel.classList.toggle('is-open', selected === 'cod');
         }
+        syncWhatsappConsentRequirement();
         if (razorpayPanel) {
             razorpayPanel.classList.toggle('is-open', selected === 'razorpay');
         }
@@ -1110,12 +1153,16 @@ include __DIR__ . '/includes/header.php';
         checkoutForm.addEventListener('submit', function (ev) {
             updateSectionSummaries();
             var okAddress = validateAddressSection();
-            if (!okAddress || !deliveryUnlocked || !shippingQuoteTokenInput || shippingQuoteTokenInput.value === '') {
+            var okWhatsappConsent = !codRequiresWhatsappConsent() || codWhatsappConsent.checked;
+            if (codWhatsappConsent) codWhatsappConsent.classList.toggle('is-invalid', !okWhatsappConsent);
+            if (!okAddress || !okWhatsappConsent || !deliveryUnlocked || !shippingQuoteTokenInput || shippingQuoteTokenInput.value === '') {
                 ev.preventDefault();
                 setSectionCollapsed(sectionAddress, sectionAddressBody, sectionAddressSummary, editAddressBtn, false);
                 setSectionCollapsed(sectionPayment, sectionPaymentBody, sectionPaymentSummary, editPaymentBtn, false);
                 if (!okAddress) {
                     focusFirstError();
+                } else if (!okWhatsappConsent && codWhatsappConsent) {
+                    codWhatsappConsent.focus();
                 } else if (deliveryStatusEl) {
                     deliveryStatusEl.textContent = 'Continue to payment again so we can confirm shipping.';
                 }
@@ -1126,6 +1173,11 @@ include __DIR__ . '/includes/header.php';
         });
     }
     updateSectionSummaries();
+    if (codWhatsappConsent) {
+        codWhatsappConsent.addEventListener('change', function () {
+            codWhatsappConsent.classList.toggle('is-invalid', !codWhatsappConsent.checked && codRequiresWhatsappConsent());
+        });
+    }
     focusFirstError();
     activateOnlineMethod(onlineMethodInput && onlineMethodInput.value ? onlineMethodInput.value : 'upi');
     syncPaymentPanels();

@@ -11,6 +11,9 @@ function_exists('add_cron_action')
 function_exists('add_cron_action')
     ? add_cron_action('cod_guard_auto_cancel_expired', 10, true)
     : add_action('cron.tick', 'cod_guard_auto_cancel_expired', 10);
+function_exists('add_cron_action')
+    ? add_cron_action('cod_guard_cleanup_webhook_events', 11, false)
+    : add_action('cron.tick', 'cod_guard_cleanup_webhook_events', 11);
 
 function cod_guard_settings(): array
 {
@@ -31,6 +34,11 @@ function cod_guard_settings(): array
     ];
 }
 
+function cod_guard_whatsapp_consent_version(): string
+{
+    return 'transactional_cod_v1';
+}
+
 function cod_guard_table_ready(mysqli $conn): bool
 {
     try {
@@ -45,6 +53,22 @@ function cod_guard_table_ready(mysqli $conn): bool
         return ((int) ($row['total'] ?? 0)) > 0;
     } catch (Throwable $e) {
         error_log('[cod-guard] table check failed: ' . $e->getMessage());
+        return false;
+    }
+}
+
+function cod_guard_webhook_events_table_ready(mysqli $conn): bool
+{
+    try {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'cod_guard_webhook_events'"
+        );
+        $stmt->execute();
+        return (int) ($stmt->get_result()->fetch_assoc()['total'] ?? 0) > 0;
+    } catch (Throwable $e) {
         return false;
     }
 }
@@ -148,14 +172,17 @@ function cod_guard_after_order_create(array $context): void
 
     $stmt = $conn->prepare(
         "INSERT INTO cod_confirmations
-            (order_id, channel, status, deadline_at, notes, confirmed_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+            (order_id, channel, status, deadline_at, notes, confirmed_at,
+             whatsapp_consent_at, whatsapp_consent_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
             channel = VALUES(channel),
             status = VALUES(status),
             deadline_at = VALUES(deadline_at),
             notes = VALUES(notes),
             confirmed_at = VALUES(confirmed_at),
+            whatsapp_consent_at = VALUES(whatsapp_consent_at),
+            whatsapp_consent_version = VALUES(whatsapp_consent_version),
             updated_at = NOW()"
     );
     $notes = $plan['channel'] === 'auto'
@@ -164,7 +191,11 @@ function cod_guard_after_order_create(array $context): void
             ? 'Awaiting customer message confirmation before dispatch. High-value COD order may also need a call.'
             : 'Awaiting customer message confirmation before dispatch.');
     $confirmedAt = $plan['status'] === 'confirmed' ? date('Y-m-d H:i:s') : null;
-    $stmt->bind_param('isssss', $orderId, $plan['channel'], $plan['status'], $deadline, $notes, $confirmedAt);
+    $consentAt = !empty($context['whatsapp_transactional_consent'])
+        ? trim((string) ($context['whatsapp_transactional_consent_at'] ?? date('Y-m-d H:i:s')))
+        : null;
+    $consentVersion = $consentAt !== null ? cod_guard_whatsapp_consent_version() : null;
+    $stmt->bind_param('isssssss', $orderId, $plan['channel'], $plan['status'], $deadline, $notes, $confirmedAt, $consentAt, $consentVersion);
     $stmt->execute();
 
     if ($plan['status'] === 'confirmed') {
@@ -199,12 +230,26 @@ function cod_guard_label(array $row): string
     return trim($channel . ' / ' . $status, ' /');
 }
 
+function cod_guard_inbound_text_for_admin(string $text): string
+{
+    $text = trim($text);
+    if ($text === '') {
+        return '';
+    }
+
+    $text = preg_replace('/\bcod_(?:yes|no|confirm|cancel):\d+(?::[a-f0-9]{32})?\b/i', '', $text);
+    $text = is_string($text) ? trim(preg_replace('/\s+/', ' ', $text) ?? '') : '';
+    return mb_substr($text, 0, 500);
+}
+
 function cod_guard_whatsapp_configured(array $settings): bool
 {
     return ($settings['whatsapp_provider'] ?? '') === 'whatsapp_cloud'
         && trim((string) ($settings['whatsapp_api_base_url'] ?? '')) !== ''
         && trim((string) ($settings['whatsapp_phone_number_id'] ?? '')) !== ''
-        && trim((string) ($settings['whatsapp_access_token'] ?? '')) !== '';
+        && trim((string) ($settings['whatsapp_access_token'] ?? '')) !== ''
+        && trim((string) ($settings['whatsapp_template_name'] ?? '')) !== ''
+        && trim((string) ($settings['whatsapp_template_language'] ?? '')) !== '';
 }
 
 function cod_guard_phone_for_whatsapp(string $phone): string
@@ -266,6 +311,12 @@ function cod_guard_whatsapp_payload(array $settings, string $to, string $message
 {
     $templateName = trim((string) ($settings['whatsapp_template_name'] ?? ''));
     if ($templateName !== '') {
+        $orderId = max(0, (int) ($row['order_id'] ?? 0));
+        $responseToken = trim((string) ($row['response_token'] ?? ''));
+        $payloadSuffix = $orderId > 0 ? (string) $orderId : (string) ($row['order_number'] ?? '');
+        if ($responseToken !== '') {
+            $payloadSuffix .= ':' . $responseToken;
+        }
         return [
             'messaging_product' => 'whatsapp',
             'to' => $to,
@@ -282,6 +333,22 @@ function cod_guard_whatsapp_payload(array $settings, string $to, string $message
                             ['type' => 'text', 'text' => (string) ($row['customer_name'] ?? 'Customer')],
                             ['type' => 'text', 'text' => (string) ($row['order_number'] ?? '')],
                             ['type' => 'text', 'text' => money((float) ($row['total_amount'] ?? 0))],
+                        ],
+                    ],
+                    [
+                        'type' => 'button',
+                        'sub_type' => 'quick_reply',
+                        'index' => '0',
+                        'parameters' => [
+                            ['type' => 'payload', 'payload' => 'cod_yes:' . $payloadSuffix],
+                        ],
+                    ],
+                    [
+                        'type' => 'button',
+                        'sub_type' => 'quick_reply',
+                        'index' => '1',
+                        'parameters' => [
+                            ['type' => 'payload', 'payload' => 'cod_no:' . $payloadSuffix],
                         ],
                     ],
                 ],
@@ -360,6 +427,23 @@ function cod_guard_mark_message_not_configured(mysqli $conn, int $orderId, strin
     $stmt = $conn->prepare(
         "UPDATE cod_confirmations
          SET message_status = 'not_configured',
+             message_error = ?,
+             updated_at = NOW()
+         WHERE order_id = ?"
+    );
+    $stmt->bind_param('si', $reason, $orderId);
+    $stmt->execute();
+}
+
+function cod_guard_mark_message_consent_missing(mysqli $conn, int $orderId): void
+{
+    if (!cod_guard_message_tracking_ready($conn)) {
+        return;
+    }
+    $reason = 'Transactional WhatsApp consent was not recorded for this order.';
+    $stmt = $conn->prepare(
+        "UPDATE cod_confirmations
+         SET message_status = 'consent_missing',
              message_error = ?,
              updated_at = NOW()
          WHERE order_id = ?"
@@ -448,6 +532,14 @@ function cod_guard_send_confirmation_message(mysqli $conn, int $orderId): array
             log_order_activity($conn, $orderId, 'cod_guard_message_not_configured', 'system', 0, 'cod-guard', $reason);
         }
         return ['ok' => false, 'message' => $reason];
+    }
+
+    if (empty($row['whatsapp_consent_at']) || (string) ($row['whatsapp_consent_version'] ?? '') !== cod_guard_whatsapp_consent_version()) {
+        cod_guard_mark_message_consent_missing($conn, $orderId);
+        if (function_exists('log_order_activity')) {
+            log_order_activity($conn, $orderId, 'cod_guard_message_consent_missing', 'system', 0, 'cod-guard', 'WhatsApp message suppressed because transactional consent was not recorded.');
+        }
+        return ['ok' => false, 'message' => 'Transactional WhatsApp consent is missing for this order.'];
     }
 
     $to = cod_guard_phone_for_whatsapp((string) ($row['customer_phone'] ?? ''));
@@ -651,6 +743,11 @@ function cod_guard_render_admin_panel(array $context): void
 
     $status = strtolower((string) ($row['status'] ?? ''));
     $channel = strtolower((string) ($row['channel'] ?? ''));
+    $lastInboundText = cod_guard_inbound_text_for_admin((string) ($row['last_inbound_text'] ?? ''));
+    if ($lastInboundText === '') {
+        $parsedReply = cod_guard_parse_customer_reply((string) ($row['last_inbound_text'] ?? ''));
+        $lastInboundText = $parsedReply === null ? '' : strtoupper($parsedReply);
+    }
     ?>
     <div class="card mb-4 border-warning">
         <div class="card-body">
@@ -667,6 +764,10 @@ function cod_guard_render_admin_panel(array $context): void
                     <?php if (!empty($row['message_error'])): ?>
                         <div class="text-danger">Last error: <?php echo e((string) $row['message_error']); ?></div>
                     <?php endif; ?>
+                <?php endif; ?>
+                <?php if (!empty($row['last_inbound_at'])): ?>
+                    <div class="mt-2">Last customer reply: <strong><?php echo e($lastInboundText !== '' ? $lastInboundText : 'Received'); ?></strong></div>
+                    <div>Reply received: <strong><?php echo e((string) $row['last_inbound_at']); ?></strong></div>
                 <?php endif; ?>
             </div>
 
@@ -758,6 +859,106 @@ function cod_guard_validate_webhook_request(string $payload): bool
     return $provided !== '' && hash_equals($authToken, $provided);
 }
 
+function cod_guard_claim_webhook_event(mysqli $conn, array $message): string
+{
+    if (!cod_guard_webhook_events_table_ready($conn)) {
+        throw new RuntimeException('COD Guard webhook event ledger is unavailable.');
+    }
+
+    $messageId = trim((string) ($message['id'] ?? ''));
+    if ($messageId === '') {
+        return 'invalid';
+    }
+    $rawJson = json_encode($message['raw'] ?? [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $payloadHash = hash('sha256', is_string($rawJson) ? $rawJson : '');
+
+    try {
+        $insert = $conn->prepare(
+            "INSERT INTO cod_guard_webhook_events
+                (provider_message_id, payload_hash, status, received_at)
+             VALUES (?, ?, 'processing', NOW())"
+        );
+        $insert->bind_param('ss', $messageId, $payloadHash);
+        $insert->execute();
+        return 'claimed';
+    } catch (mysqli_sql_exception $e) {
+        if ((int) $e->getCode() !== 1062) {
+            throw $e;
+        }
+    }
+
+    $reclaim = $conn->prepare(
+        "UPDATE cod_guard_webhook_events
+         SET status='processing', last_error=NULL, received_at=NOW(), processed_at=NULL
+         WHERE provider_message_id=? AND payload_hash=?
+           AND (status='failed' OR (status='processing' AND received_at < (NOW() - INTERVAL 15 MINUTE)))"
+    );
+    $reclaim->bind_param('ss', $messageId, $payloadHash);
+    $reclaim->execute();
+    if ((int) $reclaim->affected_rows > 0) {
+        return 'claimed';
+    }
+
+    $existing = $conn->prepare(
+        "SELECT payload_hash, status
+         FROM cod_guard_webhook_events
+         WHERE provider_message_id=?
+         LIMIT 1"
+    );
+    $existing->bind_param('s', $messageId);
+    $existing->execute();
+    $row = $existing->get_result()->fetch_assoc() ?: [];
+    if ($row === []) {
+        return 'busy';
+    }
+    if (!hash_equals((string) ($row['payload_hash'] ?? ''), $payloadHash)) {
+        throw new RuntimeException('COD Guard provider message ID payload mismatch.');
+    }
+    return in_array((string) ($row['status'] ?? ''), ['processed', 'ignored'], true)
+        ? 'duplicate'
+        : 'busy';
+}
+
+function cod_guard_cleanup_webhook_events(array $context): array
+{
+    $conn = $context['conn'] ?? ($GLOBALS['conn'] ?? null);
+    if (!$conn instanceof mysqli || !cod_guard_webhook_events_table_ready($conn)) {
+        return CronService::result('degraded', 0, 0, 1, ['reason' => 'schema_or_database_unavailable']);
+    }
+
+    $stmt = $conn->prepare(
+        "DELETE FROM cod_guard_webhook_events
+         WHERE received_at < (NOW() - INTERVAL 90 DAY)
+         ORDER BY received_at ASC
+         LIMIT 5000"
+    );
+    $stmt->execute();
+    $deleted = (int) $stmt->affected_rows;
+    return CronService::result('success', $deleted, $deleted, 0, ['retention_days' => 90, 'limit' => 5000]);
+}
+
+function cod_guard_finish_webhook_event(
+    mysqli $conn,
+    string $messageId,
+    string $status,
+    int $orderId = 0,
+    string $reply = '',
+    string $error = ''
+): void {
+    if (!in_array($status, ['processed', 'ignored', 'failed'], true)) {
+        $status = 'failed';
+    }
+    $error = $error === '' ? '' : CronService::sanitizeError($error);
+    $stmt = $conn->prepare(
+        "UPDATE cod_guard_webhook_events
+         SET status=?, order_id=NULLIF(?, 0), reply=NULLIF(?, ''),
+             last_error=NULLIF(?, ''), processed_at=NOW()
+         WHERE provider_message_id=? AND status='processing'"
+    );
+    $stmt->bind_param('sisss', $status, $orderId, $reply, $error, $messageId);
+    $stmt->execute();
+}
+
 function cod_guard_extract_inbound_messages(array $payload): array
 {
     $messages = [];
@@ -816,13 +1017,13 @@ function cod_guard_parse_customer_reply(string $text): ?string
     return null;
 }
 
-function cod_guard_find_pending_order_by_id(mysqli $conn, int $orderId): int
+function cod_guard_find_pending_order_by_id(mysqli $conn, int $orderId, string $from = '', string $responseToken = ''): int
 {
     if ($orderId <= 0) {
         return 0;
     }
     $stmt = $conn->prepare(
-        "SELECT cc.order_id
+        "SELECT cc.order_id, cc.response_token, o.customer_phone
          FROM cod_confirmations cc
          JOIN orders o ON o.id = cc.order_id
          WHERE cc.order_id = ?
@@ -834,17 +1035,26 @@ function cod_guard_find_pending_order_by_id(mysqli $conn, int $orderId): int
     $stmt->bind_param('i', $orderId);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
+    if (!$row) {
+        return 0;
+    }
+    if ($responseToken !== '' && !hash_equals((string) ($row['response_token'] ?? ''), $responseToken)) {
+        return 0;
+    }
+    if ($from !== '' && cod_guard_phone_key((string) ($row['customer_phone'] ?? '')) !== cod_guard_phone_key($from)) {
+        return 0;
+    }
     return (int) ($row['order_id'] ?? 0);
 }
 
-function cod_guard_find_pending_order_by_number(mysqli $conn, string $orderNumber): int
+function cod_guard_find_pending_order_by_number(mysqli $conn, string $orderNumber, string $from = ''): int
 {
     $orderNumber = trim($orderNumber);
     if ($orderNumber === '') {
         return 0;
     }
     $stmt = $conn->prepare(
-        "SELECT cc.order_id
+        "SELECT cc.order_id, o.customer_phone
          FROM cod_confirmations cc
          JOIN orders o ON o.id = cc.order_id
          WHERE o.order_number = ?
@@ -856,20 +1066,23 @@ function cod_guard_find_pending_order_by_number(mysqli $conn, string $orderNumbe
     $stmt->bind_param('s', $orderNumber);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
+    if ($row && $from !== '' && cod_guard_phone_key((string) ($row['customer_phone'] ?? '')) !== cod_guard_phone_key($from)) {
+        return 0;
+    }
     return (int) ($row['order_id'] ?? 0);
 }
 
 function cod_guard_find_pending_order_for_reply(mysqli $conn, string $from, string $text): int
 {
-    if (preg_match('/cod_(?:yes|no|confirm|cancel):(\d+)/i', $text, $m)) {
-        $orderId = cod_guard_find_pending_order_by_id($conn, (int) $m[1]);
+    if (preg_match('/cod_(?:yes|no|confirm|cancel):(\d+)(?::([a-f0-9]{32}))?/i', $text, $m)) {
+        $orderId = cod_guard_find_pending_order_by_id($conn, (int) $m[1], $from, (string) ($m[2] ?? ''));
         if ($orderId > 0) {
             return $orderId;
         }
     }
 
     if (preg_match('/\b(VT[A-Z0-9]{8,})\b/i', $text, $m)) {
-        $orderId = cod_guard_find_pending_order_by_number($conn, strtoupper((string) $m[1]));
+        $orderId = cod_guard_find_pending_order_by_number($conn, strtoupper((string) $m[1]), $from);
         if ($orderId > 0) {
             return $orderId;
         }
@@ -1029,54 +1242,92 @@ function cod_guard_apply_customer_reply(mysqli $conn, int $orderId, string $repl
             cod_guard_rollback_atomic($conn, $startedTransaction);
         } catch (Throwable $rollbackException) {
         }
-        error_log('[cod-guard] customer reply failed for order ' . $orderId . ': ' . $e->getMessage());
-        return false;
+        error_log('[cod-guard] customer reply failed for order ' . $orderId . ': ' . CronService::sanitizeError($e->getMessage()));
+        throw $e;
     }
 }
 
 function cod_guard_handle_webhook_payload(mysqli $conn, array $payload): array
 {
-    $result = ['processed' => 0, 'confirmed' => 0, 'cancelled' => 0, 'ignored' => 0, 'acks_sent' => 0, 'acks_failed' => 0];
+    $result = ['processed' => 0, 'confirmed' => 0, 'cancelled' => 0, 'ignored' => 0, 'duplicates' => 0, 'failed' => 0, 'acks_sent' => 0, 'acks_failed' => 0];
     foreach (cod_guard_extract_inbound_messages($payload) as $message) {
-        $reply = cod_guard_parse_customer_reply((string) ($message['text'] ?? ''));
-        if ($reply === null) {
+        $messageId = trim((string) ($message['id'] ?? ''));
+        if ($messageId === '') {
             $result['ignored']++;
             continue;
         }
+        $claimed = false;
+        $orderId = 0;
+        $reply = '';
+        try {
+            $claimStatus = cod_guard_claim_webhook_event($conn, $message);
+            if ($claimStatus === 'duplicate') {
+                $result['duplicates']++;
+                continue;
+            }
+            if ($claimStatus !== 'claimed') {
+                throw new RuntimeException('COD Guard webhook event is already processing; retry later.');
+            }
+            $claimed = true;
 
-        $orderId = cod_guard_find_pending_order_for_reply(
-            $conn,
-            (string) ($message['from'] ?? ''),
-            (string) ($message['text'] ?? '')
-        );
-        if ($orderId <= 0) {
-            $result['ignored']++;
-            $ack = cod_guard_send_unmatched_reply_ack((string) ($message['from'] ?? ''));
-            if (!empty($ack['ok'])) {
-                $result['acks_sent']++;
-            } else {
-                $result['acks_failed']++;
+            $parsedReply = cod_guard_parse_customer_reply((string) ($message['text'] ?? ''));
+            if ($parsedReply === null) {
+                cod_guard_finish_webhook_event($conn, $messageId, 'ignored');
+                $result['ignored']++;
+                continue;
             }
-            error_log('[cod-guard] inbound reply could not be matched to a single pending order.');
-            continue;
-        }
+            $reply = $parsedReply;
 
-        if (cod_guard_apply_customer_reply($conn, $orderId, $reply, $message)) {
-            $result['processed']++;
-            if ($reply === 'yes') {
-                $result['confirmed']++;
-            } else {
-                $result['cancelled']++;
+            $orderId = cod_guard_find_pending_order_for_reply(
+                $conn,
+                (string) ($message['from'] ?? ''),
+                (string) ($message['text'] ?? '')
+            );
+            if ($orderId <= 0) {
+                cod_guard_finish_webhook_event($conn, $messageId, 'ignored', 0, $reply);
+                $result['ignored']++;
+                $ack = cod_guard_send_unmatched_reply_ack((string) ($message['from'] ?? ''));
+                if (!empty($ack['ok'])) {
+                    $result['acks_sent']++;
+                } else {
+                    $result['acks_failed']++;
+                }
+                error_log('[cod-guard] inbound reply could not be matched to a single pending order.');
+                continue;
             }
-            $ack = cod_guard_send_customer_reply_ack($conn, $orderId, $reply, (string) ($message['from'] ?? ''));
-            if (!empty($ack['ok'])) {
-                $result['acks_sent']++;
+
+            if (cod_guard_apply_customer_reply($conn, $orderId, $reply, $message)) {
+                cod_guard_finish_webhook_event($conn, $messageId, 'processed', $orderId, $reply);
+                $result['processed']++;
+                if ($reply === 'yes') {
+                    $result['confirmed']++;
+                } else {
+                    $result['cancelled']++;
+                }
+                $ack = cod_guard_send_customer_reply_ack($conn, $orderId, $reply, (string) ($message['from'] ?? ''));
+                if (!empty($ack['ok'])) {
+                    $result['acks_sent']++;
+                } else {
+                    $result['acks_failed']++;
+                }
             } else {
-                $result['acks_failed']++;
+                cod_guard_finish_webhook_event($conn, $messageId, 'ignored', $orderId, $reply);
+                $result['ignored']++;
             }
-        } else {
-            $result['ignored']++;
+        } catch (Throwable $e) {
+            if ($claimed) {
+                try {
+                    cod_guard_finish_webhook_event($conn, $messageId, 'failed', $orderId, $reply, $e->getMessage());
+                } catch (Throwable $ignored) {
+                }
+            }
+            $result['failed']++;
+            error_log('[cod-guard] inbound webhook message failed: ' . CronService::sanitizeError($e->getMessage()));
         }
+    }
+
+    if ($result['failed'] > 0) {
+        throw new RuntimeException('One or more COD Guard webhook messages could not be processed.');
     }
 
     return $result;

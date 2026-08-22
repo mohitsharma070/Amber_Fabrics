@@ -33,6 +33,7 @@ $pincode = trim($_POST['pincode'] ?? '');
 $country = trim($_POST['country'] ?? '');
 $orderNotes = trim($_POST['order_notes'] ?? '');
 $paymentMethod = strtolower(trim($_POST['payment_method'] ?? ''));
+$codWhatsappConsent = (int) ($_POST['cod_whatsapp_consent'] ?? 0) === 1;
 $onlineMethod = InventoryService::sanitize_online_payment_method((string) ($_POST['online_method'] ?? ''));
 $shippingAddressId = (int) ($_POST['shipping_address_id'] ?? 0);
 $shippingQuoteToken = trim((string) ($_POST['shipping_quote_token'] ?? ''));
@@ -71,6 +72,7 @@ $_SESSION['checkout_old'] = [
     'country' => $country,
     'order_notes' => $orderNotes,
     'payment_method' => $paymentMethod,
+    'cod_whatsapp_consent' => $codWhatsappConsent ? 1 : 0,
     'cod_fee_apply' => $codFeeApply,
     'shipping_address_id' => $shippingAddressId,
     'create_account' => $wantsCreateAccount ? 1 : 0,
@@ -428,6 +430,24 @@ try {
     // Tax-inclusive pricing: GST is already in product prices. Total = taxable + shipping only.
     $totalAmount        = round($taxableAmountOrder + $shippingAmount, 2);
     $isZeroAmountOrder  = $totalAmount <= 0.0;
+
+    $codWhatsappConsentRequired = false;
+    if (
+        $paymentMethod === 'cod'
+        && function_exists('cod_guard_whatsapp_configured')
+        && function_exists('cod_guard_plan_for_amount')
+        && cod_guard_whatsapp_configured(cod_guard_settings())
+    ) {
+        $codPlan = cod_guard_plan_for_amount($totalAmount);
+        $codWhatsappConsentRequired = in_array((string) ($codPlan['channel'] ?? ''), ['whatsapp', 'call'], true);
+    }
+    if ($codWhatsappConsentRequired && !$codWhatsappConsent) {
+        $conn->rollback();
+        $_SESSION['checkout_errors'] = [
+            'cod_whatsapp_consent' => 'Agree to receive transactional WhatsApp messages for COD confirmation, or choose online payment.',
+        ];
+        redirect('/checkout.php');
+    }
 
     $orderNumber = 'VT' . date('YmdHis') . strtoupper(substr(bin2hex(random_bytes(3)), 0, 4));
 
@@ -843,6 +863,8 @@ $shippingNote = "Shipping: " . money($baseShippingAmount) . " | COD Fee: " . mon
         'customer_name' => $fullName,
         'customer_phone' => $phone,
         'payment_method' => $paymentMethod,
+        'whatsapp_transactional_consent' => $codWhatsappConsent,
+        'whatsapp_transactional_consent_at' => $codWhatsappConsent ? date('Y-m-d H:i:s') : null,
         'payment_status' => $isZeroAmountOrder ? 'paid' : 'pending',
         'order_status' => $isZeroAmountOrder ? 'confirmed' : 'pending',
         'subtotal' => $subtotal,

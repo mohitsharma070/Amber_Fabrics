@@ -1533,6 +1533,8 @@ function ensure_tables(mysqli $conn): void
             message_error TEXT,
             message_sent_at DATETIME DEFAULT NULL,
             message_attempts INT NOT NULL DEFAULT 0,
+            whatsapp_consent_at DATETIME DEFAULT NULL,
+            whatsapp_consent_version VARCHAR(64) DEFAULT NULL,
             last_inbound_message_id VARCHAR(191) DEFAULT NULL,
             last_inbound_text TEXT,
             last_inbound_at DATETIME DEFAULT NULL,
@@ -1566,7 +1568,9 @@ function ensure_tables(mysqli $conn): void
         'message_error' => "ALTER TABLE cod_confirmations ADD COLUMN message_error TEXT AFTER message_status",
         'message_sent_at' => "ALTER TABLE cod_confirmations ADD COLUMN message_sent_at DATETIME DEFAULT NULL AFTER message_error",
         'message_attempts' => "ALTER TABLE cod_confirmations ADD COLUMN message_attempts INT NOT NULL DEFAULT 0 AFTER message_sent_at",
-        'last_inbound_message_id' => "ALTER TABLE cod_confirmations ADD COLUMN last_inbound_message_id VARCHAR(191) DEFAULT NULL AFTER message_attempts",
+        'whatsapp_consent_at' => "ALTER TABLE cod_confirmations ADD COLUMN whatsapp_consent_at DATETIME DEFAULT NULL AFTER message_attempts",
+        'whatsapp_consent_version' => "ALTER TABLE cod_confirmations ADD COLUMN whatsapp_consent_version VARCHAR(64) DEFAULT NULL AFTER whatsapp_consent_at",
+        'last_inbound_message_id' => "ALTER TABLE cod_confirmations ADD COLUMN last_inbound_message_id VARCHAR(191) DEFAULT NULL AFTER whatsapp_consent_version",
         'last_inbound_text' => "ALTER TABLE cod_confirmations ADD COLUMN last_inbound_text TEXT AFTER last_inbound_message_id",
         'last_inbound_at' => "ALTER TABLE cod_confirmations ADD COLUMN last_inbound_at DATETIME DEFAULT NULL AFTER last_inbound_text",
     ];
@@ -1615,6 +1619,24 @@ function ensure_tables(mysqli $conn): void
              FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE"
         );
     }
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS cod_guard_webhook_events (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            provider_message_id VARCHAR(191) NOT NULL,
+            payload_hash CHAR(64) NOT NULL,
+            order_id INT DEFAULT NULL,
+            reply VARCHAR(16) DEFAULT NULL,
+            status ENUM('processing','processed','ignored','failed') NOT NULL DEFAULT 'processing',
+            last_error VARCHAR(1000) DEFAULT NULL,
+            received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            processed_at DATETIME DEFAULT NULL,
+            UNIQUE KEY uq_cod_guard_webhook_message (provider_message_id),
+            INDEX idx_cod_guard_webhook_status_received (status, received_at),
+            INDEX idx_cod_guard_webhook_order (order_id),
+            CONSTRAINT fk_cod_guard_webhook_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
 
     $conn->query(
         "CREATE TABLE IF NOT EXISTS marketing_attributions (

@@ -39,6 +39,7 @@ function preserve_checkout_state_from_coupon_request(): void
         ? $onlineMethod
         : '';
     $state['shipping_address_id'] = max(0, (int) ($_POST['shipping_address_id'] ?? 0));
+    $state['cod_whatsapp_consent'] = (int) ($_POST['cod_whatsapp_consent'] ?? 0) === 1 ? 1 : 0;
     $_SESSION['checkout_old'] = $state;
 }
 

@@ -958,6 +958,8 @@ CREATE TABLE IF NOT EXISTS cod_confirmations (
     message_error TEXT,
     message_sent_at DATETIME DEFAULT NULL,
     message_attempts INT NOT NULL DEFAULT 0,
+    whatsapp_consent_at DATETIME DEFAULT NULL,
+    whatsapp_consent_version VARCHAR(64) DEFAULT NULL,
     last_inbound_message_id VARCHAR(191) DEFAULT NULL,
     last_inbound_text TEXT,
     last_inbound_at DATETIME DEFAULT NULL,
@@ -971,6 +973,22 @@ CREATE TABLE IF NOT EXISTS cod_confirmations (
     INDEX idx_cod_confirmations_status_deadline (status, deadline_at),
     INDEX idx_cod_confirmations_message_status (message_status, message_attempts),
     CONSTRAINT fk_cod_confirmations_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cod_guard_webhook_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    provider_message_id VARCHAR(191) NOT NULL,
+    payload_hash CHAR(64) NOT NULL,
+    order_id INT DEFAULT NULL,
+    reply VARCHAR(16) DEFAULT NULL,
+    status ENUM('processing','processed','ignored','failed') NOT NULL DEFAULT 'processing',
+    last_error VARCHAR(1000) DEFAULT NULL,
+    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uq_cod_guard_webhook_message (provider_message_id),
+    INDEX idx_cod_guard_webhook_status_received (status, received_at),
+    INDEX idx_cod_guard_webhook_order (order_id),
+    CONSTRAINT fk_cod_guard_webhook_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Marketing campaign attribution captured from UTM/ad click parameters
@@ -1082,7 +1100,8 @@ INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-08-19-backend-integrity-hardening.sql',  'fedb5362871f1be607d033ebbb42346dcbde3f2e920bc1f4156a55cee1b1a75d'),
 ('2026-08-20-customer-backend-hardening.sql',   '39ebf3f24a9451fded654ab77c4ad8e4fc090877fef3f1d217df2e462c92afe2'),
 ('2026-08-21-cron-reliability-hardening.sql',   '015a242297956f84b692491d9f4242e8511618d125aa39032ec34e5ce46508b3'),
-('2026-08-22-ecommerce-operations-completion.sql','bc0848785dd425bc672b62e72713a59cfbba526a173d9a139daa1b84e696944d');
+('2026-08-22-ecommerce-operations-completion.sql','bc0848785dd425bc672b62e72713a59cfbba526a173d9a139daa1b84e696944d'),
+('2026-08-23-whatsapp-consent-webhook-idempotency.sql','e8fe165d3381970a641d3b8b969cfcbae7a8ad4dfe6f2a58ce5c96b5fd72ee86');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

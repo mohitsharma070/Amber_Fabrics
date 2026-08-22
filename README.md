@@ -143,6 +143,8 @@ The runner uses filesystem and MySQL locks, returns nonzero for payment/COD inte
 
 `2026-08-22-ecommerce-operations-completion.sql` removes the retired, empty newsletter subscriber table and adds per-variant alert history, cron run history, and reverse-pickup claim metadata. Bigship reverse pickup remains a manual operation until a documented and sandbox-tested provider adapter declares the required capability.
 
+`2026-08-23-whatsapp-consent-webhook-idempotency.sql` adds order-scoped transactional WhatsApp consent fields and the unique COD Guard webhook-event ledger. Apply it before enabling WhatsApp Cloud API credentials and an approved utility template. COD checkout requires consent only for amounts routed to WhatsApp/call confirmation; terminal duplicate message IDs are acknowledged without changing an order twice, active claims remain retryable, and the ledger is cleaned in bounded 90-day batches.
+
 Deployment should back up files and database, apply backward-compatible migrations, deploy the matching commit, and smoke-test authentication, catalog, cart, checkout, payment, order, and admin workflows.
 
 ## Agentic maintenance

@@ -78,7 +78,7 @@ function cron_db_lock_release(mysqli $conn, string $lockName): void
 function cron_readiness_check(mysqli $conn): array
 {
     $requiredTables = [
-        'orders', 'payments', 'public_form_attempts', 'site_settings', 'cod_confirmations',
+        'orders', 'payments', 'public_form_attempts', 'site_settings', 'cod_confirmations', 'cod_guard_webhook_events',
         'abandoned_cart_reminders', 'inventory_alert_logs', 'back_in_stock_subscriptions',
         'shipping_rto_risks', 'support_tickets', 'cron_run_history',
     ];
@@ -101,6 +101,7 @@ function cron_readiness_check(mysqli $conn): array
         'back_in_stock_subscriptions' => ['delivery_attempts', 'next_attempt_at'],
         'inventory_alert_logs' => ['variant_id'],
         'shipping_courier_reverse_pickups' => ['initialization_status', 'claim_token', 'attempt_count', 'last_error'],
+        'cod_confirmations' => ['whatsapp_consent_at', 'whatsapp_consent_version'],
     ];
     foreach ($requiredColumns as $table => $columns) {
         foreach ($columns as $column) {

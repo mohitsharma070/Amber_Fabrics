@@ -303,6 +303,10 @@ paths:
     post:
       tags: [Checkout]
       summary: Create order from checkout session
+      description: >-
+        When WhatsApp Cloud API and its approved utility template are configured,
+        COD amounts routed to WhatsApp or call confirmation require explicit
+        order-scoped consent for transactional confirmation messages.
       security:
         - sessionCookieAuth: []
       requestBody:
@@ -437,7 +441,7 @@ paths:
               additionalProperties: true
       responses:
         '200':
-          description: Webhook processed
+          description: Webhook processed; duplicate provider message IDs are acknowledged without reprocessing
           content:
             application/json:
               schema:
@@ -1467,7 +1471,6 @@ components:
         payment_method:
           type: string
           enum: [cod, razorpay]
-
     AdminProductActionRequest:
       type: object
       required: [csrf_token, product_id, action]
@@ -1611,6 +1614,10 @@ components:
         payment_method:
           type: string
           enum: [cod, razorpay]
+        cod_whatsapp_consent:
+          type: integer
+          enum: [0, 1]
+          description: Required as 1 when a COD amount is routed to configured WhatsApp or call confirmation.
         online_method:
           type: string
         shipping_address_id:

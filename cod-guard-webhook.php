@@ -55,7 +55,7 @@ try {
     header('Content-Type: application/json');
     echo json_encode(['ok' => true, 'result' => $result], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
-    error_log('[cod-guard] webhook failed: ' . $e->getMessage());
+    error_log('[cod-guard] webhook failed: ' . CronService::sanitizeError($e->getMessage()));
     http_response_code(500);
     echo 'Error';
 }

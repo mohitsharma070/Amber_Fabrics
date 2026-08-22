@@ -175,6 +175,7 @@ function app_config_validate_production(array $config): void
     $codGuardWhatsappKeys = [
         'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID',
         'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
+        'COD_GUARD_WHATSAPP_TEMPLATE_NAME',
         'COD_GUARD_WHATSAPP_APP_SECRET',
         'COD_GUARD_WEBHOOK_TOKEN',
         'COD_GUARD_WEBHOOK_VERIFY_TOKEN',
@@ -196,6 +197,7 @@ function app_config_validate_production(array $config): void
     foreach ([
         'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID',
         'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
+        'COD_GUARD_WHATSAPP_TEMPLATE_NAME',
         'COD_GUARD_WHATSAPP_APP_SECRET',
         'COD_GUARD_WEBHOOK_TOKEN',
     ] as $key) {
@@ -208,6 +210,8 @@ function app_config_validate_production(array $config): void
     if ($codGuardConfigured && !$codGuardBootstrapVerifyOnly) {
         $required[] = 'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID';
         $required[] = 'COD_GUARD_WHATSAPP_ACCESS_TOKEN';
+        $required[] = 'COD_GUARD_WHATSAPP_TEMPLATE_NAME';
+        $required[] = 'COD_GUARD_WHATSAPP_TEMPLATE_LANGUAGE';
         $required[] = 'COD_GUARD_WEBHOOK_VERIFY_TOKEN';
         if (trim((string) ($config['COD_GUARD_WHATSAPP_APP_SECRET'] ?? '')) === '') {
             $required[] = 'COD_GUARD_WEBHOOK_TOKEN';
