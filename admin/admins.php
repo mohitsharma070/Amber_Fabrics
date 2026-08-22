@@ -85,22 +85,22 @@ $admins = $conn->query('SELECT id, name, email, role, is_active, last_login_at, 
 $metaTitle = 'Administrators | Admin';
 include __DIR__ . '/partials/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-4"><div><h1 class="h3 mb-1">Administrators</h1><p class="text-muted mb-0">Manage separated-duty access. Login still requires the configured passphrase and emailed OTP.</p></div></div>
-<div class="card mb-4"><div class="card-body"><h2 class="h5">Add administrator</h2>
-<form method="POST" class="row g-3"><?php echo csrf_field(); ?><input type="hidden" name="action" value="create">
-<div class="col-md-4"><label class="form-label">Name</label><input class="form-control" name="name" maxlength="255" required></div>
-<div class="col-md-4"><label class="form-label">Email</label><input class="form-control" type="email" name="email" maxlength="255" required></div>
-<div class="col-md-3"><label class="form-label">Role</label><select class="form-select" name="role"><?php foreach ($roles as $option): ?><option value="<?php echo e($option); ?>"><?php echo e(ucwords(str_replace('_', ' ', $option))); ?></option><?php endforeach; ?></select></div>
-<div class="col-md-1 d-flex align-items-end"><label class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" checked> Active</label></div>
-<div class="col-12"><button class="btn btn-primary">Add administrator</button></div></form></div></div>
+<div class="u-flex u-justify-between u-items-center u-mb-4"><div><h1 class="h3 u-mb-1">Administrators</h1><p class="u-text-muted u-mb-0">Manage separated-duty access. Login still requires the configured passphrase and emailed OTP.</p></div></div>
+<div class="ui-card u-mb-4"><div class="ui-card__body"><h2 class="u-heading-5">Add administrator</h2>
+<form method="POST" class="l-grid l-grid--12 u-gap-3"><?php echo csrf_field(); ?><input type="hidden" name="action" value="create">
+<div class="l-col-md-third"><label class="ui-label">Name</label><input class="ui-input" name="name" maxlength="255" required></div>
+<div class="l-col-md-third"><label class="ui-label">Email</label><input class="ui-input" type="email" name="email" maxlength="255" required></div>
+<div class="l-col-md-quarter"><label class="ui-label">Role</label><select class="ui-select" name="role"><?php foreach ($roles as $option): ?><option value="<?php echo e($option); ?>"><?php echo e(ucwords(str_replace('_', ' ', $option))); ?></option><?php endforeach; ?></select></div>
+<div class="l-col-md-one u-flex u-items-end"><label class="ui-check u-mb-2"><input class="ui-check__input" type="checkbox" name="is_active" checked> Active</label></div>
+<div class="l-col-full"><button class="ui-button ui-button--primary">Add administrator</button></div></form></div></div>
 
-<div class="table-responsive"><table class="table align-middle"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th>Action</th></tr></thead><tbody>
+<div class="ui-table-wrap"><table class="ui-table u-align-middle"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th>Action</th></tr></thead><tbody>
 <?php foreach ($admins as $row): ?><?php $rowFormId = 'admin-update-' . (int) $row['id']; ?><tr>
-<td><form id="<?php echo e($rowFormId); ?>" method="POST"><?php echo csrf_field(); ?><input type="hidden" name="action" value="update"><input type="hidden" name="admin_id" value="<?php echo (int) $row['id']; ?>"></form><input class="form-control form-control-sm" name="name" form="<?php echo e($rowFormId); ?>" maxlength="255" value="<?php echo e((string) $row['name']); ?>" required></td>
-<td><input class="form-control form-control-sm" type="email" name="email" form="<?php echo e($rowFormId); ?>" maxlength="255" value="<?php echo e((string) $row['email']); ?>" required></td>
-<td><select class="form-select form-select-sm" name="role" form="<?php echo e($rowFormId); ?>"><?php foreach ($roles as $option): ?><option value="<?php echo e($option); ?>" <?php echo $option === (string) $row['role'] ? 'selected' : ''; ?>><?php echo e(ucwords(str_replace('_', ' ', $option))); ?></option><?php endforeach; ?></select></td>
-<td><label class="form-check"><input class="form-check-input" type="checkbox" name="is_active" form="<?php echo e($rowFormId); ?>" <?php echo (int) $row['is_active'] === 1 ? 'checked' : ''; ?>> Active</label></td>
-<td class="small"><?php echo e((string) ($row['last_login_at'] ?: 'Never')); ?><?php if (!empty($row['last_login_ip'])): ?><br><span class="text-muted"><?php echo e((string) $row['last_login_ip']); ?></span><?php endif; ?></td>
-<td><button class="btn btn-sm btn-outline-primary" type="submit" form="<?php echo e($rowFormId); ?>">Save</button></td></tr><?php endforeach; ?>
+<td><form id="<?php echo e($rowFormId); ?>" method="POST"><?php echo csrf_field(); ?><input type="hidden" name="action" value="update"><input type="hidden" name="admin_id" value="<?php echo (int) $row['id']; ?>"></form><input class="ui-input ui-input--small" name="name" form="<?php echo e($rowFormId); ?>" maxlength="255" value="<?php echo e((string) $row['name']); ?>" required></td>
+<td><input class="ui-input ui-input--small" type="email" name="email" form="<?php echo e($rowFormId); ?>" maxlength="255" value="<?php echo e((string) $row['email']); ?>" required></td>
+<td><select class="ui-select ui-select--small" name="role" form="<?php echo e($rowFormId); ?>"><?php foreach ($roles as $option): ?><option value="<?php echo e($option); ?>" <?php echo $option === (string) $row['role'] ? 'selected' : ''; ?>><?php echo e(ucwords(str_replace('_', ' ', $option))); ?></option><?php endforeach; ?></select></td>
+<td><label class="ui-check"><input class="ui-check__input" type="checkbox" name="is_active" form="<?php echo e($rowFormId); ?>" <?php echo (int) $row['is_active'] === 1 ? 'checked' : ''; ?>> Active</label></td>
+<td class="u-text-small"><?php echo e((string) ($row['last_login_at'] ?: 'Never')); ?><?php if (!empty($row['last_login_ip'])): ?><br><span class="u-text-muted"><?php echo e((string) $row['last_login_ip']); ?></span><?php endif; ?></td>
+<td><button class="ui-button ui-button--small ui-button--outline" type="submit" form="<?php echo e($rowFormId); ?>">Save</button></td></tr><?php endforeach; ?>
 </tbody></table></div>
 <?php include __DIR__ . '/partials/footer.php'; ?>

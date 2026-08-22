@@ -167,67 +167,67 @@ $metaDescription = 'Create, edit and delete product categories.';
 $metaKeywords = 'admin, categories, manage';
 include 'partials/header.php';
 ?>
-<div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
+<div class="admin-page-header u-flex u-justify-between u-items-center u-mb-3">
     <div>
-        <h1 class="mb-1">Categories</h1>
-        <p class="text-muted mb-0">Locked taxonomy: top-level only for storefront business rules.</p>
+        <h1 class="u-mb-1">Categories</h1>
+        <p class="u-text-muted u-mb-0">Locked taxonomy: top-level only for storefront business rules.</p>
     </div>
 </div>
-<div class="alert alert-info">
+<div class="ui-alert ui-alert--info">
     This catalog uses a fixed top-level category structure for storefront consistency. Allowed slugs:
     <?php foreach ($lockedAllowedSlugs as $index => $allowedSlug): ?>
         <?php if ($index > 0): ?>, <?php endif; ?><code><?php echo e($allowedSlug); ?></code>
     <?php endforeach; ?>.
 </div>
 
-<div class="card mb-4">
-    <div class="card-body">
-        <h5 class="card-title">Add Category</h5>
+<div class="ui-card u-mb-4">
+    <div class="ui-card__body">
+        <h5 class="ui-card__title">Add Category</h5>
         <?php if (!empty($errors)): ?>
-            <div class="alert alert-danger">
+            <div class="ui-alert ui-alert--error">
                 <?php foreach ($errors as $error): ?>
                     <div><?php echo e($error); ?></div>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
-        <form method="post" class="row g-3 admin-filter-form" enctype="multipart/form-data">
+        <form method="post" class="l-grid l-grid--12 u-gap-3 admin-filter-form" enctype="multipart/form-data">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="create">
-            <div class="col-md-3">
-                <label class="form-label">Name</label>
-                <input type="text" name="name" class="form-control" required>
+            <div class="l-col-md-quarter">
+                <label class="ui-label">Name</label>
+                <input type="text" name="name" class="ui-input" required>
             </div>
-            <div class="col-md-3">
-                <label class="form-label">Slug</label>
-                <input type="text" name="slug" class="form-control" placeholder="e.g. fabric-by-meter" required>
+            <div class="l-col-md-quarter">
+                <label class="ui-label">Slug</label>
+                <input type="text" name="slug" class="ui-input" placeholder="e.g. fabric-by-meter" required>
             </div>
 
-            <div class="col-md-2">
-                <label class="form-label">Status</label>
-                <select name="status" class="form-select">
+            <div class="l-col-md-two">
+                <label class="ui-label">Status</label>
+                <select name="status" class="ui-select">
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label">Image</label>
-                <input type="file" name="image" class="form-control" accept="image/jpeg,image/png,image/webp">
+            <div class="l-col-md-quarter">
+                <label class="ui-label">Image</label>
+                <input type="file" name="image" class="ui-input" accept="image/jpeg,image/png,image/webp">
             </div>
-            <div class="col-md-2 d-flex align-items-center">
-                <div class="form-check mt-4">
-                    <input class="form-check-input" type="checkbox" name="uses_variant_size" id="uses_variant_size_create" value="1">
-                    <label class="form-check-label" for="uses_variant_size_create">Use Variant Size</label>
+            <div class="l-col-md-two u-flex u-items-center">
+                <div class="ui-check u-mt-4">
+                    <input class="ui-check__input" type="checkbox" name="uses_variant_size" id="uses_variant_size_create" value="1">
+                    <label class="ui-check__label" for="uses_variant_size_create">Use Variant Size</label>
                 </div>
             </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <button class="btn btn-primary w-100" type="submit">Add</button>
+            <div class="l-col-md-two u-flex u-items-end">
+                <button class="ui-button ui-button--primary u-w-full" type="submit">Add</button>
             </div>
         </form>
     </div>
 </div>
 
-<div class="table-responsive">
-    <table class="table table-striped align-middle admin-no-card-table">
+<div class="ui-table-wrap">
+    <table class="ui-table ui-table--striped u-align-middle admin-no-card-table">
         <thead>
         <tr>
             <th>ID</th>
@@ -241,7 +241,7 @@ include 'partials/header.php';
         </thead>
         <tbody>
         <?php if (empty($categories)): ?>
-            <tr><td colspan="7" class="text-center text-muted py-4">No categories found.</td></tr>
+            <tr><td colspan="7" class="u-text-center u-text-muted u-py-4">No categories found.</td></tr>
         <?php else: ?>
             <?php foreach ($categories as $cat): ?>
                 <tr>
@@ -255,58 +255,58 @@ include 'partials/header.php';
 
                     <td>
                         <?php if ((string) $cat['status'] === 'active'): ?>
-                            <span class="badge bg-success">Active</span>
+                            <span class="ui-badge ui-badge--success">Active</span>
                         <?php else: ?>
-                            <span class="badge bg-secondary">Inactive</span>
+                            <span class="ui-badge ui-badge--neutral">Inactive</span>
                         <?php endif; ?>
                     </td>
                     <td>
                         <?php if ((int) ($cat['uses_variant_size'] ?? 0) === 1): ?>
-                            <span class="badge bg-primary">Enabled</span>
+                            <span class="ui-badge ui-badge--info">Enabled</span>
                         <?php else: ?>
-                            <span class="badge bg-light text-dark border">Hidden</span>
+                            <span class="ui-badge u-bg-soft u-text-ink u-border">Hidden</span>
                         <?php endif; ?>
                     </td>
                     <td><?php echo !empty($cat['image']) ? 'Set' : 'Not set'; ?></td>
                     <td>
                         <details>
-                            <summary class="btn btn-sm btn-outline-secondary">Edit</summary>
-                            <form method="post" class="row g-2 mt-2" enctype="multipart/form-data">
+                            <summary class="ui-button ui-button--small ui-button--secondary">Edit</summary>
+                            <form method="post" class="l-grid l-grid--12 u-gap-2 u-mt-2" enctype="multipart/form-data">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="update">
                                 <input type="hidden" name="id" value="<?php echo (int) $cat['id']; ?>">
-                                <div class="col-md-3">
-                                    <input type="text" name="name" class="form-control form-control-sm" value="<?php echo e((string) $cat['name']); ?>" required>
+                                <div class="l-col-md-quarter">
+                                    <input type="text" name="name" class="ui-input ui-input--small" value="<?php echo e((string) $cat['name']); ?>" required>
                                 </div>
-                                <div class="col-md-3">
-                                    <input type="text" name="slug" class="form-control form-control-sm" value="<?php echo e((string) $cat['slug']); ?>" required>
+                                <div class="l-col-md-quarter">
+                                    <input type="text" name="slug" class="ui-input ui-input--small" value="<?php echo e((string) $cat['slug']); ?>" required>
                                 </div>
 
-                                <div class="col-md-2">
-                                    <select name="status" class="form-select form-select-sm">
+                                <div class="l-col-md-two">
+                                    <select name="status" class="ui-select ui-select--small">
                                         <option value="active" <?php echo ((string) $cat['status'] === 'active') ? 'selected' : ''; ?>>Active</option>
                                         <option value="inactive" <?php echo ((string) $cat['status'] === 'inactive') ? 'selected' : ''; ?>>Inactive</option>
                                     </select>
                                 </div>
-                                <div class="col-md-3">
-                                    <input type="file" name="image" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp">
+                                <div class="l-col-md-quarter">
+                                    <input type="file" name="image" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp">
                                 </div>
-                                <div class="col-md-2 d-flex align-items-center">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="uses_variant_size" id="uses_variant_size_<?php echo (int) $cat['id']; ?>" value="1" <?php echo ((int) ($cat['uses_variant_size'] ?? 0) === 1) ? 'checked' : ''; ?>>
-                                        <label class="form-check-label small" for="uses_variant_size_<?php echo (int) $cat['id']; ?>">Use Size</label>
+                                <div class="l-col-md-two u-flex u-items-center">
+                                    <div class="ui-check">
+                                        <input class="ui-check__input" type="checkbox" name="uses_variant_size" id="uses_variant_size_<?php echo (int) $cat['id']; ?>" value="1" <?php echo ((int) ($cat['uses_variant_size'] ?? 0) === 1) ? 'checked' : ''; ?>>
+                                        <label class="ui-check__label u-text-small" for="uses_variant_size_<?php echo (int) $cat['id']; ?>">Use Size</label>
                                     </div>
                                 </div>
-                                <div class="col-md-2 d-grid">
-                                    <button class="btn btn-sm btn-dark" type="submit">Save</button>
+                                <div class="l-col-md-two u-grid">
+                                    <button class="ui-button ui-button--small ui-button--navy" type="submit">Save</button>
                                 </div>
                             </form>
                         </details>
-                        <form method="post" class="d-inline-block mt-2" data-confirm="Delete category <?php echo e((string) $cat['name']); ?>?" data-confirm-title="Delete Category?" data-confirm-ok="Delete" data-confirm-variant="danger">
+                        <form method="post" class="u-inline-block u-mt-2" data-confirm="Delete category <?php echo e((string) $cat['name']); ?>?" data-confirm-title="Delete Category?" data-confirm-ok="Delete" data-confirm-variant="danger">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?php echo (int) $cat['id']; ?>">
-                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            <button type="submit" class="ui-button ui-button--small ui-button--danger-outline">Delete</button>
                         </form>
                     </td>
                 </tr>

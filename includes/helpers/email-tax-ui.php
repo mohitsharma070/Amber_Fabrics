@@ -103,14 +103,14 @@ function app_http_json(string $method, string $url, array $headers = [], ?array 
 }
 
 // ---------------------------------------------------------------------------
-// Form helpers - Bootstrap 5 inline validation
+// Form helpers - first-party inline validation
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the appropriate Bootstrap input CSS classes.
- * $base is 'form-control' for <input>/<textarea>, 'form-select' for <select>.
+ * Returns the appropriate first-party input CSS classes.
+ * Pass ui-select for select controls and ui-textarea where a distinct textarea class is useful.
  */
-function form_class(array $errors, string $field, string $base = 'form-control'): string
+function form_class(array $errors, string $field, string $base = 'ui-input'): string
 {
     return $base . (empty($errors[$field]) ? '' : ' is-invalid');
 }
@@ -118,7 +118,7 @@ function form_class(array $errors, string $field, string $base = 'form-control')
 /**
  * Returns an invalid-feedback <div> with the field error, or '' if none.
  */
-function form_error(array $errors, string $field, string $base = 'invalid-feedback d-block'): string
+function form_error(array $errors, string $field, string $base = 'ui-field-error'): string
 {
     if (empty($errors[$field])) {
         return '';
@@ -127,11 +127,11 @@ function form_error(array $errors, string $field, string $base = 'invalid-feedba
 }
 
 // ---------------------------------------------------------------------------
-// Pagination helper - Bootstrap 5 pagination component
+// Pagination helper - first-party pagination component
 // ---------------------------------------------------------------------------
 
 /**
- * Renders a Bootstrap 5 pagination nav.
+ * Renders the application pagination navigation.
  *
  * @param int    $page       Current page (1-based)
  * @param int    $pages      Total pages
@@ -140,7 +140,7 @@ function form_error(array $errors, string $field, string $base = 'invalid-feedba
  * @param int    $total      Total records (used for "Showing X-Y of Z" info line)
  * @param int    $perPage    Records per page (used for info line)
  */
-function render_pagination(int $page, int $pages, array $queryState, string $pageKey = 'page', int $total = 0, int $perPage = 0, string $presentation = 'legacy'): string
+function render_pagination(int $page, int $pages, array $queryState, string $pageKey = 'page', int $total = 0, int $perPage = 0, string $presentation = 'ui'): string
 {
     if ($pages <= 1) {
         return '';

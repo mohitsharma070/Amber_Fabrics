@@ -1,16 +1,19 @@
 <?php
 require_once __DIR__ . '/../../includes/init.php';
 require_admin();
+
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
+$uiPage = pathinfo($currentPage, PATHINFO_FILENAME) ?: 'admin';
 $siteSettings = SiteSettingsService::get();
-$siteName = $siteSettings['site_name'];
-$siteLogo = $siteSettings['branding_logo'];
+$siteName = (string) $siteSettings['site_name'];
+$siteLogo = trim((string) ($siteSettings['branding_logo'] ?? ''));
+$siteLogo = $siteLogo !== '' ? '/' . ltrim($siteLogo, '/') : '/images/logo-brand-light.svg';
 $isRefundQueue = $currentPage === 'orders.php' && (string) ($_GET['refund_queue'] ?? '') === '1';
 $isCatalogNav = in_array($currentPage, ['fabrics.php', 'add-fabric.php', 'edit-fabric.php', 'product-import.php', 'categories.php', 'about-media.php'], true);
 $isOrdersNav = in_array($currentPage, ['orders.php', 'order-view.php', 'returns.php'], true) || $isRefundQueue;
-$isCustomersNav = $currentPage === 'customers.php';
-$isMarketingNav = in_array($currentPage, ['coupons.php', 'reviews.php', 'export-inquiries.php'], true);
-$isOperationsNav = in_array($currentPage, ['shipping-rates.php', 'expenses.php'], true);
+$isCustomersNav = in_array($currentPage, ['customers.php', 'customer-view.php'], true);
+$isMarketingNav = in_array($currentPage, ['coupons.php', 'reviews.php', 'export-inquiries.php', 'inquiries.php', 'inquiry-view.php'], true);
+$isOperationsNav = in_array($currentPage, ['shipping-rates.php', 'expenses.php', 'bigship-service.php'], true);
 $isSettingsNav = $currentPage === 'settings.php';
 $currentRole = (string) ($_SESSION['admin_role'] ?? 'viewer');
 $adminCanMutateCurrentPage = admin_can(admin_route_capability($currentPage, 'POST'), $currentRole);
@@ -18,6 +21,7 @@ $adminCanManageSettings = admin_can('settings.manage', $currentRole);
 $adminCanManageAdmins = admin_can('admins.manage', $currentRole);
 $pendingRefunds = 0;
 $pendingReviews = 0;
+
 try {
     $pendingRefunds = (int) ($conn->query("SELECT COUNT(*) FROM orders WHERE order_status = 'cancelled' AND payment_status = 'paid'")->fetch_row()[0] ?? 0);
 } catch (Throwable $e) {
@@ -31,8 +35,7 @@ try {
            AND TABLE_NAME = 'product_reviews'"
     );
     $reviewTableStmt->execute();
-    $reviewTableReady = ((int) (($reviewTableStmt->get_result()->fetch_assoc()['total'] ?? 0)) > 0);
-    if ($reviewTableReady) {
+    if ((int) ($reviewTableStmt->get_result()->fetch_assoc()['total'] ?? 0) > 0) {
         $pendingReviews = (int) ($conn->query("SELECT COUNT(*) FROM product_reviews WHERE status = 'pending'")->fetch_row()[0] ?? 0);
     }
 } catch (Throwable $e) {
@@ -46,24 +49,16 @@ if (!function_exists('admin_nav_safe_url')) {
         if ($url === '' || preg_match('/[\x00-\x1F\x7F]/', $url)) {
             return '';
         }
-
         $scheme = parse_url($url, PHP_URL_SCHEME);
-        if (is_string($scheme) && $scheme !== '' && !in_array(strtolower($scheme), ['http', 'https'], true)) {
-            return '';
-        }
-
-        return $url;
+        return is_string($scheme) && $scheme !== '' && !in_array(strtolower($scheme), ['http', 'https'], true) ? '' : $url;
     }
 }
 
 if (!function_exists('admin_nav_safe_icon')) {
     function admin_nav_safe_icon(string $icon): string
     {
-        $icon = trim($icon);
-        if ($icon === '' || !preg_match('/^[A-Za-z0-9 _-]{1,80}$/', $icon)) {
-            return '';
-        }
-        return $icon;
+        $icon = strtolower(trim($icon));
+        return preg_match('/^[a-z0-9-]{1,40}$/', $icon) ? $icon : '';
     }
 }
 
@@ -79,7 +74,6 @@ if (!function_exists('admin_nav_plugin_items')) {
         if (!is_array($items)) {
             return [];
         }
-
         $safeItems = [];
         foreach ($items as $item) {
             if (!is_array($item)) {
@@ -97,7 +91,6 @@ if (!function_exists('admin_nav_plugin_items')) {
                 'active' => !empty($item['active']),
             ];
         }
-
         return $safeItems;
     }
 }
@@ -105,133 +98,73 @@ if (!function_exists('admin_nav_plugin_items')) {
 $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo e(isset($metaTitle) ? $metaTitle : ($siteName . ' Admin')); ?></title>
-    <meta name="description" content="<?php echo e(isset($metaDescription) ? $metaDescription : ('Admin panel for ' . $siteName . '.')); ?>">
-    <meta name="keywords" content="<?php echo e(isset($metaKeywords) ? $metaKeywords : ('admin, management, ' . $siteName)); ?>">
-    <meta name="author" content="<?php echo e($siteName); ?>">
-    <meta property="og:title" content="<?php echo e(isset($metaTitle) ? $metaTitle : ($siteName . ' Admin')); ?>">
-    <meta property="og:description" content="<?php echo e(isset($metaDescription) ? $metaDescription : ('Admin panel for ' . $siteName . '.')); ?>">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="<?php echo e(isset($metaUrl) ? $metaUrl : SiteContext::url('/admin')); ?>">
-    <meta property="og:image" content="<?php echo (isset($metaImage) ? $metaImage : '../images/fabrics/default.jpg'); ?>">
-    <!-- Favicons: Light/Dark theme support -->
-    <link rel="icon" type="image/svg+xml" href="../images/favicon-light.svg" media="(prefers-color-scheme: light)">
-    <link rel="icon" type="image/svg+xml" href="../images/favicon-dark.svg" media="(prefers-color-scheme: dark)">
-    <link rel="alternate icon" type="image/png" href="../images/favicon-light.svg">
-    <link rel="apple-touch-icon" href="../images/favicon-light.svg">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260822a">
-    <link rel="stylesheet" href="../css/admin.css?v=20260822a">
+    <title><?php echo e(isset($metaTitle) ? (string) $metaTitle : ($siteName . ' Admin')); ?></title>
+    <meta name="description" content="<?php echo e(isset($metaDescription) ? (string) $metaDescription : ('Admin panel for ' . $siteName . '.')); ?>">
+    <meta name="robots" content="noindex,nofollow">
+    <link rel="icon" type="image/svg+xml" href="/images/favicon-light.svg" media="(prefers-color-scheme: light)">
+    <link rel="icon" type="image/svg+xml" href="/images/favicon-dark.svg" media="(prefers-color-scheme: dark)">
+    <link rel="stylesheet" href="<?php echo e(ui_asset('/css/foundation.css')); ?>">
+    <link rel="stylesheet" href="<?php echo e(ui_asset('/css/admin.css')); ?>">
+    <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
+    <script src="<?php echo e(ui_asset('/js/app.js')); ?>" defer></script>
+    <script src="<?php echo e(ui_asset('/js/admin.js')); ?>" defer></script>
 </head>
-<body class="admin-shell<?php echo $adminCanMutateCurrentPage ? '' : ' admin-read-only'; ?>" data-admin-can-mutate="<?php echo $adminCanMutateCurrentPage ? '1' : '0'; ?>">
-<nav class="navbar navbar-expand-lg navbar-dark">
-    <div class="container">
-        <a class="navbar-brand brand-mark text-white d-flex align-items-center" href="dashboard.php">
-            <?php
-            // Mobile-specific logo logic
-            $isMobile = false;
-            if (isset($_SERVER['HTTP_USER_AGENT'])) {
-                $ua = strtolower($_SERVER['HTTP_USER_AGENT']);
-                $isMobile = strpos($ua, 'mobile') !== false || strpos($ua, 'android') !== false || strpos($ua, 'iphone') !== false;
-            }
-            $logoLight = $isMobile ? '../images/logo-mobile.svg' : (!empty($siteLogo) ? '../' . $siteLogo : '../images/logo-brand-light.svg');
-            $logoDark = $isMobile ? '../images/logo-mobile-dark.svg' : (!empty($siteLogo) ? '../' . $siteLogo : '../images/logo-brand-light.svg');
-            ?>
-            <picture>
-                <source srcset="<?php echo $logoDark; ?>" media="(prefers-color-scheme: dark)">
-                <img src="<?php echo e($logoLight); ?>" alt="<?php echo e($siteName); ?>" class="admin-logo">
-            </picture>
-        </a>
-        <button class="navbar-toggler admin-nav-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#adminNav" aria-controls="adminNav" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon admin-nav-open-icon"></span>
-            <i class="bi bi-x-lg admin-nav-close-icon" aria-hidden="true"></i>
-        </button>
-        <div class="collapse navbar-collapse justify-content-end" id="adminNav">
-            <div class="navbar-nav admin-nav-grid">
-                <a class="nav-link <?php echo $currentPage === 'dashboard.php' ? 'active' : ''; ?>" href="dashboard.php"><i class="bi bi-speedometer2 me-2" aria-hidden="true"></i>Dashboard</a>
-
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo $isCatalogNav ? 'active' : ''; ?>" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-box-seam me-2" aria-hidden="true"></i>Catalog
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item <?php echo in_array($currentPage, ['fabrics.php', 'add-fabric.php', 'edit-fabric.php'], true) ? 'active' : ''; ?>" href="fabrics.php"><i class="bi bi-box me-2" aria-hidden="true"></i>Products</a></li>
-                        <li><a class="dropdown-item <?php echo $currentPage === 'categories.php' ? 'active' : ''; ?>" href="categories.php"><i class="bi bi-tags me-2" aria-hidden="true"></i>Categories</a></li>
-                        <li><a class="dropdown-item <?php echo $currentPage === 'about-media.php' ? 'active' : ''; ?>" href="about-media.php"><i class="bi bi-images me-2" aria-hidden="true"></i>About Media</a></li>
-                    </ul>
-                </div>
-
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo $isOrdersNav ? 'active' : ''; ?>" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-receipt me-2" aria-hidden="true"></i>Orders
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item <?php echo ((in_array($currentPage, ['orders.php', 'order-view.php'], true) && !$isRefundQueue) ? 'active' : ''); ?>" href="orders.php"><i class="bi bi-receipt-cutoff me-2" aria-hidden="true"></i>Orders</a></li>
-                        <li><a class="dropdown-item <?php echo $currentPage === 'returns.php' ? 'active' : ''; ?>" href="returns.php"><i class="bi bi-arrow-counterclockwise me-2" aria-hidden="true"></i>Returns</a></li>
-                        <li><a class="dropdown-item <?php echo $isRefundQueue ? 'active' : ''; ?>" href="orders.php?refund_queue=1"><i class="bi bi-cash-stack me-2" aria-hidden="true"></i>Refund Queue<?php if ($pendingRefunds > 0): ?><span class="badge bg-danger ms-2"><?php echo $pendingRefunds; ?></span><?php endif; ?></a></li>
-                    </ul>
-                </div>
-
-                <a class="nav-link <?php echo $isCustomersNav ? 'active' : ''; ?>" href="customers.php"><i class="bi bi-people me-2" aria-hidden="true"></i>Customers</a>
-
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo $isMarketingNav ? 'active' : ''; ?>" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-megaphone me-2" aria-hidden="true"></i>Marketing
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item <?php echo $currentPage === 'coupons.php' ? 'active' : ''; ?>" href="coupons.php"><i class="bi bi-ticket-perforated me-2" aria-hidden="true"></i>Coupons</a></li>
-                        <li><a class="dropdown-item <?php echo $currentPage === 'reviews.php' ? 'active' : ''; ?>" href="reviews.php"><i class="bi bi-chat-square-text me-2" aria-hidden="true"></i>Reviews<?php if ($pendingReviews > 0): ?><span class="badge bg-warning text-dark ms-2"><?php echo $pendingReviews; ?></span><?php endif; ?></a></li>
-                        <li><a class="dropdown-item <?php echo $currentPage === 'export-inquiries.php' ? 'active' : ''; ?>" href="export-inquiries.php"><i class="bi bi-globe2 me-2" aria-hidden="true"></i>Export Inquiries</a></li>
-                    </ul>
-                </div>
-
-                <div class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle <?php echo $isOperationsNav ? 'active' : ''; ?>" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-gear-wide-connected me-2" aria-hidden="true"></i>Operations
-                    </a>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item <?php echo $currentPage === 'shipping-rates.php' ? 'active' : ''; ?>" href="shipping-rates.php"><i class="bi bi-truck me-2" aria-hidden="true"></i>Shipping Rates</a></li>
-                        <li><a class="dropdown-item <?php echo $currentPage === 'expenses.php' ? 'active' : ''; ?>" href="expenses.php"><i class="bi bi-wallet2 me-2" aria-hidden="true"></i>Expenses</a></li>
-                    </ul>
-                </div>
-
-                <a class="nav-link <?php echo $currentPage === 'operations.php' ? 'active' : ''; ?>" href="operations.php"><i class="bi bi-activity me-2" aria-hidden="true"></i>Operations Center</a>
-
-                <?php if ($adminCanManageAdmins): ?>
-                    <a class="nav-link <?php echo $currentPage === 'admins.php' ? 'active' : ''; ?>" href="admins.php"><i class="bi bi-person-gear me-2" aria-hidden="true"></i>Administrators</a>
-                <?php endif; ?>
-
-                <?php if ($adminCanManageSettings): ?>
-                    <a class="nav-link <?php echo $isSettingsNav ? 'active' : ''; ?>" href="settings.php"><i class="bi bi-sliders me-2" aria-hidden="true"></i>Settings</a>
-                <?php endif; ?>
-
-                <?php foreach ($pluginNavItems as $pluginNavItem): ?>
-                    <a class="nav-link <?php echo !empty($pluginNavItem['active']) ? 'active' : ''; ?>" href="<?php echo e((string) $pluginNavItem['url']); ?>">
-                        <?php if (!empty($pluginNavItem['icon'])): ?><i class="<?php echo e((string) $pluginNavItem['icon']); ?> me-2" aria-hidden="true"></i><?php endif; ?><?php echo e((string) $pluginNavItem['label']); ?>
-                    </a>
-                <?php endforeach; ?>
-
-                <form method="POST" action="logout.php" class="d-inline admin-logout-form" aria-label="Admin logout">
-                    <?php echo csrf_field(); ?>
-                    <button type="submit" class="btn btn-link nav-link text-white" title="Log out of admin"><i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>Log out</button>
-                </form>
+<body class="admin-shell<?php echo $adminCanMutateCurrentPage ? '' : ' admin-read-only'; ?>" data-ui-area="admin" data-ui-page="<?php echo e($uiPage); ?>" data-admin-can-mutate="<?php echo $adminCanMutateCurrentPage ? '1' : '0'; ?>">
+<a class="ui-skip-link" href="#admin-main">Skip to main content</a>
+<header class="admin-header">
+    <div class="l-container admin-header__inner">
+        <a class="admin-brand" href="dashboard.php"><img src="<?php echo e($siteLogo); ?>" alt="<?php echo e($siteName); ?>" class="admin-logo"></a>
+        <button class="admin-nav-toggle" type="button" data-admin-nav-toggle aria-controls="adminNav" aria-expanded="false" aria-label="Toggle admin navigation"><?php echo ui_icon('sliders'); ?></button>
+        <nav class="admin-nav" id="adminNav" data-admin-nav aria-label="Administration">
+            <a class="admin-nav__link<?php echo $currentPage === 'dashboard.php' ? ' is-active' : ''; ?>" href="dashboard.php"><?php echo ui_icon('speedometer2'); ?><span>Dashboard</span></a>
+            <div class="admin-nav__group">
+                <button class="admin-nav__link<?php echo $isCatalogNav ? ' is-active' : ''; ?>" type="button" data-ui-menu-toggle="adminCatalogMenu" aria-controls="adminCatalogMenu" aria-expanded="false"><?php echo ui_icon('box-seam'); ?><span>Catalog</span></button>
+                <ul class="ui-menu admin-nav__menu" id="adminCatalogMenu" data-ui-menu hidden>
+                    <li><a class="<?php echo in_array($currentPage, ['fabrics.php', 'add-fabric.php', 'edit-fabric.php'], true) ? 'is-active' : ''; ?>" href="fabrics.php"><?php echo ui_icon('box'); ?>Products</a></li>
+                    <li><a class="<?php echo $currentPage === 'categories.php' ? 'is-active' : ''; ?>" href="categories.php"><?php echo ui_icon('tags'); ?>Categories</a></li>
+                    <li><a class="<?php echo $currentPage === 'about-media.php' ? 'is-active' : ''; ?>" href="about-media.php"><?php echo ui_icon('images'); ?>About Media</a></li>
+                </ul>
             </div>
-        </div>
+            <div class="admin-nav__group">
+                <button class="admin-nav__link<?php echo $isOrdersNav ? ' is-active' : ''; ?>" type="button" data-ui-menu-toggle="adminOrdersMenu" aria-controls="adminOrdersMenu" aria-expanded="false"><?php echo ui_icon('receipt'); ?><span>Orders</span></button>
+                <ul class="ui-menu admin-nav__menu" id="adminOrdersMenu" data-ui-menu hidden>
+                    <li><a class="<?php echo in_array($currentPage, ['orders.php', 'order-view.php'], true) && !$isRefundQueue ? 'is-active' : ''; ?>" href="orders.php"><?php echo ui_icon('receipt-cutoff'); ?>Orders</a></li>
+                    <li><a class="<?php echo $currentPage === 'returns.php' ? 'is-active' : ''; ?>" href="returns.php"><?php echo ui_icon('arrow-counterclockwise'); ?>Returns</a></li>
+                    <li><a class="<?php echo $isRefundQueue ? 'is-active' : ''; ?>" href="orders.php?refund_queue=1"><?php echo ui_icon('cash-stack'); ?>Refund Queue<?php if ($pendingRefunds > 0): ?><span class="ui-badge ui-badge--error"><?php echo $pendingRefunds; ?></span><?php endif; ?></a></li>
+                </ul>
+            </div>
+            <a class="admin-nav__link<?php echo $isCustomersNav ? ' is-active' : ''; ?>" href="customers.php"><?php echo ui_icon('people'); ?><span>Customers</span></a>
+            <div class="admin-nav__group">
+                <button class="admin-nav__link<?php echo $isMarketingNav ? ' is-active' : ''; ?>" type="button" data-ui-menu-toggle="adminMarketingMenu" aria-controls="adminMarketingMenu" aria-expanded="false"><?php echo ui_icon('megaphone'); ?><span>Marketing</span></button>
+                <ul class="ui-menu admin-nav__menu" id="adminMarketingMenu" data-ui-menu hidden>
+                    <li><a class="<?php echo $currentPage === 'coupons.php' ? 'is-active' : ''; ?>" href="coupons.php"><?php echo ui_icon('ticket-perforated'); ?>Coupons</a></li>
+                    <li><a class="<?php echo $currentPage === 'reviews.php' ? 'is-active' : ''; ?>" href="reviews.php"><?php echo ui_icon('chat-square-text'); ?>Reviews<?php if ($pendingReviews > 0): ?><span class="ui-badge ui-badge--warning"><?php echo $pendingReviews; ?></span><?php endif; ?></a></li>
+                    <li><a class="<?php echo $currentPage === 'export-inquiries.php' ? 'is-active' : ''; ?>" href="export-inquiries.php"><?php echo ui_icon('globe2'); ?>Export Inquiries</a></li>
+                </ul>
+            </div>
+            <div class="admin-nav__group">
+                <button class="admin-nav__link<?php echo $isOperationsNav ? ' is-active' : ''; ?>" type="button" data-ui-menu-toggle="adminOperationsMenu" aria-controls="adminOperationsMenu" aria-expanded="false"><?php echo ui_icon('gear-wide-connected'); ?><span>Operations</span></button>
+                <ul class="ui-menu admin-nav__menu" id="adminOperationsMenu" data-ui-menu hidden>
+                    <li><a class="<?php echo $currentPage === 'shipping-rates.php' ? 'is-active' : ''; ?>" href="shipping-rates.php"><?php echo ui_icon('truck'); ?>Shipping Rates</a></li>
+                    <li><a class="<?php echo $currentPage === 'expenses.php' ? 'is-active' : ''; ?>" href="expenses.php"><?php echo ui_icon('wallet2'); ?>Expenses</a></li>
+                </ul>
+            </div>
+            <a class="admin-nav__link<?php echo $currentPage === 'operations.php' ? ' is-active' : ''; ?>" href="operations.php"><?php echo ui_icon('activity'); ?><span>Operations Center</span></a>
+            <?php if ($adminCanManageAdmins): ?><a class="admin-nav__link<?php echo $currentPage === 'admins.php' ? ' is-active' : ''; ?>" href="admins.php"><?php echo ui_icon('person-gear'); ?><span>Administrators</span></a><?php endif; ?>
+            <?php if ($adminCanManageSettings): ?><a class="admin-nav__link<?php echo $isSettingsNav ? ' is-active' : ''; ?>" href="settings.php"><?php echo ui_icon('sliders'); ?><span>Settings</span></a><?php endif; ?>
+            <?php foreach ($pluginNavItems as $pluginNavItem): ?>
+                <a class="admin-nav__link<?php echo !empty($pluginNavItem['active']) ? ' is-active' : ''; ?>" href="<?php echo e((string) $pluginNavItem['url']); ?>"><?php if ($pluginNavItem['icon'] !== ''): ?><?php echo ui_icon((string) $pluginNavItem['icon']); ?><?php endif; ?><span><?php echo e((string) $pluginNavItem['label']); ?></span></a>
+            <?php endforeach; ?>
+            <form method="POST" action="logout.php" class="admin-logout-form" aria-label="Admin logout"><?php echo csrf_field(); ?><button type="submit" class="admin-nav__link" title="Log out of admin"><?php echo ui_icon('box-arrow-right'); ?><span>Log out</span></button></form>
+        </nav>
     </div>
-</nav>
-
+</header>
 <?php if (function_exists('flash')): ?>
-    <?php if ($msg = flash('success')): ?>
-        <div class="alert alert-success text-center mb-0 rounded-0" role="status"><?php echo e($msg); ?></div>
-    <?php endif; ?>
-    <?php if ($msg = flash('error')): ?>
-        <div class="alert alert-danger text-center mb-0 rounded-0" role="alert"><?php echo e($msg); ?></div>
-    <?php endif; ?>
+    <?php if ($msg = flash('success')): ?><div class="ui-alert ui-alert--success admin-flash" role="status"><?php echo e($msg); ?></div><?php endif; ?>
+    <?php if ($msg = flash('error')): ?><div class="ui-alert ui-alert--error admin-flash" role="alert"><?php echo e($msg); ?></div><?php endif; ?>
 <?php endif; ?>
-
-<div class="container mt-4">
+<main id="admin-main" class="admin-main" tabindex="-1"><div class="l-container">

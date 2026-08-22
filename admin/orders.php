@@ -193,22 +193,22 @@ $metaTitle = 'Orders | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
-    <h1 class="mb-0">Orders</h1>
+<div class="admin-page-header u-flex u-justify-between u-items-center u-mb-4">
+    <h1 class="u-mb-0">Orders</h1>
     <?php if (!$refundQueue): ?>
-        <a href="orders.php?refund_queue=1" class="btn btn-outline-danger"><i class="bi bi-cash-stack me-1"></i>Refund Queue</a>
+        <a href="orders.php?refund_queue=1" class="ui-button ui-button--danger-outline"><?php echo ui_icon('cash-stack'); ?>Refund Queue</a>
     <?php endif; ?>
 </div>
 
-<form class="row g-2 mb-4 admin-filter-form" method="GET" action="orders.php">
+<form class="l-grid l-grid--12 u-gap-2 u-mb-4 admin-filter-form" method="GET" action="orders.php">
     <?php if ($refundQueue): ?>
         <input type="hidden" name="refund_queue" value="1">
     <?php endif; ?>
-    <div class="col-md-3">
-        <input class="form-control" name="q" value="<?php echo e($search); ?>" placeholder="Order #, name or phone">
+    <div class="l-col-md-quarter">
+        <input class="ui-input" name="q" value="<?php echo e($search); ?>" placeholder="Order #, name or phone">
     </div>
-    <div class="col-md-3">
-        <select name="order_status" class="form-select">
+    <div class="l-col-md-quarter">
+        <select name="order_status" class="ui-select">
             <option value="">All Order Status</option>
             <?php foreach ($validOrderStatuses as $status): ?>
                 <option value="<?php echo e($status); ?>" <?php echo $orderStatus === $status ? 'selected' : ''; ?>>
@@ -217,8 +217,8 @@ include 'partials/header.php';
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-3">
-        <select name="payment_status" class="form-select">
+    <div class="l-col-md-quarter">
+        <select name="payment_status" class="ui-select">
             <option value="">All Payment Status</option>
             <?php foreach ($validPaymentStatuses as $status): ?>
                 <option value="<?php echo e($status); ?>" <?php echo $paymentStatus === $status ? 'selected' : ''; ?>>
@@ -227,28 +227,28 @@ include 'partials/header.php';
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-2">
-        <select name="sort" class="form-select">
+    <div class="l-col-md-two">
+        <select name="sort" class="ui-select">
             <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest</option>
             <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest</option>
             <option value="amount_high" <?php echo $sort === 'amount_high' ? 'selected' : ''; ?>>Amount High-Low</option>
             <option value="amount_low" <?php echo $sort === 'amount_low' ? 'selected' : ''; ?>>Amount Low-High</option>
         </select>
     </div>
-    <div class="col-md-auto d-flex gap-2 admin-filter-actions">
-        <button class="btn btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
-        <a href="orders.php<?php echo $refundQueue ? '?refund_queue=1' : ''; ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
+    <div class="l-col-auto u-flex u-gap-2 admin-filter-actions">
+        <button class="ui-button ui-button--primary"><?php echo ui_icon('funnel'); ?>Filter</button>
+        <a href="orders.php<?php echo $refundQueue ? '?refund_queue=1' : ''; ?>" class="ui-button ui-button--secondary"><?php echo ui_icon('arrow-counterclockwise'); ?>Reset</a>
     </div>
 </form>
 
 <?php if ($refundQueue): ?>
-    <div class="alert alert-warning py-2">
+    <div class="ui-alert ui-alert--warning u-py-2">
         Showing refund queue: <strong>Cancelled + Paid</strong> orders.
     </div>
 <?php endif; ?>
 
-<div class="table-responsive">
-    <table class="table table-hover align-middle admin-card-table">
+<div class="ui-table-wrap">
+    <table class="ui-table ui-table--hover u-align-middle admin-card-table">
         <thead>
             <tr>
                 <th>Order #</th>
@@ -268,7 +268,7 @@ include 'partials/header.php';
         <tbody>
             <?php if (empty($orders)): ?>
                 <tr class="admin-empty-row">
-                    <td colspan="12" class="text-center text-muted py-4">No orders found.</td>
+                    <td colspan="12" class="u-text-center u-text-muted u-py-4">No orders found.</td>
                 </tr>
             <?php endif; ?>
 
@@ -280,7 +280,7 @@ include 'partials/header.php';
                     $trackingId = (string) ($orderTrackingMap[$oid] ?? '');
                 ?>
                 <tr>
-                    <td class="fw-semibold" data-label="Order #"><?php echo e($order['order_number']); ?></td>
+                    <td class="u-font-semibold" data-label="Order #"><?php echo e($order['order_number']); ?></td>
                     <td data-label="Customer"><?php echo e($order['customer_name']); ?></td>
                     <td data-label="Phone"><?php echo e($order['customer_phone']); ?></td>
                     <td data-label="Products">
@@ -305,22 +305,22 @@ include 'partials/header.php';
                     <td data-label="Payment"><?php echo strtoupper(e((string) $order['payment_method'])); ?></td>
                     <td data-label="Payment Status">
                         <?php $pb = CommercePresenter::paymentStatus((string) ($order['payment_status'] ?? 'pending')); ?>
-                        <span class="badge bg-<?php echo e($pb['class']); ?>"><?php echo e($pb['label']); ?></span>
+                        <span class="ui-badge ui-badge--<?php echo e(ui_tone((string) $pb['class'])); ?>"><?php echo e($pb['label']); ?></span>
                     </td>
                     <td data-label="Order Status">
                         <?php $sb = CommercePresenter::orderStatus((string) ($order['order_status'] ?? 'pending')); ?>
-                        <span class="badge bg-<?php echo e($sb['class']); ?>"><?php echo e($sb['label']); ?></span>
+                        <span class="ui-badge ui-badge--<?php echo e(ui_tone((string) $sb['class'])); ?>"><?php echo e($sb['label']); ?></span>
                     </td>
                     <td data-label="Tracking"><?php echo $trackingId !== '' ? e($trackingId) : '-'; ?></td>
                     <td data-label="Created"><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></td>
                     <td data-label="Action" class="admin-row-actions">
-                        <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View</a>
+                        <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="ui-button ui-button--small ui-button--outline"><?php echo ui_icon('eye'); ?>View</a>
                         <?php if (($order['order_status'] ?? '') === 'cancelled' && ($order['payment_status'] ?? '') === 'paid'): ?>
-                            <form method="POST" action="orders.php?refund_queue=1" class="d-inline" data-confirm-modal data-confirm-title="Mark Refunded" data-confirm-message="Mark this cancelled paid order as refunded?" data-confirm-ok="Mark Refunded" data-confirm-variant="danger">
+                            <form method="POST" action="orders.php?refund_queue=1" class="u-inline" data-confirm-modal data-confirm-title="Mark Refunded" data-confirm-message="Mark this cancelled paid order as refunded?" data-confirm-ok="Mark Refunded" data-confirm-variant="danger">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="mark_refunded">
                                 <input type="hidden" name="order_id" value="<?php echo (int) $order['id']; ?>">
-                                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-check2-circle me-1"></i>Mark Refunded</button>
+                                <button type="submit" class="ui-button ui-button--small ui-button--danger-outline"><?php echo ui_icon('check2-circle'); ?>Mark Refunded</button>
                             </form>
                         <?php endif; ?>
                     </td>

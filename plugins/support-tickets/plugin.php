@@ -52,7 +52,7 @@ function support_tickets_admin_nav_items($items, array $context): array
     $items[] = [
         'label' => 'Support',
         'url' => 'support-tickets.php',
-        'icon' => 'bi bi-headset',
+        'icon' => 'headset',
         'active' => $currentPage === 'support-tickets.php',
     ];
     return $items;

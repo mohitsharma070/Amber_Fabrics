@@ -156,52 +156,52 @@ $metaTitle = 'Review Moderation | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="admin-page-header d-flex justify-content-between align-items-end flex-wrap gap-3 mb-3">
+<div class="admin-page-header u-flex u-justify-between u-items-end u-flex-wrap u-gap-3 u-mb-3">
     <div>
-        <h1 class="mb-1">Review Moderation</h1>
-        <p class="text-muted mb-0">Process pending and rejected product reviews.</p>
+        <h1 class="u-mb-1">Review Moderation</h1>
+        <p class="u-text-muted u-mb-0">Process pending and rejected product reviews.</p>
     </div>
-    <div class="d-flex gap-2 flex-wrap">
-        <span class="badge bg-warning text-dark">Pending: <?php echo (int) $counts['pending']; ?></span>
-        <span class="badge bg-success">Approved: <?php echo (int) $counts['approved']; ?></span>
-        <span class="badge bg-danger">Rejected: <?php echo (int) $counts['rejected']; ?></span>
+    <div class="u-flex u-gap-2 u-flex-wrap">
+        <span class="ui-badge ui-badge--warning u-text-ink">Pending: <?php echo (int) $counts['pending']; ?></span>
+        <span class="ui-badge ui-badge--success">Approved: <?php echo (int) $counts['approved']; ?></span>
+        <span class="ui-badge ui-badge--error">Rejected: <?php echo (int) $counts['rejected']; ?></span>
     </div>
 </div>
 
 <?php if (!$reviewTableReady): ?>
-    <div class="alert alert-warning">`product_reviews` table not found. Run `php database/setup.php`.</div>
+    <div class="ui-alert ui-alert--warning">`product_reviews` table not found. Run `php database/setup.php`.</div>
 <?php else: ?>
-    <form method="GET" action="reviews.php" class="row g-2 mb-3 admin-filter-form">
-        <div class="col-md-3">
-            <label class="form-label">Status</label>
-            <select name="status" class="form-select">
+    <form method="GET" action="reviews.php" class="l-grid l-grid--12 u-gap-2 u-mb-3 admin-filter-form">
+        <div class="l-col-md-quarter">
+            <label class="ui-label">Status</label>
+            <select name="status" class="ui-select">
                 <option value="" <?php echo $statusFilter === '' ? 'selected' : ''; ?>>All</option>
                 <option value="pending" <?php echo $statusFilter === 'pending' ? 'selected' : ''; ?>>Pending</option>
                 <option value="rejected" <?php echo $statusFilter === 'rejected' ? 'selected' : ''; ?>>Rejected</option>
                 <option value="approved" <?php echo $statusFilter === 'approved' ? 'selected' : ''; ?>>Approved</option>
             </select>
         </div>
-        <div class="col-md-6">
-            <label class="form-label">Search</label>
-            <input type="text" name="q" class="form-control" value="<?php echo e($search); ?>" placeholder="Customer, email, product, or review text">
+        <div class="l-col-md-half">
+            <label class="ui-label">Search</label>
+            <input type="text" name="q" class="ui-input" value="<?php echo e($search); ?>" placeholder="Customer, email, product, or review text">
         </div>
-        <div class="col-md-1">
-            <label class="form-label">Rows</label>
-            <select name="per_page" class="form-select">
+        <div class="l-col-md-one">
+            <label class="ui-label">Rows</label>
+            <select name="per_page" class="ui-select">
                 <?php foreach ($perPageOptions as $opt): ?>
                     <option value="<?php echo (int) $opt; ?>" <?php echo $perPage === (int) $opt ? 'selected' : ''; ?>><?php echo (int) $opt; ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-2 d-flex align-items-end gap-2 admin-filter-actions">
-            <button class="btn btn-primary w-100" type="submit">Apply</button>
-            <a class="btn btn-outline-secondary w-100" href="reviews.php">Reset</a>
+        <div class="l-col-md-two u-flex u-items-end u-gap-2 admin-filter-actions">
+            <button class="ui-button ui-button--primary u-w-full" type="submit">Apply</button>
+            <a class="ui-button ui-button--secondary u-w-full" href="reviews.php">Reset</a>
         </div>
     </form>
 
-    <div class="table-responsive">
-        <table class="table table-striped align-middle admin-card-table">
-            <thead class="table-dark">
+    <div class="ui-table-wrap">
+        <table class="ui-table ui-table--striped u-align-middle admin-card-table">
+            <thead class="ui-table__head--dark">
                 <tr>
                     <th>ID</th>
                     <th>Product</th>
@@ -210,13 +210,13 @@ include 'partials/header.php';
                     <th>Review</th>
                     <th>Status</th>
                     <th>Reviewed At</th>
-                    <th class="text-end">Actions</th>
+                    <th class="u-text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($reviews)): ?>
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No reviews found for current filters.</td>
+                        <td colspan="8" class="u-text-center u-text-muted u-py-4">No reviews found for current filters.</td>
                     </tr>
                 <?php endif; ?>
                 <?php foreach ($reviews as $r): ?>
@@ -224,31 +224,31 @@ include 'partials/header.php';
                         $rid = (int) ($r['id'] ?? 0);
                         $status = (string) ($r['status'] ?? 'pending');
                         $rating = max(1, min(5, (int) ($r['rating'] ?? 0)));
-                        $statusClass = $status === 'approved' ? 'bg-success' : ($status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark');
+                        $statusClass = $status === 'approved' ? 'ui-badge--success' : ($status === 'rejected' ? 'ui-badge--error' : 'ui-badge--warning');
                     ?>
                     <tr>
                         <td>#<?php echo $rid; ?></td>
                         <td>
-                            <div class="fw-semibold"><?php echo e((string) ($r['product_name'] ?? '')); ?></div>
-                            <div class="small text-muted">Product ID: <?php echo (int) ($r['product_id'] ?? 0); ?></div>
+                            <div class="u-font-semibold"><?php echo e((string) ($r['product_name'] ?? '')); ?></div>
+                            <div class="u-text-small u-text-muted">Product ID: <?php echo (int) ($r['product_id'] ?? 0); ?></div>
                         </td>
                         <td>
-                            <div class="fw-semibold"><?php echo e((string) ($r['customer_name'] ?? '')); ?></div>
-                            <div class="small text-muted"><?php echo e((string) ($r['customer_email'] ?? '')); ?></div>
+                            <div class="u-font-semibold"><?php echo e((string) ($r['customer_name'] ?? '')); ?></div>
+                            <div class="u-text-small u-text-muted"><?php echo e((string) ($r['customer_email'] ?? '')); ?></div>
                         </td>
                         <td>
-                            <span class="text-warning"><?php echo str_repeat('★', $rating) . str_repeat('☆', 5 - $rating); ?></span>
-                            <div class="small text-muted"><?php echo $rating; ?>/5</div>
+                            <span class="u-text-warning"><?php echo str_repeat('★', $rating) . str_repeat('☆', 5 - $rating); ?></span>
+                            <div class="u-text-small u-text-muted"><?php echo $rating; ?>/5</div>
                         </td>
-                        <td style="max-width: 380px;">
-                            <div class="small"><?php echo e((string) ($r['review_text'] ?? '')); ?></div>
+                        <td class="admin-copy-cell">
+                            <div class="u-text-small"><?php echo e((string) ($r['review_text'] ?? '')); ?></div>
                         </td>
-                        <td><span class="badge <?php echo $statusClass; ?>"><?php echo e(ucfirst($status)); ?></span></td>
-                        <td class="small"><?php echo e((string) ($r['reviewed_at'] ?? '')); ?></td>
-                        <td class="text-end admin-row-actions">
-                            <div class="d-inline-flex gap-1 flex-wrap justify-content-end">
+                        <td><span class="ui-badge <?php echo $statusClass; ?>"><?php echo e(ucfirst($status)); ?></span></td>
+                        <td class="u-text-small"><?php echo e((string) ($r['reviewed_at'] ?? '')); ?></td>
+                        <td class="u-text-end admin-row-actions">
+                            <div class="u-inline-flex u-gap-1 u-flex-wrap u-justify-end">
                                 <?php if ($status !== 'approved'): ?>
-                                    <form method="POST" action="reviews.php" class="d-inline">
+                                    <form method="POST" action="reviews.php" class="u-inline">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="review_id" value="<?php echo $rid; ?>">
                                         <input type="hidden" name="status" value="approved">
@@ -256,11 +256,11 @@ include 'partials/header.php';
                                         <input type="hidden" name="q" value="<?php echo e($search); ?>">
                                         <input type="hidden" name="filter_page" value="<?php echo (int) $page; ?>">
                                         <input type="hidden" name="filter_per_page" value="<?php echo (int) $perPage; ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-success">Approve</button>
+                                        <button type="submit" class="ui-button ui-button--small ui-button--success-outline">Approve</button>
                                     </form>
                                 <?php endif; ?>
                                 <?php if ($status !== 'rejected'): ?>
-                                    <form method="POST" action="reviews.php" class="d-inline">
+                                    <form method="POST" action="reviews.php" class="u-inline">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="review_id" value="<?php echo $rid; ?>">
                                         <input type="hidden" name="status" value="rejected">
@@ -268,11 +268,11 @@ include 'partials/header.php';
                                         <input type="hidden" name="q" value="<?php echo e($search); ?>">
                                         <input type="hidden" name="filter_page" value="<?php echo (int) $page; ?>">
                                         <input type="hidden" name="filter_per_page" value="<?php echo (int) $perPage; ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
+                                        <button type="submit" class="ui-button ui-button--small ui-button--danger-outline">Reject</button>
                                     </form>
                                 <?php endif; ?>
                                 <?php if ($status !== 'pending'): ?>
-                                    <form method="POST" action="reviews.php" class="d-inline">
+                                    <form method="POST" action="reviews.php" class="u-inline">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="review_id" value="<?php echo $rid; ?>">
                                         <input type="hidden" name="status" value="pending">
@@ -280,7 +280,7 @@ include 'partials/header.php';
                                         <input type="hidden" name="q" value="<?php echo e($search); ?>">
                                         <input type="hidden" name="filter_page" value="<?php echo (int) $page; ?>">
                                         <input type="hidden" name="filter_per_page" value="<?php echo (int) $perPage; ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-secondary">Mark Pending</button>
+                                        <button type="submit" class="ui-button ui-button--small ui-button--secondary">Mark Pending</button>
                                     </form>
                                 <?php endif; ?>
                             </div>

@@ -730,10 +730,10 @@ function cod_guard_render_admin_panel(array $context): void
         $lastInboundText = $parsedReply === null ? '' : strtoupper($parsedReply);
     }
     ?>
-    <div class="card mb-4 border-warning">
-        <div class="card-body">
-            <h6 class="card-title">COD Guard</h6>
-            <div class="small text-muted mb-2">
+    <div class="ui-card u-mb-4 u-border-primary">
+        <div class="ui-card__body">
+            <h2 class="u-heading-5">COD Guard</h2>
+            <div class="u-text-small u-text-muted u-mb-2">
                 <div>Status: <strong><?php echo e(cod_guard_label($row)); ?></strong></div>
                 <div>Deadline: <strong><?php echo e((string) ($row['deadline_at'] ?? '-')); ?></strong></div>
                 <div>Attempts: <strong><?php echo (int) ($row['attempts'] ?? 0); ?></strong></div>
@@ -743,30 +743,30 @@ function cod_guard_render_admin_panel(array $context): void
                         <div>Sent: <strong><?php echo e((string) $row['message_sent_at']); ?></strong></div>
                     <?php endif; ?>
                     <?php if (!empty($row['message_error'])): ?>
-                        <div class="text-danger">Last error: <?php echo e((string) $row['message_error']); ?></div>
+                    <div class="u-text-danger">Last error: <?php echo e((string) $row['message_error']); ?></div>
                     <?php endif; ?>
                 <?php endif; ?>
                 <?php if (!empty($row['last_inbound_at'])): ?>
-                    <div class="mt-2">Last customer reply: <strong><?php echo e($lastInboundText !== '' ? $lastInboundText : 'Received'); ?></strong></div>
+                    <div class="u-mt-2">Last customer reply: <strong><?php echo e($lastInboundText !== '' ? $lastInboundText : 'Received'); ?></strong></div>
                     <div>Reply received: <strong><?php echo e((string) $row['last_inbound_at']); ?></strong></div>
                 <?php endif; ?>
             </div>
 
             <?php if ($status === 'pending' && in_array($channel, ['whatsapp', 'call'], true)): ?>
-                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="d-grid gap-2">
+                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="u-grid u-gap-2">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="cod_guard_mark_confirmed">
-                    <button class="btn btn-sm btn-success" type="submit">Mark COD Confirmed</button>
+                    <button class="ui-button ui-button--small ui-button--success" type="submit">Mark COD Confirmed</button>
                 </form>
-                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="d-grid gap-2 mt-2" data-confirm="Cancel this unconfirmed COD order?" data-confirm-title="Cancel COD Order?" data-confirm-ok="Cancel Order" data-confirm-variant="danger">
+                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="u-grid u-gap-2 u-mt-2" data-confirm="Cancel this unconfirmed COD order?" data-confirm-title="Cancel COD Order?" data-confirm-ok="Cancel Order" data-confirm-variant="danger">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="cod_guard_mark_cancelled">
-                    <button class="btn btn-sm btn-outline-danger" type="submit">Cancel COD Order</button>
+                    <button class="ui-button ui-button--small ui-button--danger-outline" type="submit">Cancel COD Order</button>
                 </form>
-                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="mt-2">
+                <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="u-mt-2">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="cod_guard_log_attempt">
-                    <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Log Attempt</button>
+                    <button class="ui-button ui-button--small ui-button--secondary u-w-full" type="submit">Log Attempt</button>
                 </form>
             <?php endif; ?>
         </div>

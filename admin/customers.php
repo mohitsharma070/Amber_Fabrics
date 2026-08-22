@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../includes/init.php';
 require_admin();
 
@@ -62,24 +62,24 @@ $metaTitle = 'Customers | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
-    <h1 class="mb-0">Customers</h1>
-    <span class="badge bg-secondary fs-6"><?php echo number_format($total); ?> total</span>
+<div class="admin-page-header u-flex u-justify-between u-items-center u-mb-4">
+    <h1 class="u-mb-0">Customers</h1>
+    <span class="ui-badge ui-badge--neutral u-text-small"><?php echo number_format($total); ?> total</span>
 </div>
 
-<form method="GET" class="row g-2 mb-4 admin-filter-form">
-    <div class="col-md-5">
-        <input type="text" name="search" class="form-control" placeholder="Search name, email, country..." value="<?php echo e($search); ?>">
+<form method="GET" class="l-grid l-grid--12 u-gap-2 u-mb-4 admin-filter-form">
+    <div class="l-col-md-five">
+        <input type="text" name="search" class="ui-input" placeholder="Search name, email, country..." value="<?php echo e($search); ?>">
     </div>
-    <div class="col-md-auto d-flex gap-2 admin-filter-actions">
-        <button class="btn btn-outline-secondary"><i class="bi bi-search me-1"></i>Search</button>
-        <?php if ($search): ?><a href="customers.php" class="btn btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Clear</a><?php endif; ?>
+    <div class="l-col-auto u-flex u-gap-2 admin-filter-actions">
+        <button class="ui-button ui-button--secondary"><?php echo ui_icon('search'); ?>Search</button>
+        <?php if ($search): ?><a href="customers.php" class="ui-button ui-button--danger-outline"><?php echo ui_icon('x-circle'); ?>Clear</a><?php endif; ?>
     </div>
 </form>
 
-<div class="card">
-    <div class="table-responsive">
-        <table class="table table-hover mb-0 admin-card-table">
+<div class="ui-card">
+    <div class="ui-table-wrap">
+        <table class="ui-table ui-table--hover u-mb-0 admin-card-table">
             <thead>
                 <tr>
                     <th>Name</th>
@@ -93,7 +93,7 @@ include 'partials/header.php';
             </thead>
             <tbody>
                 <?php if (empty($customers)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-4">No customers found.</td></tr>
+                    <tr><td colspan="7" class="u-text-center u-text-muted u-py-4">No customers found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($customers as $c): ?>
                     <tr>
@@ -104,9 +104,9 @@ include 'partials/header.php';
                         <td><?php echo e($c['order_count']); ?></td>
                         <td>
                             <?php if ($c['is_active']): ?>
-                                <span class="badge bg-success">Active</span>
+                                <span class="ui-badge ui-badge--success">Active</span>
                             <?php else: ?>
-                                <span class="badge bg-secondary">Inactive</span>
+                                <span class="ui-badge ui-badge--neutral">Inactive</span>
                             <?php endif; ?>
                         </td>
                         <td><?php echo date('d M Y', strtotime($c['created_at'])); ?></td>

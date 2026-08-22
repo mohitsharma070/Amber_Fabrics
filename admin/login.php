@@ -107,58 +107,54 @@ render_login:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo e(SiteContext::title('Admin Login')); ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260822a">
-    <link rel="stylesheet" href="../css/admin.css?v=20260822a">
+    <link rel="stylesheet" href="<?php echo e(ui_asset('/css/foundation.css')); ?>">
+    <link rel="stylesheet" href="<?php echo e(ui_asset('/css/admin.css')); ?>">
+    <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
+    <script src="<?php echo e(ui_asset('/js/app.js')); ?>" defer></script>
+    <script src="<?php echo e(ui_asset('/js/admin.js')); ?>" defer></script>
 </head>
-<body class="bg-light">
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6 col-lg-4">
-            <div class="card shadow-sm border-0">
-                <div class="card-body p-4">
-                    <h1 class="h4 mb-3">Admin OTP Login</h1>
-                    <p class="text-muted small mb-4">Enter your admin email to receive a one-time login code.</p>
+<body class="admin-auth-page" data-ui-area="admin" data-ui-page="login">
+<main class="admin-auth-shell" id="admin-main">
+            <div class="ui-card admin-auth-card">
+                <div class="ui-card__body">
+                    <h1 class="u-heading-4 u-mb-3">Admin OTP Login</h1>
+                    <p class="u-text-muted u-text-small u-mb-4">Enter your admin email to receive a one-time login code.</p>
 
                     <?php if ((string) ($_GET['logged_out'] ?? '') === '1'): ?>
-                        <div class="alert alert-success" role="status">You have been logged out securely.</div>
+                        <div class="ui-alert ui-alert--success" role="status">You have been logged out securely.</div>
                     <?php endif; ?>
 
                     <?php if ($msg = flash('success')): ?>
-                        <div class="alert alert-success" role="status"><?php echo e($msg); ?></div>
+                        <div class="ui-alert ui-alert--success" role="status"><?php echo e($msg); ?></div>
                     <?php endif; ?>
                     <?php if ($msg = flash('error')): ?>
-                        <div class="alert alert-danger" role="alert"><?php echo e($msg); ?></div>
+                        <div class="ui-alert ui-alert--error" role="alert"><?php echo e($msg); ?></div>
                     <?php endif; ?>
                     <?php if (!empty($errors['_login'])): ?>
-                        <div class="alert alert-danger" role="alert"><?php echo e($errors['_login']); ?></div>
+                        <div class="ui-alert ui-alert--error" role="alert"><?php echo e($errors['_login']); ?></div>
                     <?php endif; ?>
 
                     <form method="POST" action="login.php" novalidate>
                         <?php echo csrf_field(); ?>
-                        <div class="mb-3">
-                            <label class="form-label" for="admin-email">Email Address</label>
+                        <div class="u-mb-3">
+                            <label class="ui-label" for="admin-email">Email Address</label>
                             <input
                                 id="admin-email"
                                 type="email"
                                 name="email"
-                                class="<?php echo form_class($errors, 'email'); ?>"
+                                class="<?php echo form_class($errors, 'email', 'ui-input'); ?>"
                                 value="<?php echo e($oldEmail); ?>"
                                 autocomplete="email"
                                 required
                                 autofocus
                             >
-                            <?php echo form_error($errors, 'email'); ?>
+                            <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                         </div>
-                        <button type="submit" class="btn btn-primary w-100">Send OTP</button>
+                        <button type="submit" class="ui-button ui-button--primary u-w-full">Send OTP</button>
                     </form>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
-<?php require dirname(__DIR__) . '/includes/partials/interaction-layer.php'; ?>
-<script src="../js/script.js?v=20260822a" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</main>
+<?php require dirname(__DIR__) . '/includes/partials/interaction-layer-v2.php'; ?>
 </body>
 </html>

@@ -130,67 +130,67 @@ $metaKeywords = 'admin, about media, images, videos';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="u-flex u-justify-between u-items-center u-mb-3">
     <div>
-        <h1 class="mb-1">About Media</h1>
-        <p class="text-muted mb-0">Manage images and videos shown in the About page media section.</p>
+        <h1 class="u-mb-1">About Media</h1>
+        <p class="u-text-muted u-mb-0">Manage images and videos shown in the About page media section.</p>
     </div>
 </div>
 
 <?php if (!empty($errors)): ?>
-    <div class="alert alert-warning">Please fix the upload errors below.</div>
+    <div class="ui-alert ui-alert--warning">Please fix the upload errors below.</div>
 <?php endif; ?>
 
-<form method="POST" enctype="multipart/form-data" class="row g-3 mb-4">
+<form method="POST" enctype="multipart/form-data" class="l-grid l-grid--12 u-gap-3 u-mb-4">
     <?php echo csrf_field(); ?>
     <input type="hidden" name="action" value="add">
 
-    <div class="col-md-3">
-        <label class="form-label">Media Type *</label>
-        <select name="media_type" class="<?php echo form_class($errors, 'media_type', 'form-select'); ?>" required>
+    <div class="l-col-md-quarter">
+        <label class="ui-label">Media Type *</label>
+        <select name="media_type" class="<?php echo form_class($errors, 'media_type', 'ui-select'); ?>" required>
             <option value="image" <?php echo $old['media_type'] === 'image' ? 'selected' : ''; ?>>Image</option>
             <option value="video" <?php echo $old['media_type'] === 'video' ? 'selected' : ''; ?>>Video</option>
         </select>
         <?php echo form_error($errors, 'media_type'); ?>
     </div>
 
-    <div class="col-md-5">
-        <label class="form-label">Media File *</label>
+    <div class="l-col-md-five">
+        <label class="ui-label">Media File *</label>
         <input type="file" name="media_file" class="<?php echo form_class($errors, 'media_file'); ?>" accept="image/*,video/mp4,video/webm,video/ogg" required>
         <?php echo form_error($errors, 'media_file'); ?>
     </div>
 
-    <div class="col-md-4">
-        <label class="form-label">Poster Image (optional for video)</label>
+    <div class="l-col-md-third">
+        <label class="ui-label">Poster Image (optional for video)</label>
         <input type="file" name="poster_image" class="<?php echo form_class($errors, 'poster_image'); ?>" accept="image/*">
         <?php echo form_error($errors, 'poster_image'); ?>
     </div>
 
-    <div class="col-md-6">
-        <label class="form-label">Alt Text</label>
-        <input type="text" name="alt_text" class="form-control" value="<?php echo e($old['alt_text']); ?>" placeholder="Describe the media for accessibility">
+    <div class="l-col-md-half">
+        <label class="ui-label">Alt Text</label>
+        <input type="text" name="alt_text" class="ui-input" value="<?php echo e($old['alt_text']); ?>" placeholder="Describe the media for accessibility">
     </div>
 
-    <div class="col-md-3">
-        <label class="form-label">Sort Order</label>
-        <input type="number" name="sort_order" class="form-control" value="<?php echo e($old['sort_order']); ?>">
+    <div class="l-col-md-quarter">
+        <label class="ui-label">Sort Order</label>
+        <input type="number" name="sort_order" class="ui-input" value="<?php echo e($old['sort_order']); ?>">
     </div>
 
-    <div class="col-md-3 d-flex align-items-end">
-        <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="is_active" name="is_active" <?php echo !empty($old['is_active']) ? 'checked' : ''; ?>>
-            <label class="form-check-label" for="is_active">Active on About page</label>
+    <div class="l-col-md-quarter u-flex u-items-end">
+        <div class="ui-check u-mb-2">
+            <input class="ui-check__input" type="checkbox" id="is_active" name="is_active" <?php echo !empty($old['is_active']) ? 'checked' : ''; ?>>
+            <label class="ui-check__label" for="is_active">Active on About page</label>
         </div>
     </div>
 
-    <div class="col-12">
-        <button type="submit" class="btn btn-primary">Upload Media</button>
+    <div class="l-col-full">
+        <button type="submit" class="ui-button ui-button--primary">Upload Media</button>
     </div>
 </form>
 
-<div class="table-responsive">
-    <table class="table table-striped align-middle admin-card-table">
-        <thead class="table-dark">
+<div class="ui-table-wrap">
+    <table class="ui-table ui-table--striped u-align-middle admin-card-table">
+        <thead class="ui-table__head--dark">
             <tr>
                 <th>Preview</th>
                 <th>Type</th>
@@ -198,12 +198,12 @@ include 'partials/header.php';
                 <th>Sort</th>
                 <th>Status</th>
                 <th>Added</th>
-                <th class="text-end">Actions</th>
+                <th class="u-text-end">Actions</th>
             </tr>
         </thead>
         <tbody>
         <?php if (empty($items)): ?>
-            <tr class="admin-empty-row"><td colspan="7" class="text-center text-muted">No media uploaded yet.</td></tr>
+            <tr class="admin-empty-row"><td colspan="7" class="u-text-center u-text-muted">No media uploaded yet.</td></tr>
         <?php endif; ?>
 
         <?php foreach ($items as $item): ?>
@@ -214,24 +214,24 @@ include 'partials/header.php';
                             <source src="../images/about/<?php echo e($item['file_name']); ?>" type="video/mp4">
                         </video>
                     <?php else: ?>
-                        <img src="../images/about/<?php echo e($item['file_name']); ?>" width="90" class="rounded" alt="<?php echo e($item['alt_text'] ?: 'About media image'); ?>">
+                        <img src="../images/about/<?php echo e($item['file_name']); ?>" width="90" class="u-rounded" alt="<?php echo e($item['alt_text'] ?: 'About media image'); ?>">
                     <?php endif; ?>
                 </td>
                 <td data-label="Type"><?php echo ucfirst((string) $item['media_type']); ?></td>
                 <td data-label="Alt Text"><?php echo e($item['alt_text'] ?: '-'); ?></td>
                 <td data-label="Sort"><?php echo (int) $item['sort_order']; ?></td>
                 <td data-label="Status">
-                    <span class="badge <?php echo !empty($item['is_active']) ? 'bg-success' : 'bg-secondary'; ?>">
+                    <span class="ui-badge <?php echo !empty($item['is_active']) ? 'ui-badge--success' : 'ui-badge--neutral'; ?>">
                         <?php echo !empty($item['is_active']) ? 'Active' : 'Inactive'; ?>
                     </span>
                 </td>
                 <td data-label="Added"><?php echo e(date('d M Y', strtotime((string) $item['created_at']))); ?></td>
-                <td data-label="Actions" class="text-end">
-                    <form method="POST" class="d-inline" data-confirm="Delete this media item?" data-confirm-title="Delete Media Item?" data-confirm-ok="Delete" data-confirm-variant="danger">
+                <td data-label="Actions" class="u-text-end">
+                    <form method="POST" class="u-inline" data-confirm="Delete this media item?" data-confirm-title="Delete Media Item?" data-confirm-ok="Delete" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id" value="<?php echo (int) $item['id']; ?>">
-                        <button class="btn btn-sm btn-outline-danger">Delete</button>
+                        <button class="ui-button ui-button--small ui-button--danger-outline">Delete</button>
                     </form>
                 </td>
             </tr>

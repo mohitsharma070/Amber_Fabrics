@@ -117,75 +117,75 @@ $metaTitle = 'Customer Detail | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
+<div class="admin-page-header u-flex u-justify-between u-items-center u-mb-4">
     <div>
-        <h1 class="mb-1"><?php echo e((string) ($customer['name'] ?? 'Customer')); ?></h1>
-        <div class="text-muted"><?php echo e((string) ($customer['email'] ?? '')); ?><?php if (!empty($customer['phone'])): ?> | <?php echo e((string) $customer['phone']); ?><?php endif; ?></div>
+        <h1 class="u-mb-1"><?php echo e((string) ($customer['name'] ?? 'Customer')); ?></h1>
+        <div class="u-text-muted"><?php echo e((string) ($customer['email'] ?? '')); ?><?php if (!empty($customer['phone'])): ?> | <?php echo e((string) $customer['phone']); ?><?php endif; ?></div>
     </div>
-    <div class="d-flex gap-2">
-        <a href="customers.php" class="btn btn-outline-secondary">Back</a>
+    <div class="u-flex u-gap-2">
+        <a href="customers.php" class="ui-button ui-button--secondary">Back</a>
         <form method="POST">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="toggle_active">
             <input type="hidden" name="new_state" value="<?php echo ((int) ($customer['is_active'] ?? 1) === 1) ? 0 : 1; ?>">
-            <button type="submit" class="btn <?php echo ((int) ($customer['is_active'] ?? 1) === 1) ? 'btn-outline-danger' : 'btn-outline-success'; ?>">
+            <button type="submit" class="ui-button <?php echo ((int) ($customer['is_active'] ?? 1) === 1) ? 'ui-button--danger-outline' : 'ui-button--success-outline'; ?>">
                 <?php echo ((int) ($customer['is_active'] ?? 1) === 1) ? 'Deactivate' : 'Reactivate'; ?>
             </button>
         </form>
     </div>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Orders</div><div class="h4 mb-0"><?php echo (int) ($summary['orders_count'] ?? 0); ?></div></div></div>
-    <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Lifetime Value</div><div class="h4 mb-0"><?php echo e(money((float) ($summary['lifetime_value'] ?? 0))); ?></div></div></div>
-    <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Wishlist Items</div><div class="h4 mb-0"><?php echo $wishlistCount; ?></div></div></div>
-    <div class="col-md-3"><div class="card p-3"><div class="small text-muted">Cart Items</div><div class="h4 mb-0"><?php echo $cartCount; ?></div></div></div>
+<div class="l-grid l-grid--12 u-gap-3 u-mb-4">
+    <div class="l-col-md-quarter"><div class="ui-card u-p-3"><div class="u-text-small u-text-muted">Orders</div><div class="u-heading-4 u-mb-0"><?php echo (int) ($summary['orders_count'] ?? 0); ?></div></div></div>
+    <div class="l-col-md-quarter"><div class="ui-card u-p-3"><div class="u-text-small u-text-muted">Lifetime Value</div><div class="u-heading-4 u-mb-0"><?php echo e(money((float) ($summary['lifetime_value'] ?? 0))); ?></div></div></div>
+    <div class="l-col-md-quarter"><div class="ui-card u-p-3"><div class="u-text-small u-text-muted">Wishlist Items</div><div class="u-heading-4 u-mb-0"><?php echo $wishlistCount; ?></div></div></div>
+    <div class="l-col-md-quarter"><div class="ui-card u-p-3"><div class="u-text-small u-text-muted">Cart Items</div><div class="u-heading-4 u-mb-0"><?php echo $cartCount; ?></div></div></div>
 </div>
 
-<div class="row g-4">
-    <div class="col-lg-8">
-        <div class="card p-3 mb-3">
+<div class="l-grid l-grid--12 u-gap-4">
+    <div class="l-col-lg-eight">
+        <div class="ui-card u-p-3 u-mb-3">
             <h5>Order History</h5>
-            <?php if (empty($orders)): ?><div class="text-muted">No orders.</div><?php else: ?>
-                <div class="table-responsive"><table class="table table-sm"><thead><tr><th>#</th><th>Status</th><th>Payment</th><th>Total</th><th>Date</th></tr></thead><tbody>
+            <?php if (empty($orders)): ?><div class="u-text-muted">No orders.</div><?php else: ?>
+                <div class="ui-table-wrap"><table class="ui-table ui-table--compact"><thead><tr><th>#</th><th>Status</th><th>Payment</th><th>Total</th><th>Date</th></tr></thead><tbody>
                 <?php foreach ($orders as $o): ?>
                     <tr><td><a href="order-view.php?id=<?php echo (int) ($o['id'] ?? 0); ?>"><?php echo e((string) ($o['order_number'] ?? '')); ?></a></td><td><?php echo e((string) ($o['order_status'] ?? '')); ?></td><td><?php echo e((string) ($o['payment_status'] ?? '')); ?></td><td><?php echo e(money((float) ($o['total_amount'] ?? 0))); ?></td><td><?php echo e((string) ($o['created_at'] ?? '')); ?></td></tr>
                 <?php endforeach; ?></tbody></table></div>
             <?php endif; ?>
         </div>
 
-        <div class="card p-3 mb-3">
+        <div class="ui-card u-p-3 u-mb-3">
             <h5>Returns / Refunds</h5>
-            <?php if (empty($returns)): ?><div class="text-muted">No returns.</div><?php else: ?>
-                <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Return #</th><th>Status</th><th>Reason</th><th>Refund</th><th>Requested</th></tr></thead><tbody>
+            <?php if (empty($returns)): ?><div class="u-text-muted">No returns.</div><?php else: ?>
+                <div class="ui-table-wrap"><table class="ui-table ui-table--compact"><thead><tr><th>Return #</th><th>Status</th><th>Reason</th><th>Refund</th><th>Requested</th></tr></thead><tbody>
                 <?php foreach ($returns as $r): ?>
                     <tr><td><?php echo e((string) ($r['return_number'] ?? '')); ?></td><td><?php echo e((string) ($r['status'] ?? '')); ?></td><td><?php echo e((string) ($r['reason'] ?? '')); ?></td><td><?php echo e(money((float) ($r['refund_amount'] ?? 0))); ?></td><td><?php echo e((string) ($r['requested_at'] ?? '')); ?></td></tr>
                 <?php endforeach; ?></tbody></table></div>
             <?php endif; ?>
         </div>
     </div>
-    <div class="col-lg-4">
-        <div class="card p-3 mb-3">
+    <div class="l-col-lg-third">
+        <div class="ui-card u-p-3 u-mb-3">
             <h5>Address Book</h5>
-            <?php if (empty($addresses)): ?><div class="text-muted">No addresses.</div><?php else: foreach ($addresses as $a): ?>
-                <div class="border rounded p-2 mb-2 small">
-                    <div class="fw-semibold"><?php echo e((string) ($a['label'] ?? 'Address')); ?><?php if ((int) ($a['is_default_shipping'] ?? 0) === 1): ?> <span class="badge bg-success">Default</span><?php endif; ?></div>
+            <?php if (empty($addresses)): ?><div class="u-text-muted">No addresses.</div><?php else: foreach ($addresses as $a): ?>
+                <div class="u-border u-rounded u-p-2 u-mb-2 u-text-small">
+                    <div class="u-font-semibold"><?php echo e((string) ($a['label'] ?? 'Address')); ?><?php if ((int) ($a['is_default_shipping'] ?? 0) === 1): ?> <span class="ui-badge ui-badge--success">Default</span><?php endif; ?></div>
                     <div><?php echo e((string) ($a['full_name'] ?? '')); ?>, <?php echo e((string) ($a['phone'] ?? '')); ?></div>
                     <div><?php echo e((string) ($a['address_line'] ?? '')); ?></div>
                     <div><?php echo e((string) ($a['city'] ?? '')); ?>, <?php echo e((string) ($a['state'] ?? '')); ?> - <?php echo e((string) ($a['pincode'] ?? '')); ?></div>
                 </div>
             <?php endforeach; endif; ?>
         </div>
-        <div class="card p-3 mb-3">
+        <div class="ui-card u-p-3 u-mb-3">
             <h5>Coupon Usage</h5>
-            <?php if (empty($couponUsages)): ?><div class="text-muted">No coupon usage.</div><?php else: foreach ($couponUsages as $cu): ?>
-                <div class="small mb-2"><strong><?php echo e((string) ($cu['code'] ?? '')); ?></strong> on <?php echo e((string) ($cu['order_number'] ?? '')); ?><br><span class="text-muted"><?php echo e((string) ($cu['used_at'] ?? '')); ?></span></div>
+            <?php if (empty($couponUsages)): ?><div class="u-text-muted">No coupon usage.</div><?php else: foreach ($couponUsages as $cu): ?>
+                <div class="u-text-small u-mb-2"><strong><?php echo e((string) ($cu['code'] ?? '')); ?></strong> on <?php echo e((string) ($cu['order_number'] ?? '')); ?><br><span class="u-text-muted"><?php echo e((string) ($cu['used_at'] ?? '')); ?></span></div>
             <?php endforeach; endif; ?>
         </div>
-        <div class="card p-3">
+        <div class="ui-card u-p-3">
             <h5>RTO / COD Risk</h5>
-            <?php if (empty($risks)): ?><div class="text-muted">No risk records.</div><?php else: foreach ($risks as $rk): ?>
-                <div class="small mb-2"><strong><?php echo e(strtoupper((string) ($rk['risk_band'] ?? 'low'))); ?></strong> (<?php echo (int) ($rk['risk_score'] ?? 0); ?>) - <?php echo e((string) ($rk['order_number'] ?? '')); ?><br><span class="text-muted"><?php echo e((string) ($rk['assessed_at'] ?? '')); ?></span></div>
+            <?php if (empty($risks)): ?><div class="u-text-muted">No risk records.</div><?php else: foreach ($risks as $rk): ?>
+                <div class="u-text-small u-mb-2"><strong><?php echo e(strtoupper((string) ($rk['risk_band'] ?? 'low'))); ?></strong> (<?php echo (int) ($rk['risk_score'] ?? 0); ?>) - <?php echo e((string) ($rk['order_number'] ?? '')); ?><br><span class="u-text-muted"><?php echo e((string) ($rk['assessed_at'] ?? '')); ?></span></div>
             <?php endforeach; endif; ?>
         </div>
     </div>

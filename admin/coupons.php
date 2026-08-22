@@ -187,75 +187,75 @@ $metaTitle = 'Coupons | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="admin-page-header d-flex justify-content-between align-items-center mb-3">
-    <h1 class="mb-0">Coupons</h1>
+<div class="admin-page-header u-flex u-justify-between u-items-center u-mb-3">
+    <h1 class="u-mb-0">Coupons</h1>
 </div>
 
-<div class="row g-4">
-    <div class="col-lg-4">
-        <div class="surface-panel p-3">
-            <h5 class="mb-3">Create Coupon</h5>
+<div class="l-grid l-grid--12 u-gap-4">
+    <div class="l-col-lg-third">
+        <div class="surface-panel u-p-3">
+            <h5 class="u-mb-3">Create Coupon</h5>
             <?php if (!empty($couponErrors)): ?>
-                <div class="alert alert-warning py-2 small">Please fix the errors below.</div>
+                <div class="ui-alert ui-alert--warning u-py-2 u-text-small">Please fix the errors below.</div>
             <?php endif; ?>
             <form method="POST" action="/admin/coupons">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="create">
-                <div class="mb-2">
-                    <label class="form-label">Code</label>
+                <div class="u-mb-2">
+                    <label class="ui-label">Code</label>
                     <input class="<?php echo form_class($couponErrors, 'code'); ?>" name="code" required placeholder="SAVE100" value="<?php echo e($couponOld['code']); ?>">
                     <?php echo form_error($couponErrors, 'code'); ?>
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Discount Type</label>
-                    <select class="<?php echo form_class($couponErrors, 'discount_type', 'form-select'); ?>" name="discount_type">
+                <div class="u-mb-2">
+                    <label class="ui-label">Discount Type</label>
+                    <select class="<?php echo form_class($couponErrors, 'discount_type', 'ui-select'); ?>" name="discount_type">
                         <option value="flat" <?php echo $couponOld['discount_type'] === 'flat' ? 'selected' : ''; ?>>Flat</option>
                         <option value="percent" <?php echo $couponOld['discount_type'] === 'percent' ? 'selected' : ''; ?>>Percent</option>
                     </select>
                     <?php echo form_error($couponErrors, 'discount_type'); ?>
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Discount Value</label>
+                <div class="u-mb-2">
+                    <label class="ui-label">Discount Value</label>
                     <input class="<?php echo form_class($couponErrors, 'discount_value'); ?>" type="number" step="0.01" min="0" name="discount_value" required value="<?php echo e($couponOld['discount_value']); ?>">
                     <?php echo form_error($couponErrors, 'discount_value'); ?>
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Min Order Amount</label>
-                    <input class="form-control" type="number" step="0.01" min="0" name="min_order_amount" value="<?php echo e($couponOld['min_order_amount']); ?>">
+                <div class="u-mb-2">
+                    <label class="ui-label">Min Order Amount</label>
+                    <input class="ui-input" type="number" step="0.01" min="0" name="min_order_amount" value="<?php echo e($couponOld['min_order_amount']); ?>">
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Max Discount</label>
-                    <input class="form-control" type="number" step="0.01" min="0" name="max_discount" placeholder="Optional" value="<?php echo e($couponOld['max_discount']); ?>">
+                <div class="u-mb-2">
+                    <label class="ui-label">Max Discount</label>
+                    <input class="ui-input" type="number" step="0.01" min="0" name="max_discount" placeholder="Optional" value="<?php echo e($couponOld['max_discount']); ?>">
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Start Date</label>
-                    <input class="form-control" type="date" name="start_date" value="<?php echo e($couponOld['start_date']); ?>">
+                <div class="u-mb-2">
+                    <label class="ui-label">Start Date</label>
+                    <input class="ui-input" type="date" name="start_date" value="<?php echo e($couponOld['start_date']); ?>">
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">End Date</label>
-                    <input class="form-control" type="date" name="end_date" value="<?php echo e($couponOld['end_date']); ?>">
+                <div class="u-mb-2">
+                    <label class="ui-label">End Date</label>
+                    <input class="ui-input" type="date" name="end_date" value="<?php echo e($couponOld['end_date']); ?>">
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Usage Limit (0 = unlimited)</label>
-                    <input class="form-control" type="number" min="0" name="usage_limit" value="<?php echo e($couponOld['usage_limit']); ?>">
+                <div class="u-mb-2">
+                    <label class="ui-label">Usage Limit (0 = unlimited)</label>
+                    <input class="ui-input" type="number" min="0" name="usage_limit" value="<?php echo e($couponOld['usage_limit']); ?>">
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Status</label>
-                    <select class="<?php echo form_class($couponErrors, 'status', 'form-select'); ?>" name="status">
+                <div class="u-mb-3">
+                    <label class="ui-label">Status</label>
+                    <select class="<?php echo form_class($couponErrors, 'status', 'ui-select'); ?>" name="status">
                         <option value="active" <?php echo $couponOld['status'] === 'active' ? 'selected' : ''; ?>>Active</option>
                         <option value="inactive" <?php echo $couponOld['status'] === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
                     </select>
                     <?php echo form_error($couponErrors, 'status'); ?>
                 </div>
-                <button class="btn btn-primary w-100" type="submit">Create Coupon</button>
+                <button class="ui-button ui-button--primary u-w-full" type="submit">Create Coupon</button>
             </form>
         </div>
     </div>
 
-    <div class="col-lg-8">
-        <div class="table-responsive">
-            <table class="table table-striped align-middle admin-card-table">
-                <thead class="table-dark">
+    <div class="l-col-lg-eight">
+        <div class="ui-table-wrap">
+            <table class="ui-table ui-table--striped u-align-middle admin-card-table">
+                <thead class="ui-table__head--dark">
                     <tr>
                         <th>Code</th>
                         <th>Type</th>
@@ -269,11 +269,11 @@ include 'partials/header.php';
                 </thead>
                 <tbody>
                     <?php if (empty($coupons)): ?>
-                        <tr><td colspan="8" class="text-center text-muted">No coupons created yet.</td></tr>
+                        <tr><td colspan="8" class="u-text-center u-text-muted">No coupons created yet.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($coupons as $coupon): ?>
                         <tr>
-                            <td class="fw-semibold"><?php echo e($coupon['code']); ?></td>
+                            <td class="u-font-semibold"><?php echo e($coupon['code']); ?></td>
                             <td><?php echo ucfirst(e($coupon['discount_type'])); ?></td>
                             <td>
                                 <?php if ($coupon['discount_type'] === 'percent'): ?>
@@ -288,23 +288,22 @@ include 'partials/header.php';
                                 <?php echo e($coupon['start_date'] ?: '-'); ?> to <?php echo e($coupon['end_date'] ?: '-'); ?>
                             </td>
                             <td>
-                                <span class="badge <?php echo $coupon['status'] === 'active' ? 'bg-success' : 'bg-secondary'; ?>">
+                                <span class="ui-badge <?php echo $coupon['status'] === 'active' ? 'ui-badge--success' : 'ui-badge--neutral'; ?>">
                                     <?php echo ucfirst(e($coupon['status'])); ?>
                                 </span>
                             </td>
-                            <td class="text-nowrap admin-row-actions" data-label="Action">
-                                <div class="d-flex flex-wrap gap-1 align-items-center">
-                                <form method="POST" action="/admin/coupons" class="m-0">
+                            <td class="u-nowrap admin-row-actions" data-label="Action">
+                                <div class="u-flex u-flex-wrap u-gap-1 u-items-center">
+                                <form method="POST" action="/admin/coupons" class="u-m-0">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="toggle_status">
                                     <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">
                                     <input type="hidden" name="new_status" value="<?php echo $coupon['status'] === 'active' ? 'inactive' : 'active'; ?>">
-                                    <button class="btn btn-sm btn-outline-primary" type="submit"><?php echo $coupon['status'] === 'active' ? 'Deactivate' : 'Activate'; ?></button>
+                                    <button class="ui-button ui-button--small ui-button--outline" type="submit"><?php echo $coupon['status'] === 'active' ? 'Deactivate' : 'Activate'; ?></button>
                                 </form>
-                                <button class="btn btn-sm btn-outline-secondary"
+                                <button class="ui-button ui-button--small ui-button--secondary"
                                         type="button"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#editCouponModal"
+                                        data-ui-dialog-open="editCouponModal"
                                         data-id="<?php echo (int) $coupon['id']; ?>"
                                         data-code="<?php echo e($coupon['code']); ?>"
                                         data-discount-type="<?php echo e($coupon['discount_type']); ?>"
@@ -317,11 +316,11 @@ include 'partials/header.php';
                                         data-status="<?php echo e($coupon['status']); ?>">
                                     Edit
                                 </button>
-                                <form method="POST" action="/admin/coupons" class="m-0" data-confirm-modal data-confirm-title="Delete Coupon" data-confirm-message="Delete this coupon?" data-confirm-ok="Delete" data-confirm-variant="danger">
+                                <form method="POST" action="/admin/coupons" class="u-m-0" data-confirm-modal data-confirm-title="Delete Coupon" data-confirm-message="Delete this coupon?" data-confirm-ok="Delete" data-confirm-variant="danger">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?php echo (int) $coupon['id']; ?>">
-                                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                    <button class="ui-button ui-button--small ui-button--danger-outline" type="submit">Delete</button>
                                 </form>
                                 </div>
                             </td>
@@ -333,96 +332,67 @@ include 'partials/header.php';
     </div>
 </div>
 
-<div class="modal fade" id="editCouponModal" tabindex="-1" aria-labelledby="editCouponModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="editCouponModalLabel">Edit Coupon</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
+<div class="ui-dialog-backdrop" id="editCouponModal" data-ui-dialog hidden>
+    <section class="ui-dialog admin-dialog" role="dialog" aria-modal="true" aria-labelledby="editCouponModalLabel" tabindex="-1">
+            <header class="ui-dialog__header">
+                <h2 class="ui-dialog__title" id="editCouponModalLabel">Edit Coupon</h2>
+                <button type="button" class="ui-button ui-button--secondary ui-button--icon" data-ui-dialog-close aria-label="Close">&times;</button>
+            </header>
             <form method="POST" action="/admin/coupons">
-                <div class="modal-body">
+                <div class="ui-dialog__body">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="update">
                     <input type="hidden" name="id" id="editCouponId" value="">
 
-                    <div class="mb-2">
-                        <label class="form-label">Code</label>
-                        <input class="form-control" name="code" id="editCouponCode" required>
+                    <div class="u-mb-2">
+                        <label class="ui-label">Code</label>
+                        <input class="ui-input" name="code" id="editCouponCode" required>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Discount Type</label>
-                        <select class="form-select" name="discount_type" id="editCouponDiscountType">
+                    <div class="u-mb-2">
+                        <label class="ui-label">Discount Type</label>
+                        <select class="ui-select" name="discount_type" id="editCouponDiscountType">
                             <option value="flat">Flat</option>
                             <option value="percent">Percent</option>
                         </select>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Discount Value</label>
-                        <input class="form-control" type="number" step="0.01" min="0" name="discount_value" id="editCouponDiscountValue" required>
+                    <div class="u-mb-2">
+                        <label class="ui-label">Discount Value</label>
+                        <input class="ui-input" type="number" step="0.01" min="0" name="discount_value" id="editCouponDiscountValue" required>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Min Order Amount</label>
-                        <input class="form-control" type="number" step="0.01" min="0" name="min_order_amount" id="editCouponMinOrderAmount">
+                    <div class="u-mb-2">
+                        <label class="ui-label">Min Order Amount</label>
+                        <input class="ui-input" type="number" step="0.01" min="0" name="min_order_amount" id="editCouponMinOrderAmount">
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Max Discount</label>
-                        <input class="form-control" type="number" step="0.01" min="0" name="max_discount" id="editCouponMaxDiscount">
+                    <div class="u-mb-2">
+                        <label class="ui-label">Max Discount</label>
+                        <input class="ui-input" type="number" step="0.01" min="0" name="max_discount" id="editCouponMaxDiscount">
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Start Date</label>
-                        <input class="form-control" type="date" name="start_date" id="editCouponStartDate">
+                    <div class="u-mb-2">
+                        <label class="ui-label">Start Date</label>
+                        <input class="ui-input" type="date" name="start_date" id="editCouponStartDate">
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">End Date</label>
-                        <input class="form-control" type="date" name="end_date" id="editCouponEndDate">
+                    <div class="u-mb-2">
+                        <label class="ui-label">End Date</label>
+                        <input class="ui-input" type="date" name="end_date" id="editCouponEndDate">
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Usage Limit (0 = unlimited)</label>
-                        <input class="form-control" type="number" min="0" name="usage_limit" id="editCouponUsageLimit">
+                    <div class="u-mb-2">
+                        <label class="ui-label">Usage Limit (0 = unlimited)</label>
+                        <input class="ui-input" type="number" min="0" name="usage_limit" id="editCouponUsageLimit">
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Status</label>
-                        <select class="form-select" name="status" id="editCouponStatus">
+                    <div class="u-mb-2">
+                        <label class="ui-label">Status</label>
+                        <select class="ui-select" name="status" id="editCouponStatus">
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                         </select>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                </div>
+                <footer class="ui-dialog__footer">
+                    <button type="button" class="ui-button ui-button--secondary" data-ui-dialog-close>Cancel</button>
+                    <button type="submit" class="ui-button ui-button--primary">Save Changes</button>
+                </footer>
             </form>
-        </div>
-    </div>
+    </section>
 </div>
-
-<script nonce="<?php echo e($cspNonce ?? ''); ?>">
-(function () {
-    function prefillCouponFromButton(btn) {
-        if (!btn) return;
-        document.getElementById('editCouponId').value = btn.getAttribute('data-id') || '';
-        document.getElementById('editCouponCode').value = btn.getAttribute('data-code') || '';
-        document.getElementById('editCouponDiscountType').value = btn.getAttribute('data-discount-type') || 'flat';
-        document.getElementById('editCouponDiscountValue').value = btn.getAttribute('data-discount-value') || '';
-        document.getElementById('editCouponMinOrderAmount').value = btn.getAttribute('data-min-order-amount') || '0';
-        document.getElementById('editCouponMaxDiscount').value = btn.getAttribute('data-max-discount') || '';
-        document.getElementById('editCouponStartDate').value = btn.getAttribute('data-start-date') || '';
-        document.getElementById('editCouponEndDate').value = btn.getAttribute('data-end-date') || '';
-        document.getElementById('editCouponUsageLimit').value = btn.getAttribute('data-usage-limit') || '0';
-        document.getElementById('editCouponStatus').value = btn.getAttribute('data-status') || 'active';
-    }
-
-    var modalEl = document.getElementById('editCouponModal');
-    if (!modalEl) return;
-
-    modalEl.addEventListener('show.bs.modal', function (event) {
-        var btn = event.relatedTarget;
-        if (!btn) return;
-        prefillCouponFromButton(btn);
-    });
-})();
-</script>
 
 <?php include 'partials/footer.php'; ?>

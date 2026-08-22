@@ -297,34 +297,34 @@ $metaTitle = 'Returns | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="admin-page-header d-flex justify-content-between align-items-center mb-4">
-    <h1 class="mb-0">Returns</h1>
+<div class="admin-page-header u-flex u-justify-between u-items-center u-mb-4">
+    <h1 class="u-mb-0">Returns</h1>
 </div>
 
-<form class="row g-2 mb-4 admin-filter-form" method="GET" action="returns.php">
-    <div class="col-md-4">
-        <select name="status" class="form-select">
+<form class="l-grid l-grid--12 u-gap-2 u-mb-4 admin-filter-form" method="GET" action="returns.php">
+    <div class="l-col-md-third">
+        <select name="status" class="ui-select">
             <option value="">All Status</option>
             <?php foreach ($validStatuses as $status): ?>
                 <option value="<?php echo e($status); ?>" <?php echo $statusFilter === $status ? 'selected' : ''; ?>><?php echo e(strtoupper(str_replace('_', ' ', $status))); ?></option>
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-2">
-        <select name="per_page" class="form-select">
+    <div class="l-col-md-two">
+        <select name="per_page" class="ui-select">
             <?php foreach ($perPageOptions as $opt): ?>
                 <option value="<?php echo (int) $opt; ?>" <?php echo $perPage === (int) $opt ? 'selected' : ''; ?>><?php echo (int) $opt; ?> / page</option>
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-auto d-flex gap-2 admin-filter-actions">
-        <button class="btn btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
-        <a href="returns.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
+    <div class="l-col-auto u-flex u-gap-2 admin-filter-actions">
+        <button class="ui-button ui-button--primary"><?php echo ui_icon('funnel'); ?>Filter</button>
+        <a href="returns.php" class="ui-button ui-button--secondary"><?php echo ui_icon('arrow-counterclockwise'); ?>Reset</a>
     </div>
 </form>
 
-<div class="table-responsive">
-    <table class="table table-hover align-middle admin-card-table">
+<div class="ui-table-wrap">
+    <table class="ui-table ui-table--hover u-align-middle admin-card-table">
         <thead>
             <tr>
                 <th>Return #</th>
@@ -340,17 +340,17 @@ include 'partials/header.php';
         </thead>
         <tbody>
             <?php if (empty($rows)): ?>
-                <tr><td colspan="9" class="text-center text-muted py-4">No return requests found.</td></tr>
+                <tr><td colspan="9" class="u-text-center u-text-muted u-py-4">No return requests found.</td></tr>
             <?php endif; ?>
             <?php foreach ($rows as $r): ?>
                 <?php $returnItems = $returnItemsMap[(int) ($r['id'] ?? 0)] ?? []; ?>
                 <tr>
-                    <td class="fw-semibold"><?php echo e((string) $r['return_number']); ?></td>
+                    <td class="u-font-semibold"><?php echo e((string) $r['return_number']); ?></td>
                     <td><a href="order-view.php?id=<?php echo (int) $r['order_id']; ?>"><?php echo e((string) $r['order_number']); ?></a></td>
-                    <td><?php echo e((string) $r['customer_name']); ?><div class="small text-muted"><?php echo e((string) $r['customer_email']); ?></div></td>
-                    <td><?php echo e((string) $r['reason']); ?><div class="small text-muted"><?php echo e((string) ($r['customer_note'] ?? '')); ?></div></td>
-                    <td><span class="badge bg-secondary"><?php echo e(strtoupper(str_replace('_', ' ', (string) $r['status']))); ?></span></td>
-                    <td class="small">
+                    <td><?php echo e((string) $r['customer_name']); ?><div class="u-text-small u-text-muted"><?php echo e((string) $r['customer_email']); ?></div></td>
+                    <td><?php echo e((string) $r['reason']); ?><div class="u-text-small u-text-muted"><?php echo e((string) ($r['customer_note'] ?? '')); ?></div></td>
+                    <td><span class="ui-badge ui-badge--neutral"><?php echo e(strtoupper(str_replace('_', ' ', (string) $r['status']))); ?></span></td>
+                    <td class="u-text-small">
                         <?php if (!empty($r['image_1'])): ?>
                             <a href="../<?php echo e((string) $r['image_1']); ?>" target="_blank" rel="noopener noreferrer">Image 1</a><br>
                         <?php endif; ?>
@@ -363,10 +363,10 @@ include 'partials/header.php';
                     </td>
                     <td>
                         <?php echo e(money((float) $r['refund_amount'])); ?>
-                        <div class="small text-muted">Return total: <?php echo e(money((float) ($r['return_total'] ?? 0))); ?></div>
+                        <div class="u-text-small u-text-muted">Return total: <?php echo e(money((float) ($r['return_total'] ?? 0))); ?></div>
                         <?php if (!empty($returnItems)): ?>
                             <div class="return-breakdown-mobile">
-                                <div class="small fw-semibold mb-1">Return Item Breakdown</div>
+                                <div class="u-text-small u-font-semibold u-mb-1">Return Item Breakdown</div>
                                 <?php foreach ($returnItems as $ri): ?>
                                     <?php
                                     $riUnit = in_array((string) ($ri['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $ri['unit_type'] : 'meter';
@@ -374,8 +374,8 @@ include 'partials/header.php';
                                     $riRestocked = (float) ($ri['restocked_qty'] ?? 0);
                                     ?>
                                     <div class="return-breakdown-mobile-item">
-                                        <div class="small fw-semibold"><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></div>
-                                        <div class="small text-muted">
+                                        <div class="u-text-small u-font-semibold"><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></div>
+                                        <div class="u-text-small u-text-muted">
                                             Returned: <?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?> |
                                             Line: <?php echo e(money((float) ($ri['line_total'] ?? 0))); ?> |
                                             Restocked: <?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?> |
@@ -388,22 +388,22 @@ include 'partials/header.php';
                     </td>
                     <td><?php echo date('d M Y, h:i A', strtotime((string) $r['requested_at'])); ?></td>
                     <td class="admin-row-actions">
-                        <form method="POST" action="returns.php" class="d-flex gap-2 flex-column">
+                        <form method="POST" action="returns.php" class="u-flex u-gap-2 u-flex-column">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="return_id" value="<?php echo (int) $r['id']; ?>">
                             <input type="hidden" name="filter_status" value="<?php echo e($statusFilter); ?>">
                             <input type="hidden" name="filter_per_page" value="<?php echo (int) $perPage; ?>">
                             <input type="hidden" name="filter_page" value="<?php echo (int) $page; ?>">
-                            <select name="status" class="form-select form-select-sm">
+                            <select name="status" class="ui-select ui-select--small">
                                 <?php foreach ($validStatuses as $status): ?>
                                     <option value="<?php echo e($status); ?>" <?php echo ((string) $r['status'] === $status) ? 'selected' : ''; ?>>
                                         <?php echo e(strtoupper(str_replace('_', ' ', $status))); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <input type="number" step="0.01" min="0" name="refund_amount" class="form-control form-control-sm" value="<?php echo e((string) $r['refund_amount']); ?>" placeholder="Refund amount">
-                            <input type="text" name="admin_note" class="form-control form-control-sm" value="<?php echo e((string) ($r['admin_note'] ?? '')); ?>" placeholder="Admin note">
-                            <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2-circle me-1"></i>Update</button>
+                            <input type="number" step="0.01" min="0" name="refund_amount" class="ui-input ui-input--small" value="<?php echo e((string) $r['refund_amount']); ?>" placeholder="Refund amount">
+                            <input type="text" name="admin_note" class="ui-input ui-input--small" value="<?php echo e((string) ($r['admin_note'] ?? '')); ?>" placeholder="Admin note">
+                            <button type="submit" class="ui-button ui-button--small ui-button--outline"><?php echo ui_icon('check2-circle'); ?>Update</button>
                         </form>
                         <?php do_action('admin.return_row.actions', [
                             'conn' => $conn,
@@ -414,22 +414,22 @@ include 'partials/header.php';
                         ]); ?>
                     </td>
                 </tr>
-                <tr class="table-light return-breakdown-row">
+                <tr class="ui-table__head--light return-breakdown-row">
                     <td></td>
                     <td colspan="8">
                         <?php if (empty($returnItems)): ?>
-                            <div class="small text-muted">No return items captured.</div>
+                            <div class="u-text-small u-text-muted">No return items captured.</div>
                         <?php else: ?>
-                            <div class="small fw-semibold mb-2">Return Item Breakdown</div>
-                            <div class="table-responsive">
-                                <table class="table table-sm mb-0">
+                            <div class="u-text-small u-font-semibold u-mb-2">Return Item Breakdown</div>
+                            <div class="ui-table-wrap">
+                                <table class="ui-table ui-table--compact u-mb-0">
                                     <thead>
                                         <tr>
                                             <th>Item</th>
-                                            <th class="text-end">Returned Qty</th>
-                                            <th class="text-end">Line Total</th>
-                                            <th class="text-end">Restocked Qty</th>
-                                            <th class="text-end">Allocated Refund</th>
+                                            <th class="u-text-end">Returned Qty</th>
+                                            <th class="u-text-end">Line Total</th>
+                                            <th class="u-text-end">Restocked Qty</th>
+                                            <th class="u-text-end">Allocated Refund</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -441,10 +441,10 @@ include 'partials/header.php';
                                             ?>
                                             <tr>
                                                 <td><?php echo e((string) ($ri['product_name'] ?? 'Item')); ?></td>
-                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?></td>
-                                                <td class="text-end"><?php echo e(money((float) ($ri['line_total'] ?? 0))); ?></td>
-                                                <td class="text-end"><?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?></td>
-                                                <td class="text-end"><?php echo e(money((float) ($ri['refund_amount'] ?? 0))); ?></td>
+                                                <td class="u-text-end"><?php echo e(format_quantity_by_unit($riQty, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?></td>
+                                                <td class="u-text-end"><?php echo e(money((float) ($ri['line_total'] ?? 0))); ?></td>
+                                                <td class="u-text-end"><?php echo e(format_quantity_by_unit($riRestocked, $riUnit)) . e(CommercePresenter::quantityUnitSuffix($riUnit)); ?></td>
+                                                <td class="u-text-end"><?php echo e(money((float) ($ri['refund_amount'] ?? 0))); ?></td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>

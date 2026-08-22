@@ -376,11 +376,11 @@ $metaTitle = 'Order ' . e((string) $order['order_number']) . ' | Admin';
 include 'partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between mb-4">
+<div class="u-flex u-justify-between u-mb-4">
     <div>
         <a href="orders.php" class="app-back-link">&larr; Back to Orders</a>
-        <h1 class="mt-1">Order <?php echo e((string) $order['order_number']); ?></h1>
-        <span class="text-muted small"><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></span>
+        <h1 class="u-mt-1">Order <?php echo e((string) $order['order_number']); ?></h1>
+        <span class="u-text-muted u-text-small"><?php echo date('d M Y, h:i A', strtotime((string) $order['created_at'])); ?></span>
         <div class="order-workflow-steps" aria-label="Order workflow">
             <?php foreach ($workflowStatuses as $index => $workflowStatus): ?>
                 <?php
@@ -399,13 +399,13 @@ include 'partials/header.php';
     </div>
 </div>
 
-<div class="row g-4">
-    <div class="col-lg-8">
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Order Items</h5>
+<div class="l-grid l-grid--12 u-gap-4">
+    <div class="l-col-lg-eight">
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h5 class="ui-card__title">Order Items</h5>
                 <?php if (empty($items)): ?>
-                    <p class="text-muted mb-0">No items found for this order.</p>
+                    <p class="u-text-muted u-mb-0">No items found for this order.</p>
                 <?php else: ?>
                     <?php foreach ($items as $item):
                         $name = (string) ($item['product_name'] ?: ($item['fabric_name_snapshot'] ?? 'Product'));
@@ -414,15 +414,15 @@ include 'partials/header.php';
                         $price = (float) (($item['price'] ?? 0) > 0 ? $item['price'] : ($item['price_per_meter'] ?? 0));
                         $lineTotal = (float) (($item['total'] ?? 0) > 0 ? $item['total'] : ($item['line_total'] ?? 0));
                     ?>
-                    <div class="d-flex gap-3 align-items-start py-2 border-bottom">
+                    <div class="u-flex u-gap-3 u-items-start u-py-2 u-border-bottom">
                         <?php if (!empty($item['product_image'])): ?>
-                            <img src="../images/fabrics/<?php echo e((string) $item['product_image']); ?>" alt="<?php echo e($name); ?>" class="rounded" style="width:50px;height:50px;object-fit:cover;">
+                            <img src="../images/fabrics/<?php echo e((string) $item['product_image']); ?>" alt="<?php echo e($name); ?>" class="admin-order-thumb u-rounded">
                         <?php else: ?>
-                            <div style="width:50px;height:50px;background:#eee;border-radius:4px;flex-shrink:0;"></div>
+                            <div class="admin-order-thumb admin-order-thumb--placeholder"></div>
                         <?php endif; ?>
                         <div class="flex-grow-1">
-                            <div class="fw-semibold"><?php echo e($name); ?></div>
-                            <div class="text-muted small">
+                            <div class="u-font-semibold"><?php echo e($name); ?></div>
+                            <div class="u-text-muted u-text-small">
                                 Qty: <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($unitType); ?>
                                 <?php if ($unitType === 'set' && (int) ($item['units_per_set'] ?? 0) > 0): ?>
                                     (<?php echo (int) round($qty); ?> sets x <?php echo (int) $item['units_per_set']; ?> = <?php echo (int) round($qty) * (int) $item['units_per_set']; ?> pieces)
@@ -431,39 +431,39 @@ include 'partials/header.php';
                                 <?php if (!empty($item['color'])): ?> | Color: <?php echo e((string) $item['color']); ?><?php endif; ?>
                             </div>
                         </div>
-                        <div class="text-end">
-                            <div class="small text-muted"><?php echo e(money($price, $currency)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></div>
-                            <div class="fw-semibold"><?php echo e(money($lineTotal, $currency)); ?></div>
+                        <div class="u-text-end">
+                            <div class="u-text-small u-text-muted"><?php echo e(money($price, $currency)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></div>
+                            <div class="u-font-semibold"><?php echo e(money($lineTotal, $currency)); ?></div>
                         </div>
                     </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
 
-                <div class="mt-3 pt-2 border-top">
-                    <div class="d-flex justify-content-between small"><span>Subtotal</span><span><?php echo e(money((float) ($order['subtotal'] ?? 0), $currency)); ?></span></div>
-                    <div class="d-flex justify-content-between small"><span>Shipping</span><span><?php echo e(money((float) ($order['shipping_amount'] ?? 0), $currency)); ?></span></div>
-                    <div class="d-flex justify-content-between small"><span>Discount</span><span>- <?php echo e(money((float) ($order['discount_amount'] ?? 0), $currency)); ?></span></div>
+                <div class="u-mt-3 u-pt-2 u-border-top">
+                    <div class="u-flex u-justify-between u-text-small"><span>Subtotal</span><span><?php echo e(money((float) ($order['subtotal'] ?? 0), $currency)); ?></span></div>
+                    <div class="u-flex u-justify-between u-text-small"><span>Shipping</span><span><?php echo e(money((float) ($order['shipping_amount'] ?? 0), $currency)); ?></span></div>
+                    <div class="u-flex u-justify-between u-text-small"><span>Discount</span><span>- <?php echo e(money((float) ($order['discount_amount'] ?? 0), $currency)); ?></span></div>
                     <?php if (!empty($gst['enabled'])): ?>
-                    <div class="d-flex justify-content-between small"><span>Including GST</span><span><?php echo e(money((float) $gst['gst_amount'], $currency)); ?></span></div>
+                    <div class="u-flex u-justify-between u-text-small"><span>Including GST</span><span><?php echo e(money((float) $gst['gst_amount'], $currency)); ?></span></div>
                     <?php endif; ?>
-                    <div class="d-flex justify-content-between fw-bold mt-2"><span>Total</span><span><?php echo e(money((float) ($order['total_amount'] ?? 0), $currency)); ?></span></div>
+                    <div class="u-flex u-justify-between u-font-bold u-mt-2"><span>Total</span><span><?php echo e(money((float) ($order['total_amount'] ?? 0), $currency)); ?></span></div>
                 </div>
             </div>
         </div>
 
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Order Actions</h5>
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h5 class="ui-card__title">Order Actions</h5>
                 <?php if (empty($nextStatusActions)): ?>
-                    <p class="text-muted small mb-0">No further workflow actions available for this order.</p>
+                    <p class="u-text-muted u-text-small u-mb-0">No further workflow actions available for this order.</p>
                 <?php else: ?>
-                    <div class="d-flex flex-wrap gap-2">
+                    <div class="u-flex u-flex-wrap u-gap-2">
                         <?php foreach ($nextStatusActions as $nextStatus): ?>
-                            <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="d-inline">
+                            <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="u-inline">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="workflow_transition">
                                 <input type="hidden" name="target_status" value="<?php echo e($nextStatus); ?>">
-                                <button class="btn btn-sm <?php echo $nextStatus === 'cancelled' ? 'btn-outline-danger' : 'btn-outline-primary'; ?>" type="submit">
+                                <button class="ui-button ui-button--small <?php echo $nextStatus === 'cancelled' ? 'ui-button--danger-outline' : 'ui-button--outline'; ?>" type="submit">
                                     <?php echo ucfirst($nextStatus); ?>
                                 </button>
                             </form>
@@ -473,36 +473,36 @@ include 'partials/header.php';
             </div>
         </div>
 
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Shipment Details</h5>
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h5 class="ui-card__title">Shipment Details</h5>
                 <form method="POST" action="order-view.php?id=<?php echo $id; ?>">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="save_shipment">
 
-                    <div class="mb-3">
-                        <label class="form-label">Courier Name</label>
-                        <input type="text" class="form-control" name="courier_name" value="<?php echo e((string) ($shipment['courier_name'] ?? '')); ?>">
+                    <div class="u-mb-3">
+                        <label class="ui-label">Courier Name</label>
+                        <input type="text" class="ui-input" name="courier_name" value="<?php echo e((string) ($shipment['courier_name'] ?? '')); ?>">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Tracking ID</label>
-                        <input type="text" class="form-control" name="tracking_id" value="<?php echo e((string) ($shipment['tracking_id'] ?? '')); ?>">
+                    <div class="u-mb-3">
+                        <label class="ui-label">Tracking ID</label>
+                        <input type="text" class="ui-input" name="tracking_id" value="<?php echo e((string) ($shipment['tracking_id'] ?? '')); ?>">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Tracking URL</label>
-                        <input type="url" class="form-control" name="tracking_url" value="<?php echo e((string) ($shipment['tracking_url'] ?? '')); ?>" placeholder="https://...">
+                    <div class="u-mb-3">
+                        <label class="ui-label">Tracking URL</label>
+                        <input type="url" class="ui-input" name="tracking_url" value="<?php echo e((string) ($shipment['tracking_url'] ?? '')); ?>" placeholder="https://...">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Shipping Cost</label>
-                        <input type="number" class="form-control" step="0.01" min="0" name="shipping_cost" value="<?php echo e((string) ($shipment['shipping_cost'] ?? '0.00')); ?>">
+                    <div class="u-mb-3">
+                        <label class="ui-label">Shipping Cost</label>
+                        <input type="number" class="ui-input" step="0.01" min="0" name="shipping_cost" value="<?php echo e((string) ($shipment['shipping_cost'] ?? '0.00')); ?>">
                     </div>
-                    <div class="d-flex gap-2 flex-wrap mt-3 pt-2 border-top">
-                        <button class="btn btn-primary" type="submit"><i class="bi bi-save2 me-1" aria-hidden="true"></i>Save Shipment</button>
+                    <div class="u-flex u-gap-2 u-flex-wrap u-mt-3 u-pt-2 u-border-top">
+                        <button class="ui-button ui-button--primary" type="submit"><?php echo ui_icon('save2'); ?>Save Shipment</button>
                     </div>
                 </form>
 
                 <hr>
-                <div class="small text-muted">
+                <div class="u-text-small u-text-muted">
                     <div>Shipped At: <strong><?php echo !empty($shipment['shipped_at']) ? e((string) $shipment['shipped_at']) : '-'; ?></strong></div>
                     <div>Delivered At: <strong><?php echo !empty($shipment['delivered_at']) ? e((string) $shipment['delivered_at']) : '-'; ?></strong></div>
                 </div>
@@ -510,19 +510,19 @@ include 'partials/header.php';
         </div>
 
         <?php if (!empty($orderActivity)): ?>
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Order Timeline</h5>
-                <div class="small">
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h5 class="ui-card__title">Order Timeline</h5>
+                <div class="u-text-small">
                     <?php foreach ($orderActivity as $ev): ?>
-                        <div class="border rounded p-2 mb-2">
+                        <div class="u-border u-rounded u-p-2 u-mb-2">
                             <?php $timelineActionLabel = (string) ($ev['display_action'] ?? ucwords(str_replace('_', ' ', (string) ($ev['action'] ?? 'update')))); ?>
-                            <div class="d-flex justify-content-between gap-2 flex-wrap">
+                            <div class="u-flex u-justify-between u-gap-2 u-flex-wrap">
                                 <strong><?php echo e($timelineActionLabel); ?></strong>
-                                <span class="text-muted"><?php echo date('d M Y, h:i A', strtotime((string) ($ev['created_at'] ?? 'now'))); ?></span>
+                                <span class="u-text-muted"><?php echo date('d M Y, h:i A', strtotime((string) ($ev['created_at'] ?? 'now'))); ?></span>
                             </div>
                             <?php if (!empty($ev['display_details']) || !empty($ev['details'])): ?>
-                                <div class="text-muted"><?php echo e((string) ($ev['display_details'] ?? $ev['details'])); ?></div>
+                                <div class="u-text-muted"><?php echo e((string) ($ev['display_details'] ?? $ev['details'])); ?></div>
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
@@ -532,21 +532,21 @@ include 'partials/header.php';
         <?php endif; ?>
     </div>
 
-    <div class="col-lg-4">
-        <div class="card mb-4">
-            <div class="card-body">
-                <h6 class="card-title">Quick Actions</h6>
-                <div class="d-flex flex-column gap-2">
+    <div class="l-col-lg-third">
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h6 class="ui-card__title">Quick Actions</h6>
+                <div class="u-flex u-flex-column u-gap-2">
                     <?php if (strtolower((string) ($order['payment_status'] ?? 'pending')) === 'paid'): ?>
                     <a href="invoice.php?order=<?php echo e((string) $order['order_number']); ?>" target="_blank"
-                       class="btn btn-outline-primary btn-sm"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print Invoice</a>
+                       class="ui-button ui-button--outline ui-button--small"><?php echo ui_icon('printer'); ?>Print Invoice</a>
                     <?php else: ?>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="Invoice available after payment is marked paid.">
-                        <i class="bi bi-printer me-1" aria-hidden="true"></i>Print Invoice (After Paid)
+                    <button type="button" class="ui-button ui-button--secondary ui-button--small" disabled title="Invoice available after payment is marked paid.">
+                        <?php echo ui_icon('printer'); ?>Print Invoice (After Paid)
                     </button>
                     <?php endif; ?>
                     <a href="packing-slip.php?order=<?php echo e((string) $order['order_number']); ?>" target="_blank"
-                       class="btn btn-outline-secondary btn-sm"><i class="bi bi-box2 me-1" aria-hidden="true"></i>Packing Slip</a>
+                       class="ui-button ui-button--secondary ui-button--small"><?php echo ui_icon('box2'); ?>Packing Slip</a>
                 </div>
             </div>
         </div>
@@ -556,10 +556,10 @@ include 'partials/header.php';
             'order' => $order,
         ]); ?>
 
-        <div class="card mb-4">
-            <div class="card-body">
-                <h6 class="card-title">Customer Details</h6>
-                <div class="small text-muted">
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h6 class="ui-card__title">Customer Details</h6>
+                <div class="u-text-small u-text-muted">
                     <div><strong><?php echo e((string) $order['customer_name']); ?></strong></div>
                     <div><?php echo e((string) $order['customer_phone']); ?></div>
                     <div><?php echo e((string) $order['customer_email']); ?></div>
@@ -567,10 +567,10 @@ include 'partials/header.php';
             </div>
         </div>
 
-        <div class="card mb-4">
-            <div class="card-body">
-                <h6 class="card-title">Address</h6>
-                <address class="mb-0 small text-muted" style="font-style:normal;">
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h6 class="ui-card__title">Address</h6>
+                <address class="admin-address u-mb-0 u-text-small u-text-muted">
                     <?php echo e((string) $order['address']); ?><br>
                     <?php echo e((string) $order['city']); ?>, <?php echo e((string) $order['state']); ?><br>
                     <?php echo e((string) $order['pincode']); ?><br>
@@ -579,10 +579,10 @@ include 'partials/header.php';
             </div>
         </div>
 
-        <div class="card mb-4">
-            <div class="card-body">
-                <h6 class="card-title">Payment</h6>
-                <div class="small text-muted">
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h6 class="ui-card__title">Payment</h6>
+                <div class="u-text-small u-text-muted">
                     <div>Method: <strong><?php echo strtoupper(e((string) $order['payment_method'])); ?></strong></div>
                     <div>Status: <strong><?php echo ucfirst(e((string) $order['payment_status'])); ?></strong></div>
                     <?php if (!empty($order['coupon_code'])): ?>
@@ -602,34 +602,34 @@ include 'partials/header.php';
                     $orderStatusView = strtolower((string) ($order['order_status'] ?? 'pending'));
                 ?>
                 <?php if ($paymentStatusView !== 'paid' && $paymentStatusView !== 'refunded' && !in_array($orderStatusView, ['cancelled', 'refunded'], true)): ?>
-                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" data-confirm-modal data-confirm-title="Mark Payment Paid" data-confirm-message="Confirm this payment has been received?" data-confirm-ok="Mark Paid">
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="u-mt-3" data-confirm-modal data-confirm-title="Mark Payment Paid" data-confirm-message="Confirm this payment has been received?" data-confirm-ok="Mark Paid">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="mark_paid">
-                        <button type="submit" class="btn btn-sm btn-outline-success w-100"><i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Mark Paid</button>
+                        <button type="submit" class="ui-button ui-button--small ui-button--success-outline u-w-full"><?php echo ui_icon('check2-circle'); ?>Mark Paid</button>
                     </form>
                 <?php endif; ?>
                 <?php if (($order['order_status'] ?? '') === 'cancelled' && ($order['payment_status'] ?? '') === 'paid'): ?>
-                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-3" data-confirm-modal data-confirm-title="Confirm Refund" data-confirm-message="Mark this order as refunded now?" data-confirm-ok="Mark Refunded" data-confirm-variant="danger">
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="u-mt-3" data-confirm-modal data-confirm-title="Confirm Refund" data-confirm-message="Mark this order as refunded now?" data-confirm-ok="Mark Refunded" data-confirm-variant="danger">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="mark_refunded">
-                        <button type="submit" class="btn btn-sm btn-outline-danger w-100"><i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Mark Refunded</button>
+                        <button type="submit" class="ui-button ui-button--small ui-button--danger-outline u-w-full"><?php echo ui_icon('arrow-counterclockwise'); ?>Mark Refunded</button>
                     </form>
                 <?php endif; ?>
                 <?php if (strtolower((string) ($order['payment_method'] ?? '')) === 'razorpay'): ?>
-                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="mt-2" data-confirm-modal data-confirm-title="Sync Refund Status" data-confirm-message="Sync refund status from Razorpay now?" data-confirm-ok="Sync Now">
+                    <form method="POST" action="order-view.php?id=<?php echo $id; ?>" class="u-mt-2" data-confirm-modal data-confirm-title="Sync Refund Status" data-confirm-message="Sync refund status from Razorpay now?" data-confirm-ok="Sync Now">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="sync_refund_status">
-                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100"><i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>Sync Refund Status</button>
+                        <button type="submit" class="ui-button ui-button--small ui-button--secondary u-w-full"><?php echo ui_icon('arrow-repeat'); ?>Sync Refund Status</button>
                     </form>
                 <?php endif; ?>
             </div>
         </div>
 
         <?php if (!empty($razorpayAuditLines)): ?>
-        <div class="card mb-4 border-warning">
-            <div class="card-body">
-                <h6 class="card-title text-warning">Razorpay Audit</h6>
-                <div class="small text-muted">
+        <div class="ui-card u-mb-4 border-warning">
+            <div class="ui-card__body">
+                <h6 class="ui-card__title u-text-warning">Razorpay Audit</h6>
+                <div class="u-text-small u-text-muted">
                     <?php foreach ($razorpayAuditLines as $auditLine): ?>
                         <div><?php echo e($auditLine); ?></div>
                     <?php endforeach; ?>
@@ -638,20 +638,20 @@ include 'partials/header.php';
         </div>
         <?php endif; ?>
 
-        <div class="card mb-4">
-            <div class="card-body">
-                <h6 class="card-title">Order Status</h6>
-                <div class="small text-muted">
+        <div class="ui-card u-mb-4">
+            <div class="ui-card__body">
+                <h6 class="ui-card__title">Order Status</h6>
+                <div class="u-text-small u-text-muted">
                     <strong><?php echo ucfirst(e((string) $order['order_status'])); ?></strong>
                 </div>
             </div>
         </div>
 
         <?php if (!empty($order['order_notes'])): ?>
-        <div class="card">
-            <div class="card-body">
-                <h6 class="card-title">Order Notes</h6>
-                <p class="small text-muted mb-0"><?php echo nl2br(e((string) $order['order_notes'])); ?></p>
+        <div class="ui-card">
+            <div class="ui-card__body">
+                <h6 class="ui-card__title">Order Notes</h6>
+                <p class="u-text-small u-text-muted u-mb-0"><?php echo nl2br(e((string) $order['order_notes'])); ?></p>
             </div>
         </div>
         <?php endif; ?>

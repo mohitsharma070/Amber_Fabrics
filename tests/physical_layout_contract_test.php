@@ -34,7 +34,7 @@ $implementations = [
     'includes/security/customer-auth.php' => 'function customer_session_valid',
     'includes/helpers/coupon-functions.php' => 'function reserve_coupon_for_order',
     'includes/views/layouts/header.php' => '<main id="main-content"',
-    'includes/views/layouts/footer.php' => 'interaction-layer.php',
+    'includes/views/layouts/footer.php' => 'interaction-layer-v2.php',
 ];
 foreach ($implementations as $implementation => $marker) {
     $assert(str_contains($read($implementation), $marker), $implementation . ' must own its implementation.');

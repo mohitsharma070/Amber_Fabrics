@@ -113,70 +113,70 @@ $metaDescription = 'Admin page to view details of a customer inquiry for ' . Sit
 $metaKeywords = 'admin, inquiry details, ' . SiteContext::name();
 include 'partials/header.php'; ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="mb-0">Inquiry #<?php echo (int) $inquiry['id']; ?></h1>
-    <a href="<?php echo e($backUrl); ?>" class="btn btn-outline-secondary">Back to List</a>
+<div class="u-flex u-justify-between u-items-center u-mb-3">
+    <h1 class="u-mb-0">Inquiry #<?php echo (int) $inquiry['id']; ?></h1>
+    <a href="<?php echo e($backUrl); ?>" class="ui-button ui-button--secondary">Back to List</a>
 </div>
 
-<div class="row g-3">
-    <div class="col-lg-7">
-        <div class="surface-panel h-100">
-            <h5 class="mb-3">Customer Details</h5>
-            <p class="mb-1"><strong>Name:</strong> <?php echo e($inquiry['name']); ?></p>
-            <p class="mb-1"><strong>Email:</strong> <a href="mailto:<?php echo e($inquiry['email']); ?>"><?php echo e($inquiry['email']); ?></a></p>
-            <p class="mb-1"><strong>Country:</strong> <?php echo e($inquiry['country']); ?></p>
-            <p class="mb-1"><strong>Fabric:</strong> <?php echo e($inquiry['fabric_type']); ?></p>
-            <p class="mb-1"><strong>Quantity:</strong> <?php echo e($inquiry['quantity']); ?></p>
-            <p class="mb-1"><strong>Meters:</strong> <?php echo e($inquiry['meters'] ?? ''); ?></p>
-            <p class="mb-1"><strong>Incoterm:</strong> <?php echo e($inquiry['incoterm']); ?></p>
-            <p class="mb-1"><strong>Destination:</strong> <?php echo e($inquiry['destination']); ?></p>
-            <p class="mb-1"><strong>Pin Code:</strong> <?php echo e($inquiry['pincode'] ?? ''); ?></p>
-            <p class="mb-1"><strong>Timeline:</strong> <?php echo e($inquiry['timeline']); ?></p>
-            <p class="mb-0"><strong>Received:</strong> <?php echo e($inquiry['created_at']); ?></p>
+<div class="l-grid l-grid--12 u-gap-3">
+    <div class="l-col-lg-seven">
+        <div class="surface-panel u-h-full">
+            <h5 class="u-mb-3">Customer Details</h5>
+            <p class="u-mb-1"><strong>Name:</strong> <?php echo e($inquiry['name']); ?></p>
+            <p class="u-mb-1"><strong>Email:</strong> <a href="mailto:<?php echo e($inquiry['email']); ?>"><?php echo e($inquiry['email']); ?></a></p>
+            <p class="u-mb-1"><strong>Country:</strong> <?php echo e($inquiry['country']); ?></p>
+            <p class="u-mb-1"><strong>Fabric:</strong> <?php echo e($inquiry['fabric_type']); ?></p>
+            <p class="u-mb-1"><strong>Quantity:</strong> <?php echo e($inquiry['quantity']); ?></p>
+            <p class="u-mb-1"><strong>Meters:</strong> <?php echo e($inquiry['meters'] ?? ''); ?></p>
+            <p class="u-mb-1"><strong>Incoterm:</strong> <?php echo e($inquiry['incoterm']); ?></p>
+            <p class="u-mb-1"><strong>Destination:</strong> <?php echo e($inquiry['destination']); ?></p>
+            <p class="u-mb-1"><strong>Pin Code:</strong> <?php echo e($inquiry['pincode'] ?? ''); ?></p>
+            <p class="u-mb-1"><strong>Timeline:</strong> <?php echo e($inquiry['timeline']); ?></p>
+            <p class="u-mb-0"><strong>Received:</strong> <?php echo e($inquiry['created_at']); ?></p>
         </div>
     </div>
-    <div class="col-lg-5">
-        <div class="surface-panel h-100">
-            <h5 class="mb-3">Update Inquiry</h5>
-            <form method="POST" class="mb-3">
+    <div class="l-col-lg-five">
+        <div class="surface-panel u-h-full">
+            <h5 class="u-mb-3">Update Inquiry</h5>
+            <form method="POST" class="u-mb-3">
                 <?php echo csrf_field(); ?>
-                <label class="form-label">Status</label>
-                <div class="d-flex gap-2">
-                    <select name="status" class="form-select">
+                <label class="ui-label">Status</label>
+                <div class="u-flex u-gap-2">
+                    <select name="status" class="ui-select">
                         <?php foreach ($allowedStatuses as $status): ?>
                             <option value="<?php echo $status; ?>" <?php echo $inquiry['status'] === $status ? 'selected' : ''; ?>><?php echo ucfirst($status); ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <button class="btn btn-primary" type="submit">Update</button>
+                    <button class="ui-button ui-button--primary" type="submit">Update</button>
                 </div>
             </form>
-            <form method="POST" class="mb-3">
+            <form method="POST" class="u-mb-3">
                 <?php echo csrf_field(); ?>
-                <label class="form-label">Internal Note</label>
-                <textarea name="internal_note" class="form-control mb-2" rows="4" placeholder="Write internal note"><?php echo e($inquiry['internal_note']); ?></textarea>
-                <button name="save_note" class="btn btn-outline-secondary" type="submit">Save Note</button>
+                <label class="ui-label">Internal Note</label>
+                <textarea name="internal_note" class="ui-input u-mb-2" rows="4" placeholder="Write internal note"><?php echo e($inquiry['internal_note']); ?></textarea>
+                <button name="save_note" class="ui-button ui-button--secondary" type="submit">Save Note</button>
             </form>
             <form method="POST" data-confirm="Delete this inquiry?" data-confirm-title="Delete Inquiry?" data-confirm-ok="Delete Inquiry" data-confirm-variant="danger">
                 <?php echo csrf_field(); ?>
-                <button name="delete" class="btn btn-outline-danger" type="submit">Delete Inquiry</button>
+                <button name="delete" class="ui-button ui-button--danger-outline" type="submit">Delete Inquiry</button>
             </form>
         </div>
     </div>
 </div>
 
-<div class="surface-panel mt-3">
-    <h5 class="mb-2">Message</h5>
+<div class="surface-panel u-mt-3">
+    <h5 class="u-mb-2">Message</h5>
     <div><?php echo nl2br(e($inquiry['message'])); ?></div>
 </div>
 
-<div class="surface-panel mt-3">
-    <h5 class="mb-3">Activity History</h5>
+<div class="surface-panel u-mt-3">
+    <h5 class="u-mb-3">Activity History</h5>
     <?php if (empty($activityLogs)): ?>
-        <p class="text-muted mb-0">No activity logged yet.</p>
+        <p class="u-text-muted u-mb-0">No activity logged yet.</p>
     <?php endif; ?>
     <?php foreach ($activityLogs as $log): ?>
-        <div class="border rounded p-2 mb-2">
-            <div class="small text-muted"><?php echo e($log['created_at']); ?> by <?php echo e($log['actor_name']); ?></div>
+        <div class="u-border u-rounded u-p-2 u-mb-2">
+            <div class="u-text-small u-text-muted"><?php echo e($log['created_at']); ?> by <?php echo e($log['actor_name']); ?></div>
             <div><strong><?php echo e($log['action']); ?></strong></div>
             <?php if (!empty($log['details'])): ?>
                 <div><?php echo e($log['details']); ?></div>

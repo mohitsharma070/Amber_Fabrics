@@ -212,36 +212,36 @@ $cooldownSeconds = AdminOtpService::cooldownSeconds($conn, $pendingAdminId);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo e('Verify OTP | ' . SiteContext::name() . ' Admin'); ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260822a">
-    <link rel="stylesheet" href="../css/admin.css?v=20260822a">
+    <link rel="stylesheet" href="<?php echo e(ui_asset('/css/foundation.css')); ?>">
+    <link rel="stylesheet" href="<?php echo e(ui_asset('/css/admin.css')); ?>">
+    <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
+    <script src="<?php echo e(ui_asset('/js/app.js')); ?>" defer></script>
+    <script src="<?php echo e(ui_asset('/js/admin.js')); ?>" defer></script>
 </head>
-<body class="bg-light">
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6 col-lg-4">
-            <div class="card shadow-sm border-0">
-                <div class="card-body p-4">
-                    <h1 class="h4 mb-3">Verify OTP</h1>
-                    <p class="text-muted small mb-4">Enter the 6-digit OTP sent to <?php echo e($pendingEmail); ?>.</p>
+<body class="admin-auth-page" data-ui-area="admin" data-ui-page="verify-otp">
+<main class="admin-auth-shell" id="admin-main">
+            <div class="ui-card admin-auth-card">
+                <div class="ui-card__body">
+                    <h1 class="u-heading-4 u-mb-3">Verify OTP</h1>
+                    <p class="u-text-muted u-text-small u-mb-4">Enter the 6-digit OTP sent to <?php echo e($pendingEmail); ?>.</p>
 
                     <?php if ($msg = flash('success')): ?>
-                        <div class="alert alert-success" role="status"><?php echo e($msg); ?></div>
+                        <div class="ui-alert ui-alert--success" role="status"><?php echo e($msg); ?></div>
                     <?php endif; ?>
                     <?php if ($msg = flash('error')): ?>
-                        <div class="alert alert-danger" role="alert"><?php echo e($msg); ?></div>
+                        <div class="ui-alert ui-alert--error" role="alert"><?php echo e($msg); ?></div>
                     <?php endif; ?>
 
-                    <form method="POST" action="verify-otp.php" novalidate class="mb-3">
+                    <form method="POST" action="verify-otp.php" novalidate class="u-mb-3">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="verify">
-                        <div class="mb-3">
-                            <label class="form-label" for="admin-otp">OTP</label>
+                        <div class="u-mb-3">
+                            <label class="ui-label" for="admin-otp">OTP</label>
                             <input
                                 id="admin-otp"
                                 type="text"
                                 name="otp"
-                                class="<?php echo form_class($errors, 'otp'); ?>"
+                                class="<?php echo form_class($errors, 'otp', 'ui-input'); ?>"
                                 inputmode="numeric"
                                 pattern="\d{6}"
                                 maxlength="6"
@@ -249,15 +249,15 @@ $cooldownSeconds = AdminOtpService::cooldownSeconds($conn, $pendingAdminId);
                                 required
                                 autofocus
                             >
-                            <?php echo form_error($errors, 'otp'); ?>
+                            <?php echo form_error($errors, 'otp', 'ui-field-error'); ?>
                         </div>
                         <?php if ($appMfaPassphrase !== ''): ?>
-                        <div class="mb-3">
-                            <label class="form-label" for="admin-passphrase">Security Passphrase</label>
-                            <input id="admin-passphrase" type="password" name="passphrase" class="form-control" autocomplete="current-password" required>
+                        <div class="u-mb-3">
+                            <label class="ui-label" for="admin-passphrase">Security Passphrase</label>
+                            <input id="admin-passphrase" type="password" name="passphrase" class="ui-input" autocomplete="current-password" required>
                         </div>
                         <?php endif; ?>
-                        <button type="submit" class="btn btn-primary w-100">Verify and Login</button>
+                        <button type="submit" class="ui-button ui-button--primary u-w-full">Verify and Login</button>
                     </form>
 
                     <form method="POST" action="verify-otp.php">
@@ -266,7 +266,7 @@ $cooldownSeconds = AdminOtpService::cooldownSeconds($conn, $pendingAdminId);
                         <button
                             type="submit"
                             id="admin-otp-resend"
-                            class="btn btn-outline-secondary w-100"
+                            class="ui-button ui-button--secondary u-w-full"
                             data-cooldown="<?php echo (int) $cooldownSeconds; ?>"
                             <?php echo $cooldownSeconds > 0 ? 'disabled' : ''; ?>
                         >
@@ -274,35 +274,12 @@ $cooldownSeconds = AdminOtpService::cooldownSeconds($conn, $pendingAdminId);
                         </button>
                     </form>
 
-                    <div class="mt-3 text-center">
-                        <a href="login.php" class="small">Use another email</a>
+                    <div class="u-mt-3 u-text-center">
+                        <a href="login.php" class="u-text-small">Use another email</a>
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
-<?php if ($cooldownSeconds > 0): ?>
-<script nonce="<?php echo e($cspNonce); ?>">
-(function () {
-    var button = document.getElementById('admin-otp-resend');
-    if (!button) return;
-    var remaining = Number(button.dataset.cooldown || 0);
-    var timer = window.setInterval(function () {
-        remaining -= 1;
-        if (remaining <= 0) {
-            window.clearInterval(timer);
-            button.disabled = false;
-            button.textContent = 'Resend OTP';
-            return;
-        }
-        button.textContent = 'Resend OTP in ' + remaining + 's';
-    }, 1000);
-})();
-</script>
-<?php endif; ?>
-<?php require dirname(__DIR__) . '/includes/partials/interaction-layer.php'; ?>
-<script src="../js/script.js?v=20260822a" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</main>
+<?php require dirname(__DIR__) . '/includes/partials/interaction-layer-v2.php'; ?>
 </body>
 </html>

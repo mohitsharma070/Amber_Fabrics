@@ -9,6 +9,7 @@ $adminService = (string) file_get_contents($root . '/includes/services/ProductAd
 $skuHelper = (string) file_get_contents($root . '/includes/helpers/inquiries-ledger.php');
 $importService = (string) file_get_contents($root . '/includes/services/ProductImportService.php');
 $editor = (string) file_get_contents($root . '/admin/edit-fabric.php');
+$adminScript = (string) file_get_contents($root . '/js/admin.js');
 $actions = (string) file_get_contents($root . '/admin/product-actions.php');
 $variantEndpoint = (string) file_get_contents($root . '/admin/fabric-variants.php');
 $variantService = (string) file_get_contents($root . '/includes/services/ProductVariantService.php');
@@ -35,7 +36,7 @@ $assert(str_contains($variantEndpoint, "'archived' => !\$hardDelete") && str_con
 $assert(!str_contains($variantEndpoint, 'UPDATE order_items SET variant_id = NULL'), 'Variant deletion must not detach historical orders.');
 $assert(str_contains($actions, 'UPDATE fabric_variants SET is_active=0 WHERE fabric_id=?'), 'Switching to simple inventory must archive variants.');
 $assert(!str_contains($actions, 'DELETE FROM fabric_variants WHERE fabric_id=?'), 'Inventory-mode changes must not delete variants.');
-$assert(str_contains($editor, 'data.archived') && str_contains($editor, "data.archived ? 'info' : 'success'"), 'Variant removal UI must explain archived versus deleted outcomes.');
+$assert(str_contains($adminScript, 'json.archived') && str_contains($adminScript, 'json.archived ? "info" : "success"'), 'Variant removal UI must explain archived versus deleted outcomes.');
 
 $assert(str_contains($mediaHelper, 'function fabric_media_delete_if_unreferenced') && str_contains($mediaHelper, 'FROM fabric_media WHERE filename = ?'), 'Reference-aware media cleanup helper is missing.');
 $assert(str_contains($mediaEndpoint, 'fabric_media_delete_if_unreferenced'), 'Product media deletion must use reference-aware cleanup.');

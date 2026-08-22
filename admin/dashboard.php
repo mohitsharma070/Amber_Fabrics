@@ -295,38 +295,38 @@ include 'partials/header.php';
 ?>
 
 <div class="dashboard-container">
-    <div class="dashboard-header admin-page-header d-flex justify-content-between align-items-end flex-wrap gap-3">
+    <div class="dashboard-header admin-page-header u-flex u-justify-between u-items-end u-flex-wrap u-gap-3">
         <div>
-            <h1 class="mb-1">Store Dashboard</h1>
-            <p class="text-muted mb-0">Performance snapshot for <?php echo e($rangeLabel); ?></p>
+            <h1 class="u-mb-1">Store Dashboard</h1>
+            <p class="u-text-muted u-mb-0">Performance snapshot for <?php echo e($rangeLabel); ?></p>
         </div>
-        <form method="GET" class="d-flex gap-2 align-items-end admin-dashboard-filter">
+        <form method="GET" class="u-flex u-gap-2 u-items-end admin-dashboard-filter">
             <div>
-                <label class="form-label mb-1">From</label>
-                <input type="date" name="from" class="form-control" value="<?php echo e($rangeFrom); ?>">
+                <label class="ui-label u-mb-1">From</label>
+                <input type="date" name="from" class="ui-input" value="<?php echo e($rangeFrom); ?>">
             </div>
             <div>
-                <label class="form-label mb-1">To</label>
-                <input type="date" name="to" class="form-control" value="<?php echo e($rangeTo); ?>">
+                <label class="ui-label u-mb-1">To</label>
+                <input type="date" name="to" class="ui-input" value="<?php echo e($rangeTo); ?>">
             </div>
             <div class="admin-filter-actions">
-                <button class="btn btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Apply</button>
-                <a class="btn btn-outline-secondary" href="dashboard.php"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
+                <button class="ui-button ui-button--primary" type="submit"><?php echo ui_icon('funnel'); ?>Apply</button>
+                <a class="ui-button ui-button--secondary" href="dashboard.php"><?php echo ui_icon('arrow-counterclockwise'); ?>Reset</a>
             </div>
         </form>
     </div>
 
     <?php if (!$cronOverdue && $cronLastStatus === 'success'): ?>
-    <div class="mb-3">
-        <span class="badge text-bg-success">Cron healthy</span>
-        <span class="small text-muted ms-2">Last run <?php echo (int) $cronLagMinutes; ?> minute(s) ago in <?php echo (int) $cronDurationMs; ?> ms.</span>
+    <div class="u-mb-3">
+        <span class="ui-badge ui-badge--success">Cron healthy</span>
+        <span class="u-text-small u-text-muted u-ms-2">Last run <?php echo (int) $cronLagMinutes; ?> minute(s) ago in <?php echo (int) $cronDurationMs; ?> ms.</span>
     </div>
     <?php endif; ?>
 
     <?php if ($staleOnlinePending > 0 || $refundPendingCount > 0 || $codPendingConfirm > 0 || $cronOverdue || $cronUnhealthy): ?>
-    <div class="alert <?php echo $cronLastStatus === 'failed' ? 'alert-danger' : 'alert-warning'; ?> mb-3">
-        <div class="fw-semibold mb-1">Operational Alerts</div>
-        <div class="small">
+    <div class="ui-alert <?php echo $cronLastStatus === 'failed' ? 'ui-alert--error' : 'ui-alert--warning'; ?> u-mb-3">
+        <div class="u-font-semibold u-mb-1">Operational Alerts</div>
+        <div class="u-text-small">
             <?php if ($staleOnlinePending > 0): ?>Stale online pending orders: <strong><?php echo $staleOnlinePending; ?></strong>. <?php endif; ?>
             <?php if ($refundPendingCount > 0): ?>Refund queue (cancelled + paid): <strong><?php echo $refundPendingCount; ?></strong>. <?php endif; ?>
             <?php if ($codPendingConfirm > 0): ?>Pending COD confirmations: <strong><?php echo $codPendingConfirm; ?></strong>. <?php endif; ?>
@@ -335,7 +335,7 @@ include 'partials/header.php';
             <?php if ($cronLastStatus !== 'success' && $cronLastSuccessAt !== ''): ?> Last fully successful run: <?php echo e($cronLastSuccessAt); ?>.<?php endif; ?>
         </div>
         <?php if ($cronSummary !== []): ?>
-            <ul class="small mb-0 mt-2">
+            <ul class="u-text-small u-mb-0 u-mt-2">
                 <?php foreach ($cronSummary as $cronDetail): ?>
                     <?php if (!is_array($cronDetail)) continue; ?>
                     <li>
@@ -348,7 +348,7 @@ include 'partials/header.php';
                     </li>
                 <?php endforeach; ?>
             </ul>
-            <a class="small" href="operations.php?view=cron">View cron history</a>
+            <a class="u-text-small" href="operations.php?view=cron">View cron history</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -436,56 +436,56 @@ include 'partials/header.php';
     </div>
 
     <div class="dashboard-actions">
-        <a class="btn btn-dark" href="fabrics.php">Manage Products</a>
-        <a class="btn btn-primary" href="orders.php">View Orders</a>
-        <a class="btn btn-outline-danger" href="orders.php?refund_queue=1">Refund Queue</a>
-        <a class="btn btn-outline-secondary" href="expenses.php">Manage Expenses</a>
-        <a class="btn btn-outline-secondary" href="inquiries.php">Export Inquiries</a>
-        <a class="btn btn-outline-primary" href="settings.php">Site Settings</a>
+        <a class="ui-button ui-button--navy" href="fabrics.php">Manage Products</a>
+        <a class="ui-button ui-button--primary" href="orders.php">View Orders</a>
+        <a class="ui-button ui-button--danger-outline" href="orders.php?refund_queue=1">Refund Queue</a>
+        <a class="ui-button ui-button--secondary" href="expenses.php">Manage Expenses</a>
+        <a class="ui-button ui-button--secondary" href="inquiries.php">Export Inquiries</a>
+        <a class="ui-button ui-button--outline" href="settings.php">Site Settings</a>
     </div>
 
-    <div class="card mt-4 mb-4">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0">Net Profit Formula Breakdown (<?php echo e($rangeLabel); ?>)</h5>
-                <span class="badge <?php echo $netProfit >= 0 ? 'bg-success' : 'bg-danger'; ?>">
+    <div class="ui-card u-mt-4 u-mb-4">
+        <div class="ui-card__body">
+            <div class="u-flex u-justify-between u-items-center u-mb-3">
+                <h5 class="u-mb-0">Net Profit Formula Breakdown (<?php echo e($rangeLabel); ?>)</h5>
+                <span class="ui-badge <?php echo $netProfit >= 0 ? 'ui-badge--success' : 'ui-badge--error'; ?>">
                     <?php echo $netProfit >= 0 ? 'Profit' : 'Loss'; ?>
                 </span>
             </div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+            <div class="ui-table-wrap">
+                <table class="ui-table ui-table--compact u-align-middle u-mb-0">
                     <tbody>
                         <tr>
                             <th scope="row">Sales</th>
-                            <td class="text-end"><?php echo e(money($totalSalesMonth)); ?></td>
+                            <td class="u-text-end"><?php echo e(money($totalSalesMonth)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Product Cost</th>
-                            <td class="text-end">- <?php echo e(money($productCostEstimate)); ?></td>
+                            <td class="u-text-end">- <?php echo e(money($productCostEstimate)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Shipping</th>
-                            <td class="text-end">- <?php echo e(money($shippingExpense)); ?></td>
+                            <td class="u-text-end">- <?php echo e(money($shippingExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Marketing</th>
-                            <td class="text-end">- <?php echo e(money($marketingExpense)); ?></td>
+                            <td class="u-text-end">- <?php echo e(money($marketingExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Packaging</th>
-                            <td class="text-end">- <?php echo e(money($packagingExpense)); ?></td>
+                            <td class="u-text-end">- <?php echo e(money($packagingExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Payment Fees</th>
-                            <td class="text-end">- <?php echo e(money($paymentFeesExpense)); ?></td>
+                            <td class="u-text-end">- <?php echo e(money($paymentFeesExpense)); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Less: Returns</th>
-                            <td class="text-end">- <?php echo e(money($returnsExpense)); ?></td>
+                            <td class="u-text-end">- <?php echo e(money($returnsExpense)); ?></td>
                         </tr>
-                        <tr class="table-light fw-bold">
+                        <tr class="ui-table__head--light u-font-bold">
                             <th scope="row">Net Profit / Loss</th>
-                            <td class="text-end <?php echo $netProfit >= 0 ? 'text-success' : 'text-danger'; ?>"><?php echo e(money($netProfit)); ?></td>
+                            <td class="u-text-end <?php echo $netProfit >= 0 ? 'u-text-success' : 'u-text-danger'; ?>"><?php echo e(money($netProfit)); ?></td>
                         </tr>
                     </tbody>
                 </table>
@@ -493,26 +493,26 @@ include 'partials/header.php';
         </div>
     </div>
 
-    <div class="row g-4">
-        <div class="col-lg-8">
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between mb-2">
-                        <h5 class="mb-0">Sales Trend (Last 6 Months)</h5>
-                        <span class="small text-muted">Paid orders</span>
+    <div class="l-grid l-grid--12 u-gap-4">
+        <div class="l-col-lg-eight">
+            <div class="ui-card u-mb-4">
+                <div class="ui-card__body">
+                    <div class="u-flex u-justify-between u-mb-2">
+                        <h5 class="u-mb-0">Sales Trend (Last 6 Months)</h5>
+                        <span class="u-text-small u-text-muted">Paid orders</span>
                     </div>
-                    <canvas id="salesTrendChart" height="120"></canvas>
+                    <canvas id="salesTrendChart" height="120" data-admin-chart="<?php echo ui_data_json(['labels' => $salesLabels, 'series' => $salesSeries, 'label' => 'Sales (INR)']); ?>"></canvas>
                 </div>
             </div>
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between mb-3">
-                        <h5 class="mb-0">Recent Orders (<?php echo e($rangeLabel); ?>)</h5>
-                        <a href="orders.php" class="small">View all -></a>
+            <div class="ui-card u-h-full">
+                <div class="ui-card__body">
+                    <div class="u-flex u-justify-between u-mb-3">
+                        <h5 class="u-mb-0">Recent Orders (<?php echo e($rangeLabel); ?>)</h5>
+                        <a href="orders.php" class="u-text-small">View all -></a>
                     </div>
                     <?php if (!empty($recentOrders)): ?>
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0">
+                    <div class="ui-table-wrap">
+                        <table class="ui-table ui-table--compact u-mb-0">
                             <thead>
                                 <tr>
                                     <th>Order</th>
@@ -527,37 +527,37 @@ include 'partials/header.php';
                             <tbody>
                                 <?php foreach ($recentOrders as $order): ?>
                                 <tr>
-                                    <td class="font-monospace"><?php echo e((string) $order['order_number']); ?></td>
+                                    <td class="u-font-mono"><?php echo e((string) $order['order_number']); ?></td>
                                     <td><?php echo e((string) $order['customer_name']); ?></td>
                                     <td><?php echo e(money((float) ($order['total_amount'] ?? 0))); ?></td>
                                     <td>
-                                        <span class="badge <?php echo ($order['payment_status'] ?? '') === 'paid' ? 'bg-success' : 'bg-secondary'; ?>">
+                                        <span class="ui-badge <?php echo ($order['payment_status'] ?? '') === 'paid' ? 'ui-badge--success' : 'ui-badge--neutral'; ?>">
                                             <?php echo ucfirst(e((string) $order['payment_status'])); ?>
                                         </span>
                                     </td>
                                     <td>
-                                        <span class="badge bg-<?php echo $statusColors[$order['order_status']] ?? 'secondary'; ?>">
+                                        <span class="ui-badge ui-badge--<?php echo e(ui_tone((string) ($statusColors[$order['order_status']] ?? 'secondary'))); ?>">
                                             <?php echo ucfirst(e((string) $order['order_status'])); ?>
                                         </span>
                                     </td>
                                     <td><?php echo date('d M', strtotime((string) $order['created_at'])); ?></td>
-                                    <td><a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="small">View</a></td>
+                                    <td><a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="u-text-small">View</a></td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
                     <?php else: ?>
-                        <p class="text-muted mb-0">No orders found for this date range.</p>
+                        <p class="u-text-muted u-mb-0">No orders found for this date range.</p>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
 
-        <div class="col-lg-4">
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h6 class="card-title mb-3">Priority Alerts</h6>
+        <div class="l-col-lg-third">
+            <div class="ui-card u-mb-4">
+                <div class="ui-card__body">
+                    <h6 class="ui-card__title u-mb-3">Priority Alerts</h6>
                     <div class="dashboard-mini-list">
                         <div class="mini-item">
                             <span class="mini-dot dot-warning"></span>
@@ -578,26 +578,26 @@ include 'partials/header.php';
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="card-title mb-3">Quick Shortcuts</h6>
-                    <div class="d-grid gap-2">
-                        <a href="add-fabric.php" class="btn btn-sm btn-outline-dark">Add New Product</a>
-                        <a href="coupons.php" class="btn btn-sm btn-outline-secondary">Manage Coupons</a>
-                        <a href="customers.php" class="btn btn-sm btn-outline-secondary">Customer Accounts</a>
+            <div class="ui-card">
+                <div class="ui-card__body">
+                    <h6 class="ui-card__title u-mb-3">Quick Shortcuts</h6>
+                    <div class="u-grid u-gap-2">
+                        <a href="add-fabric.php" class="ui-button ui-button--small ui-button--secondary">Add New Product</a>
+                        <a href="coupons.php" class="ui-button ui-button--small ui-button--secondary">Manage Coupons</a>
+                        <a href="customers.php" class="ui-button ui-button--small ui-button--secondary">Customer Accounts</a>
                     </div>
                 </div>
             </div>
-            <div class="card mt-4">
-                <div class="card-body">
-                    <h6 class="card-title mb-3">Top Selling Products (<?php echo e($rangeLabel); ?>)</h6>
+            <div class="ui-card u-mt-4">
+                <div class="ui-card__body">
+                    <h6 class="ui-card__title u-mb-3">Top Selling Products (<?php echo e($rangeLabel); ?>)</h6>
                     <?php if (empty($topProducts)): ?>
-                        <p class="text-muted small mb-0">No paid sales in this date range yet.</p>
+                        <p class="u-text-muted u-text-small u-mb-0">No paid sales in this date range yet.</p>
                     <?php else: ?>
                         <div class="dashboard-mini-list">
                             <?php foreach ($topProducts as $tp): ?>
                                 <div class="mini-item">
-                                    <span class="text-truncate pe-2"><?php echo e((string) ($tp['product_name'] ?? 'Product')); ?></span>
+                                    <span class="u-truncate u-pe-2"><?php echo e((string) ($tp['product_name'] ?? 'Product')); ?></span>
                                     <strong><?php echo number_format((float) ($tp['qty_sold'] ?? 0)); ?> sold</strong>
                                 </div>
                             <?php endforeach; ?>
@@ -610,39 +610,5 @@ include 'partials/header.php';
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script nonce="<?php echo $cspNonce; ?>">
-(function () {
-    var el = document.getElementById('salesTrendChart');
-    if (!el || typeof Chart === 'undefined') return;
-    new Chart(el, {
-        type: 'line',
-        data: {
-            labels: <?php echo json_encode($salesLabels); ?>,
-            datasets: [{
-                label: 'Sales (INR)',
-                data: <?php echo json_encode($salesSeries); ?>,
-                tension: 0.35,
-                borderColor: '#0f766e',
-                backgroundColor: 'rgba(15,118,110,0.12)',
-                fill: true,
-                pointRadius: 3,
-                pointHoverRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { display: false } },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function (v) { return 'Rs ' + Number(v).toLocaleString(); }
-                    }
-                }
-            }
-        }
-    });
-})();
-</script>
 
 <?php include 'partials/footer.php'; ?>

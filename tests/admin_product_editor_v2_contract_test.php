@@ -5,7 +5,7 @@ $catalogMigration=(string)file_get_contents($root.'/database/migrations/2026-08-
 $cleanupMigration=(string)file_get_contents($root.'/database/migrations/2026-08-16-remove-obsolete-product-fields.sql');
 $service=(string)file_get_contents($root.'/includes/services/ProductAdminService.php');
 $editor=(string)file_get_contents($root.'/admin/edit-fabric.php');
-$editorScript=(string)file_get_contents($root.'/admin/partials/fabric-product-form-script.php');
+$adminScript=(string)file_get_contents($root.'/js/admin.js');
 $editorForm=(string)file_get_contents($root.'/admin/partials/fabric-product-form.php');
 $media=(string)file_get_contents($root.'/admin/product-media.php');
 $fabric=(string)file_get_contents($root.'/fabric.php');
@@ -16,7 +16,7 @@ $assert(str_contains($migration,"ENUM('draft','active','inactive')")&&str_contai
 $assert(str_contains($migration,'CREATE UNIQUE INDEX uq_fabrics_slug')&&str_contains($migration,'product_type'),'Slug uniqueness or product type migration missing.');
 $assert(str_contains($service,'function readiness')&&str_contains($service,'function publish')&&str_contains($service,'function createDraft'),'Shared draft/readiness/publish service contract missing.');
 $assert(str_contains($service,'skuAvailable')&&str_contains($service,'uniqueSlug'),'Stable unique SKU/slug validation missing.');
-$assert(str_contains($editor,'check-readiness-btn')&&str_contains($editor,'product-media-upload')&&str_contains($editorScript,'beforeunload'),'Editor readiness, media, or unsaved warning missing.');
+$assert(str_contains($editor,'check-readiness-btn')&&str_contains($editor,'product-media-upload')&&str_contains($adminScript,'beforeunload'),'Editor readiness, media, or unsaved warning missing.');
 $assert(str_contains($media,"\$action==='reorder'")&&str_contains($media,"\$action==='delete'")&&str_contains($media,'syncLegacyMedia'),'Transactional gallery compatibility actions missing.');
 $assert(str_contains($fabric,"\$_GET['slug']")&&str_contains($fabric,"header('Location: ' . \$target, true, 301)")&&str_contains($fabric,'$metaTitle'),'Clean storefront slug/redirect/SEO behavior missing.');
 $assert(str_contains($orderSnapshot,'effective_gst_rate')&&str_contains($orderSnapshot,'effective_hsn_code')&&str_contains($order,'OrderItemSnapshotService::build'),'Per-product tax snapshots missing.');

@@ -99,7 +99,7 @@ $assert(str_contains($app, 'requestSubmit(submitter || undefined)'), 'The shared
 $assert(str_contains($app, 'amber:validate'), 'Shared confirmation must honor page validation before opening.');
 $assert(str_contains($app, 'form.hasAttribute("data-ui-async")'), 'The shared submit coordinator must leave managed asynchronous forms to commerce.js.');
 $assert(str_contains($commerce, 'event.preventDefault();') && str_contains($commerce, 'button.getAttribute("aria-busy") === "true"'), 'AJAX cart submissions must prevent native duplicate submissions.');
-$assert(str_contains($formHelpers, "string \$base = 'invalid-feedback d-block'"), 'The shared form error helper must preserve the legacy admin default during the staged migration.');
+$assert(str_contains($formHelpers, "string \$base = 'ui-field-error'"), 'The shared form error helper must use the first-party error presentation.');
 $assert(!preg_match('/form_class\([^,\r\n]+,\s*["\'][^"\']+["\']\s*\)/', $checkout), 'Checkout fields must explicitly use first-party control classes.');
 
 if ($failures !== []) {
