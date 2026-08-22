@@ -103,130 +103,19 @@ $orderBarcodeSvg = $barcodeGen->getBarcode($order['order_number'], $barcodeGen::
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Packing Slip <?php echo e($order['order_number']); ?></title>
-<style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1a; background: #f5f5f5; }
-
-/* ── Wrapper ── */
-.slip-wrapper { max-width: 680px; margin: 30px auto; background: #fff; border: 1px solid #bbb; }
-
-/* ── To section ── */
-.slip-to-section {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    padding: 16px 20px; border-bottom: 1px solid #ccc; gap: 20px;
-}
-.slip-to-left { flex: 1; }
-.slip-to-label { font-size: 12px; color: #555; margin-bottom: 2px; }
-.slip-to-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
-.slip-to-address { font-size: 12px; color: #333; line-height: 1.8; }
-.slip-to-pincode { font-size: 14px; font-weight: 700; }
-.slip-to-right { text-align: right; min-width: 200px; }
-.slip-awb-label { font-size: 11px; color: #555; margin-bottom: 2px; font-weight: 600; }
-.slip-awb-barcode svg { display: block; max-width: 100%; height: 70px; }
-.slip-awb-routing { font-size: 11px; color: #444; margin-top: 3px; }
-
-/* ── Repeat customer badge ── */
-.slip-repeat-badge {
-    text-align: center; font-size: 13px; font-weight: 700; letter-spacing: 1px;
-    padding: 7px 20px; border-bottom: 1px solid #ccc; border-top: 1px solid #ccc;
-    background: #fff;
-}
-
-/* ── Payment bar ── */
-.slip-payment-bar {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 20px; border-bottom: 1px solid #ccc;
-    background: #f0f0f0; font-size: 13px; font-weight: 700; text-transform: uppercase;
-}
-
-/* ── COD notice ── */
-.slip-cod-notice {
-    padding: 8px 20px; font-size: 12px; font-weight: 600;
-    color: #7c4a00; background: #fff3cd; border-bottom: 1px solid #ffc107;
-}
-
-/* ── Unboxing notice ── */
-.slip-unboxing-notice {
-    padding: 10px 20px; font-size: 11px; color: #333;
-    background: #fffbf0; border-bottom: 1px solid #e8d870;
-    line-height: 1.5;
-}
-
-/* ── Stats row ── */
-.slip-stats {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 20px; font-size: 12px; font-weight: 600;
-    border-bottom: 2px solid #1a1a1a; background: #fafafa;
-}
-
-/* ── Body ── */
-.slip-body { padding: 16px 20px; }
-
-/* ── From section ── */
-.slip-from-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
-.slip-from { font-size: 12px; color: #333; line-height: 1.7; flex: 1; }
-.slip-from-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 4px; }
-.slip-from-name { font-weight: 700; font-size: 13px; }
-
-/* ── Items table ── */
-.slip-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 12px; }
-.slip-table thead tr { background: #1a1a1a; color: #fff; }
-.slip-table thead th { padding: 9px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-.slip-table thead th:last-child { text-align: center; }
-.slip-table tbody tr { border-bottom: 1px solid #eee; }
-.slip-table tbody tr:last-child { border-bottom: 2px solid #ccc; }
-.slip-table tbody td { padding: 9px 10px; vertical-align: top; }
-.slip-table tbody td:last-child { text-align: center; }
-.slip-table tfoot td { padding: 8px 10px; font-weight: 600; background: #f5f5f5; font-size: 12px; }
-
-/* ── Packed by ── */
-.slip-footer-meta {
-    display: flex; justify-content: space-between; align-items: flex-end;
-    margin-top: 16px; padding-top: 12px; border-top: 1px solid #ddd;
-}
-.slip-packed-by-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; margin-bottom: 4px; }
-.slip-packed-by-line { border-top: 1px solid #888; width: 180px; margin-top: 28px; }
-.slip-print-time { font-size: 11px; color: #888; text-align: right; line-height: 1.7; }
-
-/* ── Footer note & powered by ── */
-.slip-footer-note {
-    padding: 10px 20px; font-size: 11px; color: #555;
-    border-top: 1px solid #ccc; background: #f9f9f9; line-height: 1.6;
-}
-.slip-powered-by {
-    text-align: center; font-size: 11px; color: #aaa;
-    padding: 7px; border-top: 1px solid #eee;
-}
-
-/* ── Print bar ── */
-.print-bar { text-align: center; margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; }
-.btn-print { padding: 9px 24px; background: #1a1a1a; color: #fff; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; font-family: inherit; }
-.btn-print:hover { background: #333; }
-.btn-back { padding: 9px 18px; background: transparent; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; text-decoration: none; display: inline-block; }
-.btn-back:hover { background: #f5f5f5; }
-
-/* ── Print ── */
-@media print {
-    @page { size: A4; margin: 10mm; }
-    body { background: #fff; }
-    .no-print { display: none !important; }
-    .slip-wrapper { max-width: 100%; margin: 0; border: 1px solid #aaa; }
-    .slip-table thead tr,
-    .slip-payment-bar,
-    .slip-repeat-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .slip-awb-barcode svg,
-    .slip-order-barcode svg { display: block; }
-}
-</style>
+<link rel="stylesheet" href="../css/foundation.css?v=<?php echo e(asset_version('foundation.css')); ?>">
+<link rel="stylesheet" href="../css/documents.css?v=<?php echo e(asset_version('documents.css')); ?>">
+<script defer src="../js/app.js?v=<?php echo e(asset_version('app.js')); ?>"></script>
+<script defer src="../js/documents.js?v=<?php echo e(asset_version('documents.js')); ?>"></script>
 </head>
-<body>
+<body data-ui-area="document" data-ui-page="packing-slip">
 
-<div class="no-print print-bar">
-    <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="btn-back">&larr; Back to Order</a>
-    <button class="btn-print" id="btn-print-slip">&#128438; Print Packing Slip</button>
+<div class="no-print print-bar document-toolbar">
+    <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="ui-button ui-button--secondary">&larr; Back to Order</a>
+    <button class="ui-button ui-button--primary" type="button" data-document-print>Print packing slip</button>
 </div>
 
-<div class="slip-wrapper">
+<div class="slip-wrapper" data-document-sheet>
 
     <!-- To: + AWB -->
     <div class="slip-to-section">
@@ -297,7 +186,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1
                 <?php if ($sitePhone !== ''): ?>Ph: <?php echo e($sitePhone); ?><br><?php endif; ?>
                 <?php if ($gstin !== ''): ?>GST: <?php echo e($gstin); ?><?php endif; ?>
             </div>
-            <div class="slip-order-barcode" style="text-align:right; flex-shrink:0;">
+            <div class="slip-order-barcode" class="slip-order-barcode">
                 <?php echo $orderBarcodeSvg; ?>
             </div>
         </div>
@@ -307,9 +196,9 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1
             <thead>
                 <tr>
                     <th>Product Name</th>
-                    <th style="width:115px">Product Code</th>
-                    <th style="width:115px">SKU ID</th>
-                    <th style="width:48px; text-align:center">Qty</th>
+                    <th >Product Code</th>
+                    <th >SKU ID</th>
+                    <th class="document-center">Qty</th>
                 </tr>
             </thead>
             <tbody>
@@ -326,21 +215,21 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1
                 <td>
                     <strong><?php echo e($item['fabric_name_snapshot']); ?></strong>
                     <?php if ($attrs): ?>
-                        <br><span style="color:#888;font-size:11px"><?php echo e(implode(' / ', $attrs)); ?></span>
+                        <br><span class="document-muted"><?php echo e(implode(' / ', $attrs)); ?></span>
                     <?php endif; ?>
                 </td>
-                <td style="color:#555"><?php echo $sku; ?></td>
-                <td style="color:#555"><?php echo $sku; ?></td>
+                <td class="document-muted"><?php echo $sku; ?></td>
+                <td class="document-muted"><?php echo $sku; ?></td>
                 <td><?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo e(CommercePresenter::quantityUnitSuffix($unitType)); ?></td>
             </tr>
             <?php endforeach; ?>
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="3" style="text-align:right;">
+                    <td colspan="3" class="document-number">
                         Total SKUs: <?php echo $totalSkus; ?> &nbsp;|&nbsp; Total Quantity:
                     </td>
-                    <td style="text-align:center;"><?php echo $totalQty; ?></td>
+                    <td class="document-center"><?php echo $totalQty; ?></td>
                 </tr>
             </tfoot>
         </table>
@@ -374,10 +263,5 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #1a1a1
 
 </div><!-- /.slip-wrapper -->
 
-<script nonce="<?php echo e($cspNonce); ?>">
-document.getElementById('btn-print-slip').addEventListener('click', function () {
-    window.print();
-});
-</script>
 </body>
 </html>

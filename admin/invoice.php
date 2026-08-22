@@ -119,114 +119,21 @@ if ($supportsTaxSnapshot && !empty($items)) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Invoice <?php echo e($order['order_number']); ?> | <?php echo e($siteName); ?> Admin</title>
-<style>
-/* ── Base ── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
-    font-size: 13px;
-    color: #1f2a44;
-    background: #e9edf2;
-}
-/* ── Page wrapper ── */
-.invoice-wrapper {
-    max-width: 820px;
-    margin: 30px auto;
-    background: #f8fafc;
-    border: 1px solid #b9c3d2;
-    border-radius: 0;
-    padding: 28px 20px 24px;
-}
-/* ── Header ── */
-.inv-header {
-    margin-bottom: 14px;
-}
-.inv-brand { display: none; }
-.inv-brand-name { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-.inv-brand-sub { font-size: 11px; color: #666; }
-.inv-title-block { text-align: center; width: 100%; }
-.inv-title { font-size: 42px; font-weight: 700; color: #111c34; }
-.inv-subtitle { font-size: 17px; font-weight: 600; margin-top: 2px; color: #111c34; }
-.inv-meta {
-    margin-top: 28px;
-    font-size: 14px;
-    color: #2a3652;
-    line-height: 1.3;
-    display: flex;
-    justify-content: space-between;
-    text-align: left;
-}
-/* ── Address grid ── */
-.inv-addresses {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-    border: 1px solid #b9c3d2;
-    margin-bottom: 24px;
-}
-.inv-addr-box { border: 0; border-radius: 0; padding: 12px 14px; }
-.inv-addr-box + .inv-addr-box { border-left: 1px solid #b9c3d2; }
-.inv-addr-label { font-size: 18px; font-weight: 700; text-transform: none; letter-spacing: 0; color: #111c34; margin-bottom: 8px; }
-.inv-addr-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.inv-addr-detail { font-size: 13px; color: #2a3652; line-height: 1.35; }
-.inv-addr-detail strong { color: #333; }
-/* ── Items table ── */
-.inv-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; border: 1px solid #808a98; }
-.inv-table thead tr { background: #f8fafc; color: #1f2a44; }
-.inv-table thead th { padding: 7px 8px; text-align: left; font-weight: 700; font-size: 11px; text-transform: none; letter-spacing: 0; border: 1px solid #808a98; }
-.inv-table thead th:last-child { text-align: right; }
-.inv-table tbody tr { border-bottom: 1px solid #808a98; }
-.inv-table tbody tr:last-child { border-bottom: 1px solid #808a98; }
-.inv-table tbody td { padding: 8px; vertical-align: top; border: 1px solid #808a98; }
-.inv-table tbody td:last-child { text-align: right; white-space: nowrap; }
-.inv-table tfoot td { padding: 7px 8px; border: 1px solid #808a98; font-size: 11px; }
-/* ── Payment ── */
-.inv-payment { margin-top: 24px; display: flex; gap: 24px; font-size: 12px; }
-.inv-payment-item span:first-child { color: #888; }
-.inv-payment-item span:last-child { font-weight: 600; margin-left: 6px; }
-.badge-paid { color: #2e7d32; }
-.badge-pending { color: #c77800; }
-/* ── Footer ── */
-.inv-footer { margin-top: 18px; padding-top: 12px; border-top: 0; display: block; text-align: center; font-size: 14px; color: #2a3652; }
-/* ── Print bar ── */
-.no-print { }
-.print-bar { text-align: center; margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; }
-.btn-print { padding: 10px 28px; background: #1a1a1a; color: #fff; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; font-family: inherit; }
-.btn-print:hover { background: #333; }
-.btn-download { padding: 10px 28px; background: #1565c0; color: #fff; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; font-family: inherit; }
-.btn-download:hover { background: #0d47a1; }
-.btn-back { padding: 10px 20px; background: transparent; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-block; }
-.btn-back:hover { background: #f5f5f5; }
-/* ── Print styles ── */
-@media print {
-    @page { size: A4; margin: 15mm; }
-    body { background: #fff; font-size: 12px; }
-    .no-print { display: none !important; }
-    .invoice-wrapper { max-width: 100%; margin: 0; border: none; border-radius: 0; padding: 0; }
-    .inv-title { font-size: 20px; }
-    .inv-subtitle { font-size: 13px; }
-    .inv-meta { font-size: 12px; margin-top: 10px; }
-    .inv-addr-label { font-size: 16px; }
-    .inv-addr-detail { font-size: 12px; }
-    .inv-table { font-size: 11px; }
-    .inv-table thead th { font-size: 11px; }
-    .inv-table tfoot td { font-size: 11px; }
-    .inv-footer { font-size: 11px; }
-    .inv-table thead tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .inv-totals-row.total-row { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-}
-</style>
+<link rel="stylesheet" href="../css/foundation.css?v=<?php echo e(asset_version('foundation.css')); ?>">
+<link rel="stylesheet" href="../css/documents.css?v=<?php echo e(asset_version('documents.css')); ?>">
+<script defer src="../js/app.js?v=<?php echo e(asset_version('app.js')); ?>"></script>
+<script defer src="../js/documents.js?v=<?php echo e(asset_version('documents.js')); ?>"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 </head>
-<body>
+<body data-ui-area="document" data-ui-page="invoice">
 
-<div class="no-print print-bar">
-    <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="btn-back">&larr; Back to Order</a>
-    <button class="btn-print" id="btn-print-invoice">&#128438; Print</button>
-    <button class="btn-download" id="btn-download-invoice">&#11123; Download PDF</button>
+<div class="no-print print-bar document-toolbar">
+    <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="ui-button ui-button--secondary">&larr; Back to Order</a>
+    <button class="ui-button ui-button--secondary" type="button" data-document-print>Print</button>
+    <button class="ui-button ui-button--primary" type="button" data-document-pdf="invoice-document" data-document-filename="Invoice-<?php echo e($order['order_number']); ?>.pdf">Download PDF</button>
 </div>
 
-<div class="invoice-wrapper">
+<div class="invoice-wrapper" id="invoice-document" data-document-sheet>
 
     <!-- Header -->
     <div class="inv-header">
@@ -303,14 +210,14 @@ body {
     <table class="inv-table">
         <thead>
             <tr>
-                <th style="width:30px">Sr.No</th>
+                <th>Sr.No</th>
                 <th>Product</th>
-                <th style="width:80px; text-align:right">Unit Price</th>
-                <th style="width:50px; text-align:center">Qty</th>
-                <th style="width:70px; text-align:right">Discount</th>
-                <th style="width:90px; text-align:right">Amount</th>
-                <th style="width:130px; text-align:center">Taxes</th>
-                <th style="width:80px; text-align:right">Total</th>
+                <th class="document-number">Unit Price</th>
+                <th class="document-center">Qty</th>
+                <th class="document-number">Discount</th>
+                <th class="document-number">Amount</th>
+                <th class="document-center">Taxes</th>
+                <th class="document-number">Total</th>
             </tr>
         </thead>
         <tbody>
@@ -358,15 +265,15 @@ body {
             <td>
                 <strong><?php echo e($item['fabric_name_snapshot']); ?></strong>
                 <?php if (!empty($item['fabric_sku_snapshot'])): ?>
-                    <br><span style="color:#888;font-size:11px">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></span>
+                    <br><span class="document-muted">SKU: <?php echo e($item['fabric_sku_snapshot']); ?></span>
                 <?php endif; ?>
                 <?php $attrs = array_filter([trim($item['size'] ?? ''), trim($item['color'] ?? '')]); ?>
                 <?php if ($attrs): ?>
-                    <br><span style="color:#888;font-size:11px"><?php echo e(implode(' · ', $attrs)); ?></span>
+                    <br><span class="document-muted"><?php echo e(implode(' · ', $attrs)); ?></span>
                 <?php endif; ?>
             </td>
-            <td style="text-align:right"><?php echo e(money($unitPrice, $currency)); ?></td>
-            <td style="text-align:center"><?php
+            <td class="document-number"><?php echo e(money($unitPrice, $currency)); ?></td>
+            <td class="document-center"><?php
                 $bQtyDisp   = (int) ($item['bundle_quantity'] ?? 0);
                 $bMeterDisp = (float) ($item['meter_length'] ?? 0);
                 if ($unitType === 'meter' && $bQtyDisp > 0 && $bMeterDisp > 0) {
@@ -375,9 +282,9 @@ body {
                     echo e(format_quantity_by_unit($qty, $unitType)) . e(CommercePresenter::quantityUnitSuffix($unitType));
                 }
             ?></td>
-            <td style="text-align:right"><?php echo $itemDiscount > 0 ? e(money($itemDiscount, $currency)) : '-'; ?></td>
-            <td style="text-align:right"><?php echo e(money($itemAmount, $currency)); ?></td>
-            <td style="text-align:center;font-size:11px">
+            <td class="document-number"><?php echo $itemDiscount > 0 ? e(money($itemDiscount, $currency)) : '-'; ?></td>
+            <td class="document-number"><?php echo e(money($itemAmount, $currency)); ?></td>
+            <td class="document-center document-muted">
                 <?php if ($displayTaxType === 'igst'): ?>
                     IGST@<?php echo number_format($displayGstRate, 1); ?>%=<?php echo e(money($displayIgst, $currency)); ?>
                 <?php elseif ($displayTaxType === 'cgst_sgst'): ?>
@@ -385,57 +292,57 @@ body {
                     SGST@<?php echo number_format($displayGstRate / 2, 1); ?>%=<?php echo e(money($displaySgst, $currency)); ?>
                 <?php else: ?>-<?php endif; ?>
             </td>
-            <td style="text-align:right"><?php echo e(money($itemTotal, $currency)); ?></td>
+            <td class="document-number"><?php echo e(money($itemTotal, $currency)); ?></td>
         </tr>
         <?php endforeach; ?>
         </tbody>
         <tfoot>
-            <tr style="background:#f5f5f5; font-size:12px;">
-                <td colspan="7" style="text-align:right; padding:7px 10px; border-top:2px solid #ccc;">Items Total</td>
-                <td style="text-align:right; padding:7px 10px; border-top:2px solid #ccc; white-space:nowrap;"><?php echo e(money($subtotal, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">Items Total</td>
+                <td><?php echo e(money($subtotal, $currency)); ?></td>
             </tr>
             <?php if ($discount > 0): ?>
-            <tr style="background:#f5f5f5; font-size:12px;">
-                <td colspan="7" style="text-align:right; padding:7px 10px;">Discount</td>
-                <td style="text-align:right; padding:7px 10px; color:#c0392b; white-space:nowrap;">- <?php echo e(money($discount, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">Discount</td>
+                <td>- <?php echo e(money($discount, $currency)); ?></td>
             </tr>
             <?php endif; ?>
             <?php if ($taxType !== 'none' && $gstInclTotal > 0): ?>
-            <tr style="background:#fafafa; font-size:12px;">
-                <td colspan="7" style="text-align:right; padding:7px 10px;">Total Before Tax</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($baseNet, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">Total Before Tax</td>
+                <td><?php echo e(money($baseNet, $currency)); ?></td>
             </tr>
             <?php if ($taxType === 'igst'): ?>
-            <tr style="background:#fafafa; font-size:12px;">
-                <td colspan="7" style="text-align:right; padding:7px 10px;">IGST (<?php echo number_format($gstRate, 1); ?>%)</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($gstInclTotal, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">IGST (<?php echo number_format($gstRate, 1); ?>%)</td>
+                <td><?php echo e(money($gstInclTotal, $currency)); ?></td>
             </tr>
             <?php else: ?>
-            <tr style="background:#fafafa; font-size:12px;">
-                <td colspan="7" style="text-align:right; padding:7px 10px;">CGST (<?php echo number_format($gstRate / 2, 1); ?>%)</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($cgstIncl, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">CGST (<?php echo number_format($gstRate / 2, 1); ?>%)</td>
+                <td><?php echo e(money($cgstIncl, $currency)); ?></td>
             </tr>
-            <tr style="background:#fafafa; font-size:12px;">
-                <td colspan="7" style="text-align:right; padding:7px 10px;">SGST (<?php echo number_format($gstRate / 2, 1); ?>%)</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($sgstIncl, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">SGST (<?php echo number_format($gstRate / 2, 1); ?>%)</td>
+                <td><?php echo e(money($sgstIncl, $currency)); ?></td>
             </tr>
             <?php endif; ?>
-            <tr style="background:#fafafa; font-size:12px; font-weight:600;">
-                <td colspan="7" style="text-align:right; padding:7px 10px;">Total Tax</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($gstInclTotal, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">Total Tax</td>
+                <td><?php echo e(money($gstInclTotal, $currency)); ?></td>
             </tr>
             <?php endif; ?>
             <?php if ($shippingCost > 0): ?>
-            <tr style="background:#f5f5f5; font-size:12px;">
-                <td colspan="7" style="text-align:right; padding:7px 10px;">Shipping</td>
-                <td style="text-align:right; padding:7px 10px; white-space:nowrap;"><?php echo e(money($shippingCost, $currency)); ?></td>
+            <tr class="document-total-row">
+                <td colspan="7">Shipping</td>
+                <td><?php echo e(money($shippingCost, $currency)); ?></td>
             </tr>
             <?php endif; ?>
-            <tr style="background:#1a1a1a; color:#fff; font-weight:700; font-size:14px;">
-                <td colspan="7" style="text-align:right; padding:12px 10px;">Invoice Total</td>
-                <td style="text-align:right; padding:12px 10px; white-space:nowrap;">
+            <tr class="document-grand-total">
+                <td colspan="7">Invoice Total</td>
+                <td>
                     <?php echo e(money($total, $currency, true)); ?><br>
-                    <small style="font-weight:400; opacity:0.75; font-size:11px;">Incl. GST <?php echo e(money($gstInclTotal, $currency)); ?></small>
+                    <small>Incl. GST <?php echo e(money($gstInclTotal, $currency)); ?></small>
                 </td>
             </tr>
         </tfoot>
@@ -464,23 +371,6 @@ body {
 
 </div><!-- /.invoice-wrapper -->
 
-<script nonce="<?php echo e($cspNonce); ?>">
-var invoiceFileName = 'Invoice-<?php echo e($order['order_number']); ?>';
-document.getElementById('btn-print-invoice').addEventListener('click', function () {
-    window.print();
-});
-document.getElementById('btn-download-invoice').addEventListener('click', function () {
-    var el = document.querySelector('.invoice-wrapper');
-    var opt = {
-        margin: 10,
-        filename: invoiceFileName + '.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-    html2pdf().set(opt).from(el).save();
-});
-</script>
 </body>
 </html>
 
