@@ -26,6 +26,7 @@ $eligibility = $read('includes/helpers/inventory-orders.php');
 $feed = $read('plugins/product-feed/plugin.php');
 $alerts = $read('plugins/inventory-alert/plugin.php');
 $dashboard = $read('admin/dashboard.php');
+$orderView = $read('admin/order-view.php');
 $cron = $read('cron/run-plugins.php');
 $courier = $read('plugins/shipping-courier/modules/returns.php');
 $migrationPath = 'database/migrations/2026-08-22-ecommerce-operations-completion.sql';
@@ -53,6 +54,7 @@ $assert(str_contains($guestOrder, 'reverse_pickup') && str_contains($guestOrder,
 $assert(str_contains($feed, "CONCAT('p-', f.id, '-v-', fv.id)") && str_contains($feed, 'variant_id') && str_contains($feed, 'price_override'), 'Variable product feeds must emit stable variant offers with override pricing.');
 $assert(str_contains($alerts, 'variant_id <=> ?') && str_contains($alerts, "'color'"), 'Inventory alerts must use a variant-aware cooldown and email context.');
 $assert(str_contains($dashboard, "f.product_type='variable'") && str_contains($dashboard, 'fabric_variants'), 'Dashboard low stock must count active variant SKUs.');
+$assert(str_contains($orderView, "\$method === 'cod' && \$targetStatus === 'cancelled'") && str_contains($orderView, "\$method === 'cod' && \$targetStatus === 'confirmed'") && str_contains($orderView, "WHERE order_id = ? AND status = 'pending'"), 'Admin COD workflow transitions must synchronize only pending confirmation rows.');
 
 $assert(str_contains($cron, 'cron_run_history') && str_contains($cron, 'INTERVAL 30 DAY') && str_contains($dashboard, 'cron_last_summary_json'), 'Cron history and sanitized summary must be persisted and rendered.');
 $assert(str_contains($courier, 'shipping_courier_reverse_capabilities') && str_contains($courier, 'shipping_courier_claim_reverse_pickup') && str_contains($courier, 'Manual pickup is required'), 'Reverse pickup creation must be capability-gated and claimed atomically.');

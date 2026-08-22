@@ -66,6 +66,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $update->bind_param('ssi', $targetStatus, $legacyStatus, $id);
             $update->execute();
 
+            if ($method === 'cod' && $targetStatus === 'cancelled') {
+                $codConfirmation = $conn->prepare(
+                    "UPDATE cod_confirmations
+                     SET status = 'cancelled',
+                         cancelled_at = COALESCE(cancelled_at, NOW()),
+                         updated_at = NOW()
+                     WHERE order_id = ? AND status = 'pending'"
+                );
+                $codConfirmation->bind_param('i', $id);
+                $codConfirmation->execute();
+            } elseif ($method === 'cod' && $targetStatus === 'confirmed') {
+                $codConfirmation = $conn->prepare(
+                    "UPDATE cod_confirmations
+                     SET status = 'confirmed',
+                         confirmed_at = COALESCE(confirmed_at, NOW()),
+                         updated_at = NOW()
+                     WHERE order_id = ? AND status = 'pending'"
+                );
+                $codConfirmation->bind_param('i', $id);
+                $codConfirmation->execute();
+            }
+
             if ($targetStatus === 'shipped' || $targetStatus === 'delivered') {
                 $shipStmt = $conn->prepare("SELECT id, shipped_at, delivered_at FROM shipments WHERE order_id = ? LIMIT 1 FOR UPDATE");
                 $shipStmt->bind_param('i', $id);
