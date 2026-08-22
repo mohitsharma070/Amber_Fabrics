@@ -250,6 +250,59 @@ function e(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Encode structured page data for a quoted HTML data attribute.
+ *
+ * Keeping browser configuration in inert attributes avoids executable PHP/JS
+ * interpolation while preserving the original scalar and array types.
+ */
+function ui_data_json($value): string
+{
+    $json = json_encode(
+        $value,
+        JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+    );
+
+    if (!is_string($json)) {
+        $json = 'null';
+    }
+
+    return htmlspecialchars($json, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+/**
+ * Return a cache-busted URL for a first-party browser asset.
+ */
+function ui_asset(string $publicPath): string
+{
+    $normalized = '/' . ltrim(str_replace('\\', '/', $publicPath), '/');
+    $root = dirname(__DIR__, 2);
+    $absolutePath = $root . str_replace('/', DIRECTORY_SEPARATOR, $normalized);
+    $version = is_file($absolutePath) ? (string) filemtime($absolutePath) : '1';
+
+    return $normalized . '?v=' . rawurlencode($version);
+}
+
+/**
+ * Render an icon from the first-party SVG sprite with a safe accessible name.
+ */
+function ui_icon(string $name, ?string $label = null, string $className = ''): string
+{
+    $safeName = strtolower(trim($name));
+    if (!preg_match('/^[a-z0-9-]+$/', $safeName)) {
+        return '';
+    }
+
+    $classes = trim('ui-icon ' . preg_replace('/[^a-zA-Z0-9 _-]/', '', $className));
+    $labelAttribute = $label === null || trim($label) === ''
+        ? ' aria-hidden="true" focusable="false"'
+        : ' role="img" aria-label="' . e($label) . '"';
+
+    return '<svg class="' . e($classes) . '"' . $labelAttribute . '>'
+        . '<use href="/images/ui-icons.svg#icon-' . e($safeName) . '"></use>'
+        . '</svg>';
+}
+
 function site_name(): string
 {
     return SiteContext::name();
