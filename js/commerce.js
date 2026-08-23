@@ -59,18 +59,41 @@
     });
   }
 
+  function initializeProductImageFallbacks() {
+    function replaceBrokenImage(image) {
+      if (!image || image.getAttribute("data-image-fallback-applied") === "true") {
+        return;
+      }
+      image.setAttribute("data-image-fallback-applied", "true");
+      var fallback = document.createElement("span");
+      fallback.className = "fabric-thumb-empty";
+      fallback.textContent = "Image unavailable";
+      var picture = image.closest("picture");
+      if (picture) {
+        picture.replaceWith(fallback);
+      } else {
+        image.replaceWith(fallback);
+      }
+    }
+
+    document.querySelectorAll("img.fabric-thumb").forEach(function (image) {
+      image.addEventListener("error", function () { replaceBrokenImage(image); }, { once: true });
+      if (image.complete && image.naturalWidth === 0) {
+        replaceBrokenImage(image);
+      }
+    });
+  }
+
   function initializeAnnouncement() {
     var bar = document.querySelector("[data-ui-announcement]");
     if (!bar) {
       return;
     }
     var messages = Array.prototype.slice.call(bar.querySelectorAll("[data-announcement-message]"));
-    var pause = bar.querySelector("[data-announcement-pause]");
     var dismiss = bar.querySelector("[data-announcement-dismiss]");
     var key = bar.getAttribute("data-announcement-key") || "";
     var index = 0;
     var timer = null;
-    var paused = false;
 
     function show(next) {
       messages.forEach(function (message, position) {
@@ -86,18 +109,9 @@
 
     function start() {
       stop();
-      if (!paused && messages.length > 1) {
+      if (messages.length > 1) {
         timer = window.setInterval(function () { show((index + 1) % messages.length); }, 5000);
       }
-    }
-
-    if (pause) {
-      pause.addEventListener("click", function () {
-        paused = !paused;
-        pause.setAttribute("aria-pressed", paused ? "true" : "false");
-        pause.textContent = paused ? "Play" : "Pause";
-        start();
-      });
     }
     if (dismiss) {
       dismiss.addEventListener("click", function () {
@@ -122,12 +136,10 @@
       }
       slider.setAttribute("data-ui-ready", "true");
       var track = slider.querySelector("[data-slider-track]");
-      var toggle = slider.querySelector("[data-slider-toggle]");
       if (!track) {
         return;
       }
       var timer = null;
-      var paused = false;
       var interval = Math.max(2500, Number(slider.getAttribute("data-slider-interval")) || 4500);
 
       function stepWidth() {
@@ -152,18 +164,9 @@
 
       function start() {
         stop();
-        if (!paused && track.scrollWidth > track.clientWidth + 4) {
+        if (track.scrollWidth > track.clientWidth + 4) {
           timer = window.setInterval(advance, interval);
         }
-      }
-
-      if (toggle) {
-        toggle.addEventListener("click", function () {
-          paused = !paused;
-          toggle.setAttribute("aria-pressed", paused ? "true" : "false");
-          toggle.setAttribute("aria-label", paused ? "Play slider" : "Pause slider");
-          start();
-        });
       }
       slider.addEventListener("mouseenter", stop);
       slider.addEventListener("mouseleave", start);
@@ -908,7 +911,8 @@
     var shippingNote = byId("summary_shipping_note");
     var deliveryEstimate = byId("checkout_delivery_estimate");
     var deliveryStatus = byId("checkout_delivery_status");
-    var continueButton = byId("checkout_continue_payment");
+    var continueButtons = Array.prototype.slice.call(document.querySelectorAll("[data-checkout-continue]"));
+    var mobileContinueButton = byId("checkout_continue_payment_mobile");
     var submitButton = byId("checkout_submit");
     var mobileSubmitButton = byId("mobile_place_order_btn");
     var mobileSubmitLabel = byId("mobile_place_order_label");
@@ -1046,17 +1050,20 @@
       conceal(paymentSection, !deliveryUnlocked);
       conceal(reviewSection, !deliveryUnlocked);
       conceal(mobileReview, !deliveryUnlocked);
+      conceal(mobileContinueButton, deliveryUnlocked);
       if (!deliveryUnlocked && quoteToken) { quoteToken.value = ""; }
       syncSummary();
     }
 
     function setPending(pending) {
       requestPending = Boolean(pending);
-      if (continueButton && AmberUI.setButtonLoading) {
-        AmberUI.setButtonLoading(continueButton, requestPending, "Checking delivery…");
-      } else if (continueButton) {
-        continueButton.disabled = requestPending;
-      }
+      continueButtons.forEach(function (button) {
+        if (AmberUI.setButtonLoading) {
+          AmberUI.setButtonLoading(button, requestPending, "Checking delivery…");
+        } else {
+          button.disabled = requestPending;
+        }
+      });
       if (submitButton) { submitButton.disabled = requestPending; }
       if (mobileSubmitButton) { mobileSubmitButton.disabled = requestPending; }
     }
@@ -1229,8 +1236,8 @@
         online.dispatchEvent(new Event("change", { bubbles: true }));
       });
     });
-    if (continueButton) {
-      continueButton.addEventListener("click", function (event) {
+    continueButtons.forEach(function (button) {
+      button.addEventListener("click", function (event) {
         event.preventDefault();
         if (!validateAddress()) {
           setUnlocked(false);
@@ -1249,7 +1256,7 @@
           if (paymentSection) { paymentSection.scrollIntoView({ behavior: "smooth", block: "start" }); }
         });
       });
-    }
+    });
     if (addressEdit) { addressEdit.addEventListener("click", function () { sectionCollapsed(addressSection, addressBody, addressSummary, addressEdit, false); if (name) { name.focus(); } }); }
     if (paymentEdit) { paymentEdit.addEventListener("click", function () { sectionCollapsed(paymentSection, paymentBody, paymentSummary, paymentEdit, false); cod.focus(); }); }
     if (createAccount) { createAccount.addEventListener("change", syncAccountFields); }
@@ -1422,6 +1429,7 @@
     }
     initialized = true;
     initializeCardLinks();
+    initializeProductImageFallbacks();
     initializeAnnouncement();
     initializeSliders();
     initializeGoTop();

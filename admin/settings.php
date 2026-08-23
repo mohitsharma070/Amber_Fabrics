@@ -497,7 +497,7 @@ elseif ($activeTab === 'branding'): ?>
         <label for="branding_logo" class="ui-label u-font-semibold">Site Logo</label>
         <div class="u-mb-2">
             <?php if (!empty($settings['branding_logo']) && file_exists(__DIR__ . '/../' . $settings['branding_logo'])): ?>
-                <div class="u-p-3 bg-dark u-rounded u-inline-block">
+                <div class="u-p-3 u-bg-dark u-rounded u-inline-block">
                     <img src="../<?php echo e($settings['branding_logo']); ?>" alt="Current Logo" class="settings-logo-preview">
                 </div>
             <?php else: ?>

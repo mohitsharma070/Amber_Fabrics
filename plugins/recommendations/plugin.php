@@ -825,15 +825,19 @@ function recommendations_render_section(mysqli $conn, array $rows, string $title
     }
     $sectionKey = recommendations_sanitize_tracking_value($sectionKey !== '' ? $sectionKey : $title);
     recommendations_log_impressions($conn, $rows, $sectionKey);
+    $headingId = 'recommendations-' . ($sectionKey !== '' ? $sectionKey : 'products');
     ?>
-    <div class="mt-4 border-top pt-4 recommendations-block">
-        <h5 class="mb-3"><?php echo e($title); ?></h5>
+    <section class="recommendations-block u-mt-4 u-border-top u-pt-4" aria-labelledby="<?php echo e($headingId); ?>">
+        <div class="recommendations-heading">
+            <p class="recommendations-eyebrow">Curated for you</p>
+            <h2 class="u-heading-5 u-mb-3" id="<?php echo e($headingId); ?>"><?php echo e($title); ?></h2>
+        </div>
         <div class="catalog-products-grid">
             <?php foreach ($rows as $row): ?>
                 <?php echo recommendations_render_product_card($conn, $row, $sectionKey); ?>
             <?php endforeach; ?>
         </div>
-    </div>
+    </section>
     <?php
 }
 

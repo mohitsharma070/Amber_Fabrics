@@ -44,7 +44,8 @@ $assert(str_contains($app, 'if (pendingConfirm) {' ) && str_contains($app, 'retu
 $assert(str_contains($app, 'drawer.getAttribute("data-ui-opening") === "true"') && str_contains($app, 'drawer.setAttribute("data-ui-opening", "true")'), 'Rapid drawer-open requests must not acquire multiple scroll locks.');
 $assert(str_contains($foundation, '@media (prefers-reduced-motion: reduce)'), 'The foundation must honor reduced-motion preferences.');
 $assert(str_contains($foundation, 'min-block-size: 2.75rem'), 'Interactive controls must provide 44px touch targets.');
-foreach (['.ui-spinner--small', '.ui-card__title', '.ui-surface-soft', '.ui-check__input', '.ui-check__label', '.ui-alert__link', '.ui-table__head--light', '.u-heading-6', '.u-p-5'] as $selector) {
+$assert(str_contains($foundation, '--color-canvas: #f7f5f0') && str_contains($foundation, '--radius-lg: 1.5rem'), 'The refreshed shared visual tokens must remain active.');
+foreach (['.ui-spinner--small', '.ui-card__title', '.ui-surface-soft', '.ui-check__input', '.ui-check__label', '.ui-alert__link', '.ui-table__head--light', '.u-heading-6', '.u-p-5', '.u-bg-dark', '.u-border-warning'] as $selector) {
     $assert(str_contains($foundation, $selector), 'The shared foundation must define used selector ' . $selector . '.');
 }
 $assert(substr_count($foundation, '.u-pt-2 {') === 1, 'Foundation utilities must not contain duplicate u-pt-2 declarations.');

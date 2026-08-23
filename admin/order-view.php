@@ -420,7 +420,7 @@ include 'partials/header.php';
                         <?php else: ?>
                             <div class="admin-order-thumb admin-order-thumb--placeholder"></div>
                         <?php endif; ?>
-                        <div class="flex-grow-1">
+                        <div class="u-grow">
                             <div class="u-font-semibold"><?php echo e($name); ?></div>
                             <div class="u-text-muted u-text-small">
                                 Qty: <?php echo e(format_quantity_by_unit($qty, $unitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($unitType); ?>
@@ -626,7 +626,7 @@ include 'partials/header.php';
         </div>
 
         <?php if (!empty($razorpayAuditLines)): ?>
-        <div class="ui-card u-mb-4 border-warning">
+        <div class="ui-card u-mb-4 u-border-warning">
             <div class="ui-card__body">
                 <h6 class="ui-card__title u-text-warning">Razorpay Audit</h6>
                 <div class="u-text-small u-text-muted">

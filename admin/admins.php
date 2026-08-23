@@ -85,7 +85,7 @@ $admins = $conn->query('SELECT id, name, email, role, is_active, last_login_at, 
 $metaTitle = 'Administrators | Admin';
 include __DIR__ . '/partials/header.php';
 ?>
-<div class="u-flex u-justify-between u-items-center u-mb-4"><div><h1 class="h3 u-mb-1">Administrators</h1><p class="u-text-muted u-mb-0">Manage separated-duty access. Login still requires the configured passphrase and emailed OTP.</p></div></div>
+<div class="u-flex u-justify-between u-items-center u-mb-4"><div><h1 class="u-heading-4 u-mb-1">Administrators</h1><p class="u-text-muted u-mb-0">Manage separated-duty access. Login still requires the configured passphrase and emailed OTP.</p></div></div>
 <div class="ui-card u-mb-4"><div class="ui-card__body"><h2 class="u-heading-5">Add administrator</h2>
 <form method="POST" class="l-grid l-grid--12 u-gap-3"><?php echo csrf_field(); ?><input type="hidden" name="action" value="create">
 <div class="l-col-md-third"><label class="ui-label">Name</label><input class="ui-input" name="name" maxlength="255" required></div>

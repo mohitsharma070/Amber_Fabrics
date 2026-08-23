@@ -95,7 +95,6 @@ $announcementKey = md5(implode('|', $announcementMessages));
             </div>
         </div>
     </div>
-    <?php if (count($announcementMessages) > 1): ?><button type="button" class="announce-pause" id="announcePause" data-announcement-pause aria-pressed="false" aria-label="Pause announcements">Pause</button><?php endif; ?>
     <button class="announce-close" id="announceClose" data-announcement-dismiss aria-label="Dismiss announcement">&#x2715;</button>
 </div>
 <?php endif; ?>
@@ -151,7 +150,6 @@ $announcementKey = md5(implode('|', $announcementMessages));
             <p class="u-text-muted u-mb-0"><?php echo e((string) ($siteSettings['home_categories_subtitle'] ?? 'Discover our focused collection for modern homes and gifting')); ?></p>
         </div>
         <div class="slider-wrap" id="catSlider" data-ui-slider>
-            <button type="button" class="slider-motion-toggle" data-slider-toggle aria-pressed="false">Pause slider</button>
             <div class="slider-track cat-slider-track" data-slider-track>
             <?php
             $catColors = ['#0f766e','#c77d2f','#17263d','#6d6875','#a4133c','#4361ee','#3a0ca3'];
@@ -193,7 +191,6 @@ $announcementKey = md5(implode('|', $announcementMessages));
         </div>
 
         <div class="slider-wrap" id="prodSlider" data-ui-slider>
-            <button type="button" class="slider-motion-toggle" data-slider-toggle aria-pressed="false">Pause slider</button>
             <div class="slider-track prod-slider-track" data-slider-track>
             <?php if (empty($homeProductRows)): ?>
                 <div class="surface-panel u-text-center u-text-muted u-py-5 u-px-3">
@@ -297,7 +294,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
                                 <?php endif; ?>
                             </div>
                         <?php endif; ?>
-                        <div class="u-flex u-gap-1 mt-auto">
+                        <div class="u-flex u-gap-1 u-mt-auto">
                             <?php if ($cardIsInStock): ?>
                                 <?php if ($unitType === 'meter'): ?>
                                     <a href="<?php echo e($productUrl); ?>" class="ui-button ui-button--primary ui-button--small u-grow">View Options</a>

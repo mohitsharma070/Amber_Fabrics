@@ -139,11 +139,10 @@ include __DIR__ . '/includes/header.php';
     </div>
 </section>
 
-<section class="section-block u-pt-0">
+<section class="section-block u-pt-0 inquiry-section">
     <div class="l-container">
-        <div class="l-grid l-grid--12 u-gap-4 u-justify-center">
-            <div class="l-col-lg-eight">
-                <div class="surface-panel">
+        <div class="inquiry-shell animate-in">
+                <div class="surface-panel inquiry-card">
                     <form method="POST" action="/export-inquiry.php" novalidate>
                         <?php echo csrf_field(); ?>
                         <div class="l-grid l-grid--12 u-gap-3">
@@ -185,7 +184,6 @@ include __DIR__ . '/includes/header.php';
                         </div>
                     </form>
                 </div>
-            </div>
         </div>
     </div>
 </section>

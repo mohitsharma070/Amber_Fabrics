@@ -51,6 +51,7 @@ $storefrontTemplates = [
     'plugins/back-in-stock-alert/plugin.php',
     'plugins/google-analytics/plugin.php',
     'plugins/meta-pixel/plugin.php',
+    'plugins/recommendations/plugin.php',
     'plugins/review-rating/plugin.php',
 ];
 
@@ -78,6 +79,7 @@ $app = $read('js/app.js');
 $formHelpers = $read('includes/helpers/email-tax-ui.php');
 $coreHelpers = $read('includes/helpers/core.php');
 $siteSettings = $read('includes/services/SiteSettingsService.php');
+$storefrontCss = $read('css/storefront.css');
 
 $assert(str_contains($header, 'data-ui-area="storefront"') && str_contains($header, 'data-ui-page='), 'The storefront layout must expose its guarded UI area and route.');
 $assert(substr_count($header, "ui_asset('/css/") === 2, 'Storefront routes must load exactly two first-party CSS files.');
@@ -91,6 +93,10 @@ $assert(str_contains($commerce, 'fetchJson("/cookie-consent.php"') && str_contai
 $assert(!str_contains($commerce, '/marketing-consent.php'), 'The storefront must not call a non-existent marketing-consent endpoint.');
 $assert(str_contains($commerce, 'window.location.reload();'), 'Granting consent must reload so consent-gated analytics markup and CSP directives can be rendered.');
 $assert(str_contains($checkout, 'formaction="/checkout.php" formmethod="post"') && str_contains($checkout, 'CheckoutInput::sessionState($preparedInput)'), 'Checkout must retain a server-rendered continue-to-payment fallback.');
+$assert(substr_count($checkout, 'data-checkout-continue') === 2
+    && str_contains($checkout, 'checkout_continue_payment_mobile')
+    && str_contains($commerce, 'continueButtons.forEach(function (button)')
+    && str_contains($storefrontCss, '.checkout-continue-mobile:not(.u-hidden)'), 'Phone checkout must place its shared continue-to-payment action below the order summary.');
 $assert(!preg_match('/<form\b[^>]*id="checkout_form"[^>]*\bnovalidate\b/is', $checkout), 'Checkout must retain native validation when JavaScript is unavailable.');
 
 foreach ([
@@ -109,6 +115,39 @@ $assert(str_contains($app, 'form.hasAttribute("data-ui-async")'), 'The shared su
 $assert(str_contains($commerce, 'event.preventDefault();') && str_contains($commerce, 'button.getAttribute("aria-busy") === "true"'), 'AJAX cart submissions must prevent native duplicate submissions.');
 $assert(str_contains($formHelpers, "string \$base = 'ui-field-error'"), 'The shared form error helper must use the first-party error presentation.');
 $assert(!preg_match('/form_class\([^,\r\n]+,\s*["\'][^"\']+["\']\s*\)/', $checkout), 'Checkout fields must explicitly use first-party control classes.');
+$assert(str_contains($storefrontCss, '@layer storefront-refresh')
+    && str_contains($storefrontCss, '.checkout-pay-option:hover')
+    && str_contains($storefrontCss, '.account-nav'), 'The refreshed storefront, checkout, and customer-account visual system must remain present.');
+$assert(str_contains($catalog = $read('catalog.php'), 'catalog-main-section')
+    && str_contains($catalog, 'catalog-recommendations'), 'Catalog utilities and hook-rendered recommendations must stay inside the responsive catalog layout.');
+$assert(str_contains($catalog, 'id="catalogFiltersDrawer"')
+    && str_contains($storefrontCss, ".catalog-filters {\n      display: none;"), 'Tablet and phone catalog views must hide the desktop filter sidebar and use only the filter drawer.');
+$assert(str_contains($storefrontCss, '.catalog-utility-row')
+    && str_contains($storefrontCss, '.recommendations-block .catalog-products-grid')
+    && str_contains($storefrontCss, 'grid-template-areas: "brand links actions"'), 'Catalog utilities, recommendations, and desktop navigation must retain their corrected layouts.');
+$assert(str_contains($storefrontCss, '.catalog-active-filters')
+    && str_contains($storefrontCss, '.checkout-payment-options')
+    && str_contains($storefrontCss, '.saved-cart-item__actions')
+    && str_contains($storefrontCss, '.about-story')
+    && str_contains($storefrontCss, '.testimonial-author'), 'Migrated storefront page structures must retain explicit first-party layout definitions.');
+$assert(str_contains($read('contact.php'), 'inquiry-shell--compact')
+    && str_contains($read('international-buyers.php'), 'inquiry-shell')
+    && str_contains($storefrontCss, '.inquiry-card'), 'Contact and international inquiry forms must remain centered in their explicit responsive layout.');
+$assert(str_contains($commerce, 'initializeProductImageFallbacks()')
+    && str_contains($commerce, 'Image unavailable'), 'Broken product media must degrade to a bounded accessible placeholder.');
+$assert(!str_contains($read('index.php'), 'data-announcement-pause')
+    && !str_contains($read('index.php'), 'data-slider-toggle')
+    && !str_contains($storefrontCss, '.announce-pause')
+    && !str_contains($storefrontCss, '.slider-motion-toggle'), 'Public pause controls must not crowd announcement or product content.');
+$assert(str_contains($storefrontCss, '@media (max-width: 47.99rem)')
+    && str_contains($storefrontCss, ".site-header__drawer-toggle {\n      display: none;"), 'Phone layouts must use the bottom navigation as their single menu trigger.');
+$assert(str_contains($storefrontCss, '.hero-section--home .hero-swatch-col')
+    && str_contains($storefrontCss, 'padding-block: 1.2rem 1.45rem;'), 'The phone home hero must remain compact and omit its decorative swatch panel.');
+$assert(str_contains($storefrontCss, 'flex-basis: calc((100% - 0.65rem) / 2)')
+    && str_contains($storefrontCss, '.recommendations-block .catalog-products-grid')
+    && str_contains($storefrontCss, 'grid-template-columns: repeat(2, minmax(0, 1fr));'), 'Phone sliders and product grids must retain two cards per row.');
+$assert(str_contains($storefrontCss, ".why-grid,\n    .testimonials-grid {")
+    && str_contains($storefrontCss, '.testimonial-location'), 'Why-us and buyer-testimonial cards must retain their compact two-column phone presentation.');
 $assert(str_contains($coreHelpers, 'function ui_rich_text_html('), 'Stored policy HTML must pass through the legacy presentation-class normalizer.');
 foreach (['shipping-policy.php', 'return-policy.php', 'privacy-policy.php', 'terms.php', 'international-orders-policy.php', 'size-guide.php'] as $path) {
     $assert(str_contains($read($path), 'ui_rich_text_html('), $path . ' must normalize historical editable presentation classes before rendering.');

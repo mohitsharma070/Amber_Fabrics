@@ -327,7 +327,7 @@ function catalog_query(array $params): string {
     </div>
 </section>
 
-<section class="section-block u-pt-0">
+<section class="section-block u-pt-0 catalog-main-section">
     <div class="l-container">
         <div class="surface-panel catalog-utility-row u-mb-3">
             <div class="catalog-utility-main">
@@ -364,7 +364,7 @@ function catalog_query(array $params): string {
         <div class="catalog-layout">
             <aside class="catalog-filters">
                 <div class="surface-panel catalog-filter-panel">
-                    <h2 class="h5 u-mb-3">Filters</h2>
+                    <h2 class="u-heading-5 u-mb-3">Filters</h2>
                     <form class="l-grid l-grid--12 u-gap-2" method="GET" action="/catalog">
                             <input type="hidden" name="q" value="<?php echo e($search); ?>">
                             <div class="l-col-full">
@@ -521,18 +521,20 @@ function catalog_query(array $params): string {
 </section>
 <?php endif; ?>
 
-<?php do_action('catalog.after_results', [
-    'conn' => $conn,
-    'rows' => $rows,
-    'state' => $state,
-    'total' => $total,
-    'page' => $page,
-    'pages' => $pages,
-    'per_page' => $perPage,
-    'category' => $category,
-    'search' => $search,
-    'sort' => $sort,
-]); ?>
+<div class="l-container catalog-recommendations">
+    <?php do_action('catalog.after_results', [
+        'conn' => $conn,
+        'rows' => $rows,
+        'state' => $state,
+        'total' => $total,
+        'page' => $page,
+        'pages' => $pages,
+        'per_page' => $perPage,
+        'category' => $category,
+        'search' => $search,
+        'sort' => $sort,
+    ]); ?>
+</div>
 
 <section class="section-block">
     <div class="l-container">

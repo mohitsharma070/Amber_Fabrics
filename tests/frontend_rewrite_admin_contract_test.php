@@ -43,6 +43,7 @@ $dashboard = $read('admin/dashboard.php');
 $editor = $read('admin/edit-fabric.php');
 $courierReturns = $read('plugins/shipping-courier/modules/returns.php');
 $supportTickets = $read('plugins/support-tickets/plugin.php');
+$adminCss = $read('css/admin.css');
 
 $assert(str_contains($header, 'data-ui-area="admin"') && str_contains($header, 'data-ui-page='), 'The admin layout must expose the guarded UI area and route.');
 $assert(substr_count($header, "ui_asset('/css/") === 2, 'Admin routes must load exactly two first-party CSS files.');
@@ -56,6 +57,17 @@ $assert(!str_contains($courierReturns, 'class="small text-muted mt-2"')
     && !str_contains($courierReturns, 'class="mt-2"')
     && !str_contains($courierReturns, 'class="btn btn-sm'), 'Courier return actions must use first-party admin classes.');
 $assert(!str_contains($supportTickets, 'class="alert alert-warning"'), 'Support migration warnings must use the shared alert component.');
+$assert(str_contains($adminCss, '@layer admin-refresh')
+    && str_contains($adminCss, '.dashboard-kpi-card::before')
+    && str_contains($adminCss, '.admin-card-table tr'), 'The refreshed admin shell, dashboard, and responsive table system must remain present.');
+$assert(str_contains($adminCss, '.dashboard-kpi-grid')
+    && str_contains($adminCss, '.dashboard-mini-list')
+    && str_contains($adminCss, '.return-breakdown-mobile-item'), 'Admin dashboard and return summary structures must retain explicit first-party layouts.');
+$assert(str_contains($adminCss, '@media (max-width: 95rem)')
+    && str_contains($adminCss, '.admin-nav.is-open')
+    && str_contains($adminCss, 'grid-template-columns: repeat(2, 12rem) auto')
+    && str_contains($adminCss, 'display: grid !important')
+    && str_contains($adminCss, '.dashboard-header .admin-filter-actions'), 'Admin navigation and dashboard filters must retain their collision-free desktop and mobile layouts.');
 
 if ($failures !== []) {
     fwrite(STDERR, "Admin frontend rewrite contract failures:\n- " . implode("\n- ", $failures) . "\n");

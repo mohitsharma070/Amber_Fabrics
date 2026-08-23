@@ -347,7 +347,7 @@ include __DIR__ . '/includes/header.php';
                                 <textarea name="order_notes" class="ui-input" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
                             <div class="l-col-full">
-                                <button type="submit" formaction="/checkout.php" formmethod="post" class="ui-button ui-button--primary u-w-full" id="checkout_continue_payment">Continue to Payment</button>
+                                <button type="submit" formaction="/checkout.php" formmethod="post" class="ui-button ui-button--primary u-w-full checkout-continue-primary" id="checkout_continue_payment" data-checkout-continue>Continue to Payment</button>
                                 <div class="u-text-small u-mt-2" id="checkout_delivery_status" aria-live="polite">
                                     <?php echo $hasCompleteDelivery ? 'Delivery details verified. You can continue to payment.' : 'Complete your delivery address to calculate shipping.'; ?>
                                 </div>
@@ -552,6 +552,7 @@ include __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         </div>
                         <div id="checkout_delivery_estimate" class="u-text-small u-text-muted u-mb-2"><?php if ($hasCompleteDelivery): ?>Estimated delivery: <?php echo e(DeliveryEstimateService::formatRange($deliveryEstimate['estimated_delivery_start'] ?? null,$deliveryEstimate['estimated_delivery_end'] ?? null)); ?><?php endif; ?></div>
+                        <button type="submit" form="checkout_form" formaction="/checkout.php" formmethod="post" class="ui-button ui-button--primary u-w-full checkout-continue-mobile<?php echo $hasCompleteDelivery ? ' u-hidden' : ''; ?>" id="checkout_continue_payment_mobile" data-checkout-continue>Continue to Payment</button>
                         <?php if ($isIndia): ?>
                         <div id="checkout_mobile_review_section" class="checkout-mobile-review u-hide-desktop u-mt-3<?php echo $hasCompleteDelivery ? '' : ' u-hidden'; ?>" aria-hidden="<?php echo $hasCompleteDelivery ? 'false' : 'true'; ?>">
                             <div class="u-text-small u-text-muted u-mb-2">Step 3 of 3: Review</div>

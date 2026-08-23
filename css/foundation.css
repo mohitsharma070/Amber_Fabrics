@@ -3,20 +3,20 @@
 @layer tokens {
   :root {
     color-scheme: light;
-    --color-ink: #142132;
-    --color-ink-soft: #4d5a6d;
-    --color-muted: #6e7787;
-    --color-canvas: #f5f7fa;
+    --color-ink: #17231f;
+    --color-ink-soft: #4f5d57;
+    --color-muted: #737d78;
+    --color-canvas: #f7f5f0;
     --color-surface: #ffffff;
-    --color-surface-soft: #eef3f6;
-    --color-border: #d7dee8;
-    --color-border-strong: #b8c3d1;
-    --color-navy: #14253d;
-    --color-navy-deep: #0d1a2d;
-    --color-amber: #f5c542;
-    --color-amber-deep: #ca9410;
-    --color-teal: #118579;
-    --color-teal-dark: #08675f;
+    --color-surface-soft: #f0ede6;
+    --color-border: #dedbd3;
+    --color-border-strong: #bbb9b1;
+    --color-navy: #173530;
+    --color-navy-deep: #0d2421;
+    --color-amber: #edbd4a;
+    --color-amber-deep: #bb8111;
+    --color-teal: #087f70;
+    --color-teal-dark: #05665b;
     --color-danger: #b4232f;
     --color-danger-dark: #8d1721;
     --color-danger-soft: #fff0f1;
@@ -26,14 +26,14 @@
     --color-warning-soft: #fff7dc;
     --color-info: #155b86;
     --color-info-soft: #eaf5fb;
-    --focus-ring: 0 0 0 3px rgb(17 133 121 / 28%);
-    --shadow-xs: 0 1px 2px rgb(13 26 45 / 7%);
-    --shadow-sm: 0 5px 16px rgb(13 26 45 / 9%);
-    --shadow-md: 0 14px 36px rgb(13 26 45 / 13%);
-    --shadow-lg: 0 24px 64px rgb(13 26 45 / 20%);
-    --radius-sm: 0.45rem;
-    --radius-md: 0.75rem;
-    --radius-lg: 1.15rem;
+    --focus-ring: 0 0 0 4px rgb(8 127 112 / 20%);
+    --shadow-xs: 0 1px 3px rgb(22 35 31 / 6%), 0 1px 2px rgb(22 35 31 / 4%);
+    --shadow-sm: 0 10px 30px rgb(22 35 31 / 9%), 0 2px 8px rgb(22 35 31 / 5%);
+    --shadow-md: 0 20px 48px rgb(22 35 31 / 13%), 0 5px 16px rgb(22 35 31 / 7%);
+    --shadow-lg: 0 30px 80px rgb(10 31 27 / 20%), 0 8px 24px rgb(10 31 27 / 9%);
+    --radius-sm: 0.6rem;
+    --radius-md: 0.95rem;
+    --radius-lg: 1.5rem;
     --radius-pill: 999px;
     --space-1: 0.25rem;
     --space-2: 0.5rem;
@@ -47,7 +47,7 @@
     --reading-width: 46rem;
     --header-height: 5.25rem;
     --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-display: Georgia, "Times New Roman", serif;
+    --font-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     --transition-fast: 140ms ease;
     --transition-medium: 220ms ease;
     --z-header: 600;
@@ -130,7 +130,10 @@
   body {
     min-height: 100vh;
     overflow-x: hidden;
-    background: var(--color-canvas);
+    background:
+      radial-gradient(circle at 8% -10%, rgb(237 189 74 / 10%), transparent 28rem),
+      radial-gradient(circle at 100% 8%, rgb(8 127 112 / 7%), transparent 32rem),
+      var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-body);
     font-size: 1rem;
@@ -159,7 +162,8 @@
   h5,
   h6 {
     color: var(--color-ink);
-    font-weight: 650;
+    font-weight: 700;
+    letter-spacing: -0.018em;
     line-height: 1.15;
     text-wrap: balance;
   }
@@ -405,17 +409,19 @@
     background: var(--button-bg);
     color: var(--button-color);
     cursor: pointer;
-    font-weight: 700;
+    font-weight: 750;
     line-height: 1.2;
     padding: 0.7rem 1.05rem;
     text-align: center;
     text-decoration: none;
+    box-shadow: 0 1px 2px rgb(14 35 31 / 8%);
     transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast), translate var(--transition-fast);
   }
 
   .ui-button:hover:not(:disabled):not([aria-disabled="true"]) {
     --button-bg: var(--color-teal-dark);
     color: var(--button-color);
+    box-shadow: var(--shadow-sm);
     translate: 0 -1px;
   }
 
@@ -436,6 +442,7 @@
   .ui-button--primary {
     --button-bg: var(--color-teal);
     --button-border: var(--color-teal);
+    box-shadow: 0 8px 18px rgb(8 127 112 / 20%);
   }
 
   .ui-button--navy {
@@ -582,10 +589,10 @@
   }
 
   .ui-card {
-    border: 1px solid var(--color-border);
+    border: 1px solid rgb(222 219 211 / 82%);
     border-radius: var(--radius-lg);
     background: var(--color-surface);
-    box-shadow: var(--shadow-xs);
+    box-shadow: var(--shadow-sm);
   }
 
   .ui-card__header,
@@ -632,10 +639,11 @@
     min-block-size: 2.75rem;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius-md);
-    background: var(--color-surface);
+    background: rgb(255 255 255 / 92%);
     color: var(--color-ink);
     padding: 0.68rem 0.8rem;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    box-shadow: inset 0 1px 1px rgb(23 35 31 / 3%);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
   }
 
   .ui-textarea {
@@ -656,6 +664,7 @@
   .ui-select:focus,
   .ui-textarea:focus {
     border-color: var(--color-teal);
+    background: #fff;
     box-shadow: var(--focus-ring);
     outline: 0;
   }
@@ -809,6 +818,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
+    box-shadow: var(--shadow-xs);
     overscroll-behavior-inline: contain;
   }
 
@@ -1357,6 +1367,8 @@
   .u-border-bottom { border-bottom: 1px solid var(--color-border) !important; }
   .u-border-light { border-color: rgb(255 255 255 / 30%) !important; }
   .u-border-primary { border-color: var(--color-teal) !important; }
+  .u-border-warning { border-color: var(--color-warning) !important; }
+  .u-bg-dark { background: var(--color-navy-deep) !important; color: #fff !important; }
   .u-rounded { border-radius: var(--radius-md) !important; }
   .u-rounded-0 { border-radius: 0 !important; }
   .u-shadow { box-shadow: var(--shadow-sm) !important; }
