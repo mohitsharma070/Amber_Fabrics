@@ -48,7 +48,6 @@ $old = [
     'quantity' => format_meter_quantity(((string)($fabric['unit_type']??'piece')==='meter')?(float)($fabric['stock_meters']??0):(float)($fabric['stock']??0)),
     'sku' => (string) ($fabric['sku'] ?? ''),
     'size' => (string) ($fabric['size'] ?? ''),
-    'meter_options' => (string) ($fabric['meter_options'] ?? ''),
     'color' => (string) ($fabric['color'] ?? ''),
     'dispatch_min_days' => (string) ($fabric['dispatch_min_days'] ?? ''),
     'dispatch_max_days' => (string) ($fabric['dispatch_max_days'] ?? ''),
@@ -86,7 +85,6 @@ if (isset($_POST['submit'])) {
     $costPrice     = trim($_POST['cost_price'] ?? '0');if($costPrice==='')$costPrice='0';
     $stock         = trim($_POST['quantity'] ?? '0');
     $size          = trim($_POST['size']          ?? ((string) ($fabric['size'] ?? '')));
-    $meterOptions  = (string)($fabric['meter_options']??'');
     $color         = trim($_POST['color']         ?? ((string) ($fabric['color'] ?? '')));
     $sku           = ProductAdminService::normalizeSku((string)($_POST['sku'] ?? ($fabric['sku']??'')));
     $dispatchMinDays=max(0,(int)($fabric['dispatch_min_days']??0));$dispatchMaxDays=max($dispatchMinDays,(int)($fabric['dispatch_max_days']??0));
@@ -113,11 +111,6 @@ if (isset($_POST['submit'])) {
     $lowStockMeters = ($lowStockMetersRaw !== '' && is_numeric($lowStockMetersRaw) && (float) $lowStockMetersRaw >= 0)
         ? round((float) $lowStockMetersRaw, 2)
         : null;
-    $parsedMeterOptions = CartService::parse_meter_options($meterOptions, (float) $minOrder);
-    $normalizedMeterOptions = implode(', ', array_map(static function ($val): string {
-        return format_meter_quantity((float) $val);
-    }, $parsedMeterOptions));
-
     $old = [
         'product_code' => trim((string)($_POST['product_code']??'')),
         'amazon_asin' => trim((string)($_POST['amazon_asin']??'')),
@@ -135,7 +128,6 @@ if (isset($_POST['submit'])) {
         'quantity' => $stock,
         'sku' => $sku,
         'size' => $size,
-        'meter_options' => $normalizedMeterOptions,
         'color' => $color,
         'dispatch_min_days' => $dispatchMinDays > 0 ? (string) $dispatchMinDays : '',
         'dispatch_max_days' => $dispatchMaxDays > 0 ? (string) $dispatchMaxDays : '',
@@ -195,16 +187,7 @@ if (isset($_POST['submit'])) {
     if ($lowStockMetersRaw !== '' && ($lowStockMeters === null || $lowStockMeters < 0)) {
         $errors['low_stock_threshold_meters'] = 'Low stock threshold (meters) must be 0 or more.';
     }
-    if ($unitType === 'meter') {
-        if (empty($parsedMeterOptions)) {
-            $errors['meter_options'] = 'Provide at least one valid meter option (e.g. 1, 2, 2.5).';
-        } elseif (!in_array(round((float) $minOrder, 2), array_map(static function ($val) {
-            return round((float) $val, 2);
-        }, $parsedMeterOptions), true)) {
-            $errors['meter_options'] = 'Meter options must include the minimum order qty.';
-        }
-    } else {
-        $normalizedMeterOptions = '';
+    if ($unitType !== 'meter') {
         $lowStockMeters = null;
     }
     if ($unitType === 'meter') {
@@ -228,7 +211,7 @@ if (isset($_POST['submit'])) {
         try {
         $upd = $conn->prepare(
             "UPDATE fabrics SET
-                name = ?, sku = ?, category = ?, unit_type = ?, meter_options = ?,
+                name = ?, sku = ?, category = ?, unit_type = ?,
                 size = ?, color = ?, description = ?,
                 price = ?, sale_price = ?, cost_price = ?,
                 stock = ?, stock_meters = ?, low_stock_threshold_units = ?, low_stock_threshold_meters = ?, min_order_meters = ?, qty_step = ?,
@@ -236,8 +219,8 @@ if (isset($_POST['submit'])) {
              WHERE id = ?"
         );
         $upd->bind_param(
-            'ssssssssdddddidddsii',
-            $name, $sku, $category, $unitType, $normalizedMeterOptions,
+            'sssssssdddddidddsii',
+            $name, $sku, $category, $unitType,
             $size, $color, $description,
             $priceVal, $salePriceVal, $costPriceVal,
             $stockVal, $stockMeters, $lowStockUnits, $lowStockMeters, $minOrderVal, $qtyStep,

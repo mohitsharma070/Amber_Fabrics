@@ -5,7 +5,6 @@
     var unitSelect = document.querySelector('[name="unit_type"]');
     var minOrderInput = document.querySelector('input[name="min_order_meters"]');
     var qtyStepInput = document.querySelector('input[name="qty_step"]');
-    var meterOptionsInput = document.querySelector('input[name="meter_options"]');
     var lowStockUnitsInput = document.querySelector('input[name="low_stock_threshold_units"]');
     var lowStockMetersInput = document.querySelector('input[name="low_stock_threshold_meters"]');
     var categoryInput = document.querySelector('select[name="category"]');
@@ -113,17 +112,6 @@
         var unit = unitSelect.value;
         var isMeter = unit === 'meter';
         var isWhole = unit === 'piece' || unit === 'set';
-        var meterOptionsRow = document.getElementById('meter_options_row');
-        if (meterOptionsRow) {
-            meterOptionsRow.style.display = isMeter ? '' : 'none';
-        }
-        if (meterOptionsInput) {
-            meterOptionsInput.disabled = !isMeter;
-            meterOptionsInput.required = isMeter;
-            if (!isMeter) {
-                meterOptionsInput.value = '';
-            }
-        }
         if (minOrderInput) {
             minOrderInput.step = isWhole ? '1' : '0.01';
         }
