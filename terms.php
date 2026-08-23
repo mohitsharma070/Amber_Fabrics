@@ -6,6 +6,7 @@ $heroSubtitle = (string) ($siteSettings['terms_policy_subtitle'] ?? ('Terms gove
 $heroSubtitle = strtr($heroSubtitle, ['{{site_name}}' => SiteContext::name(), '{{contact_email}}' => SiteContext::contactEmail()]);
 $policyBody = (string) ($siteSettings['terms_policy_body_html'] ?? '');
 $policyBody = strtr($policyBody, ['{{site_name}}' => SiteContext::name(), '{{contact_email}}' => SiteContext::contactEmail()]);
+$policyBody = ui_rich_text_html($policyBody);
 include __DIR__ . '/includes/header.php';
 ?>
 

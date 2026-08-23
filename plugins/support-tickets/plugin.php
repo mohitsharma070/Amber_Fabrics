@@ -702,31 +702,31 @@ function support_tickets_render_customer_page(mysqli $conn): void
     include dirname(__DIR__, 2) . '/includes/header.php';
     ?>
     <section class="page-hero">
-        <div class="container">
+        <div class="l-container">
             <h1>Support Tickets</h1>
-            <p class="mb-0">Order support stays attached to your account and order history.</p>
+            <p class="u-mb-0">Order support stays attached to your account and order history.</p>
         </div>
     </section>
     <section class="section-block">
-        <div class="container">
-            <div class="mb-3"><a href="/customer/orders" class="app-back-link">&larr; Back to My Orders</a></div>
-            <div class="row g-4">
-                <div class="col-lg-5">
-                    <div class="surface-panel p-4 mb-4">
-                        <h5 class="mb-3">Open a Ticket</h5>
+        <div class="l-container">
+            <div class="u-mb-3"><a href="/customer/orders" class="app-back-link">&larr; Back to My Orders</a></div>
+            <div class="l-grid l-grid--12 u-gap-4">
+                <div class="l-col-lg-five">
+                    <div class="surface-panel u-p-4 u-mb-4">
+                        <h2 class="u-heading-5 u-mb-3">Open a Ticket</h2>
                         <?php if (!$canOpenAnyTicket): ?>
-                            <p class="text-muted mb-0">New support tickets are not available right now.</p>
+                            <p class="u-text-muted u-mb-0">New support tickets are not available right now.</p>
                         <?php else: ?>
                         <form method="POST" action="/customer/support-tickets.php">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="support_action" value="create">
-                            <div class="d-none" aria-hidden="true">
+                            <div class="u-hidden" aria-hidden="true">
                                 <label>Website</label>
                                 <input type="text" name="company_website" tabindex="-1" autocomplete="off">
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label">Related Order</label>
-                                <select name="order_id" class="form-select">
+                            <div class="u-mb-3">
+                                <label class="ui-label">Related Order</label>
+                                <select name="order_id" class="ui-select">
                                     <?php if (!empty($settings['allow_general_tickets'])): ?>
                                         <option value="0">No specific order</option>
                                     <?php endif; ?>
@@ -739,49 +739,49 @@ function support_tickets_render_customer_page(mysqli $conn): void
                                     <?php endif; ?>
                                 </select>
                             </div>
-                            <div class="row g-2">
-                                <div class="col-md-6">
-                                    <label class="form-label">Category</label>
-                                    <select name="category" class="form-select">
+                            <div class="l-grid l-grid--12 u-gap-2">
+                                <div class="l-col-md-half">
+                                    <label class="ui-label">Category</label>
+                                    <select name="category" class="ui-select">
                                         <?php foreach ($categories as $value => $label): ?>
                                             <option value="<?php echo e($value); ?>"><?php echo e($label); ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Priority</label>
-                                    <select name="priority" class="form-select">
+                                <div class="l-col-md-half">
+                                    <label class="ui-label">Priority</label>
+                                    <select name="priority" class="ui-select">
                                         <?php foreach ($priorities as $value => $label): ?>
                                             <option value="<?php echo e($value); ?>" <?php echo $value === 'normal' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
                             </div>
-                            <div class="mt-3">
-                                <label class="form-label">Subject</label>
-                                <input class="form-control" name="subject" maxlength="160" required>
+                            <div class="u-mt-3">
+                                <label class="ui-label">Subject</label>
+                                <input class="ui-input" name="subject" maxlength="160" required>
                             </div>
-                            <div class="mt-3">
-                                <label class="form-label">Message</label>
-                                <textarea class="form-control" name="message" rows="5" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                            <div class="u-mt-3">
+                                <label class="ui-label">Message</label>
+                                <textarea class="ui-textarea" name="message" rows="5" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                             </div>
-                            <button class="btn btn-primary w-100 mt-3" type="submit">Submit Ticket</button>
+                            <button class="ui-button ui-button--primary u-w-full u-mt-3" type="submit">Submit Ticket</button>
                         </form>
                         <?php endif; ?>
                     </div>
-                    <div class="surface-panel p-4">
-                        <h5 class="mb-3">Your Tickets</h5>
+                    <div class="surface-panel u-p-4">
+                        <h2 class="u-heading-5 u-mb-3">Your Tickets</h2>
                         <?php if (empty($tickets)): ?>
-                            <p class="text-muted mb-0">No support tickets yet.</p>
+                            <p class="u-text-muted u-mb-0">No support tickets yet.</p>
                         <?php endif; ?>
                         <?php foreach ($tickets as $row): ?>
-                            <a class="d-block border rounded p-3 mb-2 text-decoration-none" href="/customer/support-tickets?id=<?php echo (int) $row['id']; ?>">
-                                <div class="d-flex justify-content-between gap-2">
+                            <a class="ui-card u-block u-p-3 u-mb-2" href="/customer/support-tickets?id=<?php echo (int) $row['id']; ?>">
+                                <div class="u-flex u-justify-between u-gap-2">
                                     <strong><?php echo e((string) $row['ticket_number']); ?></strong>
-                                    <span class="badge bg-secondary"><?php echo e($statuses[(string) $row['status']] ?? (string) $row['status']); ?></span>
+                                    <span class="ui-badge ui-badge--neutral"><?php echo e($statuses[(string) $row['status']] ?? (string) $row['status']); ?></span>
                                 </div>
-                                <div class="text-dark"><?php echo e((string) $row['subject']); ?></div>
-                                <div class="small text-muted">
+                                <div><?php echo e((string) $row['subject']); ?></div>
+                                <div class="u-text-small u-text-muted">
                                     <?php echo !empty($row['order_number']) ? 'Order ' . e((string) $row['order_number']) . ' | ' : ''; ?>
                                     <?php echo e((string) $row['last_message_at']); ?>
                                 </div>
@@ -789,25 +789,25 @@ function support_tickets_render_customer_page(mysqli $conn): void
                         <?php endforeach; ?>
                     </div>
                 </div>
-                <div class="col-lg-7">
+                <div class="l-col-lg-seven">
                     <?php if (!$ticket): ?>
-                        <div class="surface-panel p-5 text-center text-muted">Select a ticket to view the conversation.</div>
+                        <div class="surface-panel u-p-5 u-text-center u-text-muted">Select a ticket to view the conversation.</div>
                     <?php else: ?>
-                        <div class="surface-panel p-4">
-                            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+                        <div class="surface-panel u-p-4">
+                            <div class="u-flex u-justify-between u-items-start u-gap-3 u-wrap u-mb-3">
                                 <div>
-                                    <h5 class="mb-1"><?php echo e((string) $ticket['subject']); ?></h5>
-                                    <div class="small text-muted">
+                                    <h2 class="u-heading-5 u-mb-1"><?php echo e((string) $ticket['subject']); ?></h2>
+                                    <div class="u-text-small u-text-muted">
                                         <?php echo e((string) $ticket['ticket_number']); ?>
                                         <?php if (!empty($ticket['order_number'])): ?> | Order <?php echo e((string) $ticket['order_number']); ?><?php endif; ?>
                                     </div>
                                 </div>
-                                <span class="badge bg-secondary"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
+                                <span class="ui-badge ui-badge--neutral"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
                             </div>
                             <?php foreach ($messages as $msg): ?>
                                 <?php $isCustomer = (string) ($msg['sender_type'] ?? '') === 'customer'; ?>
-                                <div class="border rounded p-3 mb-2 <?php echo $isCustomer ? 'bg-light' : ''; ?>">
-                                    <div class="d-flex justify-content-between gap-2 flex-wrap small text-muted mb-1">
+                                <div class="u-border u-rounded u-p-3 u-mb-2<?php echo $isCustomer ? ' u-bg-soft' : ''; ?>">
+                                    <div class="u-flex u-justify-between u-gap-2 u-wrap u-text-small u-text-muted u-mb-1">
                                         <span><?php echo e((string) ($msg['sender_name'] ?? ucfirst((string) $msg['sender_type']))); ?></span>
                                         <span><?php echo e((string) $msg['created_at']); ?></span>
                                     </div>
@@ -815,13 +815,13 @@ function support_tickets_render_customer_page(mysqli $conn): void
                                 </div>
                             <?php endforeach; ?>
                             <?php if ((string) $ticket['status'] !== 'closed'): ?>
-                                <form method="POST" action="/customer/support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="mt-3">
+                                <form method="POST" action="/customer/support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="u-mt-3">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="support_action" value="reply">
                                     <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                                    <label class="form-label">Reply</label>
-                                    <textarea class="form-control" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
-                                    <button class="btn btn-primary mt-2" type="submit">Send Reply</button>
+                                    <label class="ui-label">Reply</label>
+                                    <textarea class="ui-textarea" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                    <button class="ui-button ui-button--primary u-mt-2" type="submit">Send Reply</button>
                                 </form>
                             <?php endif; ?>
                         </div>
@@ -882,7 +882,7 @@ function support_tickets_render_admin_page(mysqli $conn): void
     if (!$settings['enabled'] || !support_tickets_table_ready($conn)) {
         $metaTitle = 'Support Tickets | Admin';
         include dirname(__DIR__, 2) . '/admin/partials/header.php';
-        echo '<div class="alert alert-warning">Support ticket tables are not ready. Run <code>php database/migrate.php --only=2026-06-27-support-tickets-plugin.sql</code>.</div>';
+        echo '<div class="ui-alert ui-alert--warning">Support ticket tables are not ready. Run <code>php database/migrate.php --only=2026-06-27-support-tickets-plugin.sql</code>.</div>';
         include dirname(__DIR__, 2) . '/admin/partials/footer.php';
         return;
     }
@@ -956,45 +956,45 @@ function support_tickets_render_admin_page(mysqli $conn): void
     $metaTitle = 'Support Tickets | Admin';
     include dirname(__DIR__, 2) . '/admin/partials/header.php';
     ?>
-    <div class="admin-page-header d-flex justify-content-between align-items-end flex-wrap gap-3 mb-3">
+    <div class="admin-page-header u-flex u-justify-between u-items-end u-wrap u-gap-3 u-mb-3">
         <div>
-            <h1 class="mb-1">Support Tickets</h1>
-            <p class="text-muted mb-0">Account and order support conversations.</p>
+            <h1 class="u-mb-1">Support Tickets</h1>
+            <p class="u-text-muted u-mb-0">Account and order support conversations.</p>
         </div>
     </div>
 
-    <form method="GET" action="support-tickets.php" class="row g-2 mb-3 admin-filter-form">
-        <div class="col-md-3">
-            <label class="form-label">Status</label>
-            <select name="status" class="form-select">
+    <form method="GET" action="support-tickets.php" class="l-grid l-grid--12 u-gap-2 u-mb-3 admin-filter-form">
+        <div class="l-col-md-quarter">
+            <label class="ui-label">Status</label>
+            <select name="status" class="ui-select">
                 <option value="">All</option>
                 <?php foreach ($statuses as $value => $label): ?>
                     <option value="<?php echo e($value); ?>" <?php echo $statusFilter === $value ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-6">
-            <label class="form-label">Search</label>
-            <input name="q" class="form-control" value="<?php echo e($q); ?>" placeholder="Ticket, subject, customer, email, or order">
+        <div class="l-col-md-half">
+            <label class="ui-label">Search</label>
+            <input name="q" class="ui-input" value="<?php echo e($q); ?>" placeholder="Ticket, subject, customer, email, or order">
         </div>
-        <div class="col-md-1">
-            <label class="form-label">Rows</label>
-            <select name="per_page" class="form-select">
+        <div class="l-col-md-one">
+            <label class="ui-label">Rows</label>
+            <select name="per_page" class="ui-select">
                 <?php foreach ($perPageOptions as $opt): ?>
                     <option value="<?php echo (int) $opt; ?>" <?php echo $perPage === (int) $opt ? 'selected' : ''; ?>><?php echo (int) $opt; ?></option>
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-2 d-flex align-items-end gap-2 admin-filter-actions">
-            <button class="btn btn-primary w-100" type="submit">Apply</button>
-            <a class="btn btn-outline-secondary w-100" href="support-tickets.php">Reset</a>
+        <div class="l-col-md-quarter u-flex u-items-end u-gap-2 admin-filter-actions">
+            <button class="ui-button ui-button--primary u-w-full" type="submit">Apply</button>
+            <a class="ui-button ui-button--secondary u-w-full" href="support-tickets.php">Reset</a>
         </div>
     </form>
 
-    <div class="row g-4">
-        <div class="col-lg-5">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle admin-card-table">
+    <div class="l-grid l-grid--12 u-gap-4">
+        <div class="l-col-lg-five">
+            <div class="ui-table-wrap">
+                <table class="ui-table ui-table--hover u-align-middle admin-card-table">
                     <thead>
                         <tr>
                             <th>Ticket</th>
@@ -1005,14 +1005,14 @@ function support_tickets_render_admin_page(mysqli $conn): void
                     </thead>
                     <tbody>
                         <?php if (empty($tickets)): ?>
-                            <tr><td colspan="4" class="text-center text-muted py-4">No tickets found.</td></tr>
+                            <tr><td colspan="4" class="u-text-center u-text-muted u-py-4">No tickets found.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($tickets as $row): ?>
                             <tr>
                                 <td>
-                                    <div class="fw-semibold"><?php echo e((string) $row['ticket_number']); ?></div>
+                                    <div class="u-font-semibold"><?php echo e((string) $row['ticket_number']); ?></div>
                                     <div><?php echo e((string) $row['subject']); ?></div>
-                                    <div class="small text-muted">
+                                    <div class="u-text-small u-text-muted">
                                         <?php echo e($categories[(string) $row['category']] ?? (string) $row['category']); ?>
                                         | <?php echo e($priorities[(string) $row['priority']] ?? (string) $row['priority']); ?>
                                         <?php if (!empty($row['order_number'])): ?> | <?php echo e((string) $row['order_number']); ?><?php endif; ?>
@@ -1020,10 +1020,10 @@ function support_tickets_render_admin_page(mysqli $conn): void
                                 </td>
                                 <td>
                                     <?php echo e((string) $row['customer_name']); ?>
-                                    <div class="small text-muted"><?php echo e((string) $row['customer_email']); ?></div>
+                                    <div class="u-text-small u-text-muted"><?php echo e((string) $row['customer_email']); ?></div>
                                 </td>
-                                <td><span class="badge bg-secondary"><?php echo e($statuses[(string) $row['status']] ?? (string) $row['status']); ?></span></td>
-                                <td><a class="btn btn-sm btn-outline-primary" href="support-tickets.php?id=<?php echo (int) $row['id']; ?>">View</a></td>
+                                <td><span class="ui-badge ui-badge--neutral"><?php echo e($statuses[(string) $row['status']] ?? (string) $row['status']); ?></span></td>
+                                <td><a class="ui-button ui-button--outline ui-button--small" href="support-tickets.php?id=<?php echo (int) $row['id']; ?>">View</a></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -1031,15 +1031,15 @@ function support_tickets_render_admin_page(mysqli $conn): void
             </div>
             <?php echo render_pagination($page, $pages, ['status' => $statusFilter, 'q' => $q, 'per_page' => $perPage], 'page', $total, $perPage); ?>
         </div>
-        <div class="col-lg-7">
+        <div class="l-col-lg-seven">
             <?php if (!$ticket): ?>
-                <div class="surface-panel p-5 text-center text-muted">Select a ticket to view details.</div>
+                <div class="surface-panel u-p-5 u-text-center u-text-muted">Select a ticket to view details.</div>
             <?php else: ?>
-                <div class="surface-panel p-4">
-                    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+                <div class="surface-panel u-p-4">
+                    <div class="u-flex u-justify-between u-items-start u-gap-3 u-wrap u-mb-3">
                         <div>
-                            <h5 class="mb-1"><?php echo e((string) $ticket['subject']); ?></h5>
-                            <div class="small text-muted">
+                            <h2 class="u-heading-5 u-mb-1"><?php echo e((string) $ticket['subject']); ?></h2>
+                            <div class="u-text-small u-text-muted">
                                 <?php echo e((string) $ticket['ticket_number']); ?>
                                 | <?php echo e((string) $ticket['customer_name']); ?>
                                 <?php if (!empty($ticket['order_number'])): ?>
@@ -1047,26 +1047,26 @@ function support_tickets_render_admin_page(mysqli $conn): void
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <span class="badge bg-secondary"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
+                        <span class="ui-badge ui-badge--neutral"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
                     </div>
-                    <form method="POST" action="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="row g-2 align-items-end mb-3">
+                    <form method="POST" action="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="l-grid l-grid--12 u-gap-2 u-items-end u-mb-3">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="support_action" value="status">
                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                        <div class="col-md-8">
-                            <label class="form-label">Status</label>
-                            <select name="status" class="form-select">
+                        <div class="l-col-md-eight">
+                            <label class="ui-label">Status</label>
+                            <select name="status" class="ui-select">
                                 <?php foreach ($statuses as $value => $label): ?>
                                     <option value="<?php echo e($value); ?>" <?php echo (string) $ticket['status'] === $value ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-4"><button class="btn btn-outline-primary w-100" type="submit">Update</button></div>
+                        <div class="l-col-md-quarter"><button class="ui-button ui-button--outline u-w-full" type="submit">Update</button></div>
                     </form>
                     <?php foreach ($messages as $msg): ?>
                         <?php $internal = (int) ($msg['is_internal'] ?? 0) === 1; ?>
-                        <div class="border rounded p-3 mb-2 <?php echo $internal ? 'bg-warning-subtle' : ''; ?>">
-                            <div class="d-flex justify-content-between gap-2 flex-wrap small text-muted mb-1">
+                        <div class="u-border u-rounded u-p-3 u-mb-2<?php echo $internal ? ' u-bg-warning-soft' : ''; ?>">
+                            <div class="u-flex u-justify-between u-gap-2 u-wrap u-text-small u-text-muted u-mb-1">
                                 <span><?php echo e((string) ($msg['sender_name'] ?? ucfirst((string) $msg['sender_type']))); ?><?php echo $internal ? ' (internal)' : ''; ?></span>
                                 <span><?php echo e((string) $msg['created_at']); ?></span>
                             </div>
@@ -1074,22 +1074,22 @@ function support_tickets_render_admin_page(mysqli $conn): void
                         </div>
                     <?php endforeach; ?>
                     <?php if ((string) $ticket['status'] !== 'closed'): ?>
-                        <form method="POST" action="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="mt-3">
+                        <form method="POST" action="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="u-mt-3">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="support_action" value="reply">
                             <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                            <label class="form-label">Reply to Customer</label>
-                            <textarea class="form-control" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
-                            <button class="btn btn-primary mt-2" type="submit">Send Reply</button>
+                            <label class="ui-label">Reply to Customer</label>
+                            <textarea class="ui-textarea" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                            <button class="ui-button ui-button--primary u-mt-2" type="submit">Send Reply</button>
                         </form>
                     <?php endif; ?>
-                    <form method="POST" action="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="mt-3">
+                    <form method="POST" action="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="u-mt-3">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="support_action" value="internal_note">
                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                        <label class="form-label">Internal Note</label>
-                        <textarea class="form-control" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
-                        <button class="btn btn-outline-secondary mt-2" type="submit">Save Note</button>
+                        <label class="ui-label">Internal Note</label>
+                        <textarea class="ui-textarea" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                        <button class="ui-button ui-button--secondary u-mt-2" type="submit">Save Note</button>
                     </form>
                 </div>
             <?php endif; ?>
@@ -1137,115 +1137,115 @@ function support_tickets_render_order_panel(array $context): void
     $isWithinReturnWindow = return_request_is_eligible($deliveredAt);
     $canUseReturnFlow = $effectiveOrderStatus === 'delivered' && $isWithinReturnWindow && !$returnRequest;
     ?>
-    <section class="section-block pt-0">
-        <div class="container">
-            <div class="surface-panel p-4">
-                <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+    <section class="section-block u-pt-0">
+        <div class="l-container">
+            <div class="surface-panel u-p-4">
+                <div class="u-flex u-justify-between u-items-start u-gap-3 u-wrap u-mb-3">
                     <div>
-                        <h5 class="mb-1">Need Help With This Order?</h5>
-                        <p class="text-muted mb-0 small">Create an order-linked support ticket or review existing conversations.</p>
+                        <h2 class="u-heading-5 u-mb-1">Need Help With This Order?</h2>
+                        <p class="u-text-muted u-mb-0 u-text-small">Create an order-linked support ticket or review existing conversations.</p>
                     </div>
-                    <a class="btn btn-outline-secondary" href="/customer/support-tickets?order_id=<?php echo $orderId; ?>">View Support Center</a>
+                    <a class="ui-button ui-button--secondary" href="/customer/support-tickets?order_id=<?php echo $orderId; ?>">View Support Center</a>
                 </div>
 
                 <?php if ($returnRequest): ?>
-                    <div class="alert alert-secondary py-2 small">
+                    <div class="ui-alert ui-alert--neutral u-py-2 u-text-small">
                         Return request <?php echo e((string) ($returnRequest['return_number'] ?? '')); ?> is already in the returns workflow with status <?php echo e(strtoupper(str_replace('_', ' ', (string) ($returnRequest['status'] ?? '')))); ?>.
                     </div>
                 <?php elseif ($canUseReturnFlow): ?>
-                    <div class="alert alert-info py-2 small">
+                    <div class="ui-alert ui-alert--info u-py-2 u-text-small">
                         For returns or refunds, use the existing return request form on this order page. Support tickets do not create returns.
                     </div>
                 <?php endif; ?>
 
                 <?php if (!empty($settings['allow_order_tickets'])): ?>
-                    <form method="POST" action="/customer/support-tickets.php" class="border rounded p-3 mb-3">
+                    <form method="POST" action="/customer/support-tickets.php" class="u-border u-rounded u-p-3 u-mb-3">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="support_action" value="create">
                         <input type="hidden" name="order_id" value="<?php echo $orderId; ?>">
-                        <div class="d-none" aria-hidden="true">
+                        <div class="u-hidden" aria-hidden="true">
                             <label>Website</label>
                             <input type="text" name="company_website" tabindex="-1" autocomplete="off">
                         </div>
-                        <div class="row g-2">
-                            <div class="col-md-4">
-                                <label class="form-label">Category</label>
-                                <select name="category" class="form-select">
+                        <div class="l-grid l-grid--12 u-gap-2">
+                            <div class="l-col-md-third">
+                                <label class="ui-label">Category</label>
+                                <select name="category" class="ui-select">
                                     <?php foreach ($categories as $value => $label): ?>
                                         <option value="<?php echo e($value); ?>" <?php echo $value === 'order' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Priority</label>
-                                <select name="priority" class="form-select">
+                            <div class="l-col-md-third">
+                                <label class="ui-label">Priority</label>
+                                <select name="priority" class="ui-select">
                                     <?php foreach ($priorities as $value => $label): ?>
                                         <option value="<?php echo e($value); ?>" <?php echo $value === 'normal' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Subject</label>
-                                <input class="form-control" name="subject" maxlength="160" required>
+                            <div class="l-col-md-third">
+                                <label class="ui-label">Subject</label>
+                                <input class="ui-input" name="subject" maxlength="160" required>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label">Message</label>
-                                <textarea class="form-control" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                            <div class="l-col-full">
+                                <label class="ui-label">Message</label>
+                                <textarea class="ui-textarea" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                             </div>
-                            <div class="col-12">
-                                <button class="btn btn-primary" type="submit">Submit Ticket</button>
+                            <div class="l-col-full">
+                                <button class="ui-button ui-button--primary" type="submit">Submit Ticket</button>
                             </div>
                         </div>
                     </form>
                 <?php else: ?>
-                    <p class="text-muted small mb-3">Order support tickets are not available right now.</p>
+                    <p class="u-text-muted u-text-small u-mb-3">Order support tickets are not available right now.</p>
                 <?php endif; ?>
 
                 <?php if (!empty($tickets)): ?>
-                    <div class="border-top mt-3 pt-3">
+                    <div class="u-border-top u-mt-3 u-pt-3">
                         <?php foreach ($tickets as $ticket): ?>
                             <?php $messages = support_tickets_messages($conn, (int) $ticket['id'], false); ?>
-                            <div class="border rounded p-3 mb-3">
-                                <div class="d-flex justify-content-between gap-2 flex-wrap mb-2">
+                            <div class="u-border u-rounded u-p-3 u-mb-3">
+                                <div class="u-flex u-justify-between u-items-start u-gap-2 u-wrap u-mb-2">
                                     <div>
                                         <strong><?php echo e((string) $ticket['ticket_number']); ?></strong>
                                         <div><?php echo e((string) $ticket['subject']); ?></div>
-                                        <div class="small text-muted">
+                                        <div class="u-text-small u-text-muted">
                                             <?php echo e($categories[(string) $ticket['category']] ?? (string) $ticket['category']); ?>
                                             | <?php echo e($priorities[(string) $ticket['priority']] ?? (string) $ticket['priority']); ?>
                                             | Last update: <?php echo e((string) $ticket['last_message_at']); ?>
                                         </div>
                                     </div>
-                                    <span class="badge bg-secondary align-self-start"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
+                                    <span class="ui-badge ui-badge--neutral"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
                                 </div>
                                 <?php if (empty($messages)): ?>
-                                    <p class="text-muted small mb-0">No messages captured for this ticket.</p>
+                                    <p class="u-text-muted u-text-small u-mb-0">No messages captured for this ticket.</p>
                                 <?php endif; ?>
                                 <?php foreach ($messages as $msg): ?>
                                     <?php $isCustomer = (string) ($msg['sender_type'] ?? '') === 'customer'; ?>
-                                    <div class="border rounded p-2 mb-2 <?php echo $isCustomer ? 'bg-light' : ''; ?>">
-                                        <div class="d-flex justify-content-between gap-2 flex-wrap small text-muted mb-1">
+                                    <div class="u-border u-rounded u-p-2 u-mb-2<?php echo $isCustomer ? ' u-bg-soft' : ''; ?>">
+                                        <div class="u-flex u-justify-between u-gap-2 u-wrap u-text-small u-text-muted u-mb-1">
                                             <span><?php echo e((string) ($msg['sender_name'] ?? ucfirst((string) $msg['sender_type']))); ?></span>
                                             <span><?php echo e((string) $msg['created_at']); ?></span>
                                         </div>
-                                        <div class="small"><?php echo nl2br(e((string) $msg['message'])); ?></div>
+                                        <div class="u-text-small"><?php echo nl2br(e((string) $msg['message'])); ?></div>
                                     </div>
                                 <?php endforeach; ?>
                                 <?php if ((string) $ticket['status'] !== 'closed'): ?>
-                                    <form method="POST" action="/customer/support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="mt-2">
+                                    <form method="POST" action="/customer/support-tickets.php?id=<?php echo (int) $ticket['id']; ?>" class="u-mt-2">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="support_action" value="reply">
                                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                                        <label class="form-label small">Reply</label>
-                                        <textarea class="form-control form-control-sm" name="message" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
-                                        <button class="btn btn-sm btn-outline-primary mt-2" type="submit">Send Reply</button>
+                                        <label class="ui-label u-text-small">Reply</label>
+                                        <textarea class="ui-textarea ui-textarea--small" name="message" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                        <button class="ui-button ui-button--outline ui-button--small u-mt-2" type="submit">Send Reply</button>
                                     </form>
                                 <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
                 <?php else: ?>
-                    <p class="text-muted small mb-0">No support tickets for this order yet.</p>
+                    <p class="u-text-muted u-text-small u-mb-0">No support tickets for this order yet.</p>
                 <?php endif; ?>
             </div>
         </div>
@@ -1279,52 +1279,52 @@ function support_tickets_render_admin_order_sidebar(array $context): void
     $categories = support_tickets_categories();
     $priorities = support_tickets_priorities();
     ?>
-    <div class="card mb-4">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                <h6 class="card-title mb-0">Support Tickets</h6>
-                <a class="btn btn-sm btn-outline-primary" href="support-tickets.php?q=<?php echo e((string) ($order['order_number'] ?? '')); ?>">View</a>
+    <section class="ui-card u-mb-4">
+        <div class="ui-card__body">
+            <div class="u-flex u-justify-between u-items-start u-gap-2 u-mb-2">
+                <h2 class="u-heading-6 u-mb-0">Support Tickets</h2>
+                <a class="ui-button ui-button--outline ui-button--small" href="support-tickets.php?q=<?php echo e((string) ($order['order_number'] ?? '')); ?>">View</a>
             </div>
             <?php if (empty($tickets)): ?>
-                <p class="text-muted small mb-0">No support tickets linked to this order.</p>
+                <p class="u-text-muted u-text-small u-mb-0">No support tickets linked to this order.</p>
             <?php endif; ?>
             <?php foreach ($tickets as $ticket): ?>
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex justify-content-between gap-2">
-                        <a class="fw-semibold" href="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>"><?php echo e((string) $ticket['ticket_number']); ?></a>
-                        <span class="badge bg-secondary"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
+                <div class="u-border u-rounded u-p-2 u-mb-2">
+                    <div class="u-flex u-justify-between u-gap-2">
+                        <a class="u-font-semibold" href="support-tickets.php?id=<?php echo (int) $ticket['id']; ?>"><?php echo e((string) $ticket['ticket_number']); ?></a>
+                        <span class="ui-badge ui-badge--neutral"><?php echo e($statuses[(string) $ticket['status']] ?? (string) $ticket['status']); ?></span>
                     </div>
-                    <div class="small"><?php echo e((string) $ticket['subject']); ?></div>
-                    <div class="small text-muted">
+                    <div class="u-text-small"><?php echo e((string) $ticket['subject']); ?></div>
+                    <div class="u-text-small u-text-muted">
                         <?php echo e($categories[(string) $ticket['category']] ?? (string) $ticket['category']); ?>
                         | <?php echo e($priorities[(string) $ticket['priority']] ?? (string) $ticket['priority']); ?>
                     </div>
-                    <div class="small text-muted"><?php echo e((string) $ticket['customer_name']); ?> | <?php echo e((string) $ticket['last_message_at']); ?></div>
-                    <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="mt-2">
+                    <div class="u-text-small u-text-muted"><?php echo e((string) $ticket['customer_name']); ?> | <?php echo e((string) $ticket['last_message_at']); ?></div>
+                    <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="u-mt-2">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="support_ticket_status">
                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                        <div class="d-flex gap-1">
-                            <select name="status" class="form-select form-select-sm">
+                        <div class="u-flex u-gap-1">
+                            <select name="status" class="ui-select ui-select--small">
                                 <?php foreach ($statuses as $statusValue => $statusLabel): ?>
                                     <option value="<?php echo e($statusValue); ?>" <?php echo (string) $ticket['status'] === $statusValue ? 'selected' : ''; ?>><?php echo e($statusLabel); ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <button class="btn btn-sm btn-outline-primary" type="submit">Update</button>
+                            <button class="ui-button ui-button--outline ui-button--small" type="submit">Update</button>
                         </div>
                     </form>
                     <?php if ((string) $ticket['status'] !== 'closed'): ?>
-                        <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="mt-2">
+                        <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>" class="u-mt-2">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="action" value="support_ticket_reply">
                             <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                            <textarea name="message" class="form-control form-control-sm" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" placeholder="Reply to customer" required></textarea>
-                            <button class="btn btn-sm btn-outline-secondary mt-1" type="submit">Reply</button>
+                            <textarea name="message" class="ui-textarea ui-textarea--small" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" placeholder="Reply to customer" required></textarea>
+                            <button class="ui-button ui-button--secondary ui-button--small u-mt-1" type="submit">Reply</button>
                         </form>
                     <?php endif; ?>
                 </div>
             <?php endforeach; ?>
         </div>
-    </div>
+    </section>
     <?php
 }

@@ -165,7 +165,10 @@
   AmberUI.confirm = function (options) {
     options = typeof options === "string" ? { message: options } : (options || {});
     if (pendingConfirm) {
-      settleConfirm(false);
+      // Keep the active dialog and its scroll-lock lifecycle intact. Replacing
+      // it here lets the first dialog's close timer hide the replacement,
+      // leaving the later Promise unresolved after a rapid double-submit.
+      return Promise.resolve(false);
     }
     var backdrop = getConfirmDialog();
     var dialog = select(".ui-dialog", backdrop);
@@ -429,9 +432,10 @@
   }
 
   function closeDrawer(drawer, returnFocus) {
-    if (!drawer || !drawer.classList.contains("is-open")) {
+    if (!drawer || (!drawer.classList.contains("is-open") && drawer.getAttribute("data-ui-opening") !== "true")) {
       return;
     }
+    drawer.removeAttribute("data-ui-opening");
     var backdrop = select("[data-ui-drawer-backdrop]");
     drawer.classList.remove("is-open");
     drawer.setAttribute("aria-hidden", "true");
@@ -454,7 +458,7 @@
   }
 
   function openDrawer(drawer, trigger) {
-    if (!drawer) {
+    if (!drawer || drawer.classList.contains("is-open") || drawer.getAttribute("data-ui-opening") === "true") {
       return;
     }
     var backdrop = select("[data-ui-drawer-backdrop]");
@@ -466,10 +470,15 @@
       document.body.appendChild(backdrop);
     }
     drawer._uiTrigger = trigger;
+    drawer.setAttribute("data-ui-opening", "true");
     drawer.setAttribute("aria-hidden", "false");
     backdrop.hidden = false;
     lockPage();
     window.requestAnimationFrame(function () {
+      if (drawer.getAttribute("data-ui-opening") !== "true") {
+        return;
+      }
+      drawer.removeAttribute("data-ui-opening");
       drawer.classList.add("is-open");
       backdrop.classList.add("is-open");
       (focusableElements(drawer)[0] || drawer).focus({ preventScroll: true });

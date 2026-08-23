@@ -18,6 +18,7 @@ $templates = [
     'admin/dashboard.php',
     'admin/coupons.php',
     'admin/edit-fabric.php',
+    'admin/settings.php',
     'admin/shipping-rates.php',
     'admin/partials/header.php',
     'admin/partials/footer.php',
@@ -40,6 +41,8 @@ $header = $read('admin/partials/header.php');
 $admin = $read('js/admin.js');
 $dashboard = $read('admin/dashboard.php');
 $editor = $read('admin/edit-fabric.php');
+$courierReturns = $read('plugins/shipping-courier/modules/returns.php');
+$supportTickets = $read('plugins/support-tickets/plugin.php');
 
 $assert(str_contains($header, 'data-ui-area="admin"') && str_contains($header, 'data-ui-page='), 'The admin layout must expose the guarded UI area and route.');
 $assert(substr_count($header, "ui_asset('/css/") === 2, 'Admin routes must load exactly two first-party CSS files.');
@@ -49,6 +52,10 @@ $assert(str_contains($admin, 'requestJson(') && str_contains($admin, 'initVarian
 $assert(str_contains($dashboard, 'data-admin-chart="<?php echo ui_data_json('), 'Dashboard chart data must use the safe JSON attribute helper.');
 $assert(str_contains($editor, 'data-admin-product-media') && str_contains($editor, 'data-admin-variants'), 'The product editor must expose escaped configuration through data attributes.');
 $assert(!is_file($root . '/admin/partials/fabric-product-form-script.php'), 'The duplicated inline product editor script must be removed.');
+$assert(!str_contains($courierReturns, 'class="small text-muted mt-2"')
+    && !str_contains($courierReturns, 'class="mt-2"')
+    && !str_contains($courierReturns, 'class="btn btn-sm'), 'Courier return actions must use first-party admin classes.');
+$assert(!str_contains($supportTickets, 'class="alert alert-warning"'), 'Support migration warnings must use the shared alert component.');
 
 if ($failures !== []) {
     fwrite(STDERR, "Admin frontend rewrite contract failures:\n- " . implode("\n- ", $failures) . "\n");

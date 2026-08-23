@@ -211,6 +211,8 @@
   .slip-wrapper { max-inline-size: 43rem; padding: 0; }
   .inv-header { margin-block-end: 1.5rem; }
   .inv-brand { display: none; }
+  .inv-brand-name { font-size: 1.35rem; font-weight: 800; }
+  .inv-brand-sub { color: #64748b; font-size: .7rem; }
   .inv-title-block { text-align: center; }
   .inv-title { color: #111c34; font-size: clamp(2rem, 7vw, 3.15rem); font-weight: 800; }
   .inv-subtitle { color: #111c34; font-weight: 700; }
@@ -251,6 +253,7 @@
   .inv-payment-item span:last-child { font-weight: 700; margin-inline-start: .35rem; }
   .badge-paid { color: #157347; }
   .badge-pending { color: #a15c00; }
+  .badge-cod { color: #475569; }
   .inv-footer { margin-block-start: 1.25rem; color: #475569; text-align: center; }
   .slip-to-section,
   .slip-payment-bar,
@@ -275,6 +278,10 @@
   .slip-to-address,
   .slip-from { color: #334155; line-height: 1.5; }
   .slip-to-pincode { font-weight: 800; }
+  .slip-awb-barcode { margin-block: .35rem; }
+  .slip-awb-barcode svg { display: block; max-inline-size: 100%; block-size: auto; }
+  .slip-awb-routing { color: #475569; font-size: .72rem; }
+  .slip-from-name { color: #18243a; font-weight: 800; }
   .slip-payment-bar { background: #edf2f7; font-weight: 800; text-transform: uppercase; }
   .slip-cod-notice { background: #fff7dc; border-block-end: 1px solid #ecc45b; color: #7a4a00; font-weight: 700; }
   .slip-unboxing-notice { background: #fffbeb; color: #475569; }

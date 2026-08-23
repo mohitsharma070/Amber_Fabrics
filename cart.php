@@ -79,7 +79,7 @@ include __DIR__ . '/includes/header.php';
             <div class="l-grid l-grid--12 u-gap-4">
                 <div class="l-col-lg-eight">
                     <div class="u-text-center u-py-5">
-                        <p class="u-text-muted fs-5">Your cart is empty.</p>
+                        <p class="u-text-muted u-text-large">Your cart is empty.</p>
                         <a href="/catalog.php" class="ui-button ui-button--primary">Shop Collection</a>
                     </div>
 

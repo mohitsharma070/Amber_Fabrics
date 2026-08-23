@@ -339,7 +339,7 @@ function shipping_courier_render_return_actions(array $context): void
         && empty($reversePickup['provider_pickup_id']);
     ?>
     <?php if (is_array($reversePickup)): ?>
-        <div class="small text-muted mt-2">
+        <div class="u-text-small u-text-muted u-mt-2">
             <div>Reverse pickup: <strong><?php echo e($providerStatus !== '' ? $providerStatus : 'Created'); ?></strong></div>
             <?php if ($trackingId !== ''): ?>
                 <div>Tracking: <strong><?php echo e($trackingId); ?></strong><?php if ($trackingUrl !== ''): ?> <a href="<?php echo e($trackingUrl); ?>" target="_blank" rel="noopener noreferrer">Track</a><?php endif; ?></div>
@@ -350,18 +350,18 @@ function shipping_courier_render_return_actions(array $context): void
         </div>
     <?php endif; ?>
     <?php if ($canCreate): ?>
-        <form method="POST" action="returns.php" class="mt-2" data-confirm-modal data-confirm-title="Create Reverse Pickup" data-confirm-message="Create a courier reverse pickup for this approved return?" data-confirm-ok="Create Pickup">
+        <form method="POST" action="returns.php" class="u-mt-2" data-confirm-modal data-confirm-title="Create Reverse Pickup" data-confirm-message="Create a courier reverse pickup for this approved return?" data-confirm-ok="Create Pickup">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="create_courier_reverse_pickup">
             <input type="hidden" name="return_id" value="<?php echo $returnId; ?>">
             <input type="hidden" name="filter_status" value="<?php echo e((string) ($context['filter_status'] ?? '')); ?>">
             <input type="hidden" name="filter_per_page" value="<?php echo (int) ($context['filter_per_page'] ?? 10); ?>">
             <input type="hidden" name="filter_page" value="<?php echo (int) ($context['filter_page'] ?? 1); ?>">
-            <button type="submit" class="btn btn-sm btn-outline-secondary w-100">Create Reverse Pickup</button>
+            <button type="submit" class="ui-button ui-button--secondary ui-button--small u-w-full">Create Reverse Pickup</button>
         </form>
     <?php endif; ?>
     <?php if (strtolower((string) ($return['status'] ?? '')) === 'approved' && !shipping_courier_reverse_supports('create')): ?>
-        <div class="small text-warning mt-2">Manual pickup required: the configured provider has no verified reverse-pickup capability.</div>
+        <div class="u-text-small u-text-warning u-mt-2">Manual pickup required: the configured provider has no verified reverse-pickup capability.</div>
     <?php endif; ?>
     <?php
 }

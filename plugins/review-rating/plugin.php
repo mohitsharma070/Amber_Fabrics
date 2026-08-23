@@ -206,20 +206,20 @@ function review_rating_render_product_block(array $context): void
     $reviews = review_rating_recent_reviews($conn, $productId, 10);
     $canReview = review_rating_customer_can_review($conn, $customerId, $productId);
     ?>
-    <div class="mt-4 border-top pt-4">
-        <h5 class="mb-2">Customer Reviews</h5>
-        <div class="text-muted small mb-3">
+    <section class="u-mt-4 u-border-top u-pt-4" aria-labelledby="customer-reviews-title">
+        <h2 class="u-heading-5 u-mb-2" id="customer-reviews-title">Customer Reviews</h2>
+        <div class="u-text-muted u-text-small u-mb-3">
             Average: <strong><?php echo number_format((float) ($stats['avg'] ?? 0), 1); ?>/5</strong>
             (<?php echo (int) ($stats['count'] ?? 0); ?> review<?php echo ((int) ($stats['count'] ?? 0) !== 1) ? 's' : ''; ?>)
         </div>
 
         <?php if ($customerId > 0 && $canReview): ?>
-            <form method="POST" action="/review-rating-submit.php" class="mb-4">
+            <form method="POST" action="/review-rating-submit.php" class="u-mb-4">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="product_id" value="<?php echo (int) $productId; ?>">
-                <div class="mb-2">
-                    <label class="form-label">Your Rating</label>
-                    <select name="rating" class="form-select" required>
+                <div class="u-mb-2">
+                    <label class="ui-label">Your Rating</label>
+                    <select name="rating" class="ui-select" required>
                         <option value="">Select</option>
                         <option value="5">5 - Excellent</option>
                         <option value="4">4 - Very Good</option>
@@ -228,32 +228,32 @@ function review_rating_render_product_block(array $context): void
                         <option value="1">1 - Poor</option>
                     </select>
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Your Review</label>
-                    <textarea name="review_text" class="form-control" rows="3" maxlength="<?php echo (int) $settings['max_length']; ?>" required></textarea>
+                <div class="u-mb-2">
+                    <label class="ui-label">Your Review</label>
+                    <textarea name="review_text" class="ui-textarea" rows="3" maxlength="<?php echo (int) $settings['max_length']; ?>" required></textarea>
                 </div>
-                <button type="submit" class="btn btn-sm btn-outline-primary">Submit Review</button>
+                <button type="submit" class="ui-button ui-button--outline ui-button--small">Submit Review</button>
             </form>
         <?php elseif ($customerId <= 0): ?>
-            <div class="alert alert-light border small">Login to submit a review.</div>
+            <div class="ui-alert ui-alert--neutral u-text-small">Login to submit a review.</div>
         <?php else: ?>
-            <div class="alert alert-light border small">You can review this product after purchasing it.</div>
+            <div class="ui-alert ui-alert--neutral u-text-small">You can review this product after purchasing it.</div>
         <?php endif; ?>
 
         <?php if (empty($reviews)): ?>
-            <p class="text-muted small mb-0">No reviews yet.</p>
+            <p class="u-text-muted u-text-small u-mb-0">No reviews yet.</p>
         <?php else: ?>
             <?php foreach ($reviews as $review): ?>
-                <div class="border rounded p-3 mb-2">
-                    <div class="d-flex justify-content-between flex-wrap gap-2">
+                <article class="u-border u-rounded u-p-3 u-mb-2">
+                    <div class="u-flex u-justify-between u-wrap u-gap-2">
                         <strong><?php echo e((string) ($review['customer_name'] ?? 'Customer')); ?></strong>
-                        <span class="text-warning"><?php echo e(review_rating_star_text((int) ($review['rating'] ?? 0))); ?></span>
+                        <span class="u-text-warning"><?php echo e(review_rating_star_text((int) ($review['rating'] ?? 0))); ?></span>
                     </div>
-                    <div class="small text-muted mb-1"><?php echo e((string) ($review['reviewed_at'] ?? '')); ?></div>
+                    <div class="u-text-small u-text-muted u-mb-1"><?php echo e((string) ($review['reviewed_at'] ?? '')); ?></div>
                     <div><?php echo e((string) ($review['review_text'] ?? '')); ?></div>
-                </div>
+                </article>
             <?php endforeach; ?>
         <?php endif; ?>
-    </div>
+    </section>
     <?php
 }

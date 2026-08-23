@@ -237,10 +237,10 @@ function utm_attribution_render_admin_panel(array $context): void
         return;
     }
     ?>
-    <div class="card mb-4 border-info">
-        <div class="card-body">
-            <h6 class="card-title">Marketing Source</h6>
-            <div class="small text-muted">
+    <section class="ui-card u-mb-4" aria-label="Marketing source">
+        <div class="ui-card__body">
+            <h2 class="u-heading-6">Marketing Source</h2>
+            <div class="u-text-small u-text-muted">
                 <div>Source: <strong><?php echo e((string) ($row['utm_source'] ?: '-')); ?></strong></div>
                 <div>Medium: <strong><?php echo e((string) ($row['utm_medium'] ?: '-')); ?></strong></div>
                 <div>Campaign: <strong><?php echo e((string) ($row['utm_campaign'] ?: '-')); ?></strong></div>
@@ -258,6 +258,6 @@ function utm_attribution_render_admin_panel(array $context): void
                 <?php endif; ?>
             </div>
         </div>
-    </div>
+    </section>
     <?php
 }

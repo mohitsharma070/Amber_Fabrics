@@ -40,8 +40,14 @@ foreach (['AmberUI.confirm = function', 'AmberUI.toast = function', 'AmberUI.set
 }
 $assert(str_contains($app, 'form.requestSubmit(submitter || undefined)'), 'Confirmed forms must preserve the original submitter through requestSubmit().');
 $assert(str_contains($app, 'event.key === "Escape"') && str_contains($app, 'moveFocusWithin'), 'Shared overlays must support Escape and focus trapping.');
+$assert(str_contains($app, 'if (pendingConfirm) {' ) && str_contains($app, 'return Promise.resolve(false);'), 'A second confirmation request must not replace an active dialog.');
+$assert(str_contains($app, 'drawer.getAttribute("data-ui-opening") === "true"') && str_contains($app, 'drawer.setAttribute("data-ui-opening", "true")'), 'Rapid drawer-open requests must not acquire multiple scroll locks.');
 $assert(str_contains($foundation, '@media (prefers-reduced-motion: reduce)'), 'The foundation must honor reduced-motion preferences.');
 $assert(str_contains($foundation, 'min-block-size: 2.75rem'), 'Interactive controls must provide 44px touch targets.');
+foreach (['.ui-spinner--small', '.ui-card__title', '.ui-surface-soft', '.ui-check__input', '.ui-check__label', '.ui-alert__link', '.ui-table__head--light', '.u-heading-6', '.u-p-5'] as $selector) {
+    $assert(str_contains($foundation, $selector), 'The shared foundation must define used selector ' . $selector . '.');
+}
+$assert(substr_count($foundation, '.u-pt-2 {') === 1, 'Foundation utilities must not contain duplicate u-pt-2 declarations.');
 
 preg_match_all('/<symbol\s+id="icon-[^"]+"/', $sprite, $iconMatches);
 $assert(count($iconMatches[0]) === 38, 'The first-party sprite must contain exactly the 38 audited icons.');

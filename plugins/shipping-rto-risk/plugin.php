@@ -263,9 +263,9 @@ function shipping_rto_risk_render_admin_panel(array $context): void
     }
     $band = strtolower((string) ($row['risk_band'] ?? 'low'));
     $score = (int) ($row['risk_score'] ?? 0);
-    $badge = 'secondary';
+    $badge = 'neutral';
     if ($band === 'high') {
-        $badge = 'danger';
+        $badge = 'error';
     } elseif ($band === 'medium') {
         $badge = 'warning';
     } else {
@@ -276,23 +276,23 @@ function shipping_rto_risk_render_admin_panel(array $context): void
         $reasons = [];
     }
     ?>
-    <div class="card mb-4 border-<?php echo e($badge); ?>">
-        <div class="card-body">
-            <h6 class="card-title">Shipping / RTO Risk</h6>
-            <div class="small text-muted mb-2">
+    <section class="ui-card u-mb-4" aria-label="Shipping and return-to-origin risk">
+        <div class="ui-card__body">
+            <h2 class="u-heading-6">Shipping / RTO Risk</h2>
+            <div class="u-text-small u-text-muted u-mb-2">
                 <div>Risk Score: <strong><?php echo $score; ?>/100</strong></div>
-                <div>Band: <span class="badge bg-<?php echo e($badge); ?>"><?php echo strtoupper(e($band)); ?></span></div>
+                <div>Band: <span class="ui-badge ui-badge--<?php echo e($badge); ?>"><?php echo strtoupper(e($band)); ?></span></div>
                 <div>Assessed At: <strong><?php echo e((string) ($row['assessed_at'] ?? '')); ?></strong></div>
             </div>
             <?php if (!empty($reasons)): ?>
-                <div class="small">
+                <div class="u-text-small">
                     <?php foreach ($reasons as $reason): ?>
                         <div>- <?php echo e((string) $reason); ?></div>
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
         </div>
-    </div>
+    </section>
     <?php
 }
 

@@ -222,16 +222,20 @@
       if (!button || !banner.contains(button)) {
         return;
       }
-      var choice = button.getAttribute("data-consent-choice") === "accept" ? "granted" : "denied";
+      var choice = button.getAttribute("data-consent-choice") === "accept" ? "accept" : "reject";
       var controls = banner.querySelectorAll("button");
       controls.forEach(function (control) { control.disabled = true; });
-      fetchJson("/marketing-consent.php", {
+      fetchJson("/cookie-consent.php", {
         method: "POST",
-        body: new URLSearchParams({ status: choice, csrf_token: csrfToken() })
+        body: new URLSearchParams({ choice: choice, csrf_token: csrfToken() })
       }).then(function (data) {
-        banner.setAttribute("data-consent-status", data.status || choice);
+        var status = data.status || (choice === "accept" ? "granted" : "denied");
+        banner.setAttribute("data-consent-status", status);
         show(false);
-        window.dispatchEvent(new CustomEvent("amber:consent", { detail: { status: data.status || choice } }));
+        window.dispatchEvent(new CustomEvent("amber:consent", { detail: { status: status } }));
+        if (status === "granted") {
+          window.location.reload();
+        }
       }).catch(function (error) {
         if (AmberUI.toast) {
           AmberUI.toast({ type: "error", message: error.message });
@@ -1226,7 +1230,8 @@
       });
     });
     if (continueButton) {
-      continueButton.addEventListener("click", function () {
+      continueButton.addEventListener("click", function (event) {
+        event.preventDefault();
         if (!validateAddress()) {
           setUnlocked(false);
           if (deliveryStatus) { deliveryStatus.textContent = "Please complete the highlighted delivery fields."; }

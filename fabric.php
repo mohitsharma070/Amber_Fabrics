@@ -391,7 +391,7 @@ do_action('product.view', [
                 <div class="u-mb-3" id="product_price_block">
                     <?php if ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice): ?>
                         <span class="u-text-large u-font-bold u-text-primary"><?php echo e(money($salePrice)); ?> / <?php echo e($unitSingleLabel); ?></span>
-                        <span class="ms-3 u-text-muted"><del><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></del></span>
+                        <span class="u-ms-3 u-text-muted"><del><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></del></span>
                     <?php elseif ($regularPrice > 0): ?>
                         <span class="u-text-large u-font-bold u-text-primary"><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></span>
                     <?php else: ?>
@@ -401,9 +401,9 @@ do_action('product.view', [
 
                 <div class="u-flex u-wrap u-gap-2 u-mb-3">
                     <?php if (!empty($product['color'])): ?>
-                        <span class="ui-badge--soft">Color: <?php echo e($product['color']); ?></span>
+                        <span class="ui-badge ui-badge--soft">Color: <?php echo e($product['color']); ?></span>
                     <?php endif; ?>
-                    <span class="ui-badge <?php echo $inStock ? 'bg-success' : 'bg-secondary'; ?>" id="base_stock_badge">
+                    <span class="ui-badge <?php echo $inStock ? 'ui-badge--success' : 'ui-badge--neutral'; ?>" id="base_stock_badge">
                         <?php echo $inStock ? 'Stock Status: In Stock (' . format_quantity_by_unit($displayStock, $unitType) . ' ' . e($unitLabel) . ')' : 'Stock Status: Out of Stock'; ?>
                     </span>
                 </div>

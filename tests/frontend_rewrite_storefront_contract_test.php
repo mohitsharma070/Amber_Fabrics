@@ -51,6 +51,7 @@ $storefrontTemplates = [
     'plugins/back-in-stock-alert/plugin.php',
     'plugins/google-analytics/plugin.php',
     'plugins/meta-pixel/plugin.php',
+    'plugins/review-rating/plugin.php',
 ];
 
 foreach ($storefrontTemplates as $path) {
@@ -75,6 +76,8 @@ $payment = $read('payment/razorpay-create.php');
 $commerce = $read('js/commerce.js');
 $app = $read('js/app.js');
 $formHelpers = $read('includes/helpers/email-tax-ui.php');
+$coreHelpers = $read('includes/helpers/core.php');
+$siteSettings = $read('includes/services/SiteSettingsService.php');
 
 $assert(str_contains($header, 'data-ui-area="storefront"') && str_contains($header, 'data-ui-page='), 'The storefront layout must expose its guarded UI area and route.');
 $assert(substr_count($header, "ui_asset('/css/") === 2, 'Storefront routes must load exactly two first-party CSS files.');
@@ -84,6 +87,11 @@ $assert(str_contains($checkout, 'data-checkout-payable'), 'Checkout confirmation
 $assert(str_contains($fabric, 'data-product-config="<?php echo ui_data_json('), 'Product data must use the safe JSON attribute helper.');
 $assert(str_contains($payment, 'data-payment-config="<?php echo ui_data_json('), 'Payment data must use the safe JSON attribute helper.');
 $assert(str_contains($payment, 'https://checkout.razorpay.com/v1/checkout.js') && !str_contains($header, 'checkout.razorpay.com'), 'Razorpay Checkout must load only on its payment page.');
+$assert(str_contains($commerce, 'fetchJson("/cookie-consent.php"') && str_contains($commerce, 'choice: choice'), 'Cookie consent must preserve the established endpoint and request field.');
+$assert(!str_contains($commerce, '/marketing-consent.php'), 'The storefront must not call a non-existent marketing-consent endpoint.');
+$assert(str_contains($commerce, 'window.location.reload();'), 'Granting consent must reload so consent-gated analytics markup and CSP directives can be rendered.');
+$assert(str_contains($checkout, 'formaction="/checkout.php" formmethod="post"') && str_contains($checkout, 'CheckoutInput::sessionState($preparedInput)'), 'Checkout must retain a server-rendered continue-to-payment fallback.');
+$assert(!preg_match('/<form\b[^>]*id="checkout_form"[^>]*\bnovalidate\b/is', $checkout), 'Checkout must retain native validation when JavaScript is unavailable.');
 
 foreach ([
     'data-ajax-cart',
@@ -101,6 +109,11 @@ $assert(str_contains($app, 'form.hasAttribute("data-ui-async")'), 'The shared su
 $assert(str_contains($commerce, 'event.preventDefault();') && str_contains($commerce, 'button.getAttribute("aria-busy") === "true"'), 'AJAX cart submissions must prevent native duplicate submissions.');
 $assert(str_contains($formHelpers, "string \$base = 'ui-field-error'"), 'The shared form error helper must use the first-party error presentation.');
 $assert(!preg_match('/form_class\([^,\r\n]+,\s*["\'][^"\']+["\']\s*\)/', $checkout), 'Checkout fields must explicitly use first-party control classes.');
+$assert(str_contains($coreHelpers, 'function ui_rich_text_html('), 'Stored policy HTML must pass through the legacy presentation-class normalizer.');
+foreach (['shipping-policy.php', 'return-policy.php', 'privacy-policy.php', 'terms.php', 'international-orders-policy.php', 'size-guide.php'] as $path) {
+    $assert(str_contains($read($path), 'ui_rich_text_html('), $path . ' must normalize historical editable presentation classes before rendering.');
+}
+$assert(!preg_match('/class=\\"(?:mb-4|btn\b|table-responsive|table\s+table-bordered)/', $siteSettings), 'Fresh site-setting defaults must use first-party presentation classes.');
 
 if ($failures !== []) {
     fwrite(STDERR, "Storefront rewrite contract failures:\n- " . implode("\n- ", $failures) . "\n");

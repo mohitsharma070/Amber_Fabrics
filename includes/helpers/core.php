@@ -314,6 +314,44 @@ function ui_tone(string $tone): string
     };
 }
 
+/**
+ * Translate legacy presentation classes historically allowed in editable
+ * policy HTML while preserving the stored content and unknown classes.
+ */
+function ui_rich_text_html(string $html): string
+{
+    $classMap = [
+        'mb-4' => 'u-mb-4',
+        'btn' => 'ui-button',
+        'btn-sm' => 'ui-button--small',
+        'btn-outline-dark' => 'ui-button--outline',
+        'table-responsive' => 'ui-table-wrap',
+        'table' => 'ui-table',
+        'table-bordered' => 'ui-table--bordered',
+        'align-middle' => 'u-align-middle',
+    ];
+
+    $normalized = preg_replace_callback(
+        '/\bclass\s*=\s*(["\'])(.*?)\1/is',
+        static function (array $matches) use ($classMap): string {
+            $classes = preg_split('/\s+/', trim((string) $matches[2])) ?: [];
+            $classes = array_map(
+                static fn(string $className): string => $classMap[$className] ?? $className,
+                $classes
+            );
+            $classes = array_values(array_unique(array_filter(
+                $classes,
+                static fn(string $className): bool => $className !== ''
+            )));
+
+            return 'class=' . $matches[1] . implode(' ', $classes) . $matches[1];
+        },
+        $html
+    );
+
+    return is_string($normalized) ? $normalized : $html;
+}
+
 function site_name(): string
 {
     return SiteContext::name();

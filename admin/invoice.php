@@ -119,10 +119,10 @@ if ($supportsTaxSnapshot && !empty($items)) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Invoice <?php echo e($order['order_number']); ?> | <?php echo e($siteName); ?> Admin</title>
-<link rel="stylesheet" href="../css/foundation.css?v=<?php echo e(asset_version('foundation.css')); ?>">
-<link rel="stylesheet" href="../css/documents.css?v=<?php echo e(asset_version('documents.css')); ?>">
-<script defer src="../js/app.js?v=<?php echo e(asset_version('app.js')); ?>"></script>
-<script defer src="../js/documents.js?v=<?php echo e(asset_version('documents.js')); ?>"></script>
+<link rel="stylesheet" href="<?php echo e(ui_asset('/css/foundation.css')); ?>">
+<link rel="stylesheet" href="<?php echo e(ui_asset('/css/documents.css')); ?>">
+<script defer src="<?php echo e(ui_asset('/js/app.js')); ?>"></script>
+<script defer src="<?php echo e(ui_asset('/js/documents.js')); ?>"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 </head>
 <body data-ui-area="document" data-ui-page="invoice">

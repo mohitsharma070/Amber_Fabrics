@@ -232,7 +232,7 @@ if ($activeTab === 'general'): ?>
                value="<?php echo e((string) ($settings['gst_rate'] ?? '18')); ?>">
         <small class="u-text-muted">Used for GST breakdown on India orders.</small>
     </div>
-    <div class="ui-alert alert-secondary">
+    <div class="ui-alert ui-alert--neutral">
         <div class="u-font-semibold u-mb-1">Category Taxonomy Mode: <?php echo e(ucfirst(category_taxonomy_mode())); ?></div>
         <div class="u-text-small u-text-muted u-mb-1">Storefront category slugs are business-rule locked and should not be treated as free-form taxonomy.</div>
         <div class="u-text-small">

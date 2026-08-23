@@ -36,6 +36,38 @@ $old = CheckoutInput::defaults();
 $customerId = (int) ($_SESSION['customer_id'] ?? 0);
 $old = array_merge($old, CheckoutReadService::customerPrefill($conn, $customerId));
 
+// Progressive fallback for browsers where the checkout controller is unavailable.
+// The existing fields are validated and retained, then the normal GET render creates
+// the same short-lived shipping quote used by the JavaScript path.
+if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
+    if (!verify_csrf()) {
+        flash('error', 'Invalid session token. Please try again.');
+        redirect('/checkout.php');
+    }
+
+    $preparedInput = CheckoutInput::fromRequest($_POST, $customerId);
+    if (
+        $customerId > 0
+        && (int) $preparedInput['shipping_address_id'] > 0
+        && CustomerAddressService::tableReady($conn)
+    ) {
+        $preparedInput = CheckoutInput::withSavedAddress(
+            $preparedInput,
+            CustomerAddressService::get($conn, $customerId, (int) $preparedInput['shipping_address_id'])
+        );
+    }
+
+    $_SESSION['checkout_old'] = CheckoutInput::sessionState($preparedInput);
+    $preparedErrors = array_merge(
+        CheckoutInput::validateContactDeliveryPayment($preparedInput),
+        CheckoutInput::validateOrderNotes($preparedInput)
+    );
+    if ($preparedErrors !== []) {
+        $_SESSION['checkout_errors'] = $preparedErrors;
+    }
+    redirect('/checkout.php');
+}
+
 if (!empty($_SESSION['checkout_old']) && is_array($_SESSION['checkout_old'])) {
     $old = array_merge($old, $_SESSION['checkout_old']);
     unset($_SESSION['checkout_old']);
@@ -187,7 +219,6 @@ include __DIR__ . '/includes/header.php';
                     id="checkout_form"
                     method="POST"
                     action="/place-order.php"
-                    novalidate
                     data-confirm-modal
                     data-confirm-context="checkout"
                     data-ui-checkout
@@ -316,7 +347,7 @@ include __DIR__ . '/includes/header.php';
                                 <textarea name="order_notes" class="ui-input" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
                             <div class="l-col-full">
-                                <button type="button" class="ui-button ui-button--primary u-w-full" id="checkout_continue_payment">Continue to Payment</button>
+                                <button type="submit" formaction="/checkout.php" formmethod="post" class="ui-button ui-button--primary u-w-full" id="checkout_continue_payment">Continue to Payment</button>
                                 <div class="u-text-small u-mt-2" id="checkout_delivery_status" aria-live="polite">
                                     <?php echo $hasCompleteDelivery ? 'Delivery details verified. You can continue to payment.' : 'Complete your delivery address to calculate shipping.'; ?>
                                 </div>

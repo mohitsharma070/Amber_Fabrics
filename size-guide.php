@@ -6,6 +6,7 @@ $heroSubtitle = (string) ($siteSettings['size_guide_subtitle'] ?? 'Quick referen
 $heroSubtitle = strtr($heroSubtitle, ['{{site_name}}' => SiteContext::name(), '{{contact_email}}' => SiteContext::contactEmail()]);
 $pageBody = (string) ($siteSettings['size_guide_body_html'] ?? '');
 $pageBody = strtr($pageBody, ['{{site_name}}' => SiteContext::name(), '{{contact_email}}' => SiteContext::contactEmail()]);
+$pageBody = ui_rich_text_html($pageBody);
 include __DIR__ . '/includes/header.php';
 ?>
 
