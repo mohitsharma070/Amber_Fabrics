@@ -45,6 +45,14 @@ $assert(
     'Product validation must reveal the tab containing the first invalid field.'
 );
 $assert(
+    str_contains($editor, '$publishChecks = (array)')
+        && str_contains($editor, '$errors = array_merge($errors, $publishChecks);')
+        && str_contains($editorForm, 'data-initial-editor-target')
+        && str_contains($editorScript, "errorTarget === 'media'")
+        && str_contains($editorScript, "errorTarget === 'variants'"),
+    'Publish-readiness errors must retain their field keys and reveal media or variants when applicable.'
+);
+$assert(
     str_contains($editor, "!empty(\$errors['save'])")
         && str_contains($editor, "e((string)\$errors['save'])"),
     'Global editor save failures must be visible to the administrator.'

@@ -223,6 +223,7 @@ if (isset($_POST['submit'])) {
         $isAvailable   = ($status === 'active' && $isAvailInput === 1) ? 1 : 0;
         $requestedStatus = $status;
         $status = $requestedStatus === 'active' ? 'draft' : $requestedStatus;
+        $publishChecks = [];
         $conn->begin_transaction();
         try {
         $upd = $conn->prepare(
@@ -253,14 +254,19 @@ if (isset($_POST['submit'])) {
         if ($requestedStatus === 'active') {
             $publishResult = ProductAdminService::publish($conn, $id, (int) $_SESSION['admin_id']);
             if (empty($publishResult['ready'])) {
-                throw new RuntimeException('Cannot publish: ' . implode(' ', array_values((array) ($publishResult['checks'] ?? []))));
+                $publishChecks = (array) ($publishResult['checks'] ?? []);
+                throw new RuntimeException('Product does not meet the publishing requirements.');
             }
         }
         log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_draft_saved','product',$id,'Product editor changes saved.','ok');
         $conn->commit();
         } catch (Throwable $e) {
             $conn->rollback();
-            $errors['save'] = $e->getMessage();
+            if ($publishChecks) {
+                $errors = array_merge($errors, $publishChecks);
+            } else {
+                $errors['save'] = $e->getMessage();
+            }
         }
 
         if (empty($errors)) {
@@ -291,7 +297,14 @@ include 'partials/header.php'; ?>
 <?php if (!empty($errors)): ?>
     <div class="alert alert-warning">
         <?php if (!empty($errors['save'])): ?><?php echo e((string)$errors['save']); ?>
-        <?php else: ?>Please fix the highlighted fields below.<?php endif; ?>
+        <?php else: ?>
+            <strong>Please fix the highlighted fields below.</strong>
+            <ul class="mb-0 mt-2">
+                <?php foreach ($errors as $message): ?>
+                    <li><?php echo e((string)$message); ?></li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
     </div>
 <?php endif; ?>
 <?php if ($isVariableInventory): ?>
@@ -309,7 +322,7 @@ include __DIR__ . '/partials/fabric-product-form.php';
 include __DIR__ . '/partials/fabric-product-form-script.php';
 ?>
 
-<div class="card mt-4 mx-3" id="product-media-card">
+<div class="card mt-4 mx-3<?php echo !empty($errors['media']) ? ' border-danger' : ''; ?>" id="product-media-card">
   <div class="card-header"><strong>Image 1–10 / Video 1–2</strong> <span class="text-muted">— catalogue media fields</span></div>
   <div class="card-body">
     <form id="product-media-upload" class="row g-2 align-items-end" enctype="multipart/form-data">
@@ -317,6 +330,9 @@ include __DIR__ . '/partials/fabric-product-form-script.php';
       <div class="col-md-5"><label class="form-label">File</label><input class="form-control" type="file" name="file" accept="image/*,video/mp4,video/webm,video/ogg" required></div>
       <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Upload media</button></div>
     </form>
+    <?php if (!empty($errors['media'])): ?>
+      <div class="invalid-feedback d-block mt-2"><?php echo e((string)$errors['media']); ?></div>
+    <?php endif; ?>
     <div class="small text-muted mt-2">Drag images to reorder. Changes save immediately.</div>
     <div id="product-media-message" class="mt-2" aria-live="polite"></div>
     <div id="product-media-list" class="row g-3 mt-1"></div>
@@ -379,6 +395,9 @@ $variants = ProductVariantService::enrich($variants, $variantProductContext);
         </div>
     </div>
     <div class="card-body p-0">
+        <?php if (!empty($errors['variants'])): ?>
+        <div class="alert alert-danger m-3 mb-0" role="alert"><?php echo e((string)$errors['variants']); ?></div>
+        <?php endif; ?>
         <div class="p-3 border-bottom bg-body-tertiary">
             <div class="row g-2 small">
                 <div class="col-6 col-lg"><span class="text-muted d-block">Product</span><strong><?php echo e((string)$fabric['name']); ?></strong></div>

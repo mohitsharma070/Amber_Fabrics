@@ -212,8 +212,24 @@
 
     assignSections();
     var errorSection = String(formEl ? formEl.getAttribute('data-initial-editor-section') || '' : '');
+    var errorTarget = String(formEl ? formEl.getAttribute('data-initial-editor-target') || '' : '');
     var savedSection = sessionStorage.getItem('amberProductEditorSection') || 'details';
-    setSection(sectionOrder.indexOf(errorSection) >= 0 ? errorSection : (sectionOrder.indexOf(savedSection) >= 0 ? savedSection : 'details'));
+    if (errorSection === 'variants') {
+        setSection('details');
+    } else {
+        setSection(sectionOrder.indexOf(errorSection) >= 0 ? errorSection : (sectionOrder.indexOf(savedSection) >= 0 ? savedSection : 'details'));
+    }
+    if (errorTarget === 'media' || errorTarget === 'variants') {
+        window.addEventListener('DOMContentLoaded', function () {
+            var target = document.getElementById(errorTarget === 'media' ? 'product-media-card' : 'variants-card');
+            if (!target) return;
+            if (errorTarget === 'variants') {
+                setVariantsTabActive();
+                showVariantsSectionOnly();
+            }
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, { once: true });
+    }
     tabButtons.forEach(function(btn){btn.addEventListener('click',function(){sessionStorage.setItem('amberProductEditorSection',btn.getAttribute('data-editor-tab')||'details');});});
     applyUnitRules();
     updateSkuPreview();
