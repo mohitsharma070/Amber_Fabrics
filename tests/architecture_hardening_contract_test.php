@@ -42,7 +42,7 @@ foreach ([$schema, $setup] as $source) {
 $checksum = hash_file('sha256', $root . '/' . $migrationPath);
 $assert(is_string($checksum) && str_contains($schema, $checksum), 'Fresh schema must baseline the architecture migration checksum.');
 $assert(
-    str_contains($cron, "'categories' => ['uses_variant_size']")
+    str_contains($cron, "'categories' => ['uses_variant_size', 'default_unit_type']")
         && str_contains($cron, "'2026-08-25-architecture-hardening.sql' => 'Architecture hardening'"),
     'Cron readiness must detect a missing category migration or column.'
 );

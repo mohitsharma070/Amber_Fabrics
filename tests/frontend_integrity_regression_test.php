@@ -59,6 +59,23 @@ $assert(
     'Draft creation must allow the administrator to choose the selling unit.'
 );
 $assert(
+    str_contains($editorForm, '<select id="unit_type" name="unit_type"')
+        && !str_contains($editorForm, '<input type="hidden" name="unit_type"')
+        && str_contains($editorForm, 'name="meter_options"')
+        && str_contains($admin, 'function syncUnitTypeFields()')
+        && str_contains($admin, 'holder.dataset.editorSection !== current')
+        && str_contains($editor, '$requestedStatus = $unitTypeChanged ? \'draft\' : $status;'),
+    'Existing products must allow safe selling-unit changes and meter length configuration.'
+);
+$assert(
+    str_contains($draft, 'ProductAdminService::normalizeDraftUnitType')
+        && str_contains($draft, 'data-default-unit-type=')
+        && str_contains($admin, 'function initProductDraftUnitType()')
+        && str_contains($admin, 'unitType.value = requiredUnit')
+        && str_contains($editor, 'ProductAdminService::normalizeDraftUnitType'),
+    'Category selling-unit metadata must drive browser and backend unit enforcement.'
+);
+$assert(
     !str_contains($editor, "\$size = (string) (\$fabric['size'] ?? '');")
         && !str_contains($editor, "\$color = (string) (\$fabric['color'] ?? '');"),
     'Submitted size and colour must not be overwritten with stale database values.'

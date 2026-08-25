@@ -173,16 +173,39 @@
     var previous = one("#product-prev-tab-btn");
     var next = one("#product-next-tab-btn");
     var variantsLink = one("#variants-tab-link");
+    var category = one("#category", form);
+    var unitType = one("#unit_type", form);
+    var quantity = one("#quantity", form);
     var current = "details";
     var dirty = false;
     function setDirty(value) {
       dirty = Boolean(value); form.dataset.dirty = dirty ? "1" : "0";
       document.dispatchEvent(new CustomEvent("product-editor-dirty-change", { detail: { dirty: dirty } }));
     }
+    function syncUnitTypeFields() {
+      if (!unitType) return;
+      var selectedCategory = category ? category.options[category.selectedIndex] : null;
+      var requiredUnit = selectedCategory ? String(selectedCategory.dataset.defaultUnitType || "") : "";
+      var hasRequiredUnit = ["meter", "piece", "set"].indexOf(requiredUnit) >= 0;
+      if (hasRequiredUnit) unitType.value = requiredUnit;
+      all("option", unitType).forEach(function (option) { option.disabled = hasRequiredUnit && option.value !== requiredUnit; });
+      var isMeter = unitType.value === "meter";
+      all("[data-meter-unit-field]", form).forEach(function (holder) {
+        holder.hidden = !isMeter || holder.dataset.editorSection !== current;
+      });
+      all("[data-meter-required]", form).forEach(function (input) { input.required = isMeter; });
+      all("[data-meter-price-suffix]", form).forEach(function (label) { label.textContent = isMeter ? " per Meter" : ""; });
+      var quantitySuffix = one("#quantity_unit_suffix", form);
+      if (quantitySuffix) quantitySuffix.textContent = isMeter ? " (meters)" : " (units)";
+      if (quantity) quantity.step = isMeter ? "0.01" : "1";
+    }
     function showSection(section) {
       if (sections.indexOf(section) < 0) section = "details";
       current = section;
-      all("[data-editor-section]", form).forEach(function (field) { field.hidden = field.dataset.editorSection !== section && field.dataset.editorSection !== "actions"; });
+      all("[data-editor-section]", form).forEach(function (field) {
+        var meterFieldHidden = field.hasAttribute("data-meter-unit-field") && (!unitType || unitType.value !== "meter");
+        field.hidden = (field.dataset.editorSection !== section && field.dataset.editorSection !== "actions") || meterFieldHidden;
+      });
       tabs.forEach(function (tab) { tab.classList.toggle("is-active", tab.dataset.editorTab === section); });
       if (variantsLink) variantsLink.classList.remove("is-active");
       var variants = one("#variants-card"); if (variants) variants.classList.add("u-hidden");
@@ -191,6 +214,8 @@
       window.sessionStorage.setItem("amberProductEditorSection", section);
     }
     tabs.forEach(function (tab) { tab.addEventListener("click", function () { showSection(tab.dataset.editorTab || "details"); }); });
+    if (category) category.addEventListener("change", syncUnitTypeFields);
+    if (unitType) unitType.addEventListener("change", syncUnitTypeFields);
     if (next) next.addEventListener("click", function () { var index = sections.indexOf(current); if (index < sections.length - 1) showSection(sections[index + 1]); });
     if (previous) previous.addEventListener("click", function () { var index = sections.indexOf(current); if (index > 0) showSection(sections[index - 1]); else if (previous.dataset.cancelHref) window.location.assign(previous.dataset.cancelHref); });
     if (variantsLink) variantsLink.addEventListener("click", function (event) {
@@ -205,7 +230,25 @@
     form.addEventListener("invalid", function (event) { var holder = event.target instanceof Element ? event.target.closest("[data-editor-section]") : null; if (holder && sections.indexOf(holder.dataset.editorSection) >= 0) showSection(holder.dataset.editorSection); }, true);
     form.addEventListener("submit", function () { setDirty(false); });
     window.addEventListener("beforeunload", function (event) { if (!dirty) return; event.preventDefault(); event.returnValue = ""; });
-    showSection(form.dataset.initialEditorSection || window.sessionStorage.getItem("amberProductEditorSection") || "details"); setDirty(false);
+    syncUnitTypeFields(); showSection(form.dataset.initialEditorSection || window.sessionStorage.getItem("amberProductEditorSection") || "details"); setDirty(false);
+  }
+
+  function initProductDraftUnitType() {
+    var form = one("#product-draft-form");
+    if (!form) return;
+    var category = one("#category", form), unitType = one("#unit_type", form);
+    if (!category || !unitType) return;
+    function syncUnitType() {
+      var selected = category.options[category.selectedIndex];
+      var requiredUnit = selected ? String(selected.dataset.defaultUnitType || "") : "";
+      var hasRequiredUnit = ["meter", "piece", "set"].indexOf(requiredUnit) >= 0;
+      if (hasRequiredUnit) unitType.value = requiredUnit;
+      all("option", unitType).forEach(function (option) {
+        option.disabled = hasRequiredUnit && option.value !== requiredUnit;
+      });
+    }
+    category.addEventListener("change", syncUnitType);
+    syncUnitType();
   }
 
   function initProductMedia() {
@@ -365,7 +408,7 @@
   function init() {
     if (document.body.dataset.uiArea !== "admin") return;
     initDialogs(); initNavigation(); enforceReadOnlyMode(); all(".ui-table-wrap > table.ui-table").forEach(enhanceTable);
-    initOtpTimer(); initCouponEditor(); initDashboardChart(); initLiveRate(); initProductEditor(); initProductMedia(); initVariants();
+    initOtpTimer(); initCouponEditor(); initDashboardChart(); initLiveRate(); initProductDraftUnitType(); initProductEditor(); initProductMedia(); initVariants();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true }); else init();
 }());

@@ -79,14 +79,19 @@ if (isset($_POST['submit'])) {
 
     $name          = trim($_POST['name']          ?? '');
     $category      = trim($_POST['category']      ?? '');
-    $unitType      = trim((string) ($_POST['unit_type'] ?? 'meter'));
+    $submittedUnitType = trim((string) ($_POST['unit_type'] ?? 'meter'));
+    $unitType      = ProductAdminService::normalizeDraftUnitType(
+        $submittedUnitType,
+        ProductAdminService::categoryDefaultUnitType($conn, $category)
+    );
+    $unitTypeChanged = $unitType !== (string) ($fabric['unit_type'] ?? 'meter');
     $price         = trim($_POST['mrp'] ?? '');
     $sellingPrice  = trim($_POST['selling_price'] ?? '');
     $salePrice     = (is_numeric($sellingPrice)&&is_numeric($price)&&(float)$sellingPrice<(float)$price)?$sellingPrice:'';
     $costPrice     = trim($_POST['cost_price'] ?? '0');if($costPrice==='')$costPrice='0';
     $stock         = trim($_POST['quantity'] ?? '0');
     $size          = trim($_POST['size']          ?? ((string) ($fabric['size'] ?? '')));
-    $meterOptions  = (string)($fabric['meter_options']??'');
+    $meterOptions  = trim((string)($_POST['meter_options']??($fabric['meter_options']??'')));
     $color         = trim($_POST['color']         ?? ((string) ($fabric['color'] ?? '')));
     $sku           = ProductAdminService::normalizeSku((string)($_POST['sku'] ?? ($fabric['sku']??'')));
     $dispatchMinDays=max(0,(int)($fabric['dispatch_min_days']??0));$dispatchMaxDays=max($dispatchMinDays,(int)($fabric['dispatch_max_days']??0));
@@ -197,11 +202,7 @@ if (isset($_POST['submit'])) {
     }
     if ($unitType === 'meter') {
         if (empty($parsedMeterOptions)) {
-            $errors['meter_options'] = 'Provide at least one valid meter option (e.g. 1, 2, 2.5).';
-        } elseif (!in_array(round((float) $minOrder, 2), array_map(static function ($val) {
-            return round((float) $val, 2);
-        }, $parsedMeterOptions), true)) {
-            $errors['meter_options'] = 'Meter options must include the minimum order qty.';
+            $errors['meter_options'] = 'Provide at least one valid meter length (e.g. 10, 20, 30).';
         }
     } else {
         $normalizedMeterOptions = '';
@@ -220,8 +221,8 @@ if (isset($_POST['submit'])) {
         $minOrderVal = ($unitType === 'meter')
             ? round($minOrder, 2)
             : (float) max(1, (int) round($minOrder));
-        $isAvailable   = ($status === 'active' && $isAvailInput === 1) ? 1 : 0;
-        $requestedStatus = $status;
+        $requestedStatus = $unitTypeChanged ? 'draft' : $status;
+        $isAvailable   = ($requestedStatus === 'active' && $isAvailInput === 1) ? 1 : 0;
         $status = $requestedStatus === 'active' ? 'draft' : $requestedStatus;
         $conn->begin_transaction();
         try {
@@ -256,7 +257,10 @@ if (isset($_POST['submit'])) {
                 throw new RuntimeException('Cannot publish: ' . implode(' ', array_values((array) ($publishResult['checks'] ?? []))));
             }
         }
-        log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_draft_saved','product',$id,'Product editor changes saved.','ok');
+        $activityMessage = $unitTypeChanged
+            ? 'Selling unit changed; product moved to draft for inventory review.'
+            : 'Product editor changes saved.';
+        log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_draft_saved','product',$id,$activityMessage,'ok');
         $conn->commit();
         } catch (Throwable $e) {
             $conn->rollback();
@@ -265,7 +269,10 @@ if (isset($_POST['submit'])) {
 
         if (empty($errors)) {
             if(function_exists('product_feed_refresh_files'))product_feed_refresh_files(['conn'=>$conn]);
-            flash('success', $requestedStatus === 'active' ? 'Product saved and published.' : 'Draft saved.');
+            $successMessage = $unitTypeChanged
+                ? 'Selling unit changed. Product saved as draft; review stock, meter lengths, and variants before publishing.'
+                : ($requestedStatus === 'active' ? 'Product saved and published.' : 'Draft saved.');
+            flash('success', $successMessage);
             redirect('edit-fabric.php?id=' . $id);
         }
     }
