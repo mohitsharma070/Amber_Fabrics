@@ -167,10 +167,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'delete') {
         $id = (int) ($_POST['id'] ?? 0);
         if ($id > 0) {
-            $stmt = $conn->prepare("DELETE FROM coupons WHERE id = ?");
-            $stmt->bind_param('i', $id);
-            $stmt->execute();
-            flash('success', 'Coupon deleted.');
+            // coupon_usages has ON DELETE CASCADE, so a hard delete silently erases
+            // the redemption history that per-customer limits, guest reuse checks and
+            // order reconciliation depend on - while orders.coupon_id (index only, no
+            // FK) is left pointing at a row that no longer exists. Deactivate instead
+            // once the coupon has been redeemed.
+            $usageStmt = $conn->prepare("SELECT 1 FROM coupon_usages WHERE coupon_id = ? LIMIT 1");
+            $usageStmt->bind_param('i', $id);
+            $usageStmt->execute();
+            $hasUsage = (bool) $usageStmt->get_result()->fetch_row();
+
+            if ($hasUsage) {
+                $stmt = $conn->prepare("UPDATE coupons SET status = 'inactive' WHERE id = ?");
+                $stmt->bind_param('i', $id);
+                $stmt->execute();
+                flash('success', 'Coupon has been redeemed before, so it was deactivated instead of deleted. Its redemption history is preserved.');
+            } else {
+                $stmt = $conn->prepare("DELETE FROM coupons WHERE id = ?");
+                $stmt->bind_param('i', $id);
+                $stmt->execute();
+                flash('success', 'Coupon deleted.');
+            }
         }
         redirect('coupons.php');
     }
@@ -202,46 +219,46 @@ include 'partials/header.php';
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="create">
                 <div class="u-mb-2">
-                    <label class="ui-label">Code</label>
-                    <input class="<?php echo form_class($couponErrors, 'code'); ?>" name="code" required placeholder="SAVE100" value="<?php echo e($couponOld['code']); ?>">
+                    <label for="code" class="ui-label">Code</label>
+                    <input id="code" class="<?php echo form_class($couponErrors, 'code'); ?>" name="code" required placeholder="SAVE100" value="<?php echo e($couponOld['code']); ?>">
                     <?php echo form_error($couponErrors, 'code'); ?>
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Discount Type</label>
-                    <select class="<?php echo form_class($couponErrors, 'discount_type', 'ui-select'); ?>" name="discount_type">
+                    <label for="discount_type" class="ui-label">Discount Type</label>
+                    <select id="discount_type" class="<?php echo form_class($couponErrors, 'discount_type', 'ui-select'); ?>" name="discount_type">
                         <option value="flat" <?php echo $couponOld['discount_type'] === 'flat' ? 'selected' : ''; ?>>Flat</option>
                         <option value="percent" <?php echo $couponOld['discount_type'] === 'percent' ? 'selected' : ''; ?>>Percent</option>
                     </select>
                     <?php echo form_error($couponErrors, 'discount_type'); ?>
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Discount Value</label>
-                    <input class="<?php echo form_class($couponErrors, 'discount_value'); ?>" type="number" step="0.01" min="0" name="discount_value" required value="<?php echo e($couponOld['discount_value']); ?>">
+                    <label for="discount_value" class="ui-label">Discount Value</label>
+                    <input id="discount_value" class="<?php echo form_class($couponErrors, 'discount_value'); ?>" type="number" step="0.01" min="0" name="discount_value" required value="<?php echo e($couponOld['discount_value']); ?>">
                     <?php echo form_error($couponErrors, 'discount_value'); ?>
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Min Order Amount</label>
-                    <input class="ui-input" type="number" step="0.01" min="0" name="min_order_amount" value="<?php echo e($couponOld['min_order_amount']); ?>">
+                    <label for="min_order_amount" class="ui-label">Min Order Amount</label>
+                    <input id="min_order_amount" class="ui-input" type="number" step="0.01" min="0" name="min_order_amount" value="<?php echo e($couponOld['min_order_amount']); ?>">
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Max Discount</label>
-                    <input class="ui-input" type="number" step="0.01" min="0" name="max_discount" placeholder="Optional" value="<?php echo e($couponOld['max_discount']); ?>">
+                    <label for="max_discount" class="ui-label">Max Discount</label>
+                    <input id="max_discount" class="ui-input" type="number" step="0.01" min="0" name="max_discount" placeholder="Optional" value="<?php echo e($couponOld['max_discount']); ?>">
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Start Date</label>
-                    <input class="ui-input" type="date" name="start_date" value="<?php echo e($couponOld['start_date']); ?>">
+                    <label for="start_date" class="ui-label">Start Date</label>
+                    <input id="start_date" class="ui-input" type="date" name="start_date" value="<?php echo e($couponOld['start_date']); ?>">
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">End Date</label>
-                    <input class="ui-input" type="date" name="end_date" value="<?php echo e($couponOld['end_date']); ?>">
+                    <label for="end_date" class="ui-label">End Date</label>
+                    <input id="end_date" class="ui-input" type="date" name="end_date" value="<?php echo e($couponOld['end_date']); ?>">
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Usage Limit (0 = unlimited)</label>
-                    <input class="ui-input" type="number" min="0" name="usage_limit" value="<?php echo e($couponOld['usage_limit']); ?>">
+                    <label for="usage_limit" class="ui-label">Usage Limit (0 = unlimited)</label>
+                    <input id="usage_limit" class="ui-input" type="number" min="0" name="usage_limit" value="<?php echo e($couponOld['usage_limit']); ?>">
                 </div>
                 <div class="u-mb-3">
-                    <label class="ui-label">Status</label>
-                    <select class="<?php echo form_class($couponErrors, 'status', 'ui-select'); ?>" name="status">
+                    <label for="status" class="ui-label">Status</label>
+                    <select id="status" class="<?php echo form_class($couponErrors, 'status', 'ui-select'); ?>" name="status">
                         <option value="active" <?php echo $couponOld['status'] === 'active' ? 'selected' : ''; ?>>Active</option>
                         <option value="inactive" <?php echo $couponOld['status'] === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
                     </select>
@@ -345,42 +362,42 @@ include 'partials/header.php';
                     <input type="hidden" name="id" id="editCouponId" value="">
 
                     <div class="u-mb-2">
-                        <label class="ui-label">Code</label>
+                        <label for="editCouponCode" class="ui-label">Code</label>
                         <input class="ui-input" name="code" id="editCouponCode" required>
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">Discount Type</label>
+                        <label for="editCouponDiscountType" class="ui-label">Discount Type</label>
                         <select class="ui-select" name="discount_type" id="editCouponDiscountType">
                             <option value="flat">Flat</option>
                             <option value="percent">Percent</option>
                         </select>
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">Discount Value</label>
+                        <label for="editCouponDiscountValue" class="ui-label">Discount Value</label>
                         <input class="ui-input" type="number" step="0.01" min="0" name="discount_value" id="editCouponDiscountValue" required>
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">Min Order Amount</label>
+                        <label for="editCouponMinOrderAmount" class="ui-label">Min Order Amount</label>
                         <input class="ui-input" type="number" step="0.01" min="0" name="min_order_amount" id="editCouponMinOrderAmount">
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">Max Discount</label>
+                        <label for="editCouponMaxDiscount" class="ui-label">Max Discount</label>
                         <input class="ui-input" type="number" step="0.01" min="0" name="max_discount" id="editCouponMaxDiscount">
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">Start Date</label>
+                        <label for="editCouponStartDate" class="ui-label">Start Date</label>
                         <input class="ui-input" type="date" name="start_date" id="editCouponStartDate">
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">End Date</label>
+                        <label for="editCouponEndDate" class="ui-label">End Date</label>
                         <input class="ui-input" type="date" name="end_date" id="editCouponEndDate">
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">Usage Limit (0 = unlimited)</label>
+                        <label for="editCouponUsageLimit" class="ui-label">Usage Limit (0 = unlimited)</label>
                         <input class="ui-input" type="number" min="0" name="usage_limit" id="editCouponUsageLimit">
                     </div>
                     <div class="u-mb-2">
-                        <label class="ui-label">Status</label>
+                        <label for="editCouponStatus" class="ui-label">Status</label>
                         <select class="ui-select" name="status" id="editCouponStatus">
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>

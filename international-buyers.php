@@ -147,36 +147,36 @@ include __DIR__ . '/includes/header.php';
                         <?php echo csrf_field(); ?>
                         <div class="l-grid l-grid--12 u-gap-3">
                             <div class="l-col-md-half">
-                                <label class="ui-label">Name *</label>
-                                <input class="ui-input" name="name" required value="<?php echo e($old['name']); ?>">
+                                <label for="name" class="ui-label">Name *</label>
+                                <input id="name" class="ui-input" name="name" required value="<?php echo e($old['name']); ?>">
                             </div>
                             <div class="l-col-md-half">
-                                <label class="ui-label">Company Name</label>
-                                <input class="ui-input" name="company_name" value="<?php echo e($old['company_name']); ?>">
+                                <label for="company_name" class="ui-label">Company Name</label>
+                                <input id="company_name" class="ui-input" name="company_name" value="<?php echo e($old['company_name']); ?>">
                             </div>
                             <div class="l-col-md-half">
-                                <label class="ui-label">Email *</label>
-                                <input class="ui-input" type="email" name="email" required value="<?php echo e($old['email']); ?>">
+                                <label for="email" class="ui-label">Email *</label>
+                                <input id="email" class="ui-input" type="email" name="email" required value="<?php echo e($old['email']); ?>">
                             </div>
                             <div class="l-col-md-half">
-                                <label class="ui-label">WhatsApp Number *</label>
-                                <input class="ui-input" name="whatsapp_number" required value="<?php echo e($old['whatsapp_number']); ?>" placeholder="+91...">
+                                <label for="whatsapp_number" class="ui-label">WhatsApp Number *</label>
+                                <input id="whatsapp_number" class="ui-input" name="whatsapp_number" required value="<?php echo e($old['whatsapp_number']); ?>" placeholder="+91...">
                             </div>
                             <div class="l-col-md-half">
-                                <label class="ui-label">Country *</label>
-                                <input class="ui-input" name="country" required value="<?php echo e($old['country']); ?>">
+                                <label for="country" class="ui-label">Country *</label>
+                                <input id="country" class="ui-input" name="country" required value="<?php echo e($old['country']); ?>">
                             </div>
                             <div class="l-col-md-half">
-                                <label class="ui-label">Product *</label>
-                                <input class="ui-input" name="product_interested" required value="<?php echo e($old['product_interested']); ?>">
+                                <label for="product_interested" class="ui-label">Product *</label>
+                                <input id="product_interested" class="ui-input" name="product_interested" required value="<?php echo e($old['product_interested']); ?>">
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Quantity *</label>
-                                <input class="ui-input" name="quantity" required value="<?php echo e($old['quantity']); ?>" placeholder="e.g. 500 pcs / 2000 meters">
+                                <label for="quantity" class="ui-label">Quantity *</label>
+                                <input id="quantity" class="ui-input" name="quantity" required value="<?php echo e($old['quantity']); ?>" placeholder="e.g. 500 pcs / 2000 meters">
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Message</label>
-                                <textarea class="ui-input" name="message" rows="4"><?php echo e($old['message']); ?></textarea>
+                                <label for="message" class="ui-label">Message</label>
+                                <textarea id="message" class="ui-input" name="message" rows="4"><?php echo e($old['message']); ?></textarea>
                             </div>
                             <div class="l-col-full">
                                 <button class="ui-button ui-button--primary u-w-full" type="submit">Request International Quote</button>

@@ -335,11 +335,12 @@ do_action('product.view', [
                     <?php $mainImageAsset = fabric_image_asset_data((string) $galleryImages[0]); ?>
                     <div class="product-media-main u-mb-3 u-shadow u-overflow-hidden" data-ui-product-gallery>
                         <picture id="product-main-picture" class="u-block u-w-full u-h-full">
-                            <?php if (!empty($mainImageAsset['webp_srcset'])): ?>
-                                <source id="product-main-webp-source" type="image/webp" srcset="<?php echo e($mainImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 100vw, 45vw">
-                            <?php else: ?>
-                                <source id="product-main-webp-source" type="image/webp" srcset="">
-                            <?php endif; ?>
+                            <?php /* Rendered even when the product has no WebP srcset: the gallery script
+                                     swaps this element's srcset when a thumbnail is clicked, so it has to
+                                     exist either way. An empty srcset never matches, and the browser falls
+                                     through to the <img> below - which is why the two branches this
+                                     replaced only ever differed in the attribute value. */ ?>
+                            <source id="product-main-webp-source" type="image/webp" srcset="<?php echo e((string) ($mainImageAsset['webp_srcset'] ?? '')); ?>" sizes="(max-width: 767px) 100vw, 45vw">
                             <img id="product-main-image"
                                  src="<?php echo e($mainImageAsset['src']); ?>"
                                  alt="<?php echo e($product['name']); ?>"
@@ -517,17 +518,30 @@ do_action('product.view', [
                             <input type="hidden" name="meter_length" id="selected_meter_length" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>">
                             <input type="hidden" name="quantity" id="meter_total_quantity" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>">
                         <?php endif; ?>
-                        <?php if (!empty($colorGroups)): ?>
-                            <input type="hidden" name="selected_color" id="selected_color_add" value="<?php echo e($defaultColor); ?>">
+                        <?php /* selected_size is posted whenever the product has either colour groups or
+                                 plain size options, so it is emitted once for both cases; only the colour
+                                 and variant fields are specific to the colour-group layout. These are
+                                 hidden inputs, so the order change relative to the two branches this
+                                 replaced does not affect the submitted payload. */ ?>
+                        <?php if (!empty($colorGroups) || !empty($sizeOptions)): ?>
                             <input type="hidden" name="selected_size" id="selected_size_add" value="<?php echo e($defaultSize); ?>">
-                            <input type="hidden" name="variant_id" id="selected_variant_id_add" value="<?php echo $defaultVariantId; ?>">
-                        <?php elseif (!empty($sizeOptions)): ?>
-                            <input type="hidden" name="selected_size" id="selected_size_add" value="<?php echo e($defaultSize); ?>">
+                            <?php if (!empty($colorGroups)): ?>
+                                <input type="hidden" name="selected_color" id="selected_color_add" value="<?php echo e($defaultColor); ?>">
+                                <input type="hidden" name="variant_id" id="selected_variant_id_add" value="<?php echo $defaultVariantId; ?>">
+                            <?php endif; ?>
                         <?php endif; ?>
                         <div class="product-purchase-controls">
                             <div class="product-quantity-controls">
+                            <?php /* Both branches below render id="product_quantity", so one label
+                                      serves either control. Visually the field is labelled by the
+                                      -/+ buttons flanking it, which says nothing to a screen reader.
+                                      The two controls are a number input (meter) and a select (piece or
+                                      set), so they cannot be merged - but the -/+ buttons around them
+                                      are identical, so only the middle control is branched. Rendered
+                                      order is unchanged: decrement, control, increment. */ ?>
+                            <label class="ui-label u-sr-only" for="product_quantity">Quantity</label>
+                            <button type="button" id="qty_dec" class="ui-button ui-button--secondary" aria-label="Decrease quantity">-</button>
                             <?php if ($unitType === 'meter'): ?>
-                                <button type="button" id="qty_dec" class="ui-button ui-button--secondary" aria-label="Decrease quantity">-</button>
                                 <input type="number"
                                        id="product_quantity"
                                        name="bundle_quantity"
@@ -536,9 +550,7 @@ do_action('product.view', [
                                        step="1"
                                        value="1"
                                        <?php echo $inStock ? '' : 'disabled'; ?>>
-                                <button type="button" id="qty_inc" class="ui-button ui-button--secondary" aria-label="Increase quantity">+</button>
                             <?php else: ?>
-                                <button type="button" id="qty_dec" class="ui-button ui-button--secondary" aria-label="Decrease quantity">-</button>
                                 <select
                                        id="product_quantity"
                                        name="quantity"
@@ -551,8 +563,8 @@ do_action('product.view', [
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <button type="button" id="qty_inc" class="ui-button ui-button--secondary" aria-label="Increase quantity">+</button>
                             <?php endif; ?>
+                            <button type="button" id="qty_inc" class="ui-button ui-button--secondary" aria-label="Increase quantity">+</button>
                             </div>
                             <button type="submit" id="add_to_cart_submit" class="ui-button ui-button--primary product-add-cart-button" <?php echo $inStock ? '' : 'disabled'; ?>>
                                 Add to Cart
@@ -576,12 +588,14 @@ do_action('product.view', [
                                 <input type="hidden" name="meter_length" id="buy_now_meter_length" value="<?php echo e(rtrim(rtrim(number_format($defaultMeterLength ?? max(1.0, (float) ($product['min_order_meters'] ?? 1)), 2), '0'), '.')); ?>">
                                 <input type="hidden" name="bundle_quantity" id="buy_now_bundle_quantity" value="1">
                             <?php endif; ?>
-                            <?php if (!empty($colorGroups)): ?>
-                                <input type="hidden" name="selected_color" id="selected_color_buy" value="<?php echo e($defaultColor); ?>">
+                            <?php /* Same shape as the add-to-cart form above: one selected_size for both
+                                     cases, colour and variant only for colour-group products. */ ?>
+                            <?php if (!empty($colorGroups) || !empty($sizeOptions)): ?>
                                 <input type="hidden" name="selected_size" id="selected_size_buy" value="<?php echo e($defaultSize); ?>">
-                                <input type="hidden" name="variant_id" id="selected_variant_id_buy" value="<?php echo $defaultVariantId; ?>">
-                            <?php elseif (!empty($sizeOptions)): ?>
-                                <input type="hidden" name="selected_size" id="selected_size_buy" value="<?php echo e($defaultSize); ?>">
+                                <?php if (!empty($colorGroups)): ?>
+                                    <input type="hidden" name="selected_color" id="selected_color_buy" value="<?php echo e($defaultColor); ?>">
+                                    <input type="hidden" name="variant_id" id="selected_variant_id_buy" value="<?php echo $defaultVariantId; ?>">
+                                <?php endif; ?>
                             <?php endif; ?>
                             <input type="hidden" name="redirect_to" value="checkout">
                             <button type="submit" id="buy_now_submit" class="ui-button ui-button--outline">Buy Now</button>
@@ -626,7 +640,7 @@ do_action('product.view', [
                         <input type="hidden" name="variant_id" id="delivery_variant_id" value="<?php echo (int) ($defaultVariantId ?? 0); ?>">
                         <input type="hidden" name="quantity" id="delivery_quantity" value="1">
                         <div class="l-col-sm-seven">
-                            <input class="ui-input" name="pincode" inputmode="numeric" maxlength="6" pattern="[1-9][0-9]{5}" placeholder="6-digit pincode" value="<?php echo e((string) ($_SESSION['delivery_pincode'] ?? '')); ?>" required>
+                            <input class="ui-input" name="pincode" inputmode="numeric" maxlength="6" pattern="[1-9][0-9]{5}" placeholder="6-digit pincode" aria-label="Delivery pincode" value="<?php echo e((string) ($_SESSION['delivery_pincode'] ?? '')); ?>" required>
                         </div>
                         <div class="l-col-sm-quarter">
                             <select class="ui-select" name="payment_method" aria-label="Payment method">

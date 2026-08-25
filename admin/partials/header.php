@@ -19,6 +19,9 @@ $currentRole = (string) ($_SESSION['admin_role'] ?? 'viewer');
 $adminCanMutateCurrentPage = admin_can(admin_route_capability($currentPage, 'POST'), $currentRole);
 $adminCanManageSettings = admin_can('settings.manage', $currentRole);
 $adminCanManageAdmins = admin_can('admins.manage', $currentRole);
+// Order, customer and return reads expose customer PII and need a distinct
+// capability, so hide those entries from roles that would only get a 403.
+$adminCanViewPii = admin_can('admin.view.pii', $currentRole);
 $pendingRefunds = 0;
 $pendingReviews = 0;
 
@@ -129,6 +132,7 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
                     <li><a class="<?php echo $currentPage === 'about-media.php' ? 'is-active' : ''; ?>" href="about-media.php"><?php echo ui_icon('images'); ?>About Media</a></li>
                 </ul>
             </div>
+            <?php if ($adminCanViewPii): ?>
             <div class="admin-nav__group">
                 <button class="admin-nav__link<?php echo $isOrdersNav ? ' is-active' : ''; ?>" type="button" data-ui-menu-toggle="adminOrdersMenu" aria-controls="adminOrdersMenu" aria-expanded="false"><?php echo ui_icon('receipt'); ?><span>Orders</span></button>
                 <ul class="ui-menu admin-nav__menu" id="adminOrdersMenu" data-ui-menu hidden>
@@ -138,6 +142,7 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
                 </ul>
             </div>
             <a class="admin-nav__link<?php echo $isCustomersNav ? ' is-active' : ''; ?>" href="customers.php"><?php echo ui_icon('people'); ?><span>Customers</span></a>
+            <?php endif; ?>
             <div class="admin-nav__group">
                 <button class="admin-nav__link<?php echo $isMarketingNav ? ' is-active' : ''; ?>" type="button" data-ui-menu-toggle="adminMarketingMenu" aria-controls="adminMarketingMenu" aria-expanded="false"><?php echo ui_icon('megaphone'); ?><span>Marketing</span></button>
                 <ul class="ui-menu admin-nav__menu" id="adminMarketingMenu" data-ui-menu hidden>

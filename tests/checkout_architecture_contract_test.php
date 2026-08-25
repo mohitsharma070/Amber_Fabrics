@@ -99,6 +99,43 @@ $taxed = CheckoutPricingService::allocateIncludedTax($snapshot['items'], 180.0, 
 $assert((float) $taxed[0]['discount_amount'] === 30.0 && (float) $taxed[0]['taxable_amount'] === 150.0, 'Discount allocation changed during extraction.');
 $assert(abs(((float) $taxed[0]['cgst_amount'] + (float) $taxed[0]['sgst_amount']) - (float) $taxed[0]['gst_amount']) < 0.001, 'Inclusive GST split must reconcile exactly.');
 
+// Per-item discounts must sum back to the order-level discount, otherwise the
+// invoice does not foot to the amount charged and per-item GST - back-computed
+// from the taxable amount - overstates tax on the customer-facing document.
+$footingCases = [
+    [[100.00], 100.00],
+    [[999.99, 0.01, 0.01], 1000.00],
+    [[0.03, 0.03, 0.03], 0.09],
+    [[33.33, 33.33, 33.34], 100.00],
+    [[10.00, 20.00, 30.00], 15.00],
+    [[0.00, 50.00], 50.00],
+    [[5000.00, 1.00], 4999.00],
+];
+foreach ($footingCases as $caseIndex => [$lineTotals, $requestedDiscount]) {
+    $caseItems = [];
+    $caseSubtotal = 0.0;
+    foreach ($lineTotals as $lineTotal) {
+        $caseItems[] = ['total' => $lineTotal];
+        $caseSubtotal = round($caseSubtotal + $lineTotal, 2);
+    }
+    // place-order.php clamps the discount to the subtotal before allocating.
+    $caseDiscount = min($requestedDiscount, $caseSubtotal);
+    $caseTaxed = CheckoutPricingService::allocateIncludedTax($caseItems, $caseSubtotal, $caseDiscount, 'cgst_sgst', 18.0, '5208');
+    $allocated = 0.0;
+    $overAllocated = false;
+    foreach ($caseTaxed as $caseItem) {
+        $allocated = round($allocated + (float) $caseItem['discount_amount'], 2);
+        if ((float) $caseItem['discount_amount'] > (float) $caseItem['total'] + 0.0001) {
+            $overAllocated = true;
+        }
+        if ((float) $caseItem['taxable_amount'] < -0.0001) {
+            $overAllocated = true;
+        }
+    }
+    $assert(abs($allocated - $caseDiscount) < 0.0001, 'Sum of item discounts must equal the order discount (case ' . $caseIndex . '): got ' . $allocated . ' expected ' . $caseDiscount);
+    $assert(!$overAllocated, 'No line may be discounted below zero (case ' . $caseIndex . ').');
+}
+
 if ($failures !== []) {
     fwrite(STDERR, "Checkout architecture contract failures:\n- " . implode("\n- ", $failures) . "\n");
     exit(1);

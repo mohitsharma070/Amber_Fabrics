@@ -205,10 +205,10 @@ include 'partials/header.php';
         <input type="hidden" name="refund_queue" value="1">
     <?php endif; ?>
     <div class="l-col-md-quarter">
-        <input class="ui-input" name="q" value="<?php echo e($search); ?>" placeholder="Order #, name or phone">
+        <input class="ui-input" name="q" value="<?php echo e($search); ?>" placeholder="Order #, name or phone" aria-label="Search orders">
     </div>
     <div class="l-col-md-quarter">
-        <select name="order_status" class="ui-select">
+        <select name="order_status" class="ui-select" aria-label="Filter by order status">
             <option value="">All Order Status</option>
             <?php foreach ($validOrderStatuses as $status): ?>
                 <option value="<?php echo e($status); ?>" <?php echo $orderStatus === $status ? 'selected' : ''; ?>>
@@ -218,7 +218,7 @@ include 'partials/header.php';
         </select>
     </div>
     <div class="l-col-md-quarter">
-        <select name="payment_status" class="ui-select">
+        <select name="payment_status" class="ui-select" aria-label="Filter by payment status">
             <option value="">All Payment Status</option>
             <?php foreach ($validPaymentStatuses as $status): ?>
                 <option value="<?php echo e($status); ?>" <?php echo $paymentStatus === $status ? 'selected' : ''; ?>>
@@ -228,7 +228,7 @@ include 'partials/header.php';
         </select>
     </div>
     <div class="l-col-md-two">
-        <select name="sort" class="ui-select">
+        <select name="sort" class="ui-select" aria-label="Sort order">
             <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest</option>
             <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest</option>
             <option value="amount_high" <?php echo $sort === 'amount_high' ? 'selected' : ''; ?>>Amount High-Low</option>

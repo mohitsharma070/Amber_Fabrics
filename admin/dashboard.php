@@ -295,19 +295,19 @@ include 'partials/header.php';
 ?>
 
 <div class="dashboard-container">
-    <div class="dashboard-header admin-page-header u-flex u-justify-between u-items-end u-flex-wrap u-gap-3">
+    <div class="dashboard-header admin-page-header">
         <div>
             <h1 class="u-mb-1">Store Dashboard</h1>
             <p class="u-text-muted u-mb-0">Performance snapshot for <?php echo e($rangeLabel); ?></p>
         </div>
-        <form method="GET" class="u-flex u-gap-2 u-items-end admin-dashboard-filter">
+        <form method="GET" class="u-gap-2 u-items-end admin-dashboard-filter">
             <div>
-                <label class="ui-label u-mb-1">From</label>
-                <input type="date" name="from" class="ui-input" value="<?php echo e($rangeFrom); ?>">
+                <label for="from" class="ui-label u-mb-1">From</label>
+                <input id="from" type="date" name="from" class="ui-input" value="<?php echo e($rangeFrom); ?>">
             </div>
             <div>
-                <label class="ui-label u-mb-1">To</label>
-                <input type="date" name="to" class="ui-input" value="<?php echo e($rangeTo); ?>">
+                <label for="to" class="ui-label u-mb-1">To</label>
+                <input id="to" type="date" name="to" class="ui-input" value="<?php echo e($rangeTo); ?>">
             </div>
             <div class="admin-filter-actions">
                 <button class="ui-button ui-button--primary" type="submit"><?php echo ui_icon('funnel'); ?>Apply</button>

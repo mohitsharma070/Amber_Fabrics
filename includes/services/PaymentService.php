@@ -320,6 +320,30 @@ final class PaymentService
         }
     }
 
+    /**
+     * Total already refunded against an order, from processed ledger events.
+     *
+     * Used as the ceiling for a new refund so repeated returns or repeated
+     * "refund completed" actions on the same order cannot refund more than was
+     * captured. Lock the payments row before calling this inside a transaction.
+     */
+    public static function processed_refund_total(mysqli $conn, int $orderId): float
+    {
+        if ($orderId <= 0) {
+            return 0.0;
+        }
+        $stmt = $conn->prepare(
+            "SELECT COALESCE(SUM(amount), 0) AS total
+             FROM refund_ledger
+             WHERE order_id = ?
+               AND status = 'processed'"
+        );
+        $stmt->bind_param('i', $orderId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        return round(max(0.0, (float) ($row['total'] ?? 0)), 2);
+    }
+
     public static function refund_ledger_event_exists(
         mysqli $conn,
         int $orderId,
@@ -459,6 +483,53 @@ final class PaymentService
             }
             PaymentService::cancel_stale_pending_razorpay_order($conn, $orderId, $ttlMinutes);
         }
+    }
+
+    /**
+     * Count COD orders for this identity that still hold reserved stock with no
+     * payment behind them.
+     *
+     * Razorpay pendings self-release after a TTL and cod-guard auto-cancels COD
+     * orders whose confirmation deadline lapses, but COD orders below the cod-guard
+     * amount threshold get neither, so reserved stock can accumulate without bound.
+     * This is a sustained-accumulation cap, not a locked concurrency guarantee - a
+     * simultaneous burst is bounded by the place_order rate limit instead.
+     */
+    public static function count_unconfirmed_cod_orders(mysqli $conn, int $customerId, string $phone = '', string $email = ''): int
+    {
+        if ($customerId > 0) {
+            $stmt = $conn->prepare(
+                "SELECT COUNT(*) AS total
+                 FROM orders
+                 WHERE customer_id = ?
+                   AND payment_method = 'cod'
+                   AND payment_status = 'pending'
+                   AND order_status = 'pending'"
+            );
+            $stmt->bind_param('i', $customerId);
+        } else {
+            $phone = trim($phone);
+            $email = strtolower(trim($email));
+            if ($phone === '' && $email === '') {
+                return 0;
+            }
+            $stmt = $conn->prepare(
+                "SELECT COUNT(*) AS total
+                 FROM orders
+                 WHERE customer_id IS NULL
+                   AND payment_method = 'cod'
+                   AND payment_status = 'pending'
+                   AND order_status = 'pending'
+                   AND (
+                        (? <> '' AND customer_phone = ?)
+                        OR (? <> '' AND LOWER(customer_email) = ?)
+                   )"
+            );
+            $stmt->bind_param('ssss', $phone, $phone, $email, $email);
+        }
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        return max(0, (int) ($row['total'] ?? 0));
     }
 
     public static function release_stale_pending_razorpay_orders_global(mysqli $conn, int $ttlMinutes = 30, int $limit = 100): int
@@ -1171,7 +1242,28 @@ final class PaymentService
                     }
                 }
 
-                InventoryService::restore_order_inventory($conn, $orderId);
+                // Restore stock only when the goods were never dispatched. A refund
+                // on a shipped/delivered order is a return, and the returns module
+                // owns that restock - restoring here inflates stock for goods the
+                // customer still has. admin_mark_order_refunded() applies the same
+                // rule; this path used to restore unconditionally.
+                $preSyncOrderStatus = strtolower(trim((string) ($order['order_status'] ?? '')));
+                $preSyncStatus = strtolower(trim((string) ($order['status'] ?? '')));
+                if ($preSyncOrderStatus === 'cancelled' || $preSyncStatus === 'cancelled') {
+                    InventoryService::restore_order_inventory($conn, $orderId);
+                } else {
+                    log_order_activity(
+                        $conn,
+                        $orderId,
+                        'refund_inventory_restore_skipped',
+                        'system',
+                        0,
+                        'system',
+                        'Refund synced but stock was not restored because the order was not cancelled (status: '
+                            . ($preSyncOrderStatus !== '' ? $preSyncOrderStatus : 'unknown')
+                            . '). Restock dispatched goods through the returns module.'
+                    );
+                }
                 log_order_activity($conn, $orderId, 'refund_completed', 'admin', (int) ($_SESSION['admin_id'] ?? 0), (string) ($_SESSION['admin_name'] ?? 'admin'), 'Refund synced as processed from Razorpay.');
 
                 $conn->commit();

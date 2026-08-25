@@ -103,14 +103,13 @@ $orderBarcodeSvg = $barcodeGen->getBarcode($order['order_number'], $barcodeGen::
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Packing Slip <?php echo e($order['order_number']); ?></title>
-<link rel="stylesheet" href="<?php echo e(ui_asset('/css/foundation.css')); ?>">
 <link rel="stylesheet" href="<?php echo e(ui_asset('/css/documents.css')); ?>">
 <script defer src="<?php echo e(ui_asset('/js/app.js')); ?>"></script>
 <script defer src="<?php echo e(ui_asset('/js/documents.js')); ?>"></script>
 </head>
 <body data-ui-area="document" data-ui-page="packing-slip">
 
-<div class="no-print print-bar document-toolbar">
+<div class="print-bar document-toolbar">
     <a href="order-view.php?id=<?php echo (int) $order['id']; ?>" class="ui-button ui-button--secondary">&larr; Back to Order</a>
     <button class="ui-button ui-button--primary" type="button" data-document-print>Print packing slip</button>
 </div>

@@ -61,7 +61,7 @@ function shipping_courier_render_admin_panel(array $context): void
                             <option value="invoice">Invoice PDF</option>
                             <option value="eway_bill">E-way bill PDF</option>
                         </select>
-                        <input class="ui-input ui-input--small u-mb-2" type="file" name="courier_document" accept="application/pdf,.pdf" required>
+                        <input class="ui-input ui-input--small u-mb-2" type="file" name="courier_document" aria-label="Courier document PDF" accept="application/pdf,.pdf" required>
                         <button class="ui-button ui-button--secondary ui-button--small u-w-full" type="submit">Upload Courier Document</button>
                     </form>
                     <form method="POST" action="order-view.php?id=<?php echo $orderId; ?>">

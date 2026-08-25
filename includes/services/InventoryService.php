@@ -157,6 +157,40 @@ final class InventoryService
         return $stmt->get_result()->fetch_assoc() ?: null;
     }
 
+    /**
+     * Deterministic fingerprint of the cart composition a shipping quote was
+     * priced for.
+     *
+     * Derived from CartService::cart_hydrate_items() output, which is the single
+     * source every quote-issuing and quote-consuming endpoint hydrates from, so
+     * checkout.php, shipping-rate.php and place-order.php all produce the same
+     * value for the same cart. Order-independent: item order does not change a
+     * shipping rate, but weight, dimensions and quantities do.
+     */
+    public static function cart_fingerprint(array $items): string
+    {
+        $canonical = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $canonical[] = implode('|', [
+                (int) ($item['id'] ?? 0),
+                (int) ($item['variant_id'] ?? 0),
+                (string) ($item['unit_type'] ?? 'meter'),
+                number_format((float) ($item['quantity'] ?? 0), 3, '.', ''),
+                number_format((float) ($item['meter_length'] ?? 0), 3, '.', ''),
+                (int) ($item['units_per_set'] ?? 0),
+                number_format((float) ($item['shipping_weight_kg'] ?? 0), 4, '.', ''),
+                number_format((float) ($item['parcel_length_cm'] ?? 0), 2, '.', ''),
+                number_format((float) ($item['parcel_width_cm'] ?? 0), 2, '.', ''),
+                number_format((float) ($item['parcel_height_cm'] ?? 0), 2, '.', ''),
+            ]);
+        }
+        sort($canonical, SORT_STRING);
+        return hash('sha256', implode("\n", $canonical));
+    }
+
     public static function shipping_quote_store(
         float $subtotal,
         string $country,
@@ -168,7 +202,8 @@ final class InventoryService
         string $source = 'manual',
         string $courierName = '',
         int $courierId = 0,
-        array $estimate = []
+        array $estimate = [],
+        string $cartFingerprint = ''
     ): string {
         if (!isset($_SESSION['shipping_quotes']) || !is_array($_SESSION['shipping_quotes'])) {
             $_SESSION['shipping_quotes'] = [];
@@ -186,6 +221,7 @@ final class InventoryService
             'country' => strtolower(trim($country)),
             'pincode' => trim($pincode),
             'payment_method' => strtolower(trim($paymentMethod)),
+            'cart_fingerprint' => $cartFingerprint,
             'base_shipping' => round($baseShipping, 2),
             'cod_fee' => round($codFee, 2),
             'shipping_total' => round($shippingTotal, 2),
@@ -206,16 +242,18 @@ final class InventoryService
             if ($stmt instanceof mysqli) {
                 $ins = $stmt->prepare(
                     "INSERT INTO shipping_quotes (
-                        quote_token, customer_id, subtotal, country, pincode, payment_method,
+                        quote_token, customer_id, subtotal, country, pincode, payment_method, cart_fingerprint,
                         base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at,
                         serviceability_status, estimated_dispatch_start, estimated_dispatch_end, estimated_delivery_start, estimated_delivery_end
-                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE
                         customer_id = VALUES(customer_id),
                         subtotal = VALUES(subtotal),
                         country = VALUES(country),
                         pincode = VALUES(pincode),
                         payment_method = VALUES(payment_method),
+                        cart_fingerprint = VALUES(cart_fingerprint),
+                        consumed_at = NULL,
                         base_shipping = VALUES(base_shipping),
                         cod_fee = VALUES(cod_fee),
                         shipping_total = VALUES(shipping_total),
@@ -237,13 +275,14 @@ final class InventoryService
                 $dispatchStart=$estimate['estimated_dispatch_start']??null;$dispatchEnd=$estimate['estimated_dispatch_end']??null;
                 $deliveryStart=$estimate['estimated_delivery_start']??null;$deliveryEnd=$estimate['estimated_delivery_end']??null;
                 $ins->bind_param(
-                    'sidsssdddssissssss',
+                    'sidssssdddssissssss',
                     $token,
                     $customerId,
                     $subtotal,
                     $countryNorm,
                     $pincodeNorm,
                     $methodNorm,
+                    $cartFingerprint,
                     $baseShipping,
                     $codFee,
                     $shippingTotal,
@@ -275,13 +314,18 @@ final class InventoryService
             try {
                 $conn = $GLOBALS['conn'] ?? null;
                 if ($conn instanceof mysqli) {
+                    // Bind the read to the requesting identity and reject a quote
+                    // that has already been accepted onto an order.
+                    $customerId = (int) ($_SESSION['customer_id'] ?? 0);
                     $stmt = $conn->prepare(
-                        "SELECT subtotal, country, pincode, payment_method, base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at, serviceability_status, estimated_dispatch_start, estimated_dispatch_end, estimated_delivery_start, estimated_delivery_end
+                        "SELECT subtotal, country, pincode, payment_method, cart_fingerprint, base_shipping, cod_fee, shipping_total, source, courier_name, courier_id, expires_at, serviceability_status, estimated_dispatch_start, estimated_dispatch_end, estimated_delivery_start, estimated_delivery_end
                          FROM shipping_quotes
                          WHERE quote_token = ?
+                           AND COALESCE(customer_id, 0) = ?
+                           AND consumed_at IS NULL
                          LIMIT 1"
                     );
-                    $stmt->bind_param('s', $token);
+                    $stmt->bind_param('si', $token, $customerId);
                     $stmt->execute();
                     $dbRow = $stmt->get_result()->fetch_assoc();
                     if (is_array($dbRow)) {
@@ -292,6 +336,7 @@ final class InventoryService
                                 'country' => (string) ($dbRow['country'] ?? ''),
                                 'pincode' => (string) ($dbRow['pincode'] ?? ''),
                                 'payment_method' => (string) ($dbRow['payment_method'] ?? ''),
+                                'cart_fingerprint' => (string) ($dbRow['cart_fingerprint'] ?? ''),
                                 'base_shipping' => (float) ($dbRow['base_shipping'] ?? 0),
                                 'cod_fee' => (float) ($dbRow['cod_fee'] ?? 0),
                                 'shipping_total' => (float) ($dbRow['shipping_total'] ?? 0),
@@ -321,6 +366,48 @@ final class InventoryService
             return null;
         }
         return $row;
+    }
+
+    /**
+     * Mark a quote as accepted so the same priced token cannot be replayed onto a
+     * second order. Call this inside the order transaction, after validation.
+     *
+     * Returns false only when the stored quote is provably already consumed; a
+     * session-only quote with no persisted row is treated as consumable so a
+     * failed persist cannot block checkout.
+     */
+    public static function shipping_quote_consume(string $token): bool
+    {
+        $token = trim($token);
+        if ($token === '') {
+            return false;
+        }
+        unset($_SESSION['shipping_quotes'][$token]);
+
+        $conn = $GLOBALS['conn'] ?? null;
+        if (!($conn instanceof mysqli)) {
+            return true;
+        }
+        $stmt = $conn->prepare(
+            "UPDATE shipping_quotes
+             SET consumed_at = NOW()
+             WHERE quote_token = ?
+               AND consumed_at IS NULL"
+        );
+        $stmt->bind_param('s', $token);
+        $stmt->execute();
+        if ($conn->affected_rows > 0) {
+            return true;
+        }
+
+        $check = $conn->prepare("SELECT consumed_at FROM shipping_quotes WHERE quote_token = ? LIMIT 1");
+        $check->bind_param('s', $token);
+        $check->execute();
+        $row = $check->get_result()->fetch_assoc();
+        if (!is_array($row)) {
+            return true;
+        }
+        return empty($row['consumed_at']);
     }
 
     /**
@@ -389,36 +476,11 @@ final class InventoryService
     }
 
     /**
-     * Restore all order item quantities back into inventory.
+     * Stamp the reservation marker used by the reserve/restore idempotency guards.
      */
-    public static function orders_supports_inventory_tracking(mysqli $conn): bool
-    {
-        static $checked = false;
-        static $supported = false;
-        if ($checked) {
-            return $supported;
-        }
-        $checked = true;
-        try {
-            $stmt = $conn->prepare(
-                "SELECT SUM(CASE WHEN COLUMN_NAME IN ('inventory_reserved_at', 'inventory_restored_at') THEN 1 ELSE 0 END) AS total
-                 FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE()
-                   AND TABLE_NAME = 'orders'
-                   AND COLUMN_NAME IN ('inventory_reserved_at', 'inventory_restored_at')"
-            );
-            $stmt->execute();
-            $row = $stmt->get_result()->fetch_assoc();
-            $supported = ((int) ($row['total'] ?? 0)) === 2;
-        } catch (Throwable $e) {
-            $supported = false;
-        }
-        return $supported;
-    }
-
     public static function mark_order_inventory_reserved(mysqli $conn, int $orderId): void
     {
-        if ($orderId <= 0 || !InventoryService::orders_supports_inventory_tracking($conn)) {
+        if ($orderId <= 0) {
             return;
         }
         $stmt = $conn->prepare(
@@ -437,29 +499,34 @@ final class InventoryService
             return;
         }
 
-        $supportsTracking = InventoryService::orders_supports_inventory_tracking($conn);
-        if ($supportsTracking) {
-            $orderStmt = $conn->prepare(
-                "SELECT inventory_reserved_at, inventory_restored_at
-                 FROM orders
-                 WHERE id = ?
-                 FOR UPDATE"
-            );
-            $orderStmt->bind_param('i', $orderId);
-            $orderStmt->execute();
-            $order = $orderStmt->get_result()->fetch_assoc();
-            if (!$order) {
-                throw new RuntimeException('Order not found for inventory reservation.');
-            }
-            if (!empty($order['inventory_reserved_at']) && empty($order['inventory_restored_at'])) {
-                return;
-            }
+        // The idempotency guard is unconditional: orders.inventory_reserved_at /
+        // inventory_restored_at are provisioned by every path (schema.sql,
+        // setup.php and 2026-08-26-inventory-ledger-and-quote-binding.sql) and
+        // asserted by cron/run-plugins.php --check. Never make a money-path guard
+        // conditional on a feature probe that can fail open.
+        $orderStmt = $conn->prepare(
+            "SELECT inventory_reserved_at, inventory_restored_at
+             FROM orders
+             WHERE id = ?
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order) {
+            throw new RuntimeException('Order not found for inventory reservation.');
+        }
+        if (!empty($order['inventory_reserved_at']) && empty($order['inventory_restored_at'])) {
+            return;
         }
 
+        // Deterministic lock order across concurrent reserve/restore calls so
+        // two orders touching the same variants cannot deadlock each other.
         $itemsStmt = $conn->prepare(
             "SELECT id, fabric_id, variant_id, unit_type, quantity_meters
              FROM order_items
-             WHERE order_id = ?"
+             WHERE order_id = ?
+             ORDER BY fabric_id, variant_id, id"
         );
         $itemsStmt->bind_param('i', $orderId);
         $itemsStmt->execute();
@@ -510,26 +577,35 @@ final class InventoryService
 
     public static function restore_order_inventory(mysqli $conn, int $orderId): void
     {
-        $supportsTracking = InventoryService::orders_supports_inventory_tracking($conn);
-        if ($supportsTracking) {
-            $orderStmt = $conn->prepare(
-                "SELECT inventory_reserved_at, inventory_restored_at
-                 FROM orders
-                 WHERE id = ?
-                 FOR UPDATE"
-            );
-            $orderStmt->bind_param('i', $orderId);
-            $orderStmt->execute();
-            $order = $orderStmt->get_result()->fetch_assoc();
-            if (!$order || empty($order['inventory_reserved_at']) || !empty($order['inventory_restored_at'])) {
-                return;
-            }
+        if ($orderId <= 0) {
+            return;
         }
 
+        // Unconditional idempotency guard - see reserve_order_inventory().
+        $orderStmt = $conn->prepare(
+            "SELECT inventory_reserved_at, inventory_restored_at
+             FROM orders
+             WHERE id = ?
+             FOR UPDATE"
+        );
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $order = $orderStmt->get_result()->fetch_assoc();
+        if (!$order || empty($order['inventory_reserved_at']) || !empty($order['inventory_restored_at'])) {
+            return;
+        }
+
+        // Quantities the returns module already put back must not be restored a
+        // second time. Returns/restock and refund/release are separate mechanisms
+        // with separate idempotency markers, and both can fire for the same line.
         $itemsStmt = $conn->prepare(
-            "SELECT id, fabric_id, variant_id, unit_type, quantity_meters
-             FROM order_items
-             WHERE order_id = ?"
+            "SELECT oi.id, oi.fabric_id, oi.variant_id, oi.unit_type, oi.quantity_meters,
+                    COALESCE(SUM(ri.restocked_qty), 0) AS already_restocked
+             FROM order_items oi
+             LEFT JOIN return_items ri ON ri.order_item_id = oi.id
+             WHERE oi.order_id = ?
+             GROUP BY oi.id, oi.fabric_id, oi.variant_id, oi.unit_type, oi.quantity_meters
+             ORDER BY oi.fabric_id, oi.variant_id, oi.id"
         );
         $itemsStmt->bind_param('i', $orderId);
         $itemsStmt->execute();
@@ -542,7 +618,11 @@ final class InventoryService
             $itemUnit = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
                 ? (string) $item['unit_type']
                 : 'meter';
-            $qty = normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
+            $qty = (float) normalize_quantity_by_unit($item['quantity_meters'] ?? 1, $itemUnit);
+            $qty = round(max(0.0, $qty - (float) ($item['already_restocked'] ?? 0)), 2);
+            if ($qty <= 0) {
+                continue;
+            }
             $variantId = (int) ($item['variant_id'] ?? 0);
             if ($variantId > 0) {
                 InventoryService::adjust_variant_stock($conn, $variantId, $itemUnit, (float) $qty, 'increase');
@@ -566,11 +646,9 @@ final class InventoryService
             );
         }
 
-        if ($supportsTracking) {
-            $upd = $conn->prepare("UPDATE orders SET inventory_restored_at = NOW() WHERE id = ?");
-            $upd->bind_param('i', $orderId);
-            $upd->execute();
-        }
+        $upd = $conn->prepare("UPDATE orders SET inventory_restored_at = NOW() WHERE id = ?");
+        $upd->bind_param('i', $orderId);
+        $upd->execute();
     }
 
     public static function order_cancel_should_restore_inventory(string $paymentMethod, string $paymentStatus): bool
@@ -757,13 +835,13 @@ final class InventoryService
         string $source = '',
         string $notes = ''
     ): void {
+        $unitType = in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
+        $movement = in_array($movement, ['reserve', 'release', 'return_restock', 'adjustment'], true) ? $movement : 'adjustment';
+        $direction = in_array($direction, ['in', 'out'], true) ? $direction : 'in';
+        if ($quantity <= 0) {
+            return;
+        }
         try {
-            $unitType = in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
-            $movement = in_array($movement, ['reserve', 'release', 'return_restock', 'adjustment'], true) ? $movement : 'adjustment';
-            $direction = in_array($direction, ['in', 'out'], true) ? $direction : 'in';
-            if ($quantity <= 0) {
-                return;
-            }
             $stmt = $conn->prepare(
                 "INSERT INTO stock_ledger (
                     order_id, order_item_id, return_id, return_item_id, fabric_id, variant_id,
@@ -787,8 +865,134 @@ final class InventoryService
             );
             $stmt->execute();
         } catch (Throwable $e) {
-            error_log('[app] stock ledger log failed: ' . $e->getMessage());
+            // A deadlock or lock-wait timeout has already poisoned the caller's
+            // transaction: swallowing it would let the stock adjustment above be
+            // silently rolled back while the order commits. Surface it.
+            $errno = (int) $conn->errno;
+            if (in_array($errno, [1205, 1213], true)) {
+                throw $e;
+            }
+            // Anything else (most importantly a missing stock_ledger table) is a
+            // provisioning failure, not a routine condition. cron/run-plugins.php
+            // --check asserts the table exists; log loudly so this is visible
+            // instead of dropping the audit trail without a trace.
+            app_log('error', 'stock_ledger.write_failed', [
+                'errno' => $errno,
+                'order_id' => $orderId,
+                'return_id' => $returnId,
+                'movement' => $movement,
+                'message' => $e->getMessage(),
+            ]);
         }
+    }
+
+    /**
+     * Record a warehouse-side return (RTO, refused delivery, operator marking an
+     * order 'returned' from the order screen) and let the returns module own the
+     * stock credit.
+     *
+     * OrderLifecycle permits shipped -> returned and delivered -> returned, but the
+     * order screen only restored inventory on -> cancelled, so goods that came back
+     * left stock permanently decremented - a silent, cumulative understatement that
+     * only surfaces as unexplained shrinkage. Creating a returns row here keeps
+     * restock_return_items_inventory() the single owner of the credit, so the
+     * restocked_qty guard still prevents a double credit if an operator later
+     * advances the same return through the returns module.
+     *
+     * returns.order_id is unique, so a customer-initiated return already on the
+     * order wins: this returns 0 without touching it, and the caller is expected to
+     * tell the operator to finish that return in the returns module.
+     *
+     * @return int new return id, or 0 when a return already exists for the order
+     */
+    public static function open_operator_return_for_order(
+        mysqli $conn,
+        int $orderId,
+        string $reason,
+        string $adminNote = ''
+    ): int {
+        if ($orderId <= 0) {
+            return 0;
+        }
+
+        $existing = $conn->prepare("SELECT id FROM returns WHERE order_id = ? LIMIT 1 FOR UPDATE");
+        $existing->bind_param('i', $orderId);
+        $existing->execute();
+        if ($existing->get_result()->fetch_assoc()) {
+            return 0;
+        }
+
+        $orderStmt = $conn->prepare("SELECT customer_id FROM orders WHERE id = ? LIMIT 1");
+        $orderStmt->bind_param('i', $orderId);
+        $orderStmt->execute();
+        $orderRow = $orderStmt->get_result()->fetch_assoc() ?: [];
+        $customerId = (int) ($orderRow['customer_id'] ?? 0);
+        $returnCustomerId = $customerId > 0 ? $customerId : null;
+
+        $reason = trim($reason);
+        if ($reason === '') {
+            $reason = 'Returned to origin';
+        }
+        $reason = substr($reason, 0, 255);
+        $adminNote = trim($adminNote);
+
+        // Same return_number shape as customer/request-return.php. Any failure here
+        // (including the unique-key collision that 3 random bytes makes negligible)
+        // propagates so the caller's transaction rolls the status change back with it.
+        $returnNumber = 'RET' . date('Ymd') . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
+        $insertReturn = $conn->prepare(
+            "INSERT INTO returns (return_number, order_id, customer_id, status, reason, admin_note, received_at)
+             VALUES (?, ?, ?, 'received', ?, ?, NOW())"
+        );
+        $insertReturn->bind_param('siiss', $returnNumber, $orderId, $returnCustomerId, $reason, $adminNote);
+        $insertReturn->execute();
+        $returnId = (int) $conn->insert_id;
+        if ($returnId <= 0) {
+            return 0;
+        }
+
+        // No prior return can exist for this order (uq_returns_order_id was just
+        // checked under lock), so the full ordered quantity is the credit.
+        $itemStmt = $conn->prepare(
+            "SELECT id, fabric_id, variant_id, product_name, fabric_name_snapshot, unit_type, quantity, quantity_meters, total, line_total
+             FROM order_items
+             WHERE order_id = ?"
+        );
+        $itemStmt->bind_param('i', $orderId);
+        $itemStmt->execute();
+        $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $insertItem = $conn->prepare(
+            "INSERT INTO return_items (return_id, order_item_id, fabric_id, variant_id, product_name, unit_type, quantity, line_total)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        foreach ($items as $item) {
+            $unitType = in_array((string) ($item['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
+                ? (string) $item['unit_type']
+                : 'meter';
+            $quantity = (($item['quantity'] ?? 0) > 0)
+                ? (float) $item['quantity']
+                : (float) ($item['quantity_meters'] ?? 0);
+            $quantity = $unitType === 'meter' ? round($quantity, 2) : (float) max(0, (int) round($quantity));
+            if ($quantity <= 0) {
+                continue;
+            }
+            $productName = trim((string) ($item['product_name'] ?? ''));
+            if ($productName === '') {
+                $productName = trim((string) ($item['fabric_name_snapshot'] ?? 'Product'));
+            }
+            if ($productName === '') {
+                $productName = 'Product';
+            }
+            $orderItemId = (int) ($item['id'] ?? 0);
+            $fabricId = (int) ($item['fabric_id'] ?? 0);
+            $variantId = (int) ($item['variant_id'] ?? 0);
+            $lineTotal = round((($item['total'] ?? 0) > 0) ? (float) $item['total'] : (float) ($item['line_total'] ?? 0), 2);
+            $insertItem->bind_param('iiiissdd', $returnId, $orderItemId, $fabricId, $variantId, $productName, $unitType, $quantity, $lineTotal);
+            $insertItem->execute();
+        }
+
+        return $returnId;
     }
 
     public static function restock_return_items_inventory(mysqli $conn, int $returnId): float

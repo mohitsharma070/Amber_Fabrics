@@ -69,7 +69,7 @@ include 'partials/header.php';
 
 <form method="GET" class="l-grid l-grid--12 u-gap-2 u-mb-4 admin-filter-form">
     <div class="l-col-md-five">
-        <input type="text" name="search" class="ui-input" placeholder="Search name, email, country..." value="<?php echo e($search); ?>">
+        <input type="text" name="search" class="ui-input" placeholder="Search name, email, country..." aria-label="Search customers" value="<?php echo e($search); ?>">
     </div>
     <div class="l-col-auto u-flex u-gap-2 admin-filter-actions">
         <button class="ui-button ui-button--secondary"><?php echo ui_icon('search'); ?>Search</button>

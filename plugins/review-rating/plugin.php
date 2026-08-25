@@ -218,8 +218,8 @@ function review_rating_render_product_block(array $context): void
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="product_id" value="<?php echo (int) $productId; ?>">
                 <div class="u-mb-2">
-                    <label class="ui-label">Your Rating</label>
-                    <select name="rating" class="ui-select" required>
+                    <label for="rating" class="ui-label">Your Rating</label>
+                    <select id="rating" name="rating" class="ui-select" required>
                         <option value="">Select</option>
                         <option value="5">5 - Excellent</option>
                         <option value="4">4 - Very Good</option>
@@ -229,8 +229,8 @@ function review_rating_render_product_block(array $context): void
                     </select>
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Your Review</label>
-                    <textarea name="review_text" class="ui-textarea" rows="3" maxlength="<?php echo (int) $settings['max_length']; ?>" required></textarea>
+                    <label for="review_text" class="ui-label">Your Review</label>
+                    <textarea id="review_text" name="review_text" class="ui-textarea" rows="3" maxlength="<?php echo (int) $settings['max_length']; ?>" required></textarea>
                 </div>
                 <button type="submit" class="ui-button ui-button--outline ui-button--small">Submit Review</button>
             </form>

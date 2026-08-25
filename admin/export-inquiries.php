@@ -105,10 +105,10 @@ include 'partials/header.php';
 
 <form class="l-grid l-grid--12 u-gap-2 u-mb-3 admin-filter-form" method="GET">
     <div class="l-col-md-quarter">
-        <input class="ui-input" name="q" placeholder="Name, email, company, product" value="<?php echo e($search); ?>">
+        <input class="ui-input" name="q" placeholder="Name, email, company, product" aria-label="Search inquiries" value="<?php echo e($search); ?>">
     </div>
     <div class="l-col-md-quarter">
-        <select class="ui-select" name="status">
+        <select class="ui-select" name="status" aria-label="Filter by status">
             <option value="">All Status</option>
             <?php foreach ($allowedStatuses as $status): ?>
                 <option value="<?php echo $status; ?>" <?php echo $statusFilter === $status ? 'selected' : ''; ?>><?php echo ucfirst($status); ?></option>
@@ -116,7 +116,7 @@ include 'partials/header.php';
         </select>
     </div>
     <div class="l-col-md-quarter">
-        <select class="ui-select" name="sort">
+        <select class="ui-select" name="sort" aria-label="Sort order">
             <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest</option>
             <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest</option>
             <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
@@ -126,7 +126,7 @@ include 'partials/header.php';
         </select>
     </div>
     <div class="l-col-md-two">
-        <select class="ui-select" name="per_page">
+        <select class="ui-select" name="per_page" aria-label="Results per page">
             <?php foreach ($perPageOptions as $size): ?>
                 <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?></option>
             <?php endforeach; ?>

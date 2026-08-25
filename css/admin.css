@@ -480,32 +480,22 @@
     display: none;
   }
 
-  .u-grid {
-    display: grid !important;
-  }
-
+  /* Admin-only utilities. foundation.css owns the shared u-* set; only classes
+   * it does not define, or deliberately re-tuned values, belong here. Exact
+   * re-declarations of a foundation utility (.u-grid, .u-nowrap,
+   * .u-font-semibold, .u-text-warning) were removed - they looked like
+   * overrides but were byte-identical, and the `admin` layer now precedes
+   * `utilities`, so a real difference here would silently win. */
   .u-uppercase {
     text-transform: uppercase !important;
-  }
-
-  .u-nowrap {
-    white-space: nowrap !important;
   }
 
   .u-overflow-auto {
     overflow: auto !important;
   }
 
-  .u-font-semibold {
-    font-weight: 650 !important;
-  }
-
   .u-font-normal {
     font-weight: 400 !important;
-  }
-
-  .u-text-warning {
-    color: var(--color-warning) !important;
   }
 
   .u-bg-soft {

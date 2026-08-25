@@ -19,10 +19,36 @@ function admin_role_capabilities(string $role): array
     $common = ['admin.view', 'operations.view'];
     return match (strtolower(trim($role))) {
         'catalog_manager' => array_merge($common, ['catalog.manage']),
-        'operations_manager' => array_merge($common, ['operations.manage']),
+        'operations_manager' => array_merge($common, ['admin.view.pii', 'operations.manage']),
         'super_admin' => ['*'],
         default => $common,
     };
+}
+
+/**
+ * Admin routes whose READ path exposes a customer's street address, phone, email,
+ * or a shipping/invoice document built from them.
+ *
+ * These are gated on admin.view.pii rather than admin.view so the lowest-trust
+ * roles cannot page through the customer base, and every read of them is audited
+ * and throttled (see admin_guard_pii_read).
+ */
+function admin_pii_routes(): array
+{
+    return [
+        'customer-view.php',
+        'customers.php',
+        'invoice.php',
+        'order-view.php',
+        'orders.php',
+        'packing-slip.php',
+        'returns.php',
+    ];
+}
+
+function admin_route_is_pii(string $scriptName): bool
+{
+    return in_array(strtolower(basename(trim($scriptName))), admin_pii_routes(), true);
 }
 
 function admin_can(string $capability, ?string $role = null): bool
@@ -57,7 +83,10 @@ function admin_route_capability(string $scriptName, string $method = 'GET'): str
         return 'operations.manage';
     }
     if ($method !== 'POST') {
-        return 'admin.view';
+        // Returning a blanket 'admin.view' here let the lowest role read every
+        // customer's full PII through the GET path of the order, customer and
+        // document routes. Those now need a distinct capability.
+        return admin_route_is_pii($base) ? 'admin.view.pii' : 'admin.view';
     }
 
     $catalogRoutes = [
@@ -137,13 +166,68 @@ function log_admin_activity(
     }
 }
 
+/**
+ * Audit and throttle admin reads of customer PII.
+ *
+ * log_admin_activity() fired only on POST, so GET packing-slip.php?order=N,
+ * customer-view.php?id=N and orders.php?search=<phone> left no audit trail at all -
+ * and no admin route called public_form_rate_limit_allow(), so walking ?id=1..N was
+ * both unthrottled and invisible.
+ *
+ * Runs at most once per request: admin pages call require_admin() directly and then
+ * again through admin/partials/header.php.
+ */
+function admin_guard_pii_read(mysqli $conn, int $adminId): void
+{
+    static $handled = false;
+    if ($handled || $adminId <= 0) {
+        return;
+    }
+    // POST is already logged by require_admin() and mutations carry their own guards.
+    if (strtoupper(trim((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'))) === 'POST') {
+        return;
+    }
+    $script = (string) ($_SERVER['SCRIPT_NAME'] ?? '');
+    if (!admin_route_is_pii($script)) {
+        return;
+    }
+    $handled = true;
+
+    $targetId = 0;
+    foreach (['id', 'order', 'order_id', 'customer_id', 'customer'] as $param) {
+        if (isset($_GET[$param]) && is_scalar($_GET[$param])) {
+            $targetId = (int) $_GET[$param];
+            if ($targetId > 0) {
+                break;
+            }
+        }
+    }
+    $search = (isset($_GET['search']) && is_scalar($_GET['search'])) ? trim((string) $_GET['search']) : '';
+    $details = 'GET ' . basename($script)
+        . ($targetId > 0 ? ' id=' . $targetId : '')
+        . ($search !== '' ? ' search=' . substr($search, 0, 64) : '');
+
+    // Keyed on the admin id rather than the client, because the point is to bound how
+    // much of the customer base one account can page through regardless of network.
+    // Deliberately generous so ordinary operator work is never interrupted.
+    $maxReads = max(20, (int) _cfg('ADMIN_PII_READ_MAX_PER_WINDOW', '240'));
+    $windowSeconds = max(60, (int) _cfg('ADMIN_PII_READ_WINDOW_SEC', '300'));
+    if (!public_form_rate_limit_allow('admin_pii_read:' . $adminId, $maxReads, $windowSeconds, false)) {
+        log_admin_activity($conn, $adminId, 'admin_pii_read_throttled', 'route', $targetId, $details, 'denied');
+        http_response_code(429);
+        exit('Too many requests. Please slow down and try again shortly.');
+    }
+
+    log_admin_activity($conn, $adminId, 'admin_pii_read', 'route', $targetId, $details, 'ok');
+}
+
 function admin_route_min_role(string $scriptName): string
 {
     // Compatibility helper for older internal callers. Authorization is now
     // capability based so catalog and operations mutations remain separated.
     return match (admin_route_capability($scriptName, (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'))) {
         'catalog.manage' => 'catalog_manager',
-        'operations.manage' => 'operations_manager',
+        'admin.view.pii', 'operations.manage' => 'operations_manager',
         'admins.manage', 'settings.manage', 'admin.mutate' => 'super_admin',
         default => 'viewer',
     };
@@ -244,6 +328,10 @@ function require_admin(): void
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && $conn instanceof mysqli) {
         log_admin_activity($conn, $adminId, 'admin_post_action', 'route', 0, 'POST to ' . basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')), 'ok');
+    }
+
+    if ($conn instanceof mysqli) {
+        admin_guard_pii_read($conn, $adminId);
     }
 }
 

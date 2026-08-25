@@ -77,7 +77,11 @@ $token = InventoryService::shipping_quote_store(
     $source,
     $courierName,
     $courierId,
-    $estimate
+    $estimate,
+    // Bind the quote to the cart it was priced for. place-order.php recomputes
+    // this from the same hydrated cart and rejects a mismatch, so a quote issued
+    // for a light cart cannot be replayed onto a heavy one.
+    InventoryService::cart_fingerprint($quoteItems)
 );
 
 $response = [

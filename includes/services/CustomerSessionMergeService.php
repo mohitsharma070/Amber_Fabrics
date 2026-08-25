@@ -22,6 +22,23 @@ final class CustomerSessionMergeService
             ? $_SESSION['cart_meter_length']
             : [];
 
+        // Whose cart is sitting in $_SESSION? customer_clear_auth_session() deliberately
+        // preserves the cart across an involuntary session kill (idle timeout, account
+        // deactivation, auth_version bump - see includes/init.php), so on the next login
+        // the session still holds this customer's own already-persisted cart. Summing it
+        // into the DB copy would silently double every line, and compound on each repeat.
+        // Mirrors the existing wishlist_loaded_for provenance marker.
+        $sessionCartOwner = (int) ($_SESSION['cart_loaded_for'] ?? 0);
+        if ($sessionCartOwner > 0 && $sessionCartOwner !== $customerId) {
+            // A different customer's persisted cart is still in this session. It is not a
+            // guest cart to hand over, so drop it rather than leak it into this account.
+            $sessionCart = [];
+            $sessionMeterMap = [];
+        }
+        // Only a genuine guest cart is additive; a returning owner's copy takes the larger
+        // side, exactly as mergeWishlist() already does.
+        $sumQuantities = $sessionCartOwner !== $customerId;
+
         $mergedIds = array_values(array_filter(array_unique(array_map(
             static function ($key): int {
                 [$productId] = CartService::cart_parse_key((string) $key);
@@ -39,9 +56,12 @@ final class CustomerSessionMergeService
             $unitType = $unitMap[$productId] ?? 'meter';
             $currentQty = isset($dbCart[$cartKey]) ? normalize_quantity_by_unit($dbCart[$cartKey], $unitType) : 0;
             $incomingQty = normalize_quantity_by_unit($qty, $unitType);
+            $combinedQty = $sumQuantities
+                ? (float) $currentQty + (float) $incomingQty
+                : max((float) $currentQty, (float) $incomingQty);
             $dbCart[$cartKey] = $unitType === 'meter'
-                ? round((float) $currentQty + (float) $incomingQty, 2)
-                : (int) $currentQty + (int) $incomingQty;
+                ? round($combinedQty, 2)
+                : (int) $combinedQty;
             if (
                 $unitType === 'meter'
                 && isset($sessionMeterMap[$cartKey])
@@ -56,6 +76,7 @@ final class CustomerSessionMergeService
 
         $_SESSION['cart'] = $dbCart;
         $_SESSION['cart_meter_length'] = $dbMeterMap;
+        $_SESSION['cart_loaded_for'] = $customerId;
         if ($dbCart !== []) {
             CartService::cart_save_to_db($conn, $customerId, $dbCart, $dbMeterMap);
         }

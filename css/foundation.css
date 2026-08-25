@@ -1,4 +1,21 @@
-@layer reset, tokens, base, layout, components, utilities, overrides;
+/* Cascade layer order for every first-party sheet, foundation and page alike.
+ *
+ * The page sheets (storefront.css, admin.css, documents.css) declare their own
+ * layers but never appear here, so they used to be appended after `overrides`.
+ * For normal declarations that is correct - later layer wins. But cascade layers
+ * REVERSE for !important: the earliest layer wins. Appended last meant every
+ * !important a page sheet wrote lost to foundation's !important utilities, so a
+ * template carrying both a component class and a utility silently rendered the
+ * utility (u-pt-0 killed .catalog-main-section padding, u-flex killed
+ * .dashboard-header's grid, and so on). Declaring the page layers here, between
+ * `components` and `utilities`, restores both directions:
+ *   - normal: utilities > page sheets > components  (utilities still win)
+ *   - !important: page sheets > utilities           (page sheets can override)
+ * `reset` stays first so [hidden] and prefers-reduced-motion outrank everything.
+ */
+@layer reset, tokens, base, layout, components,
+  storefront, storefront-refresh, admin, admin-refresh, document,
+  utilities, overrides;
 
 @layer tokens {
   :root {
@@ -46,7 +63,17 @@
     --content-width: 80rem;
     --reading-width: 46rem;
     --header-height: 5.25rem;
-    --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    /* Deliberately system-only. `Inter` used to lead this stack, but the repo
+     * ships no @font-face, no font <link> and no .woff2, so Inter resolved only
+     * for the handful of visitors who happen to have it installed locally -
+     * meaning the site rendered one typeface for its designers and another for
+     * everyone else, and the intended version was never the tested one. The
+     * stack is now the same for every visitor. To reintroduce a webfont, add a
+     * self-hosted woff2 with font-display: swap and put it back at the front;
+     * CSP already allows 'self' in font-src (includes/init.php). */
+    --font-body: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    /* Every entry here is a system face with a real fallback chain: Iowan Old
+     * Style on Apple, Palatino Linotype on Windows, Georgia everywhere else. */
     --font-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     --transition-fast: 140ms ease;
     --transition-medium: 220ms ease;
@@ -123,6 +150,25 @@
   [hidden],
   template {
     display: none !important;
+  }
+
+  /* Kept in `reset` - the first layer - rather than `overrides`. Because
+   * !important reverses layer order, the first layer holds the strongest
+   * !important, so no page sheet can reintroduce motion for a visitor who
+   * asked for less of it. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
@@ -267,12 +313,6 @@
     min-inline-size: 0;
   }
 
-  .l-col-full { grid-column: 1 / -1 !important; }
-  .l-col-auto { grid-column: auto !important; }
-  .l-col-third { grid-column: span 4 !important; }
-  .l-col-half { grid-column: span 6 !important; }
-  .l-col-eight { grid-column: span 8 !important; }
-
   .l-sidebar {
     display: grid;
     grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
@@ -310,26 +350,6 @@
     .l-form-grid > [data-span="8"] {
       grid-column: span 8;
     }
-
-    .l-col-sm-quarter { grid-column: span 3 !important; }
-    .l-col-sm-two { grid-column: span 2 !important; }
-    .l-col-sm-third { grid-column: span 4 !important; }
-    .l-col-sm-half { grid-column: span 6 !important; }
-    .l-col-sm-seven { grid-column: span 7 !important; }
-    .l-col-sm-eight { grid-column: span 8 !important; }
-  }
-
-  @media (min-width: 48rem) {
-    .l-col-md-one { grid-column: span 1 !important; }
-    .l-col-md-two { grid-column: span 2 !important; }
-    .l-col-md-quarter { grid-column: span 3 !important; }
-    .l-col-md-third { grid-column: span 4 !important; }
-    .l-col-md-five { grid-column: span 5 !important; }
-    .l-col-md-half { grid-column: span 6 !important; }
-    .l-col-md-seven { grid-column: span 7 !important; }
-    .l-col-md-eight { grid-column: span 8 !important; }
-    .l-col-md-nine { grid-column: span 9 !important; }
-    .l-col-md-ten { grid-column: span 10 !important; }
   }
 
   @media (min-width: 64rem) {
@@ -340,24 +360,6 @@
     .l-grid[data-columns="4"] {
       --grid-columns: 4;
     }
-
-    .l-col-lg-two { grid-column: span 2 !important; }
-    .l-col-lg-quarter { grid-column: span 3 !important; }
-    .l-col-lg-third { grid-column: span 4 !important; }
-    .l-col-lg-five { grid-column: span 5 !important; }
-    .l-col-lg-half { grid-column: span 6 !important; }
-    .l-col-lg-seven { grid-column: span 7 !important; }
-    .l-col-lg-eight { grid-column: span 8 !important; }
-    .l-col-lg-nine { grid-column: span 9 !important; }
-    .l-col-lg-ten { grid-column: span 10 !important; }
-  }
-
-  @media (min-width: 75rem) {
-    .l-col-xl-two { grid-column: span 2 !important; }
-    .l-col-xl-quarter { grid-column: span 3 !important; }
-    .l-col-xl-third { grid-column: span 4 !important; }
-    .l-col-xl-half { grid-column: span 6 !important; }
-    .l-col-xl-eight { grid-column: span 8 !important; }
   }
 
   @media (max-width: 55rem) {
@@ -1427,6 +1429,61 @@
     .u-flex-column-desktop { flex-direction: column !important; }
     .u-gap-desktop-5 { gap: var(--space-5) !important; }
   }
+
+  /* Grid-span classes. These live in `utilities`, not `layout`, even though they
+   * are named l-*. They are single-property !important overrides applied from a
+   * template - utilities in everything but prefix - and `layout` sits before the
+   * page layers, so leaving them there let .l-col-auto outrank a page sheet's own
+   * responsive grid-column !important (admin.css's mobile full-width filter rows).
+   * The structural .l-container / .l-grid / .l-sidebar rules stay in `layout`,
+   * where a page sheet's normal declarations can still customise them. */
+  .l-col-full { grid-column: 1 / -1 !important; }
+  .l-col-auto { grid-column: auto !important; }
+  .l-col-third { grid-column: span 4 !important; }
+  .l-col-half { grid-column: span 6 !important; }
+  .l-col-eight { grid-column: span 8 !important; }
+
+  @media (min-width: 40rem) {
+    .l-col-sm-quarter { grid-column: span 3 !important; }
+    .l-col-sm-two { grid-column: span 2 !important; }
+    .l-col-sm-third { grid-column: span 4 !important; }
+    .l-col-sm-half { grid-column: span 6 !important; }
+    .l-col-sm-seven { grid-column: span 7 !important; }
+    .l-col-sm-eight { grid-column: span 8 !important; }
+  }
+
+  @media (min-width: 48rem) {
+    .l-col-md-one { grid-column: span 1 !important; }
+    .l-col-md-two { grid-column: span 2 !important; }
+    .l-col-md-quarter { grid-column: span 3 !important; }
+    .l-col-md-third { grid-column: span 4 !important; }
+    .l-col-md-five { grid-column: span 5 !important; }
+    .l-col-md-half { grid-column: span 6 !important; }
+    .l-col-md-seven { grid-column: span 7 !important; }
+    .l-col-md-eight { grid-column: span 8 !important; }
+    .l-col-md-nine { grid-column: span 9 !important; }
+    .l-col-md-ten { grid-column: span 10 !important; }
+  }
+
+  @media (min-width: 64rem) {
+    .l-col-lg-two { grid-column: span 2 !important; }
+    .l-col-lg-quarter { grid-column: span 3 !important; }
+    .l-col-lg-third { grid-column: span 4 !important; }
+    .l-col-lg-five { grid-column: span 5 !important; }
+    .l-col-lg-half { grid-column: span 6 !important; }
+    .l-col-lg-seven { grid-column: span 7 !important; }
+    .l-col-lg-eight { grid-column: span 8 !important; }
+    .l-col-lg-nine { grid-column: span 9 !important; }
+    .l-col-lg-ten { grid-column: span 10 !important; }
+  }
+
+  @media (min-width: 75rem) {
+    .l-col-xl-two { grid-column: span 2 !important; }
+    .l-col-xl-quarter { grid-column: span 3 !important; }
+    .l-col-xl-third { grid-column: span 4 !important; }
+    .l-col-xl-half { grid-column: span 6 !important; }
+    .l-col-xl-eight { grid-column: span 8 !important; }
+  }
 }
 
 @layer overrides {
@@ -1438,20 +1495,8 @@
     to { translate: 100% 0; }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
-
-    *,
-    *::before,
-    *::after {
-      scroll-behavior: auto !important;
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
-  }
+  /* prefers-reduced-motion lives in `reset`, not here: this layer is now the
+   * last one declared, which makes it the WEAKEST !important layer. */
 
   @media (forced-colors: active) {
     .ui-button,

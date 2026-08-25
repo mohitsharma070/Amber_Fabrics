@@ -307,6 +307,10 @@ paths:
         When WhatsApp Cloud API and its approved utility template are configured,
         COD amounts routed to WhatsApp or call confirmation require explicit
         order-scoped consent for transactional confirmation messages.
+        Order creation is throttled per client, and the number of cash-on-delivery
+        orders one customer may hold awaiting confirmation is capped; both
+        rejections redirect back to checkout with a flash message rather than
+        returning 429.
       security:
         - sessionCookieAuth: []
       requestBody:
@@ -317,7 +321,10 @@ paths:
               $ref: '#/components/schemas/PlaceOrderRequest'
       responses:
         '302':
-          description: Redirect to order success, payment, or back to checkout
+          description: >-
+            Redirect to order success, payment, or back to checkout (also used for
+            throttled attempts, a stale or already-used shipping quote, and the
+            pending-COD cap)
         '403':
           description: Invalid CSRF token
 

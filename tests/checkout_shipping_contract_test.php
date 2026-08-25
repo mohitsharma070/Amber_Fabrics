@@ -32,13 +32,24 @@ $assert(($state['payment_method'] ?? '') === 'razorpay', 'Coupon redirect did no
 $assert(($state['shipping_address_id'] ?? 0) === 42, 'Coupon redirect did not preserve the saved address ID.');
 $assert(($state['country'] ?? '') === 'India', 'Coupon redirect did not enforce the India checkout country.');
 
-$rateSource = (string) file_get_contents(__DIR__ . '/../shipping-rate.php');
-$checkoutSource = (string) file_get_contents(__DIR__ . '/../checkout.php');
-$pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/modules/reference-and-rates.php');
-$emailServiceSource = (string) file_get_contents(__DIR__ . '/../includes/services/EmailService.php');
-$placeOrderSource = (string) file_get_contents(__DIR__ . '/../place-order.php');
-$applySource = (string) file_get_contents(__DIR__ . '/../apply-coupon.php');
-$removeSource = (string) file_get_contents(__DIR__ . '/../remove-coupon.php');
+// Assertions below grep for multi-line source literals written with "\n". A
+// working tree checked out with core.autocrlf=true stores CRLF on disk, so those
+// literals could never match there even though the source was correct. Reading
+// through this normalizer keeps each assertion's exact meaning while making the
+// test agnostic to the checkout's line-ending style.
+$read = static function (string $relativePath): string {
+    $source = file_get_contents(__DIR__ . '/../' . $relativePath);
+
+    return $source === false ? '' : str_replace(["\r\n", "\r"], "\n", $source);
+};
+
+$rateSource = $read('shipping-rate.php');
+$checkoutSource = $read('checkout.php');
+$pluginSource = $read('plugins/shipping-courier/modules/reference-and-rates.php');
+$emailServiceSource = $read('includes/services/EmailService.php');
+$placeOrderSource = $read('place-order.php');
+$applySource = $read('apply-coupon.php');
+$removeSource = $read('remove-coupon.php');
 
 $assert(!str_contains($rateSource, "\$_POST['subtotal']"), 'Shipping rate still trusts a browser-supplied subtotal.');
 $assert(str_contains($rateSource, 'CartService::cart_items_subtotal'), 'Shipping rate does not derive subtotal from the server cart.');

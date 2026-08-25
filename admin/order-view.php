@@ -126,6 +126,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 InventoryService::restore_order_inventory($conn, $id);
                 release_coupon_usage_for_order($conn, $id);
             }
+            // OrderLifecycle permits shipped -> returned and delivered -> returned. Goods
+            // that come back must credit stock and free coupon capacity too, otherwise an
+            // RTO or refused delivery leaves both permanently consumed. The credit is
+            // routed through the returns module - never restore_order_inventory(), which
+            // would double-credit once the same return is processed there.
+            $returnedTransitionNotice = '';
+            $operatorReturnId = 0;
+            if ($currentOrderStatus !== 'returned' && $targetStatus === 'returned') {
+                $operatorReturnId = InventoryService::open_operator_return_for_order(
+                    $conn,
+                    $id,
+                    'Returned to origin',
+                    'Opened automatically when an administrator moved the order from '
+                        . $currentOrderStatus . ' to returned.'
+                );
+                if ($operatorReturnId > 0) {
+                    InventoryService::restock_return_items_inventory($conn, $operatorReturnId);
+                    release_coupon_usage_for_order($conn, $id);
+                } else {
+                    // A customer-initiated return already owns this order (returns.order_id
+                    // is unique). Leave it alone and say so rather than credit stock twice.
+                    $returnedTransitionNotice = 'An existing return already covers this order. '
+                        . 'Complete it in Returns to credit stock and refund.';
+                }
+            }
             log_order_activity(
                 $conn,
                 $id,
@@ -134,6 +159,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 (int) ($_SESSION['admin_id'] ?? 0),
                 (string) ($_SESSION['admin_name'] ?? 'admin'),
                 'Order: ' . $currentOrderStatus . ' -> ' . $targetStatus
+                    . ($operatorReturnId > 0 ? ' (return #' . $operatorReturnId . ' opened, stock credited)' : '')
+                    . ($returnedTransitionNotice !== '' ? ' (existing return retained, stock not credited here)' : '')
             );
             $conn->commit();
         } catch (Throwable $e) {
@@ -161,6 +188,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         EmailService::send_order_status_update_email($conn, $id, $targetStatus);
         flash('success', 'Order moved to ' . ucfirst($targetStatus) . '.');
+        if ($returnedTransitionNotice !== '') {
+            flash('error', $returnedTransitionNotice);
+        }
         redirect('order-view.php?id=' . $id);
     }
 
@@ -481,20 +511,20 @@ include 'partials/header.php';
                     <input type="hidden" name="action" value="save_shipment">
 
                     <div class="u-mb-3">
-                        <label class="ui-label">Courier Name</label>
-                        <input type="text" class="ui-input" name="courier_name" value="<?php echo e((string) ($shipment['courier_name'] ?? '')); ?>">
+                        <label for="courier_name" class="ui-label">Courier Name</label>
+                        <input id="courier_name" type="text" class="ui-input" name="courier_name" value="<?php echo e((string) ($shipment['courier_name'] ?? '')); ?>">
                     </div>
                     <div class="u-mb-3">
-                        <label class="ui-label">Tracking ID</label>
-                        <input type="text" class="ui-input" name="tracking_id" value="<?php echo e((string) ($shipment['tracking_id'] ?? '')); ?>">
+                        <label for="tracking_id" class="ui-label">Tracking ID</label>
+                        <input id="tracking_id" type="text" class="ui-input" name="tracking_id" value="<?php echo e((string) ($shipment['tracking_id'] ?? '')); ?>">
                     </div>
                     <div class="u-mb-3">
-                        <label class="ui-label">Tracking URL</label>
-                        <input type="url" class="ui-input" name="tracking_url" value="<?php echo e((string) ($shipment['tracking_url'] ?? '')); ?>" placeholder="https://...">
+                        <label for="tracking_url" class="ui-label">Tracking URL</label>
+                        <input id="tracking_url" type="url" class="ui-input" name="tracking_url" value="<?php echo e((string) ($shipment['tracking_url'] ?? '')); ?>" placeholder="https://...">
                     </div>
                     <div class="u-mb-3">
-                        <label class="ui-label">Shipping Cost</label>
-                        <input type="number" class="ui-input" step="0.01" min="0" name="shipping_cost" value="<?php echo e((string) ($shipment['shipping_cost'] ?? '0.00')); ?>">
+                        <label for="shipping_cost" class="ui-label">Shipping Cost</label>
+                        <input id="shipping_cost" type="number" class="ui-input" step="0.01" min="0" name="shipping_cost" value="<?php echo e((string) ($shipment['shipping_cost'] ?? '0.00')); ?>">
                     </div>
                     <div class="u-flex u-gap-2 u-flex-wrap u-mt-3 u-pt-2 u-border-top">
                         <button class="ui-button ui-button--primary" type="submit"><?php echo ui_icon('save2'); ?>Save Shipment</button>

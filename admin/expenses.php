@@ -124,24 +124,24 @@ include 'partials/header.php';
                 <?php endif; ?>
 
                 <div class="u-mb-2">
-                    <label class="ui-label">Type</label>
-                    <select name="type" class="ui-select" required>
+                    <label for="type" class="ui-label">Type</label>
+                    <select id="type" name="type" class="ui-select" required>
                         <?php foreach ($expenseTypes as $t): ?>
                             <option value="<?php echo e($t); ?>" <?php echo ($editExpense['type'] ?? '') === $t ? 'selected' : ''; ?>><?php echo e($t); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Amount</label>
-                    <input type="number" step="0.01" min="0.01" name="amount" class="ui-input" required value="<?php echo e((string) ($editExpense['amount'] ?? '')); ?>">
+                    <label for="amount" class="ui-label">Amount</label>
+                    <input id="amount" type="number" step="0.01" min="0.01" name="amount" class="ui-input" required value="<?php echo e((string) ($editExpense['amount'] ?? '')); ?>">
                 </div>
                 <div class="u-mb-2">
-                    <label class="ui-label">Expense Date</label>
-                    <input type="date" name="expense_date" class="ui-input" required value="<?php echo e((string) ($editExpense['expense_date'] ?? date('Y-m-d'))); ?>">
+                    <label for="expense_date" class="ui-label">Expense Date</label>
+                    <input id="expense_date" type="date" name="expense_date" class="ui-input" required value="<?php echo e((string) ($editExpense['expense_date'] ?? date('Y-m-d'))); ?>">
                 </div>
                 <div class="u-mb-3">
-                    <label class="ui-label">Note</label>
-                    <textarea name="note" class="ui-input" rows="3"><?php echo e((string) ($editExpense['note'] ?? '')); ?></textarea>
+                    <label for="note" class="ui-label">Note</label>
+                    <textarea id="note" name="note" class="ui-input" rows="3"><?php echo e((string) ($editExpense['note'] ?? '')); ?></textarea>
                 </div>
 
                 <button class="ui-button ui-button--primary u-w-full" type="submit"><?php echo $editExpense ? 'Update Expense' : 'Add Expense'; ?></button>
@@ -155,8 +155,8 @@ include 'partials/header.php';
     <div class="l-col-lg-eight">
         <form method="GET" class="l-grid l-grid--12 u-gap-2 u-mb-3 admin-filter-form">
             <div class="l-col-md-third">
-                <label class="ui-label">Filter by Month</label>
-                <input type="month" name="month" class="ui-input" value="<?php echo e($month); ?>">
+                <label for="month" class="ui-label">Filter by Month</label>
+                <input id="month" type="month" name="month" class="ui-input" value="<?php echo e($month); ?>">
             </div>
             <div class="l-col-auto u-flex u-items-end u-gap-2 admin-filter-actions">
                 <button class="ui-button ui-button--primary" type="submit"><?php echo ui_icon('funnel'); ?>Apply</button>

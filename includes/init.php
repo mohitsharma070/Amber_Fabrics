@@ -34,13 +34,45 @@ if (!headers_sent()) {
     if (app_request_is_https()) {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
     }
+
+    // cdn.jsdelivr.net used to sit in script-src for every request, so any HTML
+    // that reached a page unescaped could pull an arbitrary bundle from it. Only
+    // three pages actually load anything from that origin, so it is allowed only
+    // there. Compared by realpath against SCRIPT_FILENAME rather than by
+    // SCRIPT_NAME, because SCRIPT_NAME carries the deployment's URL prefix and
+    // would stop matching under a subdirectory install.
+    $cdnScriptPages = [
+        __DIR__ . '/../invoice.php',        // html2pdf.js - customer invoice download
+        __DIR__ . '/../admin/invoice.php',  // html2pdf.js - admin invoice download
+        __DIR__ . '/../admin/dashboard.php', // chart.js - admin dashboard charts
+    ];
+    $currentScript = realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''));
+    $cdnScriptAllowed = false;
+    if ($currentScript !== false) {
+        foreach ($cdnScriptPages as $cdnScriptPage) {
+            $resolved = realpath($cdnScriptPage);
+            if ($resolved !== false && $resolved === $currentScript) {
+                $cdnScriptAllowed = true;
+                break;
+            }
+        }
+    }
+
+    $scriptSrc = ["'self'", 'https://*.razorpay.com', "'nonce-{$cspNonce}'"];
+    if ($cdnScriptAllowed) {
+        $scriptSrc[] = 'https://cdn.jsdelivr.net';
+    }
+
+    // connect-src, style-src and font-src previously allowed jsdelivr too, with
+    // no consumer for any of them: nothing fetches from that origin, the
+    // Bootstrap CDN stylesheet is gone, and the app ships no webfonts at all.
     $cspDirectives = apply_filters('security.csp_directives', [
         'default-src' => ["'self'"],
-        'connect-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com'],
+        'connect-src' => ["'self'", 'https://*.razorpay.com'],
         'img-src' => ["'self'", 'data:', 'https:'],
-        'style-src' => ["'self'", 'https://cdn.jsdelivr.net', "'unsafe-inline'"],
-        'script-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com', "'nonce-{$cspNonce}'"],
-        'font-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com'],
+        'style-src' => ["'self'", "'unsafe-inline'"],
+        'script-src' => $scriptSrc,
+        'font-src' => ["'self'", 'https://*.razorpay.com'],
         'frame-src' => ['https://*.razorpay.com'],
         'object-src' => ["'none'"],
         'frame-ancestors' => ["'none'"],

@@ -140,9 +140,9 @@ include 'partials/header.php'; ?>
             <h5 class="u-mb-3">Update Inquiry</h5>
             <form method="POST" class="u-mb-3">
                 <?php echo csrf_field(); ?>
-                <label class="ui-label">Status</label>
+                <label for="status" class="ui-label">Status</label>
                 <div class="u-flex u-gap-2">
-                    <select name="status" class="ui-select">
+                    <select id="status" name="status" class="ui-select">
                         <?php foreach ($allowedStatuses as $status): ?>
                             <option value="<?php echo $status; ?>" <?php echo $inquiry['status'] === $status ? 'selected' : ''; ?>><?php echo ucfirst($status); ?></option>
                         <?php endforeach; ?>
@@ -152,8 +152,8 @@ include 'partials/header.php'; ?>
             </form>
             <form method="POST" class="u-mb-3">
                 <?php echo csrf_field(); ?>
-                <label class="ui-label">Internal Note</label>
-                <textarea name="internal_note" class="ui-input u-mb-2" rows="4" placeholder="Write internal note"><?php echo e($inquiry['internal_note']); ?></textarea>
+                <label for="internal_note" class="ui-label">Internal Note</label>
+                <textarea id="internal_note" name="internal_note" class="ui-input u-mb-2" rows="4" placeholder="Write internal note"><?php echo e($inquiry['internal_note']); ?></textarea>
                 <button name="save_note" class="ui-button ui-button--secondary" type="submit">Save Note</button>
             </form>
             <form method="POST" data-confirm="Delete this inquiry?" data-confirm-title="Delete Inquiry?" data-confirm-ok="Delete Inquiry" data-confirm-variant="danger">

@@ -73,13 +73,13 @@ include __DIR__ . '/../includes/header.php';
                         <form method="POST" action="/customer/reset-password.php?token=<?php echo urlencode($token); ?>">
                             <?php echo csrf_field(); ?>
                             <div class="u-mb-3">
-                                <label class="ui-label">New Password <small class="u-text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
-                                <input type="password" name="password" class="<?php echo form_class($errors, 'password', 'ui-input'); ?>" required>
+                                <label for="password" class="ui-label">New Password <small class="u-text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
+                                <input id="password" type="password" name="password" class="<?php echo form_class($errors, 'password', 'ui-input'); ?>" required>
                                 <?php echo form_error($errors, 'password', 'ui-field-error'); ?>
                             </div>
                             <div class="u-mb-4">
-                                <label class="ui-label">Confirm Password</label>
-                                <input type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password', 'ui-input'); ?>" required>
+                                <label for="confirm_password" class="ui-label">Confirm Password</label>
+                                <input id="confirm_password" type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password', 'ui-input'); ?>" required>
                                 <?php echo form_error($errors, 'confirm_password', 'ui-field-error'); ?>
                             </div>
                             <button type="submit" class="ui-button ui-button--primary u-w-full">Set New Password</button>

@@ -72,6 +72,13 @@ $assert(str_contains($create, 'razorpay_create_claim_token') && str_contains($cr
 $assert(str_contains($init, 'customer_session_valid($conn, $bootCustomerId)'), 'Storefront bootstrap must validate existing customer sessions.');
 $assert(str_contains($auth, 'SELECT is_active, auth_version FROM customers') && str_contains($auth, '$sessionAuthVersion !== $databaseAuthVersion'), 'Session validation must check account activity and auth version.');
 $assert(str_contains($auth, 'customer_clear_auth_session') && !str_contains($auth, 'session_destroy()'), 'Invalid auth must clear only auth state and preserve the session cart.');
+// Because the cart deliberately survives an involuntary session kill, the login-time
+// merge must know whose cart it is looking at or it silently doubles every line.
+$mergeService = $read('includes/services/CustomerSessionMergeService.php');
+$assert(str_contains($mergeService, "\$_SESSION['cart_loaded_for']") && str_contains($mergeService, '$sessionCartOwner'), 'Cart merge must read a cart ownership marker before combining quantities.');
+$assert(str_contains($mergeService, '$sumQuantities') && str_contains($mergeService, 'max((float) $currentQty, (float) $incomingQty)'), 'A returning owner cart must merge by max, not by sum.');
+$assert(str_contains($mergeService, '$sessionCartOwner !== $customerId') && str_contains($mergeService, '$sessionCart = [];'), 'Another customer cart left in the session must be discarded, not merged.');
+$assert(str_contains($read('guest/account-activate.php'), "\$_SESSION['cart_loaded_for']"), 'Guest activation must mark cart ownership after persisting the guest cart.');
 $assert(str_contains($login, "\$_SESSION['customer_auth_version']"), 'Login must store auth_version in the session.');
 $assert(str_contains($reset, 'auth_version = auth_version + 1') && str_contains($reset, 'reset_token = ?') && str_contains($reset, 'affected_rows !== 1'), 'Password reset must atomically consume the token and revoke sessions.');
 $assert(str_contains($accountService, 'auth_version = auth_version + 1') && str_contains($accountService, '$update->affected_rows !== 1') && str_contains($profile, "\$_SESSION['customer_auth_version']") && str_contains($profile, 'session_regenerate_id(true)'), 'Password change must preserve only the current browser session.');

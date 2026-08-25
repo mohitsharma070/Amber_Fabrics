@@ -81,6 +81,7 @@ function cron_readiness_check(mysqli $conn): array
         'orders', 'payments', 'public_form_attempts', 'site_settings', 'cod_confirmations', 'cod_guard_webhook_events',
         'abandoned_cart_reminders', 'inventory_alert_logs', 'back_in_stock_subscriptions',
         'shipping_rto_risks', 'support_tickets', 'cron_run_history', 'commerce_outbox', 'commerce_outbox_deliveries',
+        'stock_ledger',
     ];
     $missing = [];
     foreach ($requiredTables as $table) {
@@ -106,6 +107,10 @@ function cron_readiness_check(mysqli $conn): array
         'coupon_usages' => ['guest_identity_hash'],
         'commerce_outbox' => ['dedupe_key', 'status', 'attempts', 'available_at', 'claim_token', 'claimed_at'],
         'commerce_outbox_deliveries' => ['outbox_id', 'handler_key', 'status', 'claim_token', 'claimed_at'],
+        // Inventory reservation idempotency is unconditional in InventoryService,
+        // so these columns are a hard requirement rather than a probed feature.
+        'orders' => ['inventory_reserved_at', 'inventory_restored_at'],
+        'shipping_quotes' => ['cart_fingerprint', 'consumed_at'],
     ];
     foreach ($requiredColumns as $table => $columns) {
         foreach ($columns as $column) {
@@ -145,6 +150,7 @@ function cron_readiness_check(mysqli $conn): array
     $requiredMigrations = [
         '2026-08-24-priority-findings-remediation.sql' => 'Priority remediation',
         '2026-08-25-architecture-hardening.sql' => 'Architecture hardening',
+        '2026-08-26-inventory-ledger-and-quote-binding.sql' => 'Inventory ledger and shipping quote binding',
     ];
     foreach ($requiredMigrations as $migrationName => $migrationLabel) {
         $migrationPath = __DIR__ . '/../database/migrations/' . $migrationName;

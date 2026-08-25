@@ -25,7 +25,7 @@ include 'partials/header.php';
     <div class="l-col-lg-half">
         <span class="ui-badge ui-badge--neutral u-mb-2"><?php echo e((string) $product['product_type']); ?></span>
         <h1><?php echo e((string) $product['name']); ?></h1>
-        <p class="lead"><?php echo e(money((float) (($product['sale_price'] ?? 0) > 0 ? $product['sale_price'] : $product['price']))); ?></p>
+        <p class="u-text-large u-font-semibold"><?php echo e(money((float) (($product['sale_price'] ?? 0) > 0 ? $product['sale_price'] : $product['price']))); ?></p>
         <p><?php echo nl2br(e((string) $product['description'])); ?></p>
         <dl class="l-grid l-grid--12">
             <dt class="l-col-third">SKU</dt><dd class="l-col-eight"><?php echo e((string) $product['sku']); ?></dd>

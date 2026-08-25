@@ -151,22 +151,24 @@ include __DIR__ . '/../includes/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="update_info">
                         <div class="u-mb-3">
-                            <label class="ui-label">Full Name</label>
-                            <input type="text" name="name" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'name', 'ui-input'); ?>" required value="<?php echo e($cust['name']); ?>">
+                            <label for="name" class="ui-label">Full Name</label>
+                            <input id="name" type="text" name="name" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'name', 'ui-input'); ?>" required value="<?php echo e($cust['name']); ?>">
                             <?php if ($activeForm === 'info') echo form_error($errors, 'name', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-3">
-                            <label class="ui-label">Email <small class="u-text-muted">(read only)</small></label>
-                            <input type="email" class="ui-input" value="<?php echo e($cust['email']); ?>" disabled>
+                            <?php /* Disabled mirror of the account email; it is not submitted, so the
+                                     id is display-only and does not shadow a posted field name. */ ?>
+                            <label class="ui-label" for="email_display">Email <small class="u-text-muted">(read only)</small></label>
+                            <input id="email_display" type="email" class="ui-input" value="<?php echo e($cust['email']); ?>" disabled>
                         </div>
                         <div class="u-mb-3">
-                            <label class="ui-label">Phone</label>
-                            <input type="tel" name="phone" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'phone', 'ui-input'); ?>" value="<?php echo e($cust['phone'] ?? ''); ?>">
+                            <label for="phone" class="ui-label">Phone</label>
+                            <input id="phone" type="tel" name="phone" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'phone', 'ui-input'); ?>" value="<?php echo e($cust['phone'] ?? ''); ?>">
                             <?php if ($activeForm === 'info') echo form_error($errors, 'phone', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-4">
-                            <label class="ui-label">Country</label>
-                            <input type="text" name="country" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'country', 'ui-input'); ?>" value="<?php echo e($cust['country'] ?? ''); ?>">
+                            <label for="country" class="ui-label">Country</label>
+                            <input id="country" type="text" name="country" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'country', 'ui-input'); ?>" value="<?php echo e($cust['country'] ?? ''); ?>">
                             <?php if ($activeForm === 'info') echo form_error($errors, 'country', 'ui-field-error'); ?>
                         </div>
                         <button type="submit" class="ui-button ui-button--primary">Save Changes</button>
@@ -224,40 +226,40 @@ include __DIR__ . '/../includes/header.php';
                         <input type="hidden" name="action" value="save_address">
                         <input type="hidden" name="address_id" value="<?php echo (int) ($addressForm['id'] ?? 0); ?>">
                         <div class="u-mb-2">
-                            <label class="ui-label">Label</label>
-                            <input type="text" name="label" class="ui-input" placeholder="Home / Office" value="<?php echo e((string) ($addressForm['label'] ?? '')); ?>">
+                            <label for="label" class="ui-label">Label</label>
+                            <input id="label" type="text" name="label" class="ui-input" placeholder="Home / Office" value="<?php echo e((string) ($addressForm['label'] ?? '')); ?>">
                         </div>
                         <div class="u-mb-2">
-                            <label class="ui-label">Full Name *</label>
-                            <input type="text" name="full_name" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'full_name', 'ui-input'); ?>" value="<?php echo e((string) ($addressForm['full_name'] ?? '')); ?>">
+                            <label for="full_name" class="ui-label">Full Name *</label>
+                            <input id="full_name" type="text" name="full_name" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'full_name', 'ui-input'); ?>" value="<?php echo e((string) ($addressForm['full_name'] ?? '')); ?>">
                             <?php if ($activeForm === 'address') echo form_error($errors, 'full_name', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-2">
-                            <label class="ui-label">Phone</label>
-                            <input type="text" name="address_phone" class="ui-input" value="<?php echo e((string) ($addressForm['phone'] ?? '')); ?>">
+                            <label for="address_phone" class="ui-label">Phone</label>
+                            <input id="address_phone" type="text" name="address_phone" class="ui-input" value="<?php echo e((string) ($addressForm['phone'] ?? '')); ?>">
                         </div>
                         <div class="u-mb-2">
-                            <label class="ui-label">Address *</label>
-                            <textarea name="address_line" rows="2" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_line', 'ui-input'); ?>"><?php echo e((string) ($addressForm['address_line'] ?? '')); ?></textarea>
+                            <label for="address_line" class="ui-label">Address *</label>
+                            <textarea id="address_line" name="address_line" rows="2" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_line', 'ui-input'); ?>"><?php echo e((string) ($addressForm['address_line'] ?? '')); ?></textarea>
                             <?php if ($activeForm === 'address') echo form_error($errors, 'address_line', 'ui-field-error'); ?>
                         </div>
                         <div class="l-grid l-grid--12 u-gap-2">
                             <div class="l-col-sm-half">
-                                <label class="ui-label">City *</label>
-                                <input type="text" name="address_city" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_city', 'ui-input'); ?>" value="<?php echo e((string) ($addressForm['city'] ?? '')); ?>">
+                                <label for="address_city" class="ui-label">City *</label>
+                                <input id="address_city" type="text" name="address_city" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_city', 'ui-input'); ?>" value="<?php echo e((string) ($addressForm['city'] ?? '')); ?>">
                                 <?php if ($activeForm === 'address') echo form_error($errors, 'address_city', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">State</label>
-                                <input type="text" name="address_state" class="ui-input" value="<?php echo e((string) ($addressForm['state'] ?? '')); ?>">
+                                <label for="address_state" class="ui-label">State</label>
+                                <input id="address_state" type="text" name="address_state" class="ui-input" value="<?php echo e((string) ($addressForm['state'] ?? '')); ?>">
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">Pincode</label>
-                                <input type="text" name="address_pincode" class="ui-input" value="<?php echo e((string) ($addressForm['pincode'] ?? '')); ?>">
+                                <label for="address_pincode" class="ui-label">Pincode</label>
+                                <input id="address_pincode" type="text" name="address_pincode" class="ui-input" value="<?php echo e((string) ($addressForm['pincode'] ?? '')); ?>">
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">Country *</label>
-                                <input type="text" name="address_country" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_country', 'ui-input'); ?>" value="<?php echo e((string) ($addressForm['country'] ?? 'India')); ?>">
+                                <label for="address_country" class="ui-label">Country *</label>
+                                <input id="address_country" type="text" name="address_country" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_country', 'ui-input'); ?>" value="<?php echo e((string) ($addressForm['country'] ?? 'India')); ?>">
                                 <?php if ($activeForm === 'address') echo form_error($errors, 'address_country', 'ui-field-error'); ?>
                             </div>
                         </div>
@@ -285,18 +287,18 @@ include __DIR__ . '/../includes/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="change_password">
                         <div class="u-mb-3">
-                            <label class="ui-label">Current Password</label>
-                            <input type="password" name="current_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'current_password', 'ui-input'); ?>" required>
+                            <label for="current_password" class="ui-label">Current Password</label>
+                            <input id="current_password" type="password" name="current_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'current_password', 'ui-input'); ?>" required>
                             <?php if ($activeForm === 'password') echo form_error($errors, 'current_password', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-3">
-                            <label class="ui-label">New Password <small class="u-text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
-                            <input type="password" name="new_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'new_password', 'ui-input'); ?>" required>
+                            <label for="new_password" class="ui-label">New Password <small class="u-text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
+                            <input id="new_password" type="password" name="new_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'new_password', 'ui-input'); ?>" required>
                             <?php if ($activeForm === 'password') echo form_error($errors, 'new_password', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-4">
-                            <label class="ui-label">Confirm New Password</label>
-                            <input type="password" name="confirm_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'confirm_password', 'ui-input'); ?>" required>
+                            <label for="confirm_password" class="ui-label">Confirm New Password</label>
+                            <input id="confirm_password" type="password" name="confirm_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'confirm_password', 'ui-input'); ?>" required>
                             <?php if ($activeForm === 'password') echo form_error($errors, 'confirm_password', 'ui-field-error'); ?>
                         </div>
                         <button type="submit" class="ui-button ui-button--outline">Update Password</button>

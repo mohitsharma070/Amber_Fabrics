@@ -108,33 +108,33 @@ include __DIR__ . '/../includes/header.php';
                         <?php echo csrf_field(); ?>
 
                         <div class="u-mb-3">
-                            <label class="ui-label">Full Name *</label>
-                            <input type="text" name="name" class="<?php echo form_class($errors, 'name', 'ui-input'); ?>" value="<?php echo e($old['name']); ?>" required>
+                            <label for="name" class="ui-label">Full Name *</label>
+                            <input id="name" type="text" name="name" class="<?php echo form_class($errors, 'name', 'ui-input'); ?>" value="<?php echo e($old['name']); ?>" required>
                             <?php echo form_error($errors, 'name', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-3">
-                            <label class="ui-label">Email Address *</label>
-                            <input type="email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" value="<?php echo e($old['email']); ?>" required>
+                            <label for="email" class="ui-label">Email Address *</label>
+                            <input id="email" type="email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" value="<?php echo e($old['email']); ?>" required>
                             <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-3">
-                            <label class="ui-label">Phone Number</label>
-                            <input type="tel" name="phone" class="<?php echo form_class($errors, 'phone', 'ui-input'); ?>" value="<?php echo e($old['phone']); ?>">
+                            <label for="phone" class="ui-label">Phone Number</label>
+                            <input id="phone" type="tel" name="phone" class="<?php echo form_class($errors, 'phone', 'ui-input'); ?>" value="<?php echo e($old['phone']); ?>">
                             <?php echo form_error($errors, 'phone', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-3">
-                            <label class="ui-label">Country</label>
-                            <input type="text" name="country" class="<?php echo form_class($errors, 'country', 'ui-input'); ?>" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
+                            <label for="country" class="ui-label">Country</label>
+                            <input id="country" type="text" name="country" class="<?php echo form_class($errors, 'country', 'ui-input'); ?>" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
                             <?php echo form_error($errors, 'country', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-3">
-                            <label class="ui-label">Password * <small class="u-text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
-                            <input type="password" name="password" class="<?php echo form_class($errors, 'password', 'ui-input'); ?>" required>
+                            <label for="password" class="ui-label">Password * <small class="u-text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
+                            <input id="password" type="password" name="password" class="<?php echo form_class($errors, 'password', 'ui-input'); ?>" required>
                             <?php echo form_error($errors, 'password', 'ui-field-error'); ?>
                         </div>
                         <div class="u-mb-4">
-                            <label class="ui-label">Confirm Password *</label>
-                            <input type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password', 'ui-input'); ?>" required>
+                            <label for="confirm_password" class="ui-label">Confirm Password *</label>
+                            <input id="confirm_password" type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password', 'ui-input'); ?>" required>
                             <?php echo form_error($errors, 'confirm_password', 'ui-field-error'); ?>
                         </div>
 

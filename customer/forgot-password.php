@@ -71,8 +71,8 @@ include __DIR__ . '/../includes/header.php';
                         <form method="POST" action="/customer/forgot-password.php">
                             <?php echo csrf_field(); ?>
                             <div class="u-mb-3">
-                                <label class="ui-label">Email Address</label>
-                                <input type="email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" required>
+                                <label for="email" class="ui-label">Email Address</label>
+                                <input id="email" type="email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" required>
                                 <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                             </div>
                             <button type="submit" class="ui-button ui-button--primary u-w-full">Send Reset Link</button>

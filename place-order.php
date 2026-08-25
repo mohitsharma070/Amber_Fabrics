@@ -10,6 +10,15 @@ if (!verify_csrf()) {
     flash('error', 'Invalid session token. Please try again.');
     redirect('/checkout.php');
 }
+// Order creation reserves stock, creates a pending order and enqueues outbox
+// work. The one-time nonce stops accidental double-submits but is not a throttle:
+// checkout.php mints a fresh nonce on every GET, so a scripted GET/POST pair can
+// create orders without bound. Must run before the order transaction opens -
+// this helper manages its own transaction.
+if (!public_form_rate_limit_allow('place_order', 8, 900)) {
+    flash('error', 'Too many order attempts. Please wait a few minutes and try again.');
+    redirect('/checkout.php');
+}
 
 // Clear any stale pending-payment session from a previous abandoned Razorpay attempt
 unset($_SESSION['pending_order_id'], $_SESSION['pending_order_number'], $_SESSION['pending_coupon_id'], $_SESSION['pending_online_method']);
@@ -75,6 +84,19 @@ if (!empty($errors)) {
     redirect('/checkout.php');
 }
 
+// A COD order reserves stock immediately with no payment behind it. Razorpay
+// pendings self-release via release_stale_pending_razorpay_orders_for_customer above,
+// and cod-guard auto-cancels COD orders whose confirmation deadline lapses, but
+// orders below the cod-guard amount threshold get no deadline at all, so their
+// reservations never expire. Cap how many an identity can hold open at once.
+// Runs after validation so phone/email are already normalised.
+if ($paymentMethod === 'cod') {
+    $openCodOrders = PaymentService::count_unconfirmed_cod_orders($conn, $customerId, $phone, $email);
+    if ($openCodOrders >= 5) {
+        flash('error', 'You already have ' . $openCodOrders . ' cash-on-delivery orders awaiting confirmation. Please confirm or cancel one before placing another.');
+        redirect('/checkout.php');
+    }
+}
 
 $cart = $_SESSION['cart'];
 $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])) ? $_SESSION['cart_size'] : [];
@@ -170,13 +192,27 @@ try {
         $quotePincode = trim((string) ($quote['pincode'] ?? ''));
         $quoteCountry = strtolower(trim((string) ($quote['country'] ?? '')));
         $quotePayment = strtolower(trim((string) ($quote['payment_method'] ?? '')));
+        // The quote was priced against a specific cart composition. Comparing the
+        // invoice value alone lets a cart be reshaped to the same rupee total with
+        // different weight/dimensions after the courier rate was locked, so the
+        // composition itself is part of the contract. An empty stored fingerprint
+        // is a mismatch: the check fails closed rather than skipping.
+        $quoteFingerprint = (string) ($quote['cart_fingerprint'] ?? '');
+        $currentFingerprint = InventoryService::cart_fingerprint($hydrated['items']);
         if (
             abs($quoteSubtotal - $quotedInvoiceValue) > 0.001 ||
             strtolower(trim((string) $country)) !== $quoteCountry ||
             trim((string) $pincode) !== $quotePincode ||
-            strtolower((string) $paymentMethod) !== $quotePayment
+            strtolower((string) $paymentMethod) !== $quotePayment ||
+            $quoteFingerprint === '' ||
+            !hash_equals($quoteFingerprint, $currentFingerprint)
         ) {
             throw new RuntimeException('Shipping quote changed. Please review checkout totals and try again.');
+        }
+        // One priced quote, one order. Rolls back with the transaction if order
+        // creation fails, and checkout.php mints a fresh token on every render.
+        if (!InventoryService::shipping_quote_consume($shippingQuoteToken)) {
+            throw new RuntimeException('This shipping quote was already used. Please review checkout and place order again.');
         }
         $baseShippingAmount = round((float) ($quote['base_shipping'] ?? $baseShippingAmount), 2);
         $codFeeAmount = round((float) ($quote['cod_fee'] ?? $codFeeAmount), 2);

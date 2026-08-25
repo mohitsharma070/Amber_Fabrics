@@ -6,7 +6,16 @@ require_admin();
 $settingsFile = __DIR__ . '/../config/site-settings.json';
 $settings = SiteSettingsService::get();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Folding verify_csrf() into this condition made a token mismatch fall through
+    // to the render path and return HTTP 200 with the unchanged page, so an operator
+    // whose session rotated mid-form saw no error and assumed the save had landed.
+    // Every other mutating admin endpoint aborts explicitly; so does this one.
+    if (!verify_csrf()) {
+        $postedTab = trim((string) ($_POST['tab'] ?? ''));
+        flash('error', 'Invalid session token. Please retry.');
+        redirect('settings.php' . ($postedTab !== '' ? '?tab=' . urlencode($postedTab) : ''));
+    }
 
     // -- Reset announcement dismissals (special action) ----------------------
     if (isset($_POST['reset_announcement_dismissals'])) {
@@ -252,48 +261,48 @@ elseif ($activeTab === 'homepage'): ?>
     <input type="hidden" name="tab" value="homepage">
     <p class="u-text-muted">Editable storefront copy for homepage sections.</p>
     <div class="l-grid l-grid--12 u-gap-3 u-mb-3">
-        <div class="l-col-md-half"><label class="ui-label">Hero Badge</label><input type="text" class="ui-input" name="home_hero_badge" value="<?php echo e((string) ($settings['home_hero_badge'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Hero Title</label><input type="text" class="ui-input" name="home_hero_title" value="<?php echo e((string) ($settings['home_hero_title'] ?? '')); ?>"></div>
-        <div class="l-col-full"><label class="ui-label">Hero Description (after site name)</label><textarea class="ui-input" rows="2" name="home_hero_desc"><?php echo e((string) ($settings['home_hero_desc'] ?? '')); ?></textarea></div>
-        <div class="l-col-md-half"><label class="ui-label">Hero CTA 1</label><input type="text" class="ui-input" name="home_hero_shop_cta" value="<?php echo e((string) ($settings['home_hero_shop_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Hero CTA 2</label><input type="text" class="ui-input" name="home_hero_inquiry_cta" value="<?php echo e((string) ($settings['home_hero_inquiry_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_hero_badge" class="ui-label">Hero Badge</label><input id="home_hero_badge" type="text" class="ui-input" name="home_hero_badge" value="<?php echo e((string) ($settings['home_hero_badge'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_hero_title" class="ui-label">Hero Title</label><input id="home_hero_title" type="text" class="ui-input" name="home_hero_title" value="<?php echo e((string) ($settings['home_hero_title'] ?? '')); ?>"></div>
+        <div class="l-col-full"><label for="home_hero_desc" class="ui-label">Hero Description (after site name)</label><textarea id="home_hero_desc" class="ui-input" rows="2" name="home_hero_desc"><?php echo e((string) ($settings['home_hero_desc'] ?? '')); ?></textarea></div>
+        <div class="l-col-md-half"><label for="home_hero_shop_cta" class="ui-label">Hero CTA 1</label><input id="home_hero_shop_cta" type="text" class="ui-input" name="home_hero_shop_cta" value="<?php echo e((string) ($settings['home_hero_shop_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_hero_inquiry_cta" class="ui-label">Hero CTA 2</label><input id="home_hero_inquiry_cta" type="text" class="ui-input" name="home_hero_inquiry_cta" value="<?php echo e((string) ($settings['home_hero_inquiry_cta'] ?? '')); ?>"></div>
     </div>
 
     <h6 class="u-mt-4">Categories & Latest</h6>
     <div class="l-grid l-grid--12 u-gap-3 u-mb-3">
-        <div class="l-col-md-half"><label class="ui-label">Categories Title</label><input type="text" class="ui-input" name="home_categories_title" value="<?php echo e((string) ($settings['home_categories_title'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Latest Title</label><input type="text" class="ui-input" name="home_latest_title" value="<?php echo e((string) ($settings['home_latest_title'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Categories Subtitle</label><textarea class="ui-input" rows="2" name="home_categories_subtitle"><?php echo e((string) ($settings['home_categories_subtitle'] ?? '')); ?></textarea></div>
-        <div class="l-col-md-half"><label class="ui-label">Latest Subtitle</label><textarea class="ui-input" rows="2" name="home_latest_subtitle"><?php echo e((string) ($settings['home_latest_subtitle'] ?? '')); ?></textarea></div>
-        <div class="l-col-md-third"><label class="ui-label">Latest View All CTA</label><input type="text" class="ui-input" name="home_latest_view_all_cta" value="<?php echo e((string) ($settings['home_latest_view_all_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Latest Empty Text</label><input type="text" class="ui-input" name="home_latest_empty_text" value="<?php echo e((string) ($settings['home_latest_empty_text'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Latest Empty CTA</label><input type="text" class="ui-input" name="home_latest_empty_cta" value="<?php echo e((string) ($settings['home_latest_empty_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Latest Browse CTA</label><input type="text" class="ui-input" name="home_latest_browse_cta" value="<?php echo e((string) ($settings['home_latest_browse_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_categories_title" class="ui-label">Categories Title</label><input id="home_categories_title" type="text" class="ui-input" name="home_categories_title" value="<?php echo e((string) ($settings['home_categories_title'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_latest_title" class="ui-label">Latest Title</label><input id="home_latest_title" type="text" class="ui-input" name="home_latest_title" value="<?php echo e((string) ($settings['home_latest_title'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_categories_subtitle" class="ui-label">Categories Subtitle</label><textarea id="home_categories_subtitle" class="ui-input" rows="2" name="home_categories_subtitle"><?php echo e((string) ($settings['home_categories_subtitle'] ?? '')); ?></textarea></div>
+        <div class="l-col-md-half"><label for="home_latest_subtitle" class="ui-label">Latest Subtitle</label><textarea id="home_latest_subtitle" class="ui-input" rows="2" name="home_latest_subtitle"><?php echo e((string) ($settings['home_latest_subtitle'] ?? '')); ?></textarea></div>
+        <div class="l-col-md-third"><label for="home_latest_view_all_cta" class="ui-label">Latest View All CTA</label><input id="home_latest_view_all_cta" type="text" class="ui-input" name="home_latest_view_all_cta" value="<?php echo e((string) ($settings['home_latest_view_all_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="home_latest_empty_text" class="ui-label">Latest Empty Text</label><input id="home_latest_empty_text" type="text" class="ui-input" name="home_latest_empty_text" value="<?php echo e((string) ($settings['home_latest_empty_text'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="home_latest_empty_cta" class="ui-label">Latest Empty CTA</label><input id="home_latest_empty_cta" type="text" class="ui-input" name="home_latest_empty_cta" value="<?php echo e((string) ($settings['home_latest_empty_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_latest_browse_cta" class="ui-label">Latest Browse CTA</label><input id="home_latest_browse_cta" type="text" class="ui-input" name="home_latest_browse_cta" value="<?php echo e((string) ($settings['home_latest_browse_cta'] ?? '')); ?>"></div>
     </div>
 
     <h6 class="u-mt-4">Why Choose</h6>
     <div class="l-grid l-grid--12 u-gap-3 u-mb-3">
-        <div class="l-col-md-half"><label class="ui-label">Why Title Prefix</label><input type="text" class="ui-input" name="home_why_title_prefix" value="<?php echo e((string) ($settings['home_why_title_prefix'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Why Subtitle</label><input type="text" class="ui-input" name="home_why_subtitle" value="<?php echo e((string) ($settings['home_why_subtitle'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_why_title_prefix" class="ui-label">Why Title Prefix</label><input id="home_why_title_prefix" type="text" class="ui-input" name="home_why_title_prefix" value="<?php echo e((string) ($settings['home_why_title_prefix'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_why_subtitle" class="ui-label">Why Subtitle</label><input id="home_why_subtitle" type="text" class="ui-input" name="home_why_subtitle" value="<?php echo e((string) ($settings['home_why_subtitle'] ?? '')); ?>"></div>
         <?php for ($i = 1; $i <= 4; $i++): ?>
-            <div class="l-col-md-half"><label class="ui-label">Why Card <?php echo $i; ?> Title</label><input type="text" class="ui-input" name="home_why_card_<?php echo $i; ?>_title" value="<?php echo e((string) ($settings['home_why_card_' . $i . '_title'] ?? '')); ?>"></div>
-            <div class="l-col-md-half"><label class="ui-label">Why Card <?php echo $i; ?> Description</label><textarea class="ui-input" rows="2" name="home_why_card_<?php echo $i; ?>_desc"><?php echo e((string) ($settings['home_why_card_' . $i . '_desc'] ?? '')); ?></textarea></div>
+            <div class="l-col-md-half"><label for="home_why_card_<?php echo $i; ?>_title" class="ui-label">Why Card <?php echo $i; ?> Title</label><input id="home_why_card_<?php echo $i; ?>_title" type="text" class="ui-input" name="home_why_card_<?php echo $i; ?>_title" value="<?php echo e((string) ($settings['home_why_card_' . $i . '_title'] ?? '')); ?>"></div>
+            <div class="l-col-md-half"><label for="home_why_card_<?php echo $i; ?>_desc" class="ui-label">Why Card <?php echo $i; ?> Description</label><textarea id="home_why_card_<?php echo $i; ?>_desc" class="ui-input" rows="2" name="home_why_card_<?php echo $i; ?>_desc"><?php echo e((string) ($settings['home_why_card_' . $i . '_desc'] ?? '')); ?></textarea></div>
         <?php endfor; ?>
     </div>
 
     <h6 class="u-mt-4">B2B CTA & Testimonials</h6>
     <div class="l-grid l-grid--12 u-gap-3 u-mb-3">
-        <div class="l-col-md-third"><label class="ui-label">B2B Eyebrow</label><input type="text" class="ui-input" name="home_b2b_eyebrow" value="<?php echo e((string) ($settings['home_b2b_eyebrow'] ?? '')); ?>"></div>
-        <div class="l-col-md-eight"><label class="ui-label">B2B Title</label><input type="text" class="ui-input" name="home_b2b_title" value="<?php echo e((string) ($settings['home_b2b_title'] ?? '')); ?>"></div>
-        <div class="l-col-full"><label class="ui-label">B2B Description</label><textarea class="ui-input" rows="2" name="home_b2b_desc"><?php echo e((string) ($settings['home_b2b_desc'] ?? '')); ?></textarea></div>
-        <div class="l-col-md-half"><label class="ui-label">B2B Primary CTA</label><input type="text" class="ui-input" name="home_b2b_primary_cta" value="<?php echo e((string) ($settings['home_b2b_primary_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">B2B Secondary CTA</label><input type="text" class="ui-input" name="home_b2b_secondary_cta" value="<?php echo e((string) ($settings['home_b2b_secondary_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Testimonials Title</label><input type="text" class="ui-input" name="home_testimonials_title" value="<?php echo e((string) ($settings['home_testimonials_title'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Testimonials Subtitle</label><input type="text" class="ui-input" name="home_testimonials_subtitle" value="<?php echo e((string) ($settings['home_testimonials_subtitle'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="home_b2b_eyebrow" class="ui-label">B2B Eyebrow</label><input id="home_b2b_eyebrow" type="text" class="ui-input" name="home_b2b_eyebrow" value="<?php echo e((string) ($settings['home_b2b_eyebrow'] ?? '')); ?>"></div>
+        <div class="l-col-md-eight"><label for="home_b2b_title" class="ui-label">B2B Title</label><input id="home_b2b_title" type="text" class="ui-input" name="home_b2b_title" value="<?php echo e((string) ($settings['home_b2b_title'] ?? '')); ?>"></div>
+        <div class="l-col-full"><label for="home_b2b_desc" class="ui-label">B2B Description</label><textarea id="home_b2b_desc" class="ui-input" rows="2" name="home_b2b_desc"><?php echo e((string) ($settings['home_b2b_desc'] ?? '')); ?></textarea></div>
+        <div class="l-col-md-half"><label for="home_b2b_primary_cta" class="ui-label">B2B Primary CTA</label><input id="home_b2b_primary_cta" type="text" class="ui-input" name="home_b2b_primary_cta" value="<?php echo e((string) ($settings['home_b2b_primary_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_b2b_secondary_cta" class="ui-label">B2B Secondary CTA</label><input id="home_b2b_secondary_cta" type="text" class="ui-input" name="home_b2b_secondary_cta" value="<?php echo e((string) ($settings['home_b2b_secondary_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_testimonials_title" class="ui-label">Testimonials Title</label><input id="home_testimonials_title" type="text" class="ui-input" name="home_testimonials_title" value="<?php echo e((string) ($settings['home_testimonials_title'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="home_testimonials_subtitle" class="ui-label">Testimonials Subtitle</label><input id="home_testimonials_subtitle" type="text" class="ui-input" name="home_testimonials_subtitle" value="<?php echo e((string) ($settings['home_testimonials_subtitle'] ?? '')); ?>"></div>
         <?php for ($i = 1; $i <= 3; $i++): ?>
-            <div class="l-col-full"><label class="ui-label">Testimonial <?php echo $i; ?> Text</label><textarea class="ui-input" rows="2" name="home_testimonial_<?php echo $i; ?>_text"><?php echo e((string) ($settings['home_testimonial_' . $i . '_text'] ?? '')); ?></textarea></div>
-            <div class="l-col-md-half"><label class="ui-label">Testimonial <?php echo $i; ?> Name</label><input type="text" class="ui-input" name="home_testimonial_<?php echo $i; ?>_name" value="<?php echo e((string) ($settings['home_testimonial_' . $i . '_name'] ?? '')); ?>"></div>
-            <div class="l-col-md-half"><label class="ui-label">Testimonial <?php echo $i; ?> Location</label><input type="text" class="ui-input" name="home_testimonial_<?php echo $i; ?>_location" value="<?php echo e((string) ($settings['home_testimonial_' . $i . '_location'] ?? '')); ?>"></div>
+            <div class="l-col-full"><label for="home_testimonial_<?php echo $i; ?>_text" class="ui-label">Testimonial <?php echo $i; ?> Text</label><textarea id="home_testimonial_<?php echo $i; ?>_text" class="ui-input" rows="2" name="home_testimonial_<?php echo $i; ?>_text"><?php echo e((string) ($settings['home_testimonial_' . $i . '_text'] ?? '')); ?></textarea></div>
+            <div class="l-col-md-half"><label for="home_testimonial_<?php echo $i; ?>_name" class="ui-label">Testimonial <?php echo $i; ?> Name</label><input id="home_testimonial_<?php echo $i; ?>_name" type="text" class="ui-input" name="home_testimonial_<?php echo $i; ?>_name" value="<?php echo e((string) ($settings['home_testimonial_' . $i . '_name'] ?? '')); ?>"></div>
+            <div class="l-col-md-half"><label for="home_testimonial_<?php echo $i; ?>_location" class="ui-label">Testimonial <?php echo $i; ?> Location</label><input id="home_testimonial_<?php echo $i; ?>_location" type="text" class="ui-input" name="home_testimonial_<?php echo $i; ?>_location" value="<?php echo e((string) ($settings['home_testimonial_' . $i . '_location'] ?? '')); ?>"></div>
         <?php endfor; ?>
     </div>
     <button type="submit" class="ui-button ui-button--primary">Save Homepage Copy</button>
@@ -306,23 +315,23 @@ elseif ($activeTab === 'footercopy'): ?>
     <input type="hidden" name="tab" value="footercopy">
     <p class="u-text-muted">Editable copy for storefront footer labels and text.</p>
     <div class="l-grid l-grid--12 u-gap-3 u-mb-3">
-        <div class="l-col-full"><label class="ui-label">Footer Description</label><textarea class="ui-input" rows="2" name="footer_description"><?php echo e((string) ($settings['footer_description'] ?? '')); ?></textarea></div>
-        <div class="l-col-md-third"><label class="ui-label">Support Title</label><input type="text" class="ui-input" name="footer_support_title" value="<?php echo e((string) ($settings['footer_support_title'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Support Hours</label><input type="text" class="ui-input" name="footer_support_hours" value="<?php echo e((string) ($settings['footer_support_hours'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Support Contact CTA</label><input type="text" class="ui-input" name="footer_support_contact_cta" value="<?php echo e((string) ($settings['footer_support_contact_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Explore Title</label><input type="text" class="ui-input" name="footer_explore_title" value="<?php echo e((string) ($settings['footer_explore_title'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Explore Shop CTA</label><input type="text" class="ui-input" name="footer_explore_shop_cta" value="<?php echo e((string) ($settings['footer_explore_shop_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Explore Categories CTA</label><input type="text" class="ui-input" name="footer_explore_categories_cta" value="<?php echo e((string) ($settings['footer_explore_categories_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Explore International CTA</label><input type="text" class="ui-input" name="footer_explore_inquiry_cta" value="<?php echo e((string) ($settings['footer_explore_inquiry_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Explore FAQ CTA</label><input type="text" class="ui-input" name="footer_explore_faq_cta" value="<?php echo e((string) ($settings['footer_explore_faq_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Policies Title</label><input type="text" class="ui-input" name="footer_policies_title" value="<?php echo e((string) ($settings['footer_policies_title'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Shipping CTA</label><input type="text" class="ui-input" name="footer_policy_shipping_cta" value="<?php echo e((string) ($settings['footer_policy_shipping_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Return CTA</label><input type="text" class="ui-input" name="footer_policy_return_cta" value="<?php echo e((string) ($settings['footer_policy_return_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Privacy CTA</label><input type="text" class="ui-input" name="footer_policy_privacy_cta" value="<?php echo e((string) ($settings['footer_policy_privacy_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Terms CTA</label><input type="text" class="ui-input" name="footer_policy_terms_cta" value="<?php echo e((string) ($settings['footer_policy_terms_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-third"><label class="ui-label">Size Guide CTA</label><input type="text" class="ui-input" name="footer_policy_size_guide_cta" value="<?php echo e((string) ($settings['footer_policy_size_guide_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">International Policy CTA</label><input type="text" class="ui-input" name="footer_policy_international_cta" value="<?php echo e((string) ($settings['footer_policy_international_cta'] ?? '')); ?>"></div>
-        <div class="l-col-md-half"><label class="ui-label">Bottom Tagline</label><input type="text" class="ui-input" name="footer_bottom_tagline" value="<?php echo e((string) ($settings['footer_bottom_tagline'] ?? '')); ?>"></div>
+        <div class="l-col-full"><label for="footer_description" class="ui-label">Footer Description</label><textarea id="footer_description" class="ui-input" rows="2" name="footer_description"><?php echo e((string) ($settings['footer_description'] ?? '')); ?></textarea></div>
+        <div class="l-col-md-third"><label for="footer_support_title" class="ui-label">Support Title</label><input id="footer_support_title" type="text" class="ui-input" name="footer_support_title" value="<?php echo e((string) ($settings['footer_support_title'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_support_hours" class="ui-label">Support Hours</label><input id="footer_support_hours" type="text" class="ui-input" name="footer_support_hours" value="<?php echo e((string) ($settings['footer_support_hours'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_support_contact_cta" class="ui-label">Support Contact CTA</label><input id="footer_support_contact_cta" type="text" class="ui-input" name="footer_support_contact_cta" value="<?php echo e((string) ($settings['footer_support_contact_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_explore_title" class="ui-label">Explore Title</label><input id="footer_explore_title" type="text" class="ui-input" name="footer_explore_title" value="<?php echo e((string) ($settings['footer_explore_title'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_explore_shop_cta" class="ui-label">Explore Shop CTA</label><input id="footer_explore_shop_cta" type="text" class="ui-input" name="footer_explore_shop_cta" value="<?php echo e((string) ($settings['footer_explore_shop_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_explore_categories_cta" class="ui-label">Explore Categories CTA</label><input id="footer_explore_categories_cta" type="text" class="ui-input" name="footer_explore_categories_cta" value="<?php echo e((string) ($settings['footer_explore_categories_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="footer_explore_inquiry_cta" class="ui-label">Explore International CTA</label><input id="footer_explore_inquiry_cta" type="text" class="ui-input" name="footer_explore_inquiry_cta" value="<?php echo e((string) ($settings['footer_explore_inquiry_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="footer_explore_faq_cta" class="ui-label">Explore FAQ CTA</label><input id="footer_explore_faq_cta" type="text" class="ui-input" name="footer_explore_faq_cta" value="<?php echo e((string) ($settings['footer_explore_faq_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_policies_title" class="ui-label">Policies Title</label><input id="footer_policies_title" type="text" class="ui-input" name="footer_policies_title" value="<?php echo e((string) ($settings['footer_policies_title'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_policy_shipping_cta" class="ui-label">Shipping CTA</label><input id="footer_policy_shipping_cta" type="text" class="ui-input" name="footer_policy_shipping_cta" value="<?php echo e((string) ($settings['footer_policy_shipping_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_policy_return_cta" class="ui-label">Return CTA</label><input id="footer_policy_return_cta" type="text" class="ui-input" name="footer_policy_return_cta" value="<?php echo e((string) ($settings['footer_policy_return_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_policy_privacy_cta" class="ui-label">Privacy CTA</label><input id="footer_policy_privacy_cta" type="text" class="ui-input" name="footer_policy_privacy_cta" value="<?php echo e((string) ($settings['footer_policy_privacy_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_policy_terms_cta" class="ui-label">Terms CTA</label><input id="footer_policy_terms_cta" type="text" class="ui-input" name="footer_policy_terms_cta" value="<?php echo e((string) ($settings['footer_policy_terms_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-third"><label for="footer_policy_size_guide_cta" class="ui-label">Size Guide CTA</label><input id="footer_policy_size_guide_cta" type="text" class="ui-input" name="footer_policy_size_guide_cta" value="<?php echo e((string) ($settings['footer_policy_size_guide_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="footer_policy_international_cta" class="ui-label">International Policy CTA</label><input id="footer_policy_international_cta" type="text" class="ui-input" name="footer_policy_international_cta" value="<?php echo e((string) ($settings['footer_policy_international_cta'] ?? '')); ?>"></div>
+        <div class="l-col-md-half"><label for="footer_bottom_tagline" class="ui-label">Bottom Tagline</label><input id="footer_bottom_tagline" type="text" class="ui-input" name="footer_bottom_tagline" value="<?php echo e((string) ($settings['footer_bottom_tagline'] ?? '')); ?>"></div>
     </div>
     <button type="submit" class="ui-button ui-button--primary">Save Footer Copy</button>
 </form>
@@ -351,13 +360,13 @@ elseif ($activeTab === 'policies'): ?>
     <div class="u-border u-rounded u-p-3 u-mb-3">
         <h6 class="u-mb-3"><?php echo e($plabel); ?></h6>
         <div class="u-mb-2">
-            <label class="ui-label">Hero Subtitle</label>
-            <input type="text" class="ui-input" name="<?php echo e($subtitleKey); ?>" value="<?php echo e((string) ($settings[$subtitleKey] ?? '')); ?>">
+            <label class="ui-label" for="<?php echo e($subtitleKey); ?>">Hero Subtitle</label>
+            <input type="text" class="ui-input" id="<?php echo e($subtitleKey); ?>" name="<?php echo e($subtitleKey); ?>" value="<?php echo e((string) ($settings[$subtitleKey] ?? '')); ?>">
         </div>
         <div>
-            <label class="ui-label">Body HTML</label>
-            <textarea class="ui-input" rows="8" name="<?php echo e($bodyKey); ?>"><?php echo e((string) ($settings[$bodyKey] ?? '')); ?></textarea>
-            <small class="u-text-muted">Allowed: HTML headings/paragraphs/links. Use placeholders: {{site_name}}, {{contact_email}}</small>
+            <label class="ui-label" for="<?php echo e($bodyKey); ?>">Body HTML</label>
+            <textarea class="ui-input" rows="8" id="<?php echo e($bodyKey); ?>" name="<?php echo e($bodyKey); ?>"><?php echo e((string) ($settings[$bodyKey] ?? '')); ?></textarea>
+            <small class="u-text-muted">Kept: headings, paragraphs, lists, tables, links, images, and inline emphasis. Stripped when the page renders: scripts, styles, iframes, forms, event handlers, and <code>style</code> attributes. Placeholders: {{site_name}}, {{contact_email}}</small>
         </div>
     </div>
     <?php endforeach; ?>
@@ -512,14 +521,14 @@ elseif ($activeTab === 'branding'): ?>
     <div class="l-grid l-grid--12 u-gap-3 u-mb-4">
         <?php for ($i = 1; $i <= 6; $i++): $key = 'hero_swatch_' . $i; ?>
         <div class="l-col-md-third">
-            <label class="ui-label">Hero Card <?php echo $i; ?></label>
+            <label class="ui-label" for="<?php echo e($key); ?>">Hero Card <?php echo $i; ?></label>
             <?php if (!empty($settings[$key]) && file_exists(__DIR__ . '/../' . $settings[$key])): ?>
                 <div class="u-mb-2">
                     <img src="../<?php echo e($settings[$key]); ?>" alt="Hero Card <?php echo $i; ?>"
                          class="admin-responsive-media admin-brand-preview u-rounded u-border">
                 </div>
             <?php endif; ?>
-            <input type="file" class="ui-input" name="<?php echo e($key); ?>" accept="image/jpeg,image/png,image/webp">
+            <input type="file" class="ui-input" id="<?php echo e($key); ?>" name="<?php echo e($key); ?>" accept="image/jpeg,image/png,image/webp">
         </div>
         <?php endfor; ?>
     </div>

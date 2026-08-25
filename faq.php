@@ -6,6 +6,10 @@ $heroSubtitle = (string) ($siteSettings['faq_subtitle'] ?? 'Answers for India sh
 $heroSubtitle = strtr($heroSubtitle, ['{{site_name}}' => SiteContext::name(), '{{contact_email}}' => SiteContext::contactEmail()]);
 $pageBody = (string) ($siteSettings['faq_body_html'] ?? '');
 $pageBody = strtr($pageBody, ['{{site_name}}' => SiteContext::name(), '{{contact_email}}' => SiteContext::contactEmail()]);
+// Echoed unescaped at the bottom of this file, exactly like the six policy pages.
+// This page was the one that never sanitized; substitution happens first so the
+// allowlist also sees whatever the placeholders expanded into.
+$pageBody = ui_rich_text_html($pageBody);
 include __DIR__ . '/includes/header.php';
 ?>
 

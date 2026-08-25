@@ -312,8 +312,8 @@ include __DIR__ . '/partials/fabric-product-form.php';
   <div class="ui-card__header"><strong>Image 1–10 / Video 1–2</strong> <span class="u-text-muted">— catalogue media fields</span></div>
   <div class="ui-card__body">
     <form id="product-media-upload" class="l-grid l-grid--12 u-gap-2 u-items-end" enctype="multipart/form-data">
-      <div class="l-col-md-quarter"><label class="ui-label">Type</label><select class="ui-select" name="media_type"><option value="image">Image</option><option value="video">Video</option></select></div>
-      <div class="l-col-md-five"><label class="ui-label">File</label><input class="ui-input" type="file" name="file" accept="image/*,video/mp4,video/webm,video/ogg" required></div>
+      <div class="l-col-md-quarter"><label for="media_type" class="ui-label">Type</label><select id="media_type" class="ui-select" name="media_type"><option value="image">Image</option><option value="video">Video</option></select></div>
+      <div class="l-col-md-five"><label for="file" class="ui-label">File</label><input id="file" class="ui-input" type="file" name="file" accept="image/*,video/mp4,video/webm,video/ogg" required></div>
       <div class="l-col-md-third"><button class="ui-button ui-button--primary u-w-full" type="submit">Upload media</button></div>
     </form>
     <div class="u-text-small u-text-muted u-mt-2">Drag images to reorder. Changes save immediately.</div>
@@ -403,11 +403,13 @@ $variants = ProductVariantService::enrich($variants, $variantProductContext);
             <input type="hidden" id="vf_variant_id" value="0">
             <div class="l-grid l-grid--12 u-gap-2">
                 <div class="l-col-md-half l-col-xl-quarter">
-                    <label class="ui-label ui-label--small">Colour</label>
+                    <label class="ui-label ui-label--small" for="vf_color">Colour</label>
                     <input type="text" id="vf_color" class="ui-input ui-input--small" placeholder="e.g. Red">
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter">
-                    <label class="ui-label ui-label--small">Size</label>
+                    <?php /* Points at the preset <select>; the sibling custom-size input carries
+                             its own aria-label because only one of the two is visible at a time. */ ?>
+                    <label class="ui-label ui-label--small" for="vf_size_preset">Size</label>
                     <div id="vf_size_group">
                         <select id="vf_size_preset" class="ui-select ui-select--small <?php echo $variantHasPresetSizes ? '' : 'u-hidden'; ?>">
                             <option value="">Select size</option>
@@ -416,7 +418,7 @@ $variants = ProductVariantService::enrich($variants, $variantProductContext);
 <?php endforeach; ?>
                             <option value="__custom__">Custom size</option>
                         </select>
-                        <input type="text" id="vf_size_custom" class="ui-input ui-input--small u-mt-1 <?php echo $variantHasPresetSizes ? 'u-hidden' : ''; ?>" placeholder="Enter one size only">
+                        <input type="text" id="vf_size_custom" aria-label="Custom size" class="ui-input ui-input--small u-mt-1 <?php echo $variantHasPresetSizes ? 'u-hidden' : ''; ?>" placeholder="Enter one size only">
                         <input type="hidden" id="vf_size" value="">
                         <small id="vf_size_hint" class="u-text-muted">
                             <?php echo $variantSizeMode === 'hidden'
@@ -426,66 +428,69 @@ $variants = ProductVariantService::enrich($variants, $variantProductContext);
                     </div>
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter<?php echo $isSetUnitType ? '' : ' u-hidden'; ?>" id="vf_pack_controls">
-                    <label class="ui-label ui-label--small">Units per Set</label>
+                    <label class="ui-label ui-label--small" for="vf_units_per_set">Units per Set</label>
                     <input type="number" id="vf_units_per_set" class="ui-input ui-input--small" value="1" min="1" step="1">
-                    <input type="text" id="vf_pack_label" class="ui-input ui-input--small u-mt-1" placeholder="Pack of N">
+                    <input type="text" id="vf_pack_label" aria-label="Pack label" class="ui-input ui-input--small u-mt-1" placeholder="Pack of N">
                     <small class="u-text-muted u-block u-mt-1">For set products, 1 quantity means 1 full set.</small>
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter">
-                    <label class="ui-label ui-label--small">Variant SKU <small class="u-text-muted">(inherits product prefix)</small></label>
+                    <label class="ui-label ui-label--small" for="vf_sku">Variant SKU <small class="u-text-muted">(inherits product prefix)</small></label>
                     <input type="text" id="vf_sku" class="ui-input ui-input--small" maxlength="100" pattern="[A-Z0-9_-]+" placeholder="Suggested on save; editable">
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter">
-                    <label class="ui-label ui-label--small">Variant Image 1</label>
+                    <?php /* Each of these points at the file input, not the hidden field that
+                             carries the already-stored path - the file input is the one an
+                             operator interacts with. */ ?>
+                    <label class="ui-label ui-label--small" for="vf_image_file">Variant Image 1</label>
                     <input type="hidden" id="vf_image" value="">
                     <input type="file" id="vf_image_file" class="ui-input ui-input--small" accept="image/*">
                     <small id="vf_image_current" class="u-text-muted u-hidden"></small>
                     <label id="vf_image_remove_wrap" class="ui-check u-text-small u-mt-1 u-hidden"><input class="ui-check__input" type="checkbox" id="vf_remove_image"> Remove current override</label>
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter">
-                    <label class="ui-label ui-label--small">Variant Image 2</label>
+                    <label class="ui-label ui-label--small" for="vf_image2_file">Variant Image 2</label>
                     <input type="hidden" id="vf_image2" value="">
                     <input type="file" id="vf_image2_file" class="ui-input ui-input--small" accept="image/*">
                     <small id="vf_image2_current" class="u-text-muted u-hidden"></small>
                     <label id="vf_image2_remove_wrap" class="ui-check u-text-small u-mt-1 u-hidden"><input class="ui-check__input" type="checkbox" id="vf_remove_image2"> Remove current override</label>
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter">
-                    <label class="ui-label ui-label--small">Variant Image 3</label>
+                    <label class="ui-label ui-label--small" for="vf_image3_file">Variant Image 3</label>
                     <input type="hidden" id="vf_image3" value="">
                     <input type="file" id="vf_image3_file" class="ui-input ui-input--small" accept="image/*">
                     <small id="vf_image3_current" class="u-text-muted u-hidden"></small>
                     <label id="vf_image3_remove_wrap" class="ui-check u-text-small u-mt-1 u-hidden"><input class="ui-check__input" type="checkbox" id="vf_remove_image3"> Remove current override</label>
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter">
-                    <label class="ui-label ui-label--small">Variant Image 4</label>
+                    <label class="ui-label ui-label--small" for="vf_image4_file">Variant Image 4</label>
                     <input type="hidden" id="vf_image4" value="">
                     <input type="file" id="vf_image4_file" class="ui-input ui-input--small" accept="image/*">
                     <small id="vf_image4_current" class="u-text-muted u-hidden"></small>
                     <label id="vf_image4_remove_wrap" class="ui-check u-text-small u-mt-1 u-hidden"><input class="ui-check__input" type="checkbox" id="vf_remove_image4"> Remove current override</label>
                 </div>
                 <div class="l-col-md-half l-col-xl-third">
-                    <label class="ui-label ui-label--small">Variant Video</label>
+                    <label class="ui-label ui-label--small" for="vf_video_file">Variant Video</label>
                     <input type="hidden" id="vf_video" value="">
                     <input type="file" id="vf_video_file" class="ui-input ui-input--small" accept="video/mp4,video/webm,video/ogg">
                     <small id="vf_video_current" class="u-text-muted u-hidden"></small>
                     <label id="vf_video_remove_wrap" class="ui-check u-text-small u-mt-1 u-hidden"><input class="ui-check__input" type="checkbox" id="vf_remove_video"> Remove current override</label>
                 </div>
                 <div class="l-col-md-half l-col-xl-third">
-                    <label class="ui-label ui-label--small">Selling Price Override <small class="u-text-muted">(optional)</small></label>
+                    <label class="ui-label ui-label--small" for="vf_price_override">Selling Price Override <small class="u-text-muted">(optional)</small></label>
                     <input type="number" id="vf_price_override" class="ui-input ui-input--small" placeholder="Blank = <?php echo e(money($baseVariantPrice)); ?>" min="0.01" max="<?php echo e((string)($fabric['price']??'')); ?>" step="0.01">
                     <small class="u-text-muted">Must not exceed product MRP <?php echo e(money((float)($fabric['price']??0))); ?>.</small>
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter" id="vf_stock_pcs_wrap">
-                    <label class="ui-label ui-label--small" id="vf_stock_label">Stock (pcs)</label>
+                    <label class="ui-label ui-label--small" id="vf_stock_label" for="vf_stock">Stock (pcs)</label>
                     <input type="number" id="vf_stock" class="ui-input ui-input--small" value="0" min="0" step="1">
                     <small id="vf_stock_unit_hint" class="u-text-muted u-block u-mt-1"></small>
                 </div>
                 <div class="l-col-md-half l-col-xl-quarter" id="vf_stock_m_wrap">
-                    <label class="ui-label ui-label--small">Stock (m)</label>
+                    <label class="ui-label ui-label--small" for="vf_stock_meters">Stock (m)</label>
                     <input type="number" id="vf_stock_meters" class="ui-input ui-input--small" value="0" min="0" step="0.01">
                 </div>
                 <div class="l-col-md-half l-col-xl-two">
-                    <label class="ui-label ui-label--small">Display Order</label>
+                    <label class="ui-label ui-label--small" for="vf_sort_order">Display Order</label>
                     <input type="number" id="vf_sort_order" class="ui-input ui-input--small" value="0" min="0" step="1">
                 </div>
                 <div class="l-col-md-half l-col-xl-two u-flex u-items-center">

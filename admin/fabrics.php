@@ -143,20 +143,20 @@ include 'partials/header.php';
 
 <form class="l-grid l-grid--12 u-gap-2 u-mb-3" method="GET" action="fabrics.php">
     <div class="l-col-md-third">
-        <label class="ui-label">Search</label>
-        <input type="text" name="q" class="ui-input" value="<?php echo e($search); ?>" placeholder="Product name or SKU">
+        <label for="q" class="ui-label">Search</label>
+        <input id="q" type="text" name="q" class="ui-input" value="<?php echo e($search); ?>" placeholder="Product name or SKU">
     </div>
     <div class="l-col-md-two">
-        <label class="ui-label">Status</label>
-        <select name="status" class="ui-select">
+        <label for="status" class="ui-label">Status</label>
+        <select id="status" name="status" class="ui-select">
             <option value="">All</option>
             <option value="active" <?php echo $status === 'active' ? 'selected' : ''; ?>>Active</option>
             <option value="inactive" <?php echo $status === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
         </select>
     </div>
     <div class="l-col-md-two">
-        <label class="ui-label">Sort</label>
-        <select class="ui-select" name="sort">
+        <label for="sort" class="ui-label">Sort</label>
+        <select id="sort" class="ui-select" name="sort">
             <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
             <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
             <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
@@ -168,8 +168,8 @@ include 'partials/header.php';
         </select>
     </div>
     <div class="l-col-md-two">
-        <label class="ui-label">Per Page</label>
-        <select class="ui-select" name="per_page">
+        <label for="per_page" class="ui-label">Per Page</label>
+        <select id="per_page" class="ui-select" name="per_page">
             <?php foreach ($perPageOptions as $size): ?>
                 <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?></option>
             <?php endforeach; ?>

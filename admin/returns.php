@@ -51,7 +51,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'in_transit' => ['received', 'cancelled', 'in_transit'],
         'received' => ['refund_initiated', 'received'],
         'refund_initiated' => ['refund_completed', 'refund_initiated'],
-        'refund_completed' => ['refund_completed'],
+        // refund_completed is terminal. Re-submitting it re-wrote returns.refund_amount
+        // and re-allocated return_items.refund_amount while the ledger write was
+        // suppressed as a duplicate, leaving the two records disagreeing.
+        'refund_completed' => [],
         'rejected' => ['rejected'],
         'cancelled' => ['cancelled'],
     ];
@@ -85,12 +88,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $currentStatus = strtolower((string) ($ctx['return_status'] ?? ''));
             $orderTotal = max(0, (float) ($ctx['total_amount'] ?? 0));
             $returnTotal = max(0, (float) ($ctx['return_total'] ?? 0));
+            $orderIdForRefund = (int) ($ctx['order_id'] ?? 0);
+
+            // Lock the payment row before validating the ceiling so two return
+            // completions on the same order cannot both pass the same check.
+            $payStmt = $conn->prepare(
+                "SELECT id, amount, payment_method
+                 FROM payments
+                 WHERE order_id = ?
+                 ORDER BY id DESC
+                 LIMIT 1 FOR UPDATE"
+            );
+            $payStmt->bind_param('i', $orderIdForRefund);
+            $payStmt->execute();
+            $pay = $payStmt->get_result()->fetch_assoc() ?: [];
+            $paymentId = (int) ($pay['id'] ?? 0);
+            $paymentAmount = max(0.0, (float) ($pay['amount'] ?? 0));
+            $alreadyRefunded = $paymentId > 0
+                ? PaymentService::processed_refund_total($conn, $orderIdForRefund)
+                : 0.0;
+            // returns.return_total is a SUM of pre-discount line totals, so it can
+            // exceed what the customer actually paid on a discounted order. The real
+            // ceiling is the captured amount less refunds already processed.
+            $refundCeiling = $paymentAmount > 0
+                ? min($returnTotal, max(0.0, round($paymentAmount - $alreadyRefunded, 2)))
+                : $returnTotal;
 
             if ($refundAmount < 0) {
                 throw new RuntimeException('Refund amount cannot be negative.');
             }
             if ($refundAmount > $returnTotal) {
                 throw new RuntimeException('Refund amount cannot exceed returned items total.');
+            }
+            if ($refundAmount > $refundCeiling + 0.001) {
+                throw new RuntimeException(
+                    'Refund amount cannot exceed the captured payment less refunds already processed (maximum '
+                    . number_format($refundCeiling, 2, '.', '') . ').'
+                );
             }
 
             $allowedNext = $allowedTransitions[$currentStatus] ?? [$currentStatus];
@@ -135,22 +169,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     InventoryService::restock_return_items_inventory($conn, $returnId);
                 }
 
-                $payStmt = $conn->prepare(
-                    "SELECT id, amount, payment_method
-                     FROM payments
-                     WHERE order_id = ?
-                     ORDER BY id DESC
-                     LIMIT 1"
-                );
-                $orderIdForRefund = (int) ($ctx['order_id'] ?? 0);
-                $payStmt->bind_param('i', $orderIdForRefund);
-                $payStmt->execute();
-                $pay = $payStmt->get_result()->fetch_assoc() ?: [];
-                $paymentId = (int) ($pay['id'] ?? 0);
-                $paymentAmount = (float) ($pay['amount'] ?? 0);
-                $amount = $refundAmount > 0 ? $refundAmount : min($paymentAmount, $returnTotal);
-                if ($paymentId > 0) {
-                    if ($amount > 0) {
+                $amount = round($refundAmount > 0 ? $refundAmount : $refundCeiling, 2);
+                if ($paymentId > 0 && $amount > 0) {
+                    // One processed ledger event per return. gateway_refund_id
+                    // carries a synthetic key because a returns-module refund has no
+                    // gateway reference, which keeps the guard per-return instead of
+                    // suppressing a legitimate second return on the same order.
+                    $ledgerGateway = strtolower(trim((string) ($pay['payment_method'] ?? '')));
+                    $ledgerRefundKey = 'return:' . $returnId;
+                    if (!PaymentService::refund_ledger_event_exists(
+                        $conn,
+                        $orderIdForRefund,
+                        $paymentId,
+                        'processed',
+                        $ledgerGateway,
+                        $ledgerRefundKey
+                    )) {
                         log_refund_ledger(
                             $conn,
                             $orderIdForRefund,
@@ -158,8 +192,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $amount,
                             'INR',
                             'processed',
-                            (string) ($pay['payment_method'] ?? ''),
-                            '',
+                            $ledgerGateway,
+                            $ledgerRefundKey,
                             'Refund completed from returns module.'
                         );
                     }
@@ -303,7 +337,7 @@ include 'partials/header.php';
 
 <form class="l-grid l-grid--12 u-gap-2 u-mb-4 admin-filter-form" method="GET" action="returns.php">
     <div class="l-col-md-third">
-        <select name="status" class="ui-select">
+        <select name="status" class="ui-select" aria-label="Filter by return status">
             <option value="">All Status</option>
             <?php foreach ($validStatuses as $status): ?>
                 <option value="<?php echo e($status); ?>" <?php echo $statusFilter === $status ? 'selected' : ''; ?>><?php echo e(strtoupper(str_replace('_', ' ', $status))); ?></option>
@@ -311,7 +345,7 @@ include 'partials/header.php';
         </select>
     </div>
     <div class="l-col-md-two">
-        <select name="per_page" class="ui-select">
+        <select name="per_page" class="ui-select" aria-label="Results per page">
             <?php foreach ($perPageOptions as $opt): ?>
                 <option value="<?php echo (int) $opt; ?>" <?php echo $perPage === (int) $opt ? 'selected' : ''; ?>><?php echo (int) $opt; ?> / page</option>
             <?php endforeach; ?>
@@ -394,15 +428,15 @@ include 'partials/header.php';
                             <input type="hidden" name="filter_status" value="<?php echo e($statusFilter); ?>">
                             <input type="hidden" name="filter_per_page" value="<?php echo (int) $perPage; ?>">
                             <input type="hidden" name="filter_page" value="<?php echo (int) $page; ?>">
-                            <select name="status" class="ui-select ui-select--small">
+                            <select name="status" class="ui-select ui-select--small" aria-label="Set return status">
                                 <?php foreach ($validStatuses as $status): ?>
                                     <option value="<?php echo e($status); ?>" <?php echo ((string) $r['status'] === $status) ? 'selected' : ''; ?>>
                                         <?php echo e(strtoupper(str_replace('_', ' ', $status))); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <input type="number" step="0.01" min="0" name="refund_amount" class="ui-input ui-input--small" value="<?php echo e((string) $r['refund_amount']); ?>" placeholder="Refund amount">
-                            <input type="text" name="admin_note" class="ui-input ui-input--small" value="<?php echo e((string) ($r['admin_note'] ?? '')); ?>" placeholder="Admin note">
+                            <input type="number" step="0.01" min="0" name="refund_amount" class="ui-input ui-input--small" value="<?php echo e((string) $r['refund_amount']); ?>" placeholder="Refund amount" aria-label="Refund amount">
+                            <input type="text" name="admin_note" class="ui-input ui-input--small" value="<?php echo e((string) ($r['admin_note'] ?? '')); ?>" placeholder="Admin note" aria-label="Admin note">
                             <button type="submit" class="ui-button ui-button--small ui-button--outline"><?php echo ui_icon('check2-circle'); ?>Update</button>
                         </form>
                         <?php do_action('admin.return_row.actions', [

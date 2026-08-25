@@ -281,6 +281,7 @@ include __DIR__ . '/../includes/header.php';
                                     <input type="number"
                                            class="ui-input ui-input--small return-quantity-input"
                                            name="return_qty[<?php echo $riOrderItemId; ?>]"
+                                           aria-label="Return quantity for <?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?>"
                                            min="0"
                                            max="<?php echo e((string) $riQty); ?>"
                                            step="<?php echo $riUnitType === 'meter' ? '0.01' : '1'; ?>"
@@ -291,7 +292,7 @@ include __DIR__ . '/../includes/header.php';
                         </div>
                         <div class="u-text-small u-text-muted u-mb-2">Step 2: Tell us why</div>
                         <div class="u-mb-2">
-                            <select name="reason" class="ui-select ui-select--small" required>
+                            <select name="reason" class="ui-select ui-select--small" aria-label="Return reason" required>
                                 <option value="">Select return reason</option>
                                 <option value="Damaged Item">Damaged Item</option>
                                 <option value="Wrong Item Delivered">Wrong Item Delivered</option>
@@ -301,16 +302,16 @@ include __DIR__ . '/../includes/header.php';
                             </select>
                         </div>
                         <div class="u-mb-2">
-                            <textarea name="customer_note" class="ui-input ui-input--small" rows="2" placeholder="Optional note"></textarea>
+                            <textarea name="customer_note" class="ui-input ui-input--small" rows="2" placeholder="Optional note" aria-label="Additional details about the return"></textarea>
                         </div>
                         <div class="u-text-small u-text-muted u-mb-2">Step 3: Upload issue photos</div>
                         <div class="u-mb-2">
-                            <label class="ui-label u-text-small u-mb-1">Image 1 (required)</label>
-                            <input type="file" name="image_1" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp" required>
+                            <label for="image_1" class="ui-label u-text-small u-mb-1">Image 1 (required)</label>
+                            <input id="image_1" type="file" name="image_1" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp" required>
                         </div>
                         <div class="u-mb-2">
-                            <label class="ui-label u-text-small u-mb-1">Image 2 (required)</label>
-                            <input type="file" name="image_2" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp" required>
+                            <label for="image_2" class="ui-label u-text-small u-mb-1">Image 2 (required)</label>
+                            <input id="image_2" type="file" name="image_2" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp" required>
                         </div>
                         <div class="u-text-small u-text-muted u-mb-2">Step 4: Review and submit. Refund returns are allowed within <?php echo return_request_window_days(); ?> calendar days of delivery.</div>
                         <button type="submit" class="ui-button ui-button--secondary u-w-full">Submit Return Request</button>

@@ -198,6 +198,7 @@ include __DIR__ . '/includes/header.php';
                                         <?php endif; ?>
                                         <button type="button" class="ui-button ui-button--small ui-button--secondary qty-dec" aria-label="Decrease quantity">-</button>
                                         <input type="number" name="<?php echo ($item['unit_type'] === 'meter') ? 'bundle_quantity' : 'quantity'; ?>" class="ui-input ui-input--small cart-qty-input"
+                                               aria-label="Quantity for <?php echo e($item['name']); ?>"
                                                value="<?php echo e(($item['unit_type'] === 'meter') ? (string) max(1, (int) ($item['bundle_quantity'] ?? 1)) : $item['quantity_text']); ?>" min="1"
                                                step="<?php echo ($item['unit_type'] === 'piece' || $item['unit_type'] === 'set' || $item['unit_type'] === 'meter') ? '1' : '0.01'; ?>"
                                                <?php echo ($item['unit_type'] === 'meter' && !empty($item['max_bundle_qty'])) ? 'max="' . (int) $item['max_bundle_qty'] . '"' : ($item['stock'] > 0 ? 'max="' . $item['stock'] . '"' : ''); ?>>

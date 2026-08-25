@@ -721,12 +721,12 @@ function support_tickets_render_customer_page(mysqli $conn): void
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="support_action" value="create">
                             <div class="u-hidden" aria-hidden="true">
-                                <label>Website</label>
-                                <input type="text" name="company_website" tabindex="-1" autocomplete="off">
+                                <label for="company_website">Website</label>
+                                <input id="company_website" type="text" name="company_website" tabindex="-1" autocomplete="off">
                             </div>
                             <div class="u-mb-3">
-                                <label class="ui-label">Related Order</label>
-                                <select name="order_id" class="ui-select">
+                                <label for="order_id" class="ui-label">Related Order</label>
+                                <select id="order_id" name="order_id" class="ui-select">
                                     <?php if (!empty($settings['allow_general_tickets'])): ?>
                                         <option value="0">No specific order</option>
                                     <?php endif; ?>
@@ -741,16 +741,16 @@ function support_tickets_render_customer_page(mysqli $conn): void
                             </div>
                             <div class="l-grid l-grid--12 u-gap-2">
                                 <div class="l-col-md-half">
-                                    <label class="ui-label">Category</label>
-                                    <select name="category" class="ui-select">
+                                    <label for="category" class="ui-label">Category</label>
+                                    <select id="category" name="category" class="ui-select">
                                         <?php foreach ($categories as $value => $label): ?>
                                             <option value="<?php echo e($value); ?>"><?php echo e($label); ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
                                 <div class="l-col-md-half">
-                                    <label class="ui-label">Priority</label>
-                                    <select name="priority" class="ui-select">
+                                    <label for="priority" class="ui-label">Priority</label>
+                                    <select id="priority" name="priority" class="ui-select">
                                         <?php foreach ($priorities as $value => $label): ?>
                                             <option value="<?php echo e($value); ?>" <?php echo $value === 'normal' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                         <?php endforeach; ?>
@@ -758,12 +758,12 @@ function support_tickets_render_customer_page(mysqli $conn): void
                                 </div>
                             </div>
                             <div class="u-mt-3">
-                                <label class="ui-label">Subject</label>
-                                <input class="ui-input" name="subject" maxlength="160" required>
+                                <label for="subject" class="ui-label">Subject</label>
+                                <input id="subject" class="ui-input" name="subject" maxlength="160" required>
                             </div>
                             <div class="u-mt-3">
-                                <label class="ui-label">Message</label>
-                                <textarea class="ui-textarea" name="message" rows="5" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                <label for="message" class="ui-label">Message</label>
+                                <textarea id="message" class="ui-textarea" name="message" rows="5" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                             </div>
                             <button class="ui-button ui-button--primary u-w-full u-mt-3" type="submit">Submit Ticket</button>
                         </form>
@@ -819,8 +819,8 @@ function support_tickets_render_customer_page(mysqli $conn): void
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="support_action" value="reply">
                                     <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                                    <label class="ui-label">Reply</label>
-                                    <textarea class="ui-textarea" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                    <label for="message-2" class="ui-label">Reply</label>
+                                    <textarea id="message-2" class="ui-textarea" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                                     <button class="ui-button ui-button--primary u-mt-2" type="submit">Send Reply</button>
                                 </form>
                             <?php endif; ?>
@@ -965,8 +965,8 @@ function support_tickets_render_admin_page(mysqli $conn): void
 
     <form method="GET" action="support-tickets.php" class="l-grid l-grid--12 u-gap-2 u-mb-3 admin-filter-form">
         <div class="l-col-md-quarter">
-            <label class="ui-label">Status</label>
-            <select name="status" class="ui-select">
+            <label for="status" class="ui-label">Status</label>
+            <select id="status" name="status" class="ui-select">
                 <option value="">All</option>
                 <?php foreach ($statuses as $value => $label): ?>
                     <option value="<?php echo e($value); ?>" <?php echo $statusFilter === $value ? 'selected' : ''; ?>><?php echo e($label); ?></option>
@@ -974,12 +974,12 @@ function support_tickets_render_admin_page(mysqli $conn): void
             </select>
         </div>
         <div class="l-col-md-half">
-            <label class="ui-label">Search</label>
-            <input name="q" class="ui-input" value="<?php echo e($q); ?>" placeholder="Ticket, subject, customer, email, or order">
+            <label for="q" class="ui-label">Search</label>
+            <input id="q" name="q" class="ui-input" value="<?php echo e($q); ?>" placeholder="Ticket, subject, customer, email, or order">
         </div>
         <div class="l-col-md-one">
-            <label class="ui-label">Rows</label>
-            <select name="per_page" class="ui-select">
+            <label for="per_page" class="ui-label">Rows</label>
+            <select id="per_page" name="per_page" class="ui-select">
                 <?php foreach ($perPageOptions as $opt): ?>
                     <option value="<?php echo (int) $opt; ?>" <?php echo $perPage === (int) $opt ? 'selected' : ''; ?>><?php echo (int) $opt; ?></option>
                 <?php endforeach; ?>
@@ -1054,8 +1054,8 @@ function support_tickets_render_admin_page(mysqli $conn): void
                         <input type="hidden" name="support_action" value="status">
                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
                         <div class="l-col-md-eight">
-                            <label class="ui-label">Status</label>
-                            <select name="status" class="ui-select">
+                            <label for="status-2" class="ui-label">Status</label>
+                            <select id="status-2" name="status" class="ui-select">
                                 <?php foreach ($statuses as $value => $label): ?>
                                     <option value="<?php echo e($value); ?>" <?php echo (string) $ticket['status'] === $value ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                 <?php endforeach; ?>
@@ -1078,8 +1078,8 @@ function support_tickets_render_admin_page(mysqli $conn): void
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="support_action" value="reply">
                             <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                            <label class="ui-label">Reply to Customer</label>
-                            <textarea class="ui-textarea" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                            <label for="message-3" class="ui-label">Reply to Customer</label>
+                            <textarea id="message-3" class="ui-textarea" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                             <button class="ui-button ui-button--primary u-mt-2" type="submit">Send Reply</button>
                         </form>
                     <?php endif; ?>
@@ -1087,8 +1087,8 @@ function support_tickets_render_admin_page(mysqli $conn): void
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="support_action" value="internal_note">
                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                        <label class="ui-label">Internal Note</label>
-                        <textarea class="ui-textarea" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                        <label for="message-4" class="ui-label">Internal Note</label>
+                        <textarea id="message-4" class="ui-textarea" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                         <button class="ui-button ui-button--secondary u-mt-2" type="submit">Save Note</button>
                     </form>
                 </div>
@@ -1164,33 +1164,33 @@ function support_tickets_render_order_panel(array $context): void
                         <input type="hidden" name="support_action" value="create">
                         <input type="hidden" name="order_id" value="<?php echo $orderId; ?>">
                         <div class="u-hidden" aria-hidden="true">
-                            <label>Website</label>
-                            <input type="text" name="company_website" tabindex="-1" autocomplete="off">
+                            <label for="company_website-2">Website</label>
+                            <input id="company_website-2" type="text" name="company_website" tabindex="-1" autocomplete="off">
                         </div>
                         <div class="l-grid l-grid--12 u-gap-2">
                             <div class="l-col-md-third">
-                                <label class="ui-label">Category</label>
-                                <select name="category" class="ui-select">
+                                <label for="category-2" class="ui-label">Category</label>
+                                <select id="category-2" name="category" class="ui-select">
                                     <?php foreach ($categories as $value => $label): ?>
                                         <option value="<?php echo e($value); ?>" <?php echo $value === 'order' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="l-col-md-third">
-                                <label class="ui-label">Priority</label>
-                                <select name="priority" class="ui-select">
+                                <label for="priority-2" class="ui-label">Priority</label>
+                                <select id="priority-2" name="priority" class="ui-select">
                                     <?php foreach ($priorities as $value => $label): ?>
                                         <option value="<?php echo e($value); ?>" <?php echo $value === 'normal' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="l-col-md-third">
-                                <label class="ui-label">Subject</label>
-                                <input class="ui-input" name="subject" maxlength="160" required>
+                                <label for="subject-2" class="ui-label">Subject</label>
+                                <input id="subject-2" class="ui-input" name="subject" maxlength="160" required>
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Message</label>
-                                <textarea class="ui-textarea" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                <label for="message-5" class="ui-label">Message</label>
+                                <textarea id="message-5" class="ui-textarea" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                             </div>
                             <div class="l-col-full">
                                 <button class="ui-button ui-button--primary" type="submit">Submit Ticket</button>
@@ -1236,8 +1236,8 @@ function support_tickets_render_order_panel(array $context): void
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="support_action" value="reply">
                                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                                        <label class="ui-label u-text-small">Reply</label>
-                                        <textarea class="ui-textarea ui-textarea--small" name="message" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                        <label class="ui-label u-text-small" for="ticket-reply-<?php echo (int) $ticket['id']; ?>">Reply</label>
+                                        <textarea id="ticket-reply-<?php echo (int) $ticket['id']; ?>" class="ui-textarea ui-textarea--small" name="message" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                                         <button class="ui-button ui-button--outline ui-button--small u-mt-2" type="submit">Send Reply</button>
                                     </form>
                                 <?php endif; ?>
@@ -1305,7 +1305,7 @@ function support_tickets_render_admin_order_sidebar(array $context): void
                         <input type="hidden" name="action" value="support_ticket_status">
                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
                         <div class="u-flex u-gap-1">
-                            <select name="status" class="ui-select ui-select--small">
+                            <select name="status" class="ui-select ui-select--small" aria-label="Ticket status">
                                 <?php foreach ($statuses as $statusValue => $statusLabel): ?>
                                     <option value="<?php echo e($statusValue); ?>" <?php echo (string) $ticket['status'] === $statusValue ? 'selected' : ''; ?>><?php echo e($statusLabel); ?></option>
                                 <?php endforeach; ?>
@@ -1318,7 +1318,7 @@ function support_tickets_render_admin_order_sidebar(array $context): void
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="action" value="support_ticket_reply">
                             <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
-                            <textarea name="message" class="ui-textarea ui-textarea--small" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" placeholder="Reply to customer" required></textarea>
+                            <textarea name="message" class="ui-textarea ui-textarea--small" rows="2" aria-label="Reply to customer" maxlength="<?php echo (int) $settings['max_message_length']; ?>" placeholder="Reply to customer" required></textarea>
                             <button class="ui-button ui-button--secondary ui-button--small u-mt-1" type="submit">Reply</button>
                         </form>
                     <?php endif; ?>

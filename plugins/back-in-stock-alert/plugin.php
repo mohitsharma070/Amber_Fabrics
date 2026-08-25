@@ -436,8 +436,8 @@ function back_in_stock_alert_render_signup_form(array $context): void
                 <input type="text" name="company_website" id="back_in_stock_alert_company_website" tabindex="-1" autocomplete="off">
             </div>
             <div class="l-col-lg-eight">
-                <label class="ui-label">Email</label>
-                <input type="email" name="email" class="ui-input" value="<?php echo e($defaultEmail); ?>" required>
+                <label for="email" class="ui-label">Email</label>
+                <input id="email" type="email" name="email" class="ui-input" value="<?php echo e($defaultEmail); ?>" required>
             </div>
             <div class="l-col-lg-third">
                 <button type="submit" class="ui-button ui-button--outline u-w-full">Notify me when available</button>

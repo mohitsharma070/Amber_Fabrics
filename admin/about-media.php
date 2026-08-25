@@ -146,8 +146,8 @@ include 'partials/header.php';
     <input type="hidden" name="action" value="add">
 
     <div class="l-col-md-quarter">
-        <label class="ui-label">Media Type *</label>
-        <select name="media_type" class="<?php echo form_class($errors, 'media_type', 'ui-select'); ?>" required>
+        <label for="media_type" class="ui-label">Media Type *</label>
+        <select id="media_type" name="media_type" class="<?php echo form_class($errors, 'media_type', 'ui-select'); ?>" required>
             <option value="image" <?php echo $old['media_type'] === 'image' ? 'selected' : ''; ?>>Image</option>
             <option value="video" <?php echo $old['media_type'] === 'video' ? 'selected' : ''; ?>>Video</option>
         </select>
@@ -155,25 +155,25 @@ include 'partials/header.php';
     </div>
 
     <div class="l-col-md-five">
-        <label class="ui-label">Media File *</label>
-        <input type="file" name="media_file" class="<?php echo form_class($errors, 'media_file'); ?>" accept="image/*,video/mp4,video/webm,video/ogg" required>
+        <label for="media_file" class="ui-label">Media File *</label>
+        <input id="media_file" type="file" name="media_file" class="<?php echo form_class($errors, 'media_file'); ?>" accept="image/*,video/mp4,video/webm,video/ogg" required>
         <?php echo form_error($errors, 'media_file'); ?>
     </div>
 
     <div class="l-col-md-third">
-        <label class="ui-label">Poster Image (optional for video)</label>
-        <input type="file" name="poster_image" class="<?php echo form_class($errors, 'poster_image'); ?>" accept="image/*">
+        <label for="poster_image" class="ui-label">Poster Image (optional for video)</label>
+        <input id="poster_image" type="file" name="poster_image" class="<?php echo form_class($errors, 'poster_image'); ?>" accept="image/*">
         <?php echo form_error($errors, 'poster_image'); ?>
     </div>
 
     <div class="l-col-md-half">
-        <label class="ui-label">Alt Text</label>
-        <input type="text" name="alt_text" class="ui-input" value="<?php echo e($old['alt_text']); ?>" placeholder="Describe the media for accessibility">
+        <label for="alt_text" class="ui-label">Alt Text</label>
+        <input id="alt_text" type="text" name="alt_text" class="ui-input" value="<?php echo e($old['alt_text']); ?>" placeholder="Describe the media for accessibility">
     </div>
 
     <div class="l-col-md-quarter">
-        <label class="ui-label">Sort Order</label>
-        <input type="number" name="sort_order" class="ui-input" value="<?php echo e($old['sort_order']); ?>">
+        <label for="sort_order" class="ui-label">Sort Order</label>
+        <input id="sort_order" type="number" name="sort_order" class="ui-input" value="<?php echo e($old['sort_order']); ?>">
     </div>
 
     <div class="l-col-md-quarter u-flex u-items-end">

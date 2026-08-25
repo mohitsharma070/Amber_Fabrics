@@ -8,7 +8,13 @@ if ($customerId <= 0) {
     redirect('customers.php');
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && verify_csrf()) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // A folded verify_csrf() would fall through to the render path and return HTTP 200
+    // with the unchanged page, hiding the failure from the operator. Abort explicitly.
+    if (!verify_csrf()) {
+        flash('error', 'Invalid session token. Please retry.');
+        redirect('customer-view.php?id=' . $customerId);
+    }
     $action = trim((string) ($_POST['action'] ?? ''));
     if ($action === 'toggle_active') {
         $newState = ((int) ($_POST['new_state'] ?? 1)) === 1 ? 1 : 0;

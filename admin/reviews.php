@@ -173,8 +173,8 @@ include 'partials/header.php';
 <?php else: ?>
     <form method="GET" action="reviews.php" class="l-grid l-grid--12 u-gap-2 u-mb-3 admin-filter-form">
         <div class="l-col-md-quarter">
-            <label class="ui-label">Status</label>
-            <select name="status" class="ui-select">
+            <label for="status" class="ui-label">Status</label>
+            <select id="status" name="status" class="ui-select">
                 <option value="" <?php echo $statusFilter === '' ? 'selected' : ''; ?>>All</option>
                 <option value="pending" <?php echo $statusFilter === 'pending' ? 'selected' : ''; ?>>Pending</option>
                 <option value="rejected" <?php echo $statusFilter === 'rejected' ? 'selected' : ''; ?>>Rejected</option>
@@ -182,12 +182,12 @@ include 'partials/header.php';
             </select>
         </div>
         <div class="l-col-md-half">
-            <label class="ui-label">Search</label>
-            <input type="text" name="q" class="ui-input" value="<?php echo e($search); ?>" placeholder="Customer, email, product, or review text">
+            <label for="q" class="ui-label">Search</label>
+            <input id="q" type="text" name="q" class="ui-input" value="<?php echo e($search); ?>" placeholder="Customer, email, product, or review text">
         </div>
         <div class="l-col-md-one">
-            <label class="ui-label">Rows</label>
-            <select name="per_page" class="ui-select">
+            <label for="per_page" class="ui-label">Rows</label>
+            <select id="per_page" name="per_page" class="ui-select">
                 <?php foreach ($perPageOptions as $opt): ?>
                     <option value="<?php echo (int) $opt; ?>" <?php echo $perPage === (int) $opt ? 'selected' : ''; ?>><?php echo (int) $opt; ?></option>
                 <?php endforeach; ?>

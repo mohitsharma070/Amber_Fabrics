@@ -47,9 +47,11 @@ function shipping_quote_store(float $subtotal,
     float $shippingTotal,
     string $source = 'manual',
     string $courierName = '',
-    int $courierId = 0) : string
+    int $courierId = 0,
+    array $estimate = [],
+    string $cartFingerprint = '') : string
 {
-    return InventoryService::shipping_quote_store($subtotal, $country, $pincode, $paymentMethod, $baseShipping, $codFee, $shippingTotal, $source, $courierName, $courierId);
+    return InventoryService::shipping_quote_store($subtotal, $country, $pincode, $paymentMethod, $baseShipping, $codFee, $shippingTotal, $source, $courierName, $courierId, $estimate, $cartFingerprint);
 }
 
 function shipping_quote_get(string $token) : ?array
@@ -57,9 +59,9 @@ function shipping_quote_get(string $token) : ?array
     return InventoryService::shipping_quote_get($token);
 }
 
-function orders_supports_inventory_tracking(mysqli $conn) : bool
+function shipping_quote_consume(string $token) : bool
 {
-    return InventoryService::orders_supports_inventory_tracking($conn);
+    return InventoryService::shipping_quote_consume($token);
 }
 
 function mark_order_inventory_reserved(mysqli $conn, int $orderId) : void

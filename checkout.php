@@ -154,7 +154,8 @@ $shippingQuoteToken = $hasCompleteDelivery
         (string) $shippingRateSource,
         $selectedCourierName,
         $selectedCourierId,
-        $deliveryEstimate
+        $deliveryEstimate,
+        InventoryService::cart_fingerprint($items)
     )
     : '';
 // Tax-inclusive pricing: GST is already embedded in product prices.
@@ -258,7 +259,7 @@ include __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         <?php if (!empty($savedAddresses)): ?>
                             <div class="u-mb-3">
-                                <label class="ui-label">Use Saved Address</label>
+                                <label class="ui-label" for="saved_address_select">Use Saved Address</label>
                                 <select class="ui-select" id="saved_address_select">
                                     <option value="">Select saved address</option>
                                     <?php foreach ($savedAddresses as $addr): ?>
@@ -290,17 +291,17 @@ include __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         <div class="l-grid l-grid--12 u-gap-3">
                             <div class="l-col-sm-half">
-                                <label class="ui-label">Full Name *</label>
+                                <label for="checkout_full_name" class="ui-label">Full Name *</label>
                                 <input type="text" id="checkout_full_name" name="full_name" class="<?php echo form_class($errors, 'full_name', 'ui-input'); ?>" required value="<?php echo e($old['full_name']); ?>">
                                 <?php echo form_error($errors, 'full_name', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">Phone *</label>
+                                <label for="checkout_phone" class="ui-label">Phone *</label>
                                 <input type="text" id="checkout_phone" name="phone" class="<?php echo form_class($errors, 'phone', 'ui-input'); ?>" required value="<?php echo e($old['phone']); ?>">
                                 <?php echo form_error($errors, 'phone', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Email *</label>
+                                <label for="checkout_email" class="ui-label">Email *</label>
                                 <input type="email" id="checkout_email" name="email" class="<?php echo form_class($errors, 'email', 'ui-input'); ?>" required value="<?php echo e($old['email']); ?>">
                                 <?php echo form_error($errors, 'email', 'ui-field-error'); ?>
                             </div>
@@ -316,35 +317,35 @@ include __DIR__ . '/includes/header.php';
                                 </div>
                             <?php endif; ?>
                             <div class="l-col-full">
-                                <label class="ui-label">Address *</label>
+                                <label for="checkout_address" class="ui-label">Address *</label>
                                 <textarea id="checkout_address" name="address" class="<?php echo form_class($errors, 'address', 'ui-textarea'); ?>" rows="2" maxlength="500" required><?php echo e($old['address']); ?></textarea>
                                 <?php echo form_error($errors, 'address', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">City *</label>
+                                <label for="checkout_city" class="ui-label">City *</label>
                                 <input type="text" id="checkout_city" name="city" class="<?php echo form_class($errors, 'city', 'ui-input'); ?>" required value="<?php echo e($old['city']); ?>">
                                 <?php echo form_error($errors, 'city', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">State *</label>
+                                <label for="checkout_state" class="ui-label">State *</label>
                                 <input type="text" id="checkout_state" name="state" class="<?php echo form_class($errors, 'state', 'ui-input'); ?>" required value="<?php echo e($old['state']); ?>">
                                 <?php echo form_error($errors, 'state', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">Pincode *</label>
+                                <label for="checkout_pincode" class="ui-label">Pincode *</label>
                                 <input type="text" id="checkout_pincode" name="pincode" class="<?php echo form_class($errors, 'pincode', 'ui-input'); ?>" required value="<?php echo e($old['pincode']); ?>">
                                 <?php echo form_error($errors, 'pincode', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-sm-half">
-                                <label class="ui-label">Country *</label>
+                                <label for="checkout_country" class="ui-label">Country *</label>
                                 <select id="checkout_country" name="country" class="<?php echo form_class($errors, 'country', 'ui-select'); ?>" required>
                                     <option value="India" selected>India</option>
                                 </select>
                                 <?php echo form_error($errors, 'country', 'ui-field-error'); ?>
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Order Notes</label>
-                                <textarea name="order_notes" class="ui-input" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
+                                <label for="order_notes" class="ui-label">Order Notes</label>
+                                <textarea id="order_notes" name="order_notes" class="ui-input" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
                             <div class="l-col-full">
                                 <button type="submit" formaction="/checkout.php" formmethod="post" class="ui-button ui-button--primary u-w-full checkout-continue-primary" id="checkout_continue_payment" data-checkout-continue>Continue to Payment</button>
@@ -495,9 +496,9 @@ include __DIR__ . '/includes/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="redirect_to" value="checkout">
                         <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
-                        <label class="ui-label">Coupon Code</label>
+                        <label for="coupon_code" class="ui-label">Coupon Code</label>
                         <div class="u-flex u-gap-2">
-                            <input type="text" name="coupon_code" class="ui-input" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
+                            <input id="coupon_code" type="text" name="coupon_code" class="ui-input" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
                             <button class="ui-button ui-button--outline" type="submit">Apply</button>
                         </div>
                     </form>

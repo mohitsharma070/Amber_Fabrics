@@ -878,6 +878,7 @@ CREATE TABLE IF NOT EXISTS shipping_quotes (
     country        VARCHAR(120) NOT NULL,
     pincode        VARCHAR(20) DEFAULT NULL,
     payment_method VARCHAR(32) NOT NULL,
+    cart_fingerprint CHAR(64) DEFAULT NULL,
     base_shipping  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     cod_fee        DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     shipping_total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -890,6 +891,7 @@ CREATE TABLE IF NOT EXISTS shipping_quotes (
     estimated_delivery_start DATE DEFAULT NULL,
     estimated_delivery_end DATE DEFAULT NULL,
     expires_at     DATETIME NOT NULL,
+    consumed_at    DATETIME DEFAULT NULL,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_shipping_quotes_customer_expires (customer_id, expires_at),
@@ -1145,7 +1147,8 @@ INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-08-22-ecommerce-operations-completion.sql','bc0848785dd425bc672b62e72713a59cfbba526a173d9a139daa1b84e696944d'),
 ('2026-08-23-whatsapp-consent-webhook-idempotency.sql','e8fe165d3381970a641d3b8b969cfcbae7a8ad4dfe6f2a58ce5c96b5fd72ee86'),
 ('2026-08-24-priority-findings-remediation.sql','224b7a6ef0c8ba68082eb0706817eec13594fe023d80849fc145b695aea2f8af'),
-('2026-08-25-architecture-hardening.sql','fd33ec7d3cd331c1c32bf451117a49241fcab0f3bb625c256c5f8fe91772cf84');
+('2026-08-25-architecture-hardening.sql','fd33ec7d3cd331c1c32bf451117a49241fcab0f3bb625c256c5f8fe91772cf84'),
+('2026-08-26-inventory-ledger-and-quote-binding.sql','ac4955c8a3af2bf729b4a7d67a1dd59c5c5804e046618ad05f5f72f321d98944');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

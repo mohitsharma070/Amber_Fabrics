@@ -120,7 +120,6 @@ if ($supportsTaxSnapshot && !empty($items)) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Invoice <?php echo e($order['order_number']); ?> | <?php echo e($siteName); ?></title>
-<link rel="stylesheet" href="<?php echo e(ui_asset('/css/foundation.css')); ?>">
 <link rel="stylesheet" href="<?php echo e(ui_asset('/css/documents.css')); ?>">
 <script defer src="<?php echo e(ui_asset('/js/app.js')); ?>"></script>
 <script defer src="<?php echo e(ui_asset('/js/documents.js')); ?>"></script>
@@ -128,7 +127,7 @@ if ($supportsTaxSnapshot && !empty($items)) {
 </head>
 <body data-ui-area="document" data-ui-page="invoice">
 
-<div class="no-print print-bar document-toolbar">
+<div class="print-bar document-toolbar">
     <a href="/customer/order-view?id=<?php echo (int) $order['id']; ?>" class="ui-button ui-button--secondary">&larr; Back to Order</a>
     <button class="ui-button ui-button--secondary" type="button" data-document-print>Print</button>
     <button class="ui-button ui-button--primary" type="button" data-document-pdf="invoice-document" data-document-filename="Invoice-<?php echo e($order['order_number']); ?>.pdf">Download PDF</button>

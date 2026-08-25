@@ -315,12 +315,58 @@ function ui_tone(string $tone): string
 }
 
 /**
- * Translate legacy presentation classes historically allowed in editable
- * policy HTML while preserving the stored content and unknown classes.
+ * Decide whether a href/src value from editable HTML may be kept.
+ *
+ * Browsers ignore control characters and whitespace inside a scheme, so
+ * "java\tscript:alert(1)" executes; the probe strips those before matching.
+ */
+function ui_rich_text_url_is_safe(string $url): bool
+{
+    $probe = strtolower((string) preg_replace('/[\x00-\x20\x7f]+/', '', $url));
+    if ($probe === '') {
+        return false;
+    }
+    if ($probe[0] === '#' || $probe[0] === '/' || $probe[0] === '?') {
+        return true;
+    }
+    if (preg_match('#^([a-z][a-z0-9+.\-]*):#', $probe, $scheme) === 1) {
+        return in_array($scheme[1], ['http', 'https', 'mailto', 'tel'], true);
+    }
+
+    // No scheme at all: a document-relative path such as "shipping-policy.php".
+    return true;
+}
+
+/**
+ * Sanitize and normalize admin-editable rich text for unescaped output.
+ *
+ * The policy/FAQ bodies behind this helper are authored in admin settings and
+ * echoed without escaping on six public pages, so the stored value is
+ * attacker-controlled from the perspective of any compromised or
+ * over-privileged admin account. This used to be a pure class-token rewriter -
+ * it returned every tag it was given - which meant a stored
+ * `<script src="https://cdn.jsdelivr.net/...">` executed for every visitor,
+ * since that origin was globally allowed in script-src. It now parses the
+ * fragment and rebuilds it from an allowlist:
+ *
+ *   - script/style/iframe/object/embed/form/svg/math and friends are removed
+ *     together with their entire subtree;
+ *   - any other unknown element is unwrapped, keeping its text;
+ *   - attributes not on the allowlist are dropped, which covers every on*
+ *     handler, `style`, and the whole `data-*` surface that drives this app's
+ *     own JavaScript behaviours;
+ *   - href/src must resolve to http(s)/mailto/tel or stay relative.
+ *
+ * Legacy Bootstrap presentation classes are mapped to their first-party
+ * equivalents during the same pass.
  */
 function ui_rich_text_html(string $html): string
 {
-    $classMap = [
+    if (trim($html) === '') {
+        return '';
+    }
+
+    static $classMap = [
         'mb-4' => 'u-mb-4',
         'btn' => 'ui-button',
         'btn-sm' => 'ui-button--small',
@@ -330,26 +376,149 @@ function ui_rich_text_html(string $html): string
         'table-bordered' => 'ui-table--bordered',
         'align-middle' => 'u-align-middle',
     ];
+    static $allowedTags = [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'hr', 'strong', 'b', 'em',
+        'i', 'u', 's', 'small', 'sub', 'sup', 'span', 'div', 'ul', 'ol', 'li',
+        'dl', 'dt', 'dd', 'a', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th',
+        'td', 'caption', 'colgroup', 'col', 'blockquote', 'code', 'pre',
+        'figure', 'figcaption', 'img', 'button',
+    ];
+    static $droppedSubtrees = [
+        'script', 'style', 'iframe', 'object', 'embed', 'applet', 'form',
+        'input', 'select', 'textarea', 'svg', 'math', 'template',
+        'noscript', 'link', 'meta', 'base', 'head', 'title', 'audio', 'video',
+        'source', 'track', 'canvas', 'portal',
+    ];
+    static $allowedAttributes = [
+        '*' => ['class', 'id', 'title', 'dir', 'lang'],
+        'a' => ['href', 'target', 'rel'],
+        'img' => ['src', 'alt', 'width', 'height', 'loading'],
+        'th' => ['colspan', 'rowspan', 'scope', 'headers', 'abbr'],
+        'td' => ['colspan', 'rowspan', 'headers'],
+        'col' => ['span'],
+        'colgroup' => ['span'],
+        'ol' => ['start', 'reversed', 'type'],
+        'blockquote' => ['cite'],
+        // <button> is allowed but inert: `form` and `formaction` are not on this
+        // list, <form> is dropped outright, and `type` is forced to "button"
+        // below. data-open-cookie-consent is named explicitly rather than opening
+        // the whole data-* surface - the shipped privacy-policy default uses it to
+        // reopen the consent banner (js/commerce.js), and that is the only
+        // editable-content JavaScript hook this app intends to expose.
+        'button' => ['type', 'disabled', 'data-open-cookie-consent'],
+    ];
 
-    $normalized = preg_replace_callback(
-        '/\bclass\s*=\s*(["\'])(.*?)\1/is',
-        static function (array $matches) use ($classMap): string {
-            $classes = preg_split('/\s+/', trim((string) $matches[2])) ?: [];
-            $classes = array_map(
-                static fn(string $className): string => $classMap[$className] ?? $className,
-                $classes
-            );
-            $classes = array_values(array_unique(array_filter(
-                $classes,
-                static fn(string $className): bool => $className !== ''
-            )));
-
-            return 'class=' . $matches[1] . implode(' ', $classes) . $matches[1];
-        },
-        $html
+    $document = new DOMDocument();
+    $previousErrorState = libxml_use_internal_errors(true);
+    // The wrapper gives every fragment a single known root to serialize back
+    // from; <meta charset> is what makes libxml treat the bytes as UTF-8.
+    // LIBXML_NONET forbids any network fetch during parsing.
+    $loaded = $document->loadHTML(
+        '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
+        . '<div data-ui-rich-text-root="1">' . $html . '</div></body></html>',
+        LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING
     );
+    libxml_clear_errors();
+    libxml_use_internal_errors($previousErrorState);
+    if ($loaded === false) {
+        return '';
+    }
 
-    return is_string($normalized) ? $normalized : $html;
+    $roots = (new DOMXPath($document))->query('//div[@data-ui-rich-text-root]');
+    $root = ($roots instanceof DOMNodeList && $roots->length > 0) ? $roots->item(0) : null;
+    if (!$root instanceof DOMElement) {
+        return '';
+    }
+
+    $scrub = static function (DOMNode $parent) use (
+        &$scrub,
+        $classMap,
+        $allowedTags,
+        $droppedSubtrees,
+        $allowedAttributes
+    ): void {
+        // Snapshot the list: the loop reparents and removes nodes as it goes.
+        foreach (iterator_to_array($parent->childNodes) as $node) {
+            if ($node instanceof DOMComment || $node instanceof DOMProcessingInstruction) {
+                $parent->removeChild($node);
+                continue;
+            }
+            if (!$node instanceof DOMElement) {
+                // Text and CDATA are re-escaped by saveHTML(), so they are safe.
+                continue;
+            }
+
+            $tag = strtolower($node->tagName);
+            if (in_array($tag, $droppedSubtrees, true)) {
+                $parent->removeChild($node);
+                continue;
+            }
+            if (!in_array($tag, $allowedTags, true)) {
+                $scrub($node);
+                while ($node->firstChild !== null) {
+                    $parent->insertBefore($node->firstChild, $node);
+                }
+                $parent->removeChild($node);
+                continue;
+            }
+
+            $allowed = array_merge($allowedAttributes['*'], $allowedAttributes[$tag] ?? []);
+            foreach (iterator_to_array($node->attributes) as $attribute) {
+                $name = strtolower($attribute->nodeName);
+                if (!in_array($name, $allowed, true)) {
+                    $node->removeAttribute($attribute->nodeName);
+                    continue;
+                }
+                if (($name === 'href' || $name === 'src')
+                    && !ui_rich_text_url_is_safe((string) $attribute->nodeValue)) {
+                    $node->removeAttribute($attribute->nodeName);
+                    continue;
+                }
+                if ($name === 'class') {
+                    $classes = preg_split('/\s+/', trim((string) $attribute->nodeValue)) ?: [];
+                    $classes = array_values(array_unique(array_filter(
+                        array_map(
+                            static fn(string $className): string => $classMap[$className] ?? $className,
+                            $classes
+                        ),
+                        static fn(string $className): bool => $className !== ''
+                    )));
+                    if ($classes === []) {
+                        $node->removeAttribute('class');
+                    } else {
+                        $node->setAttribute('class', implode(' ', $classes));
+                    }
+                }
+            }
+
+            // An editable link that opens a new tab must not hand the opener over.
+            if ($tag === 'a' && strtolower($node->getAttribute('target')) === '_blank') {
+                $node->setAttribute('rel', 'noopener noreferrer');
+            }
+
+            // Force type="button" rather than trusting the author's value. Today a
+            // stored <button type="submit"> is already inert because no page echoes
+            // this helper's output inside a <form>, but that is a property of the
+            // call sites, not of the sanitizer. Pinning the type here keeps the
+            // guarantee if a future template ever renders editable copy in a form.
+            if ($tag === 'button') {
+                $node->setAttribute('type', 'button');
+            }
+
+            $scrub($node);
+        }
+    };
+    $scrub($root);
+
+    $safe = '';
+    foreach ($root->childNodes as $node) {
+        $serialized = $document->saveHTML($node);
+        if (is_string($serialized)) {
+            $safe .= $serialized;
+        }
+    }
+
+    return $safe;
 }
 
 function site_name(): string

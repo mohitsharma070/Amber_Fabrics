@@ -1512,6 +1512,8 @@ function ensure_tables(mysqli $conn): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
     $ensureColumns($conn, 'shipping_quotes', [
+        'cart_fingerprint' => "CHAR(64) NULL DEFAULT NULL",
+        'consumed_at' => "DATETIME NULL DEFAULT NULL",
         'serviceability_status' => "ENUM('live','estimated','unavailable') NOT NULL DEFAULT 'estimated'",
         'estimated_dispatch_start' => "DATE NULL DEFAULT NULL",
         'estimated_dispatch_end' => "DATE NULL DEFAULT NULL",

@@ -194,24 +194,24 @@ include 'partials/header.php';
             <?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="create">
             <div class="l-col-md-quarter">
-                <label class="ui-label">Name</label>
-                <input type="text" name="name" class="ui-input" required>
+                <label for="name" class="ui-label">Name</label>
+                <input id="name" type="text" name="name" class="ui-input" required>
             </div>
             <div class="l-col-md-quarter">
-                <label class="ui-label">Slug</label>
-                <input type="text" name="slug" class="ui-input" placeholder="e.g. fabric-by-meter" required>
+                <label for="slug" class="ui-label">Slug</label>
+                <input id="slug" type="text" name="slug" class="ui-input" placeholder="e.g. fabric-by-meter" required>
             </div>
 
             <div class="l-col-md-two">
-                <label class="ui-label">Status</label>
-                <select name="status" class="ui-select">
+                <label for="status" class="ui-label">Status</label>
+                <select id="status" name="status" class="ui-select">
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                 </select>
             </div>
             <div class="l-col-md-quarter">
-                <label class="ui-label">Image</label>
-                <input type="file" name="image" class="ui-input" accept="image/jpeg,image/png,image/webp">
+                <label for="image" class="ui-label">Image</label>
+                <input id="image" type="file" name="image" class="ui-input" accept="image/jpeg,image/png,image/webp">
             </div>
             <div class="l-col-md-two u-flex u-items-center">
                 <div class="ui-check u-mt-4">
@@ -276,20 +276,20 @@ include 'partials/header.php';
                                 <input type="hidden" name="action" value="update">
                                 <input type="hidden" name="id" value="<?php echo (int) $cat['id']; ?>">
                                 <div class="l-col-md-quarter">
-                                    <input type="text" name="name" class="ui-input ui-input--small" value="<?php echo e((string) $cat['name']); ?>" required>
+                                    <input type="text" name="name" class="ui-input ui-input--small" aria-label="Category name" value="<?php echo e((string) $cat['name']); ?>" required>
                                 </div>
                                 <div class="l-col-md-quarter">
-                                    <input type="text" name="slug" class="ui-input ui-input--small" value="<?php echo e((string) $cat['slug']); ?>" required>
+                                    <input type="text" name="slug" class="ui-input ui-input--small" aria-label="Category slug" value="<?php echo e((string) $cat['slug']); ?>" required>
                                 </div>
 
                                 <div class="l-col-md-two">
-                                    <select name="status" class="ui-select ui-select--small">
+                                    <select name="status" class="ui-select ui-select--small" aria-label="Category status">
                                         <option value="active" <?php echo ((string) $cat['status'] === 'active') ? 'selected' : ''; ?>>Active</option>
                                         <option value="inactive" <?php echo ((string) $cat['status'] === 'inactive') ? 'selected' : ''; ?>>Inactive</option>
                                     </select>
                                 </div>
                                 <div class="l-col-md-quarter">
-                                    <input type="file" name="image" class="ui-input ui-input--small" accept="image/jpeg,image/png,image/webp">
+                                    <input type="file" name="image" class="ui-input ui-input--small" aria-label="Replace category image" accept="image/jpeg,image/png,image/webp">
                                 </div>
                                 <div class="l-col-md-two u-flex u-items-center">
                                     <div class="ui-check">

@@ -57,6 +57,35 @@ $assert(str_contains($alerts, 'variant_id <=> ?') && str_contains($alerts, "'col
 $assert(str_contains($dashboard, "f.product_type='variable'") && str_contains($dashboard, 'fabric_variants'), 'Dashboard low stock must count active variant SKUs.');
 $assert(str_contains($orderView, "\$method === 'cod' && \$targetStatus === 'cancelled'") && str_contains($orderView, "\$method === 'cod' && \$targetStatus === 'confirmed'") && str_contains($orderView, "WHERE order_id = ? AND status = 'pending'"), 'Admin COD workflow transitions must synchronize only pending confirmation rows.');
 
+// shipped -> returned and delivered -> returned are permitted transitions, so the
+// order screen must credit stock and coupon capacity there too - through the returns
+// module, never through restore_order_inventory(), which would double-credit once the
+// same return is processed in Returns.
+$inventoryService = $read('includes/services/InventoryService.php');
+$lifecycle = $read('includes/domain/OrderLifecycle.php');
+$assert(str_contains($lifecycle, "'shipped' => ['shipped', 'delivered', 'returned']") && str_contains($lifecycle, "'delivered' => ['delivered', 'returned']"), 'Returned must remain reachable from shipped and delivered.');
+$assert(str_contains($orderView, "\$targetStatus === 'returned'") && str_contains($orderView, 'open_operator_return_for_order') && str_contains($orderView, 'restock_return_items_inventory'), 'Returned transitions must open a return and credit stock through the returns module.');
+$returnedBranchStart = strpos($orderView, "\$currentOrderStatus !== 'returned' && \$targetStatus === 'returned'");
+$returnedBranch = $returnedBranchStart === false ? '' : substr($orderView, $returnedBranchStart, 1400);
+$assert($returnedBranch !== '' && !str_contains($returnedBranch, 'restore_order_inventory'), 'Returned transitions must not call restore_order_inventory (double-credit path).');
+$assert($returnedBranch !== '' && str_contains($returnedBranch, 'release_coupon_usage_for_order'), 'Returned transitions must release coupon capacity.');
+$assert(str_contains($inventoryService, 'function open_operator_return_for_order') && str_contains($inventoryService, 'SELECT id FROM returns WHERE order_id = ? LIMIT 1 FOR UPDATE'), 'Operator return creation must respect the one-return-per-order unique key under lock.');
+$assert(str_contains($schema, 'uq_returns_order_id (order_id)'), 'Returns must stay unique per order for the operator return guard to hold.');
+
+// Reads of customer PII need their own capability, an audit trail, and a throttle.
+$assert(str_contains($admin, "'admin.view.pii'") && str_contains($admin, 'function admin_pii_routes') && str_contains($admin, 'function admin_route_is_pii'), 'PII reads must be gated on a distinct admin.view.pii capability.');
+$assert(str_contains($admin, "return admin_route_is_pii(\$base) ? 'admin.view.pii' : 'admin.view';"), 'Non-POST PII routes must not fall back to the blanket admin.view capability.');
+$assert(str_contains($admin, "'operations_manager' => array_merge(\$common, ['admin.view.pii', 'operations.manage'])") && !str_contains($admin, "\$common = ['admin.view', 'operations.view', 'admin.view.pii']"), 'admin.view.pii must not be granted to the lowest roles.');
+$assert(str_contains($admin, 'function admin_guard_pii_read') && str_contains($admin, "'admin_pii_read'") && str_contains($admin, 'admin_guard_pii_read($conn, $adminId)'), 'PII GETs must be audited from require_admin().');
+$assert(str_contains($admin, "public_form_rate_limit_allow('admin_pii_read:' . \$adminId") && str_contains($admin, 'http_response_code(429)'), 'PII reads must be throttled per admin account.');
+$assert(str_contains($adminHeader, '$adminCanViewPii'), 'Admin navigation must hide PII sections from roles without the capability.');
+
+// A folded verify_csrf() renders HTTP 200 with the unchanged page, hiding the failure.
+foreach (['admin/settings.php', 'admin/customer-view.php'] as $csrfRoute) {
+    $csrfSource = $read($csrfRoute);
+    $assert(!str_contains($csrfSource, "=== 'POST' && verify_csrf()") && str_contains($csrfSource, 'if (!verify_csrf())') && str_contains($csrfSource, 'Invalid session token.'), $csrfRoute . ' must abort explicitly on a CSRF token mismatch.');
+}
+
 $assert(str_contains($cron, 'cron_run_history') && str_contains($cron, 'INTERVAL 30 DAY') && str_contains($dashboard, 'cron_last_summary_json'), 'Cron history and sanitized summary must be persisted and rendered.');
 $assert(str_contains($courier, 'shipping_courier_reverse_capabilities') && str_contains($courier, 'shipping_courier_claim_reverse_pickup') && str_contains($courier, 'Manual pickup is required'), 'Reverse pickup creation must be capability-gated and claimed atomically.');
 

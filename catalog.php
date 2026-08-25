@@ -327,7 +327,7 @@ function catalog_query(array $params): string {
     </div>
 </section>
 
-<section class="section-block u-pt-0 catalog-main-section">
+<section class="section-block catalog-main-section">
     <div class="l-container">
         <div class="surface-panel catalog-utility-row u-mb-3">
             <div class="catalog-utility-main">
@@ -368,8 +368,8 @@ function catalog_query(array $params): string {
                     <form class="l-grid l-grid--12 u-gap-2" method="GET" action="/catalog">
                             <input type="hidden" name="q" value="<?php echo e($search); ?>">
                             <div class="l-col-full">
-                                <label class="ui-label">Category</label>
-                                <select class="ui-select" name="category">
+                                <label for="category" class="ui-label">Category</label>
+                                <select id="category" class="ui-select" name="category">
                                     <option value="">All Categories</option>
                                     <?php foreach ($categories as $cat): ?>
                                         <option value="<?php echo e($cat['slug']); ?>" <?php echo $category === $cat['slug'] ? 'selected' : ''; ?>>
@@ -381,8 +381,8 @@ function catalog_query(array $params): string {
                             <div class="l-col-full">
                                 <label class="ui-label">Price Range (Rs)</label>
                                 <div class="l-grid l-grid--12 u-gap-2">
-                                    <div class="l-col-half"><input type="number" min="0" name="min_price" class="ui-input" value="<?php echo (int) $minPrice; ?>" placeholder="Min"></div>
-                                    <div class="l-col-half"><input type="number" min="0" name="max_price" class="ui-input" value="<?php echo (int) $maxPrice; ?>" placeholder="Max"></div>
+                                    <div class="l-col-half"><input type="number" min="0" name="min_price" class="ui-input" value="<?php echo (int) $minPrice; ?>" placeholder="Min" aria-label="Minimum price"></div>
+                                    <div class="l-col-half"><input type="number" min="0" name="max_price" class="ui-input" value="<?php echo (int) $maxPrice; ?>" placeholder="Max" aria-label="Maximum price"></div>
                                 </div>
                             </div>
                             <div class="l-col-full ui-check u-mt-2 u-ms-1">
@@ -390,24 +390,24 @@ function catalog_query(array $params): string {
                                 <label class="ui-check__label" for="in_stock_only">In Stock Only</label>
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Material</label>
-                                <input type="text" class="ui-input" name="material" value="<?php echo e($materialFilter); ?>" placeholder="Cotton, Linen...">
+                                <label for="material" class="ui-label">Material</label>
+                                <input id="material" type="text" class="ui-input" name="material" value="<?php echo e($materialFilter); ?>" placeholder="Cotton, Linen...">
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Color</label>
-                                <input type="text" class="ui-input" name="color" value="<?php echo e($colorFilter); ?>" placeholder="Indigo, Red...">
+                                <label for="color" class="ui-label">Color</label>
+                                <input id="color" type="text" class="ui-input" name="color" value="<?php echo e($colorFilter); ?>" placeholder="Indigo, Red...">
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Size / Pack</label>
-                                <input type="text" class="ui-input" name="size" value="<?php echo e($sizeFilter); ?>" placeholder="L, Queen, Pack of 2...">
+                                <label for="size" class="ui-label">Size / Pack</label>
+                                <input id="size" type="text" class="ui-input" name="size" value="<?php echo e($sizeFilter); ?>" placeholder="L, Queen, Pack of 2...">
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Dispatch Time</label>
-                                <input type="text" class="ui-input" name="dispatch" value="<?php echo e($dispatchFilter); ?>" placeholder="2-3 days, 1 week...">
+                                <label for="dispatch" class="ui-label">Dispatch Time</label>
+                                <input id="dispatch" type="text" class="ui-input" name="dispatch" value="<?php echo e($dispatchFilter); ?>" placeholder="2-3 days, 1 week...">
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Sort</label>
-                                <select class="ui-select" name="sort">
+                                <label for="sort" class="ui-label">Sort</label>
+                                <select id="sort" class="ui-select" name="sort">
                                     <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
                                     <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
                                     <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
@@ -417,8 +417,8 @@ function catalog_query(array $params): string {
                                 </select>
                             </div>
                             <div class="l-col-full">
-                                <label class="ui-label">Per Page</label>
-                                <select class="ui-select" name="per_page">
+                                <label for="per_page" class="ui-label">Per Page</label>
+                                <select id="per_page" class="ui-select" name="per_page">
                                     <?php foreach ($perPageOptions as $size): ?>
                                         <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?></option>
                                     <?php endforeach; ?>
@@ -556,8 +556,8 @@ function catalog_query(array $params): string {
         <form class="l-grid l-grid--12 u-gap-3" method="GET" action="/catalog">
             <input type="hidden" name="q" value="<?php echo e($search); ?>">
             <div class="l-col-full">
-                <label class="ui-label u-font-semibold">Category</label>
-                <select class="ui-select" name="category">
+                <label for="category-2" class="ui-label u-font-semibold">Category</label>
+                <select id="category-2" class="ui-select" name="category">
                     <option value="">All Categories</option>
                     <?php foreach ($categories as $cat): ?>
                         <option value="<?php echo e($cat['slug']); ?>" <?php echo $category === $cat['slug'] ? 'selected' : ''; ?>>
@@ -567,8 +567,8 @@ function catalog_query(array $params): string {
                 </select>
             </div>
             <div class="l-col-half">
-                <label class="ui-label u-font-semibold">Sort</label>
-                <select class="ui-select" name="sort">
+                <label for="sort-2" class="ui-label u-font-semibold">Sort</label>
+                <select id="sort-2" class="ui-select" name="sort">
                     <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
                     <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
                     <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
@@ -578,12 +578,12 @@ function catalog_query(array $params): string {
                 </select>
             </div>
             <div class="l-col-half">
-                <label class="ui-label u-font-semibold">Min Price</label>
-                <input type="number" min="0" name="min_price" class="ui-input" value="<?php echo (int) $minPrice; ?>">
+                <label for="min_price" class="ui-label u-font-semibold">Min Price</label>
+                <input id="min_price" type="number" min="0" name="min_price" class="ui-input" value="<?php echo (int) $minPrice; ?>">
             </div>
             <div class="l-col-half">
-                <label class="ui-label u-font-semibold">Max Price</label>
-                <input type="number" min="0" name="max_price" class="ui-input" value="<?php echo (int) $maxPrice; ?>">
+                <label for="max_price" class="ui-label u-font-semibold">Max Price</label>
+                <input id="max_price" type="number" min="0" name="max_price" class="ui-input" value="<?php echo (int) $maxPrice; ?>">
             </div>
             <div class="l-col-full ui-check u-ms-1">
                 <input class="ui-check__input" type="checkbox" value="1" id="in_stock_only_mobile" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
@@ -603,28 +603,28 @@ function catalog_query(array $params): string {
             <div class="l-col-full" id="mobileAdvancedFilters" <?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? '' : 'hidden'; ?>>
                 <div class="l-grid l-grid--12 u-gap-3 mobile-advanced-group">
                     <div class="l-col-full">
-                        <label class="ui-label u-font-semibold">Per Page</label>
-                        <select class="ui-select" name="per_page">
+                        <label for="per_page-2" class="ui-label u-font-semibold">Per Page</label>
+                        <select id="per_page-2" class="ui-select" name="per_page">
                             <?php foreach ($perPageOptions as $size): ?>
                                 <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?> items</option>
                             <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="l-col-half">
-                        <label class="ui-label u-font-semibold">Material</label>
-                        <input type="text" class="ui-input" name="material" value="<?php echo e($materialFilter); ?>">
+                        <label for="material-2" class="ui-label u-font-semibold">Material</label>
+                        <input id="material-2" type="text" class="ui-input" name="material" value="<?php echo e($materialFilter); ?>">
                     </div>
                     <div class="l-col-half">
-                        <label class="ui-label u-font-semibold">Color</label>
-                        <input type="text" class="ui-input" name="color" value="<?php echo e($colorFilter); ?>">
+                        <label for="color-2" class="ui-label u-font-semibold">Color</label>
+                        <input id="color-2" type="text" class="ui-input" name="color" value="<?php echo e($colorFilter); ?>">
                     </div>
                     <div class="l-col-half">
-                        <label class="ui-label u-font-semibold">Size/Pack</label>
-                        <input type="text" class="ui-input" name="size" value="<?php echo e($sizeFilter); ?>">
+                        <label for="size-2" class="ui-label u-font-semibold">Size/Pack</label>
+                        <input id="size-2" type="text" class="ui-input" name="size" value="<?php echo e($sizeFilter); ?>">
                     </div>
                     <div class="l-col-half">
-                        <label class="ui-label u-font-semibold">Dispatch</label>
-                        <input type="text" class="ui-input" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
+                        <label for="dispatch-2" class="ui-label u-font-semibold">Dispatch</label>
+                        <input id="dispatch-2" type="text" class="ui-input" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
                     </div>
                 </div>
             </div>
