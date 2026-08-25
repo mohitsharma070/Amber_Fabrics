@@ -4,7 +4,7 @@ final class CategoryAdminService
 {
     public static function all(mysqli $conn): array
     {
-        $stmt = $conn->prepare('SELECT id, name, slug, parent_id, image, status, uses_variant_size, created_at FROM categories ORDER BY parent_id ASC, name ASC');
+        $stmt = $conn->prepare('SELECT id, name, slug, parent_id, image, status, uses_variant_size, default_unit_type, created_at FROM categories ORDER BY parent_id ASC, name ASC');
         $stmt->execute();
         return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     }
@@ -26,11 +26,12 @@ final class CategoryAdminService
         string $slug,
         ?string $image,
         string $status,
-        int $usesVariantSize
+        int $usesVariantSize,
+        string $defaultUnitType
     ): int {
         $parentId = null;
-        $stmt = $conn->prepare('INSERT INTO categories (name, slug, parent_id, image, status, uses_variant_size) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('ssissi', $name, $slug, $parentId, $image, $status, $usesVariantSize);
+        $stmt = $conn->prepare("INSERT INTO categories (name, slug, parent_id, image, status, uses_variant_size, default_unit_type) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?,''))");
+        $stmt->bind_param('ssissis', $name, $slug, $parentId, $image, $status, $usesVariantSize, $defaultUnitType);
         $stmt->execute();
         return (int) $conn->insert_id;
     }
@@ -42,16 +43,17 @@ final class CategoryAdminService
         string $slug,
         ?string $image,
         string $status,
-        int $usesVariantSize
+        int $usesVariantSize,
+        string $defaultUnitType
     ): void {
         if ($categoryId <= 0) {
             throw new InvalidArgumentException('Invalid category selected.');
         }
         $parentId = null;
         $stmt = $conn->prepare(
-            'UPDATE categories SET name = ?, slug = ?, parent_id = ?, image = ?, status = ?, uses_variant_size = ? WHERE id = ?'
+            "UPDATE categories SET name = ?, slug = ?, parent_id = ?, image = ?, status = ?, uses_variant_size = ?, default_unit_type = NULLIF(?,'') WHERE id = ?"
         );
-        $stmt->bind_param('ssissii', $name, $slug, $parentId, $image, $status, $usesVariantSize, $categoryId);
+        $stmt->bind_param('ssissisi', $name, $slug, $parentId, $image, $status, $usesVariantSize, $defaultUnitType, $categoryId);
         $stmt->execute();
     }
 

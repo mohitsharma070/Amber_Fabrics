@@ -15,6 +15,8 @@ $assert(str_contains($service,'is_uploaded_file')&&str_contains($service,'MAX_RO
 $assert(str_contains($service,"['skip','update']")&&str_contains($service,'begin_transaction()')&&str_contains($service,'rollback()'),'Duplicate modes or per-row transaction handling is missing.');
 $assert(str_contains($service,'fabric_upload_path')&&!str_contains($service,'file_get_contents($row'),'Media import must only reference safe existing files and never fetch arbitrary URLs.');
 $assert(str_contains($service,'ProductAdminService::publish')&&str_contains($service,'Imported as draft'),'Visible products must pass normal readiness checks or remain drafts.');
+$assert(str_contains($service,'SELECT name,slug,default_unit_type FROM categories')&&str_contains($service,'ProductAdminService::normalizeDraftUnitType((string)$unit,$categoryDefaultUnit)'),'CSV imports must enforce category-required selling units.');
+$assert(str_contains($service,'Selling Unit changed to ')&&str_contains($service,'because the selected product type requires it.'),'CSV validation must explain category-driven unit overrides.');
 $assert(str_contains($page,'Fallback selling unit')&&str_contains($page,'used only when that cell is blank'),'Importer UI must explain that the selected unit is only a fallback.');
 
 $method=new ReflectionMethod(ProductImportService::class,'headerKey');$method->setAccessible(true);

@@ -45,6 +45,22 @@ final class ProductAdminService
         return trim($sku, '-_');
     }
 
+    public static function normalizeDraftUnitType(string $unitType, string $categoryDefaultUnitType): string
+    {
+        $defaultUnitType = trim($categoryDefaultUnitType);
+        return in_array($defaultUnitType, ['meter', 'piece', 'set'], true)
+            ? $defaultUnitType
+            : trim($unitType);
+    }
+
+    public static function categoryDefaultUnitType(mysqli $conn, string $category): string
+    {
+        $stmt = $conn->prepare("SELECT default_unit_type FROM categories WHERE slug = ? AND status = 'active' LIMIT 1");
+        $stmt->bind_param('s', $category);
+        $stmt->execute();
+        return (string) ($stmt->get_result()->fetch_assoc()['default_unit_type'] ?? '');
+    }
+
     public static function publicPath(array $product): string
     {
         $slug = trim((string) ($product['slug'] ?? ''));
@@ -181,7 +197,9 @@ final class ProductAdminService
     {
         $name = trim((string)($input['name']??''));
         $category = trim((string)($input['category']??''));
-        $unit = in_array(($input['unit_type']??''),['meter','piece','set'],true)?(string)$input['unit_type']:'meter';
+        $categoryDefaultUnit = self::categoryDefaultUnitType($conn, $category);
+        $requestedUnit = self::normalizeDraftUnitType((string)($input['unit_type']??''), $categoryDefaultUnit);
+        $unit = in_array($requestedUnit,['meter','piece','set'],true)?$requestedUnit:'meter';
         $type = in_array(($input['product_type']??''),['simple','variable'],true)?(string)$input['product_type']:'simple';
         if ($name===''||$category==='') throw new InvalidArgumentException('Product name and category are required.');
         $sku=self::normalizeSku((string)($input['sku']??''));

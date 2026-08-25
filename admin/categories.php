@@ -53,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $parentId = 0;
         $status = trim((string) ($_POST['status'] ?? 'active'));
         $usesVariantSize = isset($_POST['uses_variant_size']) ? 1 : 0;
+        $defaultUnitType = trim((string) ($_POST['default_unit_type'] ?? ''));
         $slug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $slugRaw));
         $slug = trim($slug, '-');
 
@@ -68,6 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!in_array($status, ['active', 'inactive'], true)) {
             $status = 'active';
         }
+        if (!in_array($defaultUnitType, ['', 'meter', 'piece', 'set'], true)) {
+            $errors[] = 'Select a valid required selling unit.';
+        }
 
         if (empty($errors)) {
             try {
@@ -75,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($_FILES['image']['name'])) {
                     $imagePath = $processCategoryImageUpload($_FILES['image'], $slug);
                 }
-                CategoryAdminService::create($conn, $name, $slug, $imagePath, $status, $usesVariantSize);
+                CategoryAdminService::create($conn, $name, $slug, $imagePath, $status, $usesVariantSize, $defaultUnitType);
                 flash('success', 'Category added successfully.');
             } catch (Throwable $e) {
                 error_log('[categories] create failed: ' . $e->getMessage());
@@ -92,6 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $parentId = 0;
         $status = trim((string) ($_POST['status'] ?? 'active'));
         $usesVariantSize = isset($_POST['uses_variant_size']) ? 1 : 0;
+        $defaultUnitType = trim((string) ($_POST['default_unit_type'] ?? ''));
         $slug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $slugRaw));
         $slug = trim($slug, '-');
 
@@ -106,6 +111,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!in_array($status, ['active', 'inactive'], true)) {
             $status = 'active';
         }
+        if (!in_array($defaultUnitType, ['', 'meter', 'piece', 'set'], true)) {
+            flash('error', 'Select a valid required selling unit.');
+            redirect('categories.php');
+        }
 
         try {
             $imagePath = CategoryAdminService::image($conn, $id);
@@ -117,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            CategoryAdminService::update($conn, $id, $name, $slug, $imagePath, $status, $usesVariantSize);
+            CategoryAdminService::update($conn, $id, $name, $slug, $imagePath, $status, $usesVariantSize, $defaultUnitType);
             flash('success', 'Category updated.');
         } catch (Throwable $e) {
             error_log('[categories] update failed: ' . $e->getMessage());
@@ -219,6 +228,12 @@ include 'partials/header.php';
                     <label class="form-check-label" for="uses_variant_size_create">Use Variant Size</label>
                 </div>
             </div>
+            <div class="col-md-2">
+                <label for="default_unit_type_create" class="form-label">Required Unit</label>
+                <select id="default_unit_type_create" name="default_unit_type" class="form-select">
+                    <option value="">Any</option><option value="meter">Meter</option><option value="piece">Piece</option><option value="set">Set</option>
+                </select>
+            </div>
             <div class="col-md-2 d-flex align-items-end">
                 <button class="btn btn-primary w-100" type="submit">Add</button>
             </div>
@@ -235,13 +250,14 @@ include 'partials/header.php';
             <th>Slug</th>
             <th>Status</th>
             <th>Variant Size</th>
+            <th>Required Unit</th>
             <th>Image</th>
             <th>Actions</th>
         </tr>
         </thead>
         <tbody>
         <?php if (empty($categories)): ?>
-            <tr><td colspan="7" class="text-center text-muted py-4">No categories found.</td></tr>
+            <tr><td colspan="8" class="text-center text-muted py-4">No categories found.</td></tr>
         <?php else: ?>
             <?php foreach ($categories as $cat): ?>
                 <tr>
@@ -267,6 +283,7 @@ include 'partials/header.php';
                             <span class="badge bg-light text-dark border">Hidden</span>
                         <?php endif; ?>
                     </td>
+                    <td><?php echo e(($cat['default_unit_type'] ?? '') !== '' ? ucfirst((string) $cat['default_unit_type']) : 'Any'); ?></td>
                     <td><?php echo !empty($cat['image']) ? 'Set' : 'Not set'; ?></td>
                     <td>
                         <details>
@@ -296,6 +313,14 @@ include 'partials/header.php';
                                         <input class="form-check-input" type="checkbox" name="uses_variant_size" id="uses_variant_size_<?php echo (int) $cat['id']; ?>" value="1" <?php echo ((int) ($cat['uses_variant_size'] ?? 0) === 1) ? 'checked' : ''; ?>>
                                         <label class="form-check-label small" for="uses_variant_size_<?php echo (int) $cat['id']; ?>">Use Size</label>
                                     </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <select name="default_unit_type" class="form-select form-select-sm" aria-label="Required selling unit">
+                                        <option value="" <?php echo empty($cat['default_unit_type']) ? 'selected' : ''; ?>>Any unit</option>
+                                        <?php foreach (['meter' => 'Meter', 'piece' => 'Piece', 'set' => 'Set'] as $unitValue => $unitLabel): ?>
+                                            <option value="<?php echo $unitValue; ?>" <?php echo (($cat['default_unit_type'] ?? '') === $unitValue) ? 'selected' : ''; ?>><?php echo $unitLabel; ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 </div>
                                 <div class="col-md-2 d-grid">
                                     <button class="btn btn-sm btn-dark" type="submit">Save</button>

@@ -255,6 +255,7 @@ function ensure_tables(mysqli $conn): void
             image VARCHAR(255) DEFAULT NULL,
             status ENUM('active','inactive') DEFAULT 'active',
             uses_variant_size TINYINT(1) NOT NULL DEFAULT 0,
+            default_unit_type ENUM('meter','piece','set') DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -267,6 +268,9 @@ function ensure_tables(mysqli $conn): void
     if (!$columnExists($conn, 'categories', 'uses_variant_size')) {
         $conn->query("ALTER TABLE categories ADD COLUMN uses_variant_size TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
     }
+    if (!$columnExists($conn, 'categories', 'default_unit_type')) {
+        $conn->query("ALTER TABLE categories ADD COLUMN default_unit_type ENUM('meter','piece','set') DEFAULT NULL AFTER uses_variant_size");
+    }
 
     // Check if foreign key already exists
     $fkCheck = $conn->query("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'categories' AND COLUMN_NAME = 'parent_id' AND REFERENCED_TABLE_NAME = 'categories'");
@@ -278,9 +282,13 @@ function ensure_tables(mysqli $conn): void
     // Curated storefront taxonomy (no parent categories):
     // Fabric by Meter, Bedsheets, Towels, Table Covers.
     $conn->query(
-        "INSERT INTO categories (name, slug, parent_id, status)
-         VALUES ('Fabric by Meter', 'fabric-by-meter', NULL, 'active')
+        "INSERT INTO categories (name, slug, parent_id, status, default_unit_type)
+         VALUES ('Fabric by Meter', 'fabric-by-meter', NULL, 'active', 'meter')
          ON DUPLICATE KEY UPDATE name = VALUES(name), status = VALUES(status), parent_id = NULL"
+    );
+    $conn->query(
+        "UPDATE categories SET default_unit_type = 'meter'
+         WHERE slug = 'fabric-by-meter' AND default_unit_type IS NULL"
     );
     $conn->query(
         "INSERT INTO categories (name, slug, parent_id, status)

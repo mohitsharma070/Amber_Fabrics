@@ -74,10 +74,48 @@
         });
     }
 
+    function initCategoryUnitType(form) {
+        if (!form) return;
+        var category = form.querySelector("#category");
+        var unitType = form.querySelector("#unit_type");
+        var quantity = form.querySelector("#quantity");
+        if (!category || !unitType) return;
+
+        function syncUnitType() {
+            var selected = category.options[category.selectedIndex];
+            var requiredUnit = selected ? String(selected.dataset.defaultUnitType || "") : "";
+            var hasRequiredUnit = ["meter", "piece", "set"].indexOf(requiredUnit) >= 0;
+            if (hasRequiredUnit) unitType.value = requiredUnit;
+            unitType.querySelectorAll("option").forEach(function (option) {
+                option.disabled = hasRequiredUnit && option.value !== requiredUnit;
+            });
+
+            var isMeter = unitType.value === "meter";
+            form.querySelectorAll("[data-meter-unit-field]").forEach(function (holder) {
+                holder.hidden = !isMeter;
+            });
+            form.querySelectorAll("[data-meter-required]").forEach(function (input) {
+                input.required = isMeter;
+            });
+            form.querySelectorAll("[data-meter-price-suffix]").forEach(function (suffix) {
+                suffix.textContent = isMeter ? " per Meter" : "";
+            });
+            var quantitySuffix = form.querySelector("#quantity_unit_suffix");
+            if (quantitySuffix) quantitySuffix.textContent = isMeter ? " (meters)" : " (units)";
+            if (quantity) quantity.step = isMeter ? "0.01" : "1";
+        }
+
+        category.addEventListener("change", syncUnitType);
+        unitType.addEventListener("change", syncUnitType);
+        syncUnitType();
+    }
+
     function init() {
         if (!document.body.classList.contains("admin-shell")) return;
         initNavigation();
         enforceReadOnlyMode();
+        initCategoryUnitType(document.getElementById("product-draft-form"));
+        initCategoryUnitType(document.getElementById("product-editor-form"));
         document.querySelectorAll(".table-responsive > table.table").forEach(enhanceTable);
     }
 
