@@ -4,6 +4,22 @@ declare(strict_types=1);
 
 final class WebhookLifecycleService
 {
+    public static function processingLeaseIsStale(
+        string $status,
+        int $updatedTimestamp,
+        int $currentTimestamp,
+        int $processingTtlSeconds = 120
+    ): bool {
+        return strtolower(trim($status)) === 'processing'
+            && $updatedTimestamp > 0
+            && ($currentTimestamp - $updatedTimestamp) > max(30, $processingTtlSeconds);
+    }
+
+    public static function requiresProviderRetry(string $state): bool
+    {
+        return strtolower(trim($state)) === 'in_progress';
+    }
+
     /**
      * Atomically claim a webhook event without extending an existing processing lease
      * before evaluating whether that lease is stale.
@@ -30,12 +46,9 @@ final class WebhookLifecycleService
             $insert = $conn->prepare(
                 "INSERT INTO payment_webhook_events (
                     provider, event_id, signature, payload_hash, raw_payload, status, attempts, last_error, processed_at, created_at, updated_at
-                )
+                 )
                  VALUES (?, ?, ?, ?, ?, 'received', 0, NULL, NULL, NOW(), NOW())
-                 ON DUPLICATE KEY UPDATE
-                    signature = VALUES(signature),
-                    payload_hash = VALUES(payload_hash),
-                    raw_payload = VALUES(raw_payload)"
+                 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
             );
             $insert->bind_param('sssss', $provider, $eventId, $signature, $payloadHash, $payload);
             $insert->execute();
@@ -58,9 +71,12 @@ final class WebhookLifecycleService
             $attempts = (int) ($row['attempts'] ?? 0);
             $updatedTs = (int) ($row['updated_ts'] ?? 0);
             $nowTs = time();
-            $isStaleProcessing = $status === 'processing'
-                && $updatedTs > 0
-                && ($nowTs - $updatedTs) > $processingTtlSeconds;
+            $isStaleProcessing = self::processingLeaseIsStale(
+                $status,
+                $updatedTs,
+                $nowTs,
+                $processingTtlSeconds
+            );
 
             if ($status === 'processed') {
                 $conn->commit();
@@ -74,7 +90,10 @@ final class WebhookLifecycleService
             $nextAttempts = $attempts + 1;
             $update = $conn->prepare(
                 "UPDATE payment_webhook_events
-                 SET status = 'processing',
+                 SET signature = ?,
+                     payload_hash = ?,
+                     raw_payload = ?,
+                     status = 'processing',
                      attempts = ?,
                      last_error = NULL,
                      processed_at = NULL,
@@ -82,7 +101,7 @@ final class WebhookLifecycleService
                  WHERE id = ?"
             );
             $id = (int) $row['id'];
-            $update->bind_param('ii', $nextAttempts, $id);
+            $update->bind_param('sssii', $signature, $payloadHash, $payload, $nextAttempts, $id);
             $update->execute();
 
             $conn->commit();

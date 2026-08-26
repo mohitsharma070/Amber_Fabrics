@@ -7,9 +7,23 @@ add_action('cart.after_add', 'meta_capi_handle_add_to_cart', 20);
 add_action('order.after_commit', 'meta_capi_handle_cod_purchase', 30);
 add_action('order.after_payment_success', 'meta_capi_handle_paid_purchase', 10);
 
-function meta_capi_enabled(): bool
+function meta_capi_normalize_durable_consent(mixed $status): string
 {
-    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+    $status = strtolower(trim((string) $status));
+    return in_array($status, ['granted', 'denied', 'unknown'], true) ? $status : 'unknown';
+}
+
+function meta_capi_consent_granted(array $context = []): bool
+{
+    if (array_key_exists('marketing_consent', $context)) {
+        return meta_capi_normalize_durable_consent($context['marketing_consent']) === 'granted';
+    }
+    return !function_exists('marketing_consent_granted') || marketing_consent_granted();
+}
+
+function meta_capi_enabled(array $context = []): bool
+{
+    if (!meta_capi_consent_granted($context)) {
         return false;
     }
     $token = trim((string) plugin_setting('meta-capi', 'access_token', ''));
@@ -75,7 +89,7 @@ function meta_capi_capture_browser_ids(array $context): void
 
 function meta_capi_user_data(array $context = []): array
 {
-    if (function_exists('marketing_consent_granted') && !marketing_consent_granted()) {
+    if (!meta_capi_consent_granted($context)) {
         return [];
     }
 
@@ -99,22 +113,24 @@ function meta_capi_user_data(array $context = []): array
         }
     }
 
-    $fbp = trim((string) ($_SESSION['meta_fbp'] ?? ($_COOKIE['_fbp'] ?? '')));
-    $fbc = trim((string) ($_SESSION['meta_fbc'] ?? ($_COOKIE['_fbc'] ?? '')));
-    if ($fbp !== '') {
-        $userData['fbp'] = $fbp;
-    }
-    if ($fbc !== '') {
-        $userData['fbc'] = $fbc;
-    }
+    if (empty($context['durable_delivery'])) {
+        $fbp = trim((string) ($_SESSION['meta_fbp'] ?? ($_COOKIE['_fbp'] ?? '')));
+        $fbc = trim((string) ($_SESSION['meta_fbc'] ?? ($_COOKIE['_fbc'] ?? '')));
+        if ($fbp !== '') {
+            $userData['fbp'] = $fbp;
+        }
+        if ($fbc !== '') {
+            $userData['fbc'] = $fbc;
+        }
 
-    $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
-    $ua = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
-    if ($ip !== '') {
-        $userData['client_ip_address'] = $ip;
-    }
-    if ($ua !== '') {
-        $userData['client_user_agent'] = $ua;
+        $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+        $ua = trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+        if ($ip !== '') {
+            $userData['client_ip_address'] = $ip;
+        }
+        if ($ua !== '') {
+            $userData['client_user_agent'] = $ua;
+        }
     }
 
     return $userData;
@@ -135,9 +151,16 @@ function meta_capi_event_source_url(): string
     return $scheme . '://' . $host . $uri;
 }
 
-function meta_capi_post_event(string $eventName, array $customData, array $userData, string $eventId, string $eventSourceUrl = ''): void
+function meta_capi_post_event(
+    string $eventName,
+    array $customData,
+    array $userData,
+    string $eventId,
+    string $eventSourceUrl = '',
+    array $context = []
+): void
 {
-    if (!meta_capi_enabled()) {
+    if (!meta_capi_enabled($context)) {
         return;
     }
     if ($eventId === '') {
@@ -231,7 +254,8 @@ function meta_capi_handle_view_content(array $context): void
         $payload,
         meta_capi_user_data($context),
         meta_capi_event_id('ViewContent', (string) $productId),
-        meta_capi_event_source_url()
+        meta_capi_event_source_url(),
+        $context
     );
 }
 
@@ -255,7 +279,7 @@ function meta_capi_handle_add_to_cart(array $context): void
     if ($eventId === '') {
         $eventId = meta_capi_event_id('AddToCart', $productId . '|' . time());
     }
-    meta_capi_post_event('AddToCart', $payload, meta_capi_user_data($context), $eventId, meta_capi_event_source_url());
+    meta_capi_post_event('AddToCart', $payload, meta_capi_user_data($context), $eventId, meta_capi_event_source_url(), $context);
 }
 
 function meta_capi_handle_initiate_checkout(array $context): void
@@ -279,7 +303,40 @@ function meta_capi_handle_initiate_checkout(array $context): void
         'currency' => 'INR',
     ];
     $seed = implode(',', $contentIds);
-    meta_capi_post_event('InitiateCheckout', $payload, meta_capi_user_data($context), meta_capi_event_id('InitiateCheckout', $seed), meta_capi_event_source_url());
+    meta_capi_post_event(
+        'InitiateCheckout',
+        $payload,
+        meta_capi_user_data($context),
+        meta_capi_event_id('InitiateCheckout', $seed),
+        meta_capi_event_source_url(),
+        $context
+    );
+}
+
+function meta_capi_order_delivery_context(mysqli $conn, int $orderId): array
+{
+    if ($orderId <= 0) {
+        return ['marketing_consent' => 'unknown'];
+    }
+    $stmt = $conn->prepare(
+        "SELECT payload_json
+         FROM commerce_outbox
+         WHERE topic = 'order.after_commit'
+           AND aggregate_type = 'order'
+           AND aggregate_id = ?
+         ORDER BY id ASC
+         LIMIT 1"
+    );
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stored = is_array($row)
+        ? json_decode((string) ($row['payload_json'] ?? ''), true)
+        : null;
+    $storedConsent = is_array($stored) && array_key_exists('marketing_consent', $stored)
+        ? $stored['marketing_consent']
+        : null;
+    return ['marketing_consent' => meta_capi_normalize_durable_consent($storedConsent)];
 }
 
 function meta_capi_purchase_payload(mysqli $conn, int $orderId): ?array
@@ -310,13 +367,18 @@ function meta_capi_purchase_payload(mysqli $conn, int $orderId): ?array
             $contentIds[] = (string) $pid;
         }
     }
+    $userDataContext = [
+        'email' => (string) ($order['customer_email'] ?? ''),
+        'phone' => (string) ($order['customer_phone'] ?? ''),
+        'customer_id' => (int) ($order['customer_id'] ?? 0),
+    ];
+    $deliveryContext = meta_capi_order_delivery_context($conn, $orderId);
+    $userDataContext['marketing_consent'] = meta_capi_normalize_durable_consent(
+        $deliveryContext['marketing_consent'] ?? null
+    );
     return [
         'order_number' => (string) ($order['order_number'] ?? ''),
-        'user_data_context' => [
-            'email' => (string) ($order['customer_email'] ?? ''),
-            'phone' => (string) ($order['customer_phone'] ?? ''),
-            'customer_id' => (int) ($order['customer_id'] ?? 0),
-        ],
+        'user_data_context' => $userDataContext,
         'custom_data' => [
             'content_ids' => array_values(array_unique($contentIds)),
             'content_type' => 'product',
@@ -346,12 +408,14 @@ function meta_capi_handle_cod_purchase(array $context): void
         return;
     }
     $userContext = array_merge($context, (array) ($purchase['user_data_context'] ?? []));
+    $userContext['durable_delivery'] = true;
     meta_capi_post_event(
         'Purchase',
         (array) ($purchase['custom_data'] ?? []),
         meta_capi_user_data($userContext),
         meta_capi_event_id('Purchase', $orderNumber),
-        meta_capi_event_source_url()
+        meta_capi_event_source_url(),
+        $userContext
     );
 }
 
@@ -371,11 +435,13 @@ function meta_capi_handle_paid_purchase(array $context): void
         return;
     }
     $userContext = array_merge($context, (array) ($purchase['user_data_context'] ?? []));
+    $userContext['durable_delivery'] = true;
     meta_capi_post_event(
         'Purchase',
         (array) ($purchase['custom_data'] ?? []),
         meta_capi_user_data($userContext),
         meta_capi_event_id('Purchase', $orderNumber),
-        meta_capi_event_source_url()
+        meta_capi_event_source_url(),
+        $userContext
     );
 }

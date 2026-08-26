@@ -56,18 +56,21 @@ $payloadHash = PaymentService::payment_webhook_payload_hash($payload);
 // 2) run business transaction once
 // 3) mark processed only after commit
 // 4) on business failure -> mark failed so later retries are accepted
+$lifecycleAttempt = 0;
 try {
     $lifecycle = WebhookLifecycleService::beginProcessing($conn, 'razorpay', $eventId, $signature, $payload);
+    $lifecycleAttempt = (int) ($lifecycle['attempts'] ?? 0);
     if (($lifecycle['state'] ?? '') === 'already_processed') {
         error_log('[razorpay-webhook] replay processed event_id=' . $eventId . ' payload_hash=' . $payloadHash);
         http_response_code(200);
         echo 'Already processed';
         exit;
     }
-    if (($lifecycle['state'] ?? '') === 'in_progress') {
+    if (WebhookLifecycleService::requiresProviderRetry((string) ($lifecycle['state'] ?? ''))) {
         error_log('[razorpay-webhook] duplicate in-progress event_id=' . $eventId . ' payload_hash=' . $payloadHash);
-        http_response_code(200);
-        echo 'Already processing';
+        header('Retry-After: 5');
+        http_response_code(503);
+        echo 'Processing in progress';
         exit;
     }
     error_log('[razorpay-webhook] claimed event_id=' . $eventId . ' attempt=' . (int) ($lifecycle['attempts'] ?? 0) . ' payload_hash=' . $payloadHash);
@@ -80,7 +83,7 @@ try {
 
 $eventType = (string) ($event['event'] ?? '');
 if (!in_array($eventType, ['payment.captured', 'order.paid', 'payment.failed'], true)) {
-    PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
+    PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload, $lifecycleAttempt);
     error_log('[razorpay-webhook] ignored unsupported event type=' . $eventType . ' event_id=' . $eventId);
     http_response_code(200);
     echo 'Ignored';
@@ -111,7 +114,8 @@ if ($rzpOrderId === '') {
             'razorpay',
             $eventId,
             'Missing Razorpay order id in supported signed webhook event.',
-            $signature
+            $signature,
+            $lifecycleAttempt
         );
     } catch (Throwable $markFailedException) {
         error_log('[razorpay-webhook] failed to persist malformed webhook state: ' . $markFailedException->getMessage());
@@ -153,7 +157,7 @@ if ($eventType === 'payment.failed') {
                 $payload,
                 false
             );
-            PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
+            PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload, $lifecycleAttempt);
             $conn->commit();
             http_response_code(200);
             echo 'Ignored';
@@ -219,7 +223,7 @@ if ($eventType === 'payment.failed') {
             log_order_activity($conn, $orderId, 'payment_failed', 'webhook', 0, 'razorpay', $note);
         }
 
-        PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
+        PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload, $lifecycleAttempt);
         $conn->commit();
         error_log('[razorpay-webhook] processed failure event_id=' . $eventId . ' order_id=' . $orderId . ' payment_id=' . $paymentId);
         http_response_code(200);
@@ -231,7 +235,7 @@ if ($eventType === 'payment.failed') {
             // ignore rollback errors
         }
         try {
-            PaymentService::payment_webhook_mark_failed($conn, 'razorpay', $eventId, $e->getMessage(), $signature);
+            PaymentService::payment_webhook_mark_failed($conn, 'razorpay', $eventId, $e->getMessage(), $signature, $lifecycleAttempt);
         } catch (Throwable $markFailedException) {
             error_log('[razorpay-webhook] failed to persist webhook failure state: ' . $markFailedException->getMessage());
         }
@@ -244,19 +248,18 @@ if ($eventType === 'payment.failed') {
 
 try {
     $businessCommitted = false;
-    $conn->begin_transaction();
-    //throw new RuntimeException('manual test failure after claim');
-
-    $paymentStmt = $conn->prepare(
-        "SELECT id, order_id, payment_status
-         FROM payments
-         WHERE payment_method = 'razorpay' AND razorpay_order_id = ?
+    $preflightStmt = $conn->prepare(
+        "SELECT p.id AS payment_id, p.order_id, o.total_amount,
+                o.payment_status AS order_payment_status, o.order_status
+         FROM payments p
+         INNER JOIN orders o ON o.id = p.order_id AND o.payment_method = 'razorpay'
+         WHERE p.payment_method = 'razorpay' AND p.razorpay_order_id = ?
          LIMIT 1"
     );
-    $paymentStmt->bind_param('s', $rzpOrderId);
-    $paymentStmt->execute();
-    $paymentRow = $paymentStmt->get_result()->fetch_assoc();
-    if (!$paymentRow) {
+    $preflightStmt->bind_param('s', $rzpOrderId);
+    $preflightStmt->execute();
+    $preflight = $preflightStmt->get_result()->fetch_assoc();
+    if (!$preflight) {
         PaymentService::payment_attempt_touch(
             $conn,
             'razorpay',
@@ -277,10 +280,61 @@ try {
         throw new RuntimeException('Payment row not found for razorpay_order_id=' . $rzpOrderId);
     }
 
+    $preflightPaymentRowId = (int) ($preflight['payment_id'] ?? 0);
+    $preflightOrderId = (int) ($preflight['order_id'] ?? 0);
+    $preflightTotalAmount = (float) ($preflight['total_amount'] ?? 0);
+    if ($preflightPaymentRowId <= 0 || $preflightOrderId <= 0) {
+        throw new RuntimeException('Invalid order id mapped to razorpay_order_id=' . $rzpOrderId);
+    }
+    if ($paymentId === '') {
+        throw new RuntimeException('Missing razorpay payment id for capture event.');
+    }
+    if (strtolower((string) ($preflight['order_payment_status'] ?? '')) !== 'paid') {
+        if (!in_array((string) ($preflight['order_status'] ?? ''), ['pending', 'confirmed'], true)) {
+            throw new RuntimeException('Order not in payable state for order_id=' . $preflightOrderId);
+        }
+        $remoteValidation = PaymentService::razorpay_validate_remote_capture(
+            $paymentId,
+            $rzpOrderId,
+            $preflightTotalAmount
+        );
+        if (empty($remoteValidation['ok'])) {
+            PaymentService::payment_attempt_touch(
+                $conn,
+                'razorpay',
+                $rzpOrderId,
+                $preflightOrderId,
+                $preflightPaymentRowId,
+                'webhook_rejected',
+                'webhook',
+                $paymentId,
+                $signature,
+                'gateway_validation_failed',
+                (string) ($remoteValidation['error'] ?? 'unknown'),
+                $eventId,
+                $signature,
+                $payload,
+                false
+            );
+            throw new RuntimeException('Razorpay gateway validation failed.');
+        }
+    }
+
+    $conn->begin_transaction();
+
+    $paymentStmt = $conn->prepare(
+        "SELECT id, order_id, payment_status
+         FROM payments
+         WHERE payment_method = 'razorpay' AND razorpay_order_id = ?
+         LIMIT 1"
+    );
+    $paymentStmt->bind_param('s', $rzpOrderId);
+    $paymentStmt->execute();
+    $paymentRow = $paymentStmt->get_result()->fetch_assoc();
     $paymentRowId = (int) ($paymentRow['id'] ?? 0);
     $orderId = (int) ($paymentRow['order_id'] ?? 0);
-    if ($orderId <= 0) {
-        throw new RuntimeException('Invalid order id mapped to razorpay_order_id=' . $rzpOrderId);
+    if (!$paymentRow || $paymentRowId !== $preflightPaymentRowId || $orderId !== $preflightOrderId) {
+        throw new RuntimeException('Razorpay payment mapping changed during webhook validation.');
     }
 
     $orderStmt = $conn->prepare(
@@ -304,7 +358,7 @@ try {
             'payment_method' => 'razorpay',
             'payment_status' => 'paid',
         ]);
-        PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
+        PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload, $lifecycleAttempt);
         $conn->commit();
         error_log('[razorpay-webhook] replay business-idempotent paid event_id=' . $eventId . ' order_id=' . $orderId);
         OutboxService::safeDrainForOrder($conn, $orderId);
@@ -319,31 +373,8 @@ try {
     if ($paymentId === '') {
         throw new RuntimeException('Missing razorpay payment id for capture event.');
     }
-
-    $remoteValidation = PaymentService::razorpay_validate_remote_capture(
-        $paymentId,
-        $rzpOrderId,
-        (float) ($order['total_amount'] ?? 0)
-    );
-    if (empty($remoteValidation['ok'])) {
-        PaymentService::payment_attempt_touch(
-            $conn,
-            'razorpay',
-            $rzpOrderId,
-            $orderId,
-            $paymentRowId,
-            'webhook_rejected',
-            'webhook',
-            $paymentId,
-            $signature,
-            'gateway_validation_failed',
-            (string) ($remoteValidation['error'] ?? 'unknown'),
-            $eventId,
-            $signature,
-            $payload,
-            false
-        );
-        throw new RuntimeException('Razorpay gateway validation failed.');
+    if (abs((float) ($order['total_amount'] ?? 0) - $preflightTotalAmount) > 0.0001) {
+        throw new RuntimeException('Order total changed during Razorpay webhook validation.');
     }
 
     PaymentService::razorpay_mark_order_paid(
@@ -392,7 +423,7 @@ try {
         'payment_method' => 'razorpay',
         'payment_status' => 'paid',
     ]);
-    PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload);
+    PaymentService::payment_webhook_mark_processed($conn, 'razorpay', $eventId, $signature, $payloadHash, $payload, $lifecycleAttempt);
 
     $conn->commit();
     $businessCommitted = true;
@@ -408,7 +439,7 @@ try {
     }
     if (empty($businessCommitted)) {
         try {
-            PaymentService::payment_webhook_mark_failed($conn, 'razorpay', $eventId, $e->getMessage(), $signature);
+            PaymentService::payment_webhook_mark_failed($conn, 'razorpay', $eventId, $e->getMessage(), $signature, $lifecycleAttempt);
         } catch (Throwable $markFailedException) {
             error_log('[razorpay-webhook] failed to persist webhook failure state: ' . $markFailedException->getMessage());
         }

@@ -105,9 +105,10 @@ function payment_webhook_mark_processed(mysqli $conn,
     string $eventId,
     string $signature,
     ?string $payloadHash = null,
-    ?string $rawPayload = null) : void
+    ?string $rawPayload = null,
+    int $expectedAttempt = 0) : void
 {
-    PaymentService::payment_webhook_mark_processed($conn, $provider, $eventId, $signature, $payloadHash, $rawPayload);
+    PaymentService::payment_webhook_mark_processed($conn, $provider, $eventId, $signature, $payloadHash, $rawPayload, $expectedAttempt);
 }
 
 function payment_webhook_begin_processing(mysqli $conn,
@@ -124,7 +125,8 @@ function payment_webhook_mark_failed(mysqli $conn,
     string $provider,
     string $eventId,
     string $errorMessage,
-    string $signature = '') : void
+    string $signature = '',
+    int $expectedAttempt = 0) : void
 {
-    PaymentService::payment_webhook_mark_failed($conn, $provider, $eventId, $errorMessage, $signature);
+    PaymentService::payment_webhook_mark_failed($conn, $provider, $eventId, $errorMessage, $signature, $expectedAttempt);
 }

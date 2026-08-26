@@ -13,9 +13,11 @@ $root = dirname(__DIR__);
 require $root . '/config/db.php';
 require_once $root . '/includes/services/AdminOtpService.php';
 require_once $root . '/includes/services/CronService.php';
+require_once $root . '/includes/services/PaymentService.php';
 require_once $root . '/includes/hooks.php';
 require_once $root . '/includes/services/OutboxService.php';
 require_once $root . '/includes/coupon-functions.php';
+require_once $root . '/includes/helpers/payments.php';
 
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
@@ -52,7 +54,112 @@ $suffix = bin2hex(random_bytes(8));
 $adminId = 0;
 $couponId = 0;
 $orderIds = [];
+$webhookEventId = '';
 try {
+    $webhookEventId = 'priority-webhook-' . $suffix;
+    $webhookPayload = json_encode(['event' => 'payment.captured', 'test' => $suffix], JSON_UNESCAPED_SLASHES);
+    if (!is_string($webhookPayload)) {
+        throw new RuntimeException('Unable to encode disposable webhook payload.');
+    }
+    $firstWebhookClaim = payment_webhook_begin_processing(
+        $conn,
+        'integration-test',
+        $webhookEventId,
+        'signature-one',
+        $webhookPayload,
+        30
+    );
+    $assert(
+        ($firstWebhookClaim['state'] ?? '') === 'claimed' && (int) ($firstWebhookClaim['attempts'] ?? 0) === 1,
+        'The compatibility webhook helper must claim a new event through the canonical lifecycle service.'
+    );
+    $activeDuplicate = WebhookLifecycleService::beginProcessing(
+        $conn,
+        'integration-test',
+        $webhookEventId,
+        'signature-two',
+        $webhookPayload,
+        30
+    );
+    $assert(
+        ($activeDuplicate['state'] ?? '') === 'in_progress' && (int) ($activeDuplicate['attempts'] ?? 0) === 1,
+        'An active duplicate webhook must not steal or extend the current processing claim.'
+    );
+    $expireWebhookClaim = $conn->prepare(
+        "UPDATE payment_webhook_events
+         SET updated_at = DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+         WHERE provider = 'integration-test' AND event_id = ?"
+    );
+    $expireWebhookClaim->bind_param('s', $webhookEventId);
+    $expireWebhookClaim->execute();
+    $reclaimedWebhook = payment_webhook_begin_processing(
+        $conn,
+        'integration-test',
+        $webhookEventId,
+        'signature-three',
+        $webhookPayload,
+        30
+    );
+    $assert(
+        ($reclaimedWebhook['state'] ?? '') === 'claimed' && (int) ($reclaimedWebhook['attempts'] ?? 0) === 2,
+        'A stale webhook processing claim must be reclaimed through the existing compatibility API.'
+    );
+    PaymentService::payment_webhook_mark_failed(
+        $conn,
+        'integration-test',
+        $webhookEventId,
+        'Injected stale-owner failure.',
+        'signature-one',
+        1
+    );
+    $webhookStateStmt = $conn->prepare(
+        "SELECT status, attempts
+         FROM payment_webhook_events
+         WHERE provider = 'integration-test' AND event_id = ?"
+    );
+    $webhookStateStmt->bind_param('s', $webhookEventId);
+    $webhookStateStmt->execute();
+    $webhookState = $webhookStateStmt->get_result()->fetch_assoc() ?: [];
+    $assert(
+        ($webhookState['status'] ?? '') === 'processing' && (int) ($webhookState['attempts'] ?? 0) === 2,
+        'A stale owner must not fail a processing lease reclaimed by a newer attempt.'
+    );
+    PaymentService::payment_webhook_mark_processed(
+        $conn,
+        'integration-test',
+        $webhookEventId,
+        'signature-three',
+        PaymentService::payment_webhook_payload_hash($webhookPayload),
+        $webhookPayload,
+        2
+    );
+    PaymentService::payment_webhook_mark_failed(
+        $conn,
+        'integration-test',
+        $webhookEventId,
+        'Injected post-completion stale-owner failure.',
+        'signature-one',
+        1
+    );
+    $webhookStateStmt->execute();
+    $webhookState = $webhookStateStmt->get_result()->fetch_assoc() ?: [];
+    $assert(
+        ($webhookState['status'] ?? '') === 'processed' && (int) ($webhookState['attempts'] ?? 0) === 2,
+        'A stale owner must not regress a newer processed lifecycle row to failed.'
+    );
+    $processedDuplicate = WebhookLifecycleService::beginProcessing(
+        $conn,
+        'integration-test',
+        $webhookEventId,
+        'signature-four',
+        $webhookPayload,
+        30
+    );
+    $assert(
+        ($processedDuplicate['state'] ?? '') === 'already_processed',
+        'A processed webhook duplicate must remain idempotently acknowledged.'
+    );
+
     $email = 'priority-' . $suffix . '@example.test';
     $stmt = $conn->prepare("INSERT INTO admins (name, email, role, is_active) VALUES ('Priority Test', ?, 'viewer', 1)");
     $stmt->bind_param('s', $email);
@@ -202,6 +309,11 @@ try {
         $outboxDelete->execute();
         $stmt = $conn->prepare('DELETE FROM orders WHERE id = ?');
         $stmt->bind_param('i', $orderId);
+        $stmt->execute();
+    }
+    if ($webhookEventId !== '') {
+        $stmt = $conn->prepare("DELETE FROM payment_webhook_events WHERE provider = 'integration-test' AND event_id = ?");
+        $stmt->bind_param('s', $webhookEventId);
         $stmt->execute();
     }
     if ($couponId > 0) {

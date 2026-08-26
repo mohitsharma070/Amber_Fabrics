@@ -356,6 +356,7 @@ try {
         'whatsapp_transactional_consent_at' => $codWhatsappConsent ? date('Y-m-d H:i:s') : null,
         'payment_status' => $isZeroAmountOrder ? 'paid' : 'pending',
         'order_status' => $isZeroAmountOrder ? 'confirmed' : 'pending',
+        'marketing_consent' => marketing_consent_status(),
         'subtotal' => $subtotal,
         'shipping_amount' => $shippingAmount,
         'discount_amount' => $discountAmount,
