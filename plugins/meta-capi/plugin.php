@@ -4,7 +4,7 @@ add_action('app.init', 'meta_capi_capture_browser_ids', 10);
 add_action('product.view', 'meta_capi_handle_view_content', 10);
 add_action('checkout.view', 'meta_capi_handle_initiate_checkout', 10);
 add_action('cart.after_add', 'meta_capi_handle_add_to_cart', 20);
-add_action('order.after_create', 'meta_capi_handle_cod_purchase', 30);
+add_action('order.after_commit', 'meta_capi_handle_cod_purchase', 30);
 add_action('order.after_payment_success', 'meta_capi_handle_paid_purchase', 10);
 
 function meta_capi_enabled(): bool
