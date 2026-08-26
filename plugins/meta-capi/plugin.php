@@ -287,7 +287,12 @@ function meta_capi_purchase_payload(mysqli $conn, int $orderId): ?array
     if ($orderId <= 0) {
         return null;
     }
-    $stmt = $conn->prepare("SELECT id, order_number, total_amount FROM orders WHERE id = ? LIMIT 1");
+    $stmt = $conn->prepare(
+        "SELECT id, order_number, total_amount, customer_email, customer_phone, customer_id
+         FROM orders
+         WHERE id = ?
+         LIMIT 1"
+    );
     $stmt->bind_param('i', $orderId);
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
@@ -307,6 +312,11 @@ function meta_capi_purchase_payload(mysqli $conn, int $orderId): ?array
     }
     return [
         'order_number' => (string) ($order['order_number'] ?? ''),
+        'user_data_context' => [
+            'email' => (string) ($order['customer_email'] ?? ''),
+            'phone' => (string) ($order['customer_phone'] ?? ''),
+            'customer_id' => (int) ($order['customer_id'] ?? 0),
+        ],
         'custom_data' => [
             'content_ids' => array_values(array_unique($contentIds)),
             'content_type' => 'product',
@@ -335,10 +345,11 @@ function meta_capi_handle_cod_purchase(array $context): void
     if ($orderNumber === '') {
         return;
     }
+    $userContext = array_merge($context, (array) ($purchase['user_data_context'] ?? []));
     meta_capi_post_event(
         'Purchase',
         (array) ($purchase['custom_data'] ?? []),
-        meta_capi_user_data($context),
+        meta_capi_user_data($userContext),
         meta_capi_event_id('Purchase', $orderNumber),
         meta_capi_event_source_url()
     );
@@ -359,10 +370,11 @@ function meta_capi_handle_paid_purchase(array $context): void
     if ($orderNumber === '') {
         return;
     }
+    $userContext = array_merge($context, (array) ($purchase['user_data_context'] ?? []));
     meta_capi_post_event(
         'Purchase',
         (array) ($purchase['custom_data'] ?? []),
-        meta_capi_user_data($context),
+        meta_capi_user_data($userContext),
         meta_capi_event_id('Purchase', $orderNumber),
         meta_capi_event_source_url()
     );
