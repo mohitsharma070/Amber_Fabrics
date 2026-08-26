@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/helpers/coupon-functions.php';
+require_once __DIR__ . '/../includes/services/WebhookLifecycleService.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -56,7 +57,7 @@ $payloadHash = PaymentService::payment_webhook_payload_hash($payload);
 // 3) mark processed only after commit
 // 4) on business failure -> mark failed so later retries are accepted
 try {
-    $lifecycle = PaymentService::payment_webhook_begin_processing($conn, 'razorpay', $eventId, $signature, $payload);
+    $lifecycle = WebhookLifecycleService::beginProcessing($conn, 'razorpay', $eventId, $signature, $payload);
     if (($lifecycle['state'] ?? '') === 'already_processed') {
         error_log('[razorpay-webhook] replay processed event_id=' . $eventId . ' payload_hash=' . $payloadHash);
         http_response_code(200);
@@ -104,6 +105,17 @@ if ($eventType === 'payment.captured') {
 }
 
 if ($rzpOrderId === '') {
+    try {
+        PaymentService::payment_webhook_mark_failed(
+            $conn,
+            'razorpay',
+            $eventId,
+            'Missing Razorpay order id in supported signed webhook event.',
+            $signature
+        );
+    } catch (Throwable $markFailedException) {
+        error_log('[razorpay-webhook] failed to persist malformed webhook state: ' . $markFailedException->getMessage());
+    }
     http_response_code(400);
     echo 'Missing order id';
     exit;
