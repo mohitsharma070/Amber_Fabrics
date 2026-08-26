@@ -284,7 +284,9 @@ final class ProductImportService
             $archive->addFromString('_rels/.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
             $archive->addFromString('xl/workbook.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Products" sheetId="1" r:id="rId1"/></sheets></workbook>');
             $archive->addFromString('xl/_rels/workbook.xml.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
-            $archive->addFile($sheetPath,'xl/worksheets/sheet1.xml');unset($archive);@unlink($sheetPath);
+            $archive->addFile($sheetPath,'xl/worksheets/sheet1.xml');unset($archive);
+            self::normalizeXlsxZipHeaders($archivePath);
+            @unlink($sheetPath);
             return $archivePath;
         }catch(ProductCatalogueException $e){
             if(is_resource($sheet))fclose($sheet);unset($archive);@unlink($sheetPath);@unlink($archivePath);throw $e;
@@ -292,6 +294,29 @@ final class ProductImportService
             if(is_resource($sheet))fclose($sheet);unset($archive);@unlink($sheetPath);@unlink($archivePath);
             throw new ProductCatalogueException('Could not generate the Excel workbook. Verify that PHP Phar ZIP support is enabled.',0,$e);
         }
+    }
+
+    private static function normalizeXlsxZipHeaders(string $archivePath): void
+    {
+        $bytes=file_get_contents($archivePath);
+        if($bytes===false)throw new RuntimeException('Could not finalize the Excel workbook archive.');
+        $eocd=strrpos($bytes,"PK\x05\x06");
+        if($eocd===false||strlen($bytes)<$eocd+22)throw new RuntimeException('The Excel workbook ZIP directory is missing.');
+        $uint16=static fn(int $offset):int=>(int)(unpack('vvalue',substr($bytes,$offset,2))['value']??0);
+        $uint32=static fn(int $offset):int=>(int)(unpack('Vvalue',substr($bytes,$offset,4))['value']??0);
+        $entryCount=$uint16($eocd+10);$cursor=$uint32($eocd+16);$version=pack('v',20);
+        if($entryCount<1||$cursor<0||$cursor>=$eocd)throw new RuntimeException('The Excel workbook ZIP directory is invalid.');
+        for($entry=0;$entry<$entryCount;$entry++){
+            if(substr($bytes,$cursor,4)!=="PK\x01\x02")throw new RuntimeException('The Excel workbook ZIP entry is invalid.');
+            $nameLength=$uint16($cursor+28);$extraLength=$uint16($cursor+30);$commentLength=$uint16($cursor+32);$localOffset=$uint32($cursor+42);
+            if(substr($bytes,$localOffset,4)!=="PK\x03\x04")throw new RuntimeException('The Excel workbook ZIP local entry is invalid.');
+            $bytes=substr_replace($bytes,$version,$localOffset+4,2);
+            $bytes=substr_replace($bytes,$version,$cursor+4,2);
+            $bytes=substr_replace($bytes,$version,$cursor+6,2);
+            $cursor+=46+$nameLength+$extraLength+$commentLength;
+        }
+        $written=file_put_contents($archivePath,$bytes,LOCK_EX);
+        if($written!==strlen($bytes))throw new RuntimeException('Could not finalize the Excel workbook archive.');
     }
 
     private static function readXlsxRows(string $path): array

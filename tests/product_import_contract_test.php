@@ -39,6 +39,7 @@ $assert(str_contains($service,'mediaMatches($conn')&&str_contains($service,'more
 $assert(str_contains($service,'assertCurrentRevision')&&str_contains($service,'hash_equals')&&str_contains($service,'FOR UPDATE'),'Round-trip updates must reject stale product revisions again inside the write transaction.');
 $assert(str_contains($page,'catch (ProductCatalogueException $e)')&&str_contains($page,"flash('error', \$e->getMessage())"),'Expected export-limit failures must give administrators an actionable message.');
 $assert(str_contains($openapi,'enum: [template, products]')&&str_contains($architecture,'immutable Product IDs'),'The product export endpoint contract and architecture documentation must describe round-trip exports.');
+$assert(str_contains($service,'normalizeXlsxZipHeaders')&&str_contains($openapi,'desktop Excel-compatible')&&str_contains($architecture,'without recovery'),'Product exports must declare desktop Excel-compatible ZIP metadata and document the compatibility contract.');
 
 $method=new ReflectionMethod(ProductImportService::class,'headerKey');$method->setAccessible(true);
 $assert($method->invoke(null,"\xEF\xBB\xBFProduct Code")==='productcode','UTF-8 BOM header normalization failed.');
@@ -67,6 +68,12 @@ foreach($workbookValues as $header=>$value)$workbookRow[array_search($header,Pro
 $workbookPath='';
 try{
     $workbookPath=$createXlsx->invoke(null,[ProductImportService::HEADERS,$workbookRow]);
+    $zipBytes=(string)file_get_contents($workbookPath);
+    $localHeader=strpos($zipBytes,"PK\x03\x04");$centralHeader=strpos($zipBytes,"PK\x01\x02");
+    $localVersion=$localHeader===false?0:(int)(unpack('vvalue',substr($zipBytes,$localHeader+4,2))['value']??0);
+    $madeByVersion=$centralHeader===false?0:(int)(unpack('vvalue',substr($zipBytes,$centralHeader+4,2))['value']??0);
+    $centralVersion=$centralHeader===false?0:(int)(unpack('vvalue',substr($zipBytes,$centralHeader+6,2))['value']??0);
+    $assert($localVersion>=10&&$madeByVersion>=10&&$centralVersion>=10,'Generated Excel ZIP headers must declare a standard non-zero extraction version for desktop Excel compatibility.');
     $workbookRows=$readRows->invoke(null,$workbookPath,'xlsx');$roundTrip=$normalizeRow->invoke(null,reset($workbookRows));
     $assert(($roundTrip['sku']??'')==='000123'&&($roundTrip['product_code']??'')==='000045'&&($roundTrip['amazon_asin']??'')==='0000000123','Excel round trips must preserve leading-zero identifiers as text.');
     $assert(($roundTrip['product_revision']??'')===str_repeat('a',64),'Excel round trips must preserve immutable revision tokens.');

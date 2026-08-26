@@ -1232,7 +1232,7 @@ paths:
             enum: [template, products]
       responses:
         '200':
-          description: HTML import page, populated simple-product Excel workbook, or blank CSV template
+          description: HTML import page, desktop Excel-compatible populated simple-product workbook, or blank CSV template
           content:
             text/html:
               schema:
