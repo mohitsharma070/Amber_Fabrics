@@ -522,7 +522,8 @@ final class PaymentService
         string $eventId,
         string $signature,
         ?string $payloadHash = null,
-        ?string $rawPayload = null
+        ?string $rawPayload = null,
+        int $expectedAttempt = 0
     ): void
     {
         if ($provider === '' || $eventId === '') {
@@ -531,6 +532,36 @@ final class PaymentService
         $hash = trim((string) $payloadHash);
         $payload = $rawPayload;
         $processedAt = date('Y-m-d H:i:s');
+        if ($expectedAttempt > 0) {
+            $payloadValue = (string) ($payload ?? '');
+            $stmt = $conn->prepare(
+                "UPDATE payment_webhook_events
+                 SET signature = CASE WHEN ? <> '' THEN ? ELSE signature END,
+                     payload_hash = CASE WHEN ? <> '' THEN ? ELSE payload_hash END,
+                     raw_payload = CASE WHEN ? <> '' THEN ? ELSE raw_payload END,
+                     status = 'processed',
+                     last_error = NULL,
+                     processed_at = ?,
+                     updated_at = NOW()
+                 WHERE provider = ? AND event_id = ?
+                   AND status = 'processing' AND attempts = ?"
+            );
+            $stmt->bind_param(
+                'sssssssssi',
+                $signature,
+                $signature,
+                $hash,
+                $hash,
+                $payloadValue,
+                $payloadValue,
+                $processedAt,
+                $provider,
+                $eventId,
+                $expectedAttempt
+            );
+            $stmt->execute();
+            return;
+        }
         $stmt = $conn->prepare(
             "INSERT INTO payment_webhook_events (
                 provider, event_id, signature, payload_hash, raw_payload, status, attempts, processed_at, created_at, updated_at
@@ -565,81 +596,15 @@ final class PaymentService
         int $processingTtlSeconds = 120
     ): array
     {
-        if ($provider === '' || $eventId === '') {
-            return ['state' => 'in_progress', 'status' => '', 'attempts' => 0];
-        }
-        $payloadHash = PaymentService::payment_webhook_payload_hash($payload);
-        $processingTtlSeconds = max(30, $processingTtlSeconds);
-
-        $conn->begin_transaction();
-        try {
-            $insert = $conn->prepare(
-                "INSERT INTO payment_webhook_events (
-                    provider, event_id, signature, payload_hash, raw_payload, status, attempts, last_error, processed_at, created_at, updated_at
-                )
-                 VALUES (?, ?, ?, ?, ?, 'received', 0, NULL, NULL, NOW(), NOW())
-                 ON DUPLICATE KEY UPDATE
-                    signature = VALUES(signature),
-                    payload_hash = VALUES(payload_hash),
-                    raw_payload = VALUES(raw_payload),
-                    updated_at = NOW()"
-            );
-            $insert->bind_param('sssss', $provider, $eventId, $signature, $payloadHash, $payload);
-            $insert->execute();
-
-            $select = $conn->prepare(
-                "SELECT id, status, attempts, UNIX_TIMESTAMP(updated_at) AS updated_ts
-                 FROM payment_webhook_events
-                 WHERE provider = ? AND event_id = ?
-                 LIMIT 1
-                 FOR UPDATE"
-            );
-            $select->bind_param('ss', $provider, $eventId);
-            $select->execute();
-            $row = $select->get_result()->fetch_assoc();
-            if (!$row) {
-                throw new RuntimeException('Webhook lifecycle row missing for provider=' . $provider . ' event=' . $eventId);
-            }
-
-            $status = strtolower(trim((string) ($row['status'] ?? 'received')));
-            $attempts = (int) ($row['attempts'] ?? 0);
-            $updatedTs = (int) ($row['updated_ts'] ?? 0);
-            $nowTs = time();
-            $isStaleProcessing = $status === 'processing' && $updatedTs > 0 && ($nowTs - $updatedTs) > $processingTtlSeconds;
-
-            if ($status === 'processed') {
-                $conn->commit();
-                return ['state' => 'already_processed', 'status' => 'processed', 'attempts' => $attempts];
-            }
-            if ($status === 'processing' && !$isStaleProcessing) {
-                $conn->commit();
-                return ['state' => 'in_progress', 'status' => 'processing', 'attempts' => $attempts];
-            }
-
-            $nextAttempts = $attempts + 1;
-            $update = $conn->prepare(
-                "UPDATE payment_webhook_events
-                 SET status = 'processing',
-                     attempts = ?,
-                     last_error = NULL,
-                     processed_at = NULL,
-                     updated_at = NOW()
-                 WHERE id = ?"
-            );
-            $id = (int) $row['id'];
-            $update->bind_param('ii', $nextAttempts, $id);
-            $update->execute();
-
-            $conn->commit();
-            return ['state' => 'claimed', 'status' => 'processing', 'attempts' => $nextAttempts];
-        } catch (Throwable $e) {
-            try {
-                $conn->rollback();
-            } catch (Throwable $rollbackException) {
-                // ignore rollback errors
-            }
-            throw $e;
-        }
+        require_once __DIR__ . '/WebhookLifecycleService.php';
+        return WebhookLifecycleService::beginProcessing(
+            $conn,
+            $provider,
+            $eventId,
+            $signature,
+            $payload,
+            $processingTtlSeconds
+        );
     }
 
     public static function payment_webhook_mark_failed(
@@ -647,7 +612,8 @@ final class PaymentService
         string $provider,
         string $eventId,
         string $errorMessage,
-        string $signature = ''
+        string $signature = '',
+        int $expectedAttempt = 0
     ): void
     {
         if ($provider === '' || $eventId === '') {
@@ -656,6 +622,20 @@ final class PaymentService
         $errorMessage = trim($errorMessage);
         if ($errorMessage === '') {
             $errorMessage = 'Webhook processing failed.';
+        }
+        if ($expectedAttempt > 0) {
+            $stmt = $conn->prepare(
+                "UPDATE payment_webhook_events
+                 SET status = 'failed',
+                     last_error = ?,
+                     updated_at = NOW(),
+                     signature = CASE WHEN ? <> '' THEN ? ELSE signature END
+                 WHERE provider = ? AND event_id = ?
+                   AND status = 'processing' AND attempts = ?"
+            );
+            $stmt->bind_param('sssssi', $errorMessage, $signature, $signature, $provider, $eventId, $expectedAttempt);
+            $stmt->execute();
+            return;
         }
         $stmt = $conn->prepare(
             "UPDATE payment_webhook_events

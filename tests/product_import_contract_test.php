@@ -28,6 +28,12 @@ $assert(str_contains($page,'Fallback selling unit')&&str_contains($page,'Used on
 $assert(str_contains($service,"WHERE product_type='simple'")&&str_contains($service,'amber-products-')&&str_contains($service,"status='draft',is_available=0"),'Current-product export or draft-safe update behavior is missing.');
 $assert(str_contains($service,'assertUniqueIdentifiers($rows)')&&str_contains($service,"throw new InvalidArgumentException('Product ID '"),'Round-trip imports must reject duplicate or unknown immutable identifiers.');
 $assert(str_contains($page,'ProductImportService::CLEAR_MARKER')&&str_contains($service,"'media_action'=>\$mediaAction"),'Explicit optional-field and media clearing semantics are missing.');
+$assert(
+    str_contains($page,'existing legacy meter product')
+        && str_contains($openapi,'legacy meter product')
+        && str_contains($architecture,'legacy meter products'),
+    'Catalogue UI and endpoint documentation must explain legacy blank meter-option round trips.'
+);
 $assert(str_contains($service,"array_merge(\$existingCatalog,\$data['catalog_data'])")&&str_contains($service,'$altByMedia'),'Round-trip updates must retain unknown catalogue metadata and alt text for media that remains attached.');
 $assert(str_contains($service,'mediaMatches($conn')&&str_contains($service,'more than 10 images or 2 videos'),'Unchanged or unrepresentable product media must not be destructively rewritten by a round trip.');
 $assert(str_contains($service,'assertCurrentRevision')&&str_contains($service,'hash_equals')&&str_contains($service,'FOR UPDATE'),'Round-trip updates must reject stale product revisions again inside the write transaction.');
@@ -79,5 +85,32 @@ $inactiveCategories=['archivedcategory'=>['slug'=>'archived-category','default_u
 [, $newInactiveErrors]=$validateRow->invoke(null,$validationConn,$validationInput,$inactiveCategories,'piece',null);
 $assert($preservedData['category']==='archived-category'&&$preservedData['unit_type']==='meter'&&!str_contains(implode(' ',$preservedErrors),'active category'),'An unchanged inactive category and its existing unit must remain valid for an existing product.');
 $assert(str_contains(implode(' ',$newInactiveErrors),'active category'),'New products must not be assigned to inactive categories.');
+
+$activeMeterCategories=['fabricbymeter'=>['slug'=>'fabric-by-meter','default_unit_type'=>'meter','status'=>'active']];
+$legacyMeterExisting=array_merge($existing,['meter_options'=>'']);
+$legacyMeterWorkbookRow=array_fill(0,count(ProductImportService::HEADERS),'');
+$legacyMeterWorkbookValues=['Product ID'=>'7','Product Revision'=>$revisionToken->invoke(null,$legacyMeterExisting,['image'=>[],'video'=>[]]),'Name'=>'Existing Product','Sku Id'=>'OLD-SKU','MRP'=>'100','Quantity'=>'20','Selling Unit'=>'meter','Meter Length Options'=>'','Product Type'=>'fabric-by-meter'];
+foreach($legacyMeterWorkbookValues as $header=>$value)$legacyMeterWorkbookRow[array_search($header,ProductImportService::HEADERS,true)]=$value;
+$legacyMeterWorkbookPath='';
+try{
+    $legacyMeterWorkbookPath=$createXlsx->invoke(null,[ProductImportService::HEADERS,$legacyMeterWorkbookRow]);
+    $legacyMeterWorkbookRows=$readRows->invoke(null,$legacyMeterWorkbookPath,'xlsx');
+    $legacyMeterInput=$normalizeRow->invoke(null,reset($legacyMeterWorkbookRows));
+}catch(Throwable $e){$fail[]='Legacy meter export could not be read back: '.$e->getMessage();$legacyMeterInput=[];}
+finally{if($legacyMeterWorkbookPath!==''&&is_file($legacyMeterWorkbookPath))unlink($legacyMeterWorkbookPath);}
+[$legacyMeterMerged,$legacyMeterMergeErrors]=$merge->invoke(null,$legacyMeterInput,$legacyMeterExisting);
+[$legacyMeterData,$legacyMeterErrors,$legacyMeterWarnings]=$validateRow->invoke(null,$validationConn,$legacyMeterMerged,$activeMeterCategories,'piece',$legacyMeterExisting);
+$assert(
+    $legacyMeterMergeErrors===[]
+        && $legacyMeterData['meter_options']===''
+        && !str_contains(implode(' ',$legacyMeterErrors),'Meter Length Options are required')
+        && str_contains(implode(' ',$legacyMeterWarnings),'existing meter product'),
+    'An unchanged legacy meter product with blank options must round-trip without inventing hardcoded length choices.'
+);
+[, $newMeterErrors]=$validateRow->invoke(null,$validationConn,$legacyMeterInput,$activeMeterCategories,'piece',null);
+$assert(str_contains(implode(' ',$newMeterErrors),'Meter Length Options are required'),'New meter products must still provide explicit length choices.');
+$convertedExisting=array_merge($existing,['category'=>'bedsheets','unit_type'=>'piece','meter_options'=>'']);
+[, $convertedMeterErrors]=$validateRow->invoke(null,$validationConn,$legacyMeterInput,$activeMeterCategories,'piece',$convertedExisting);
+$assert(str_contains(implode(' ',$convertedMeterErrors),'Meter Length Options are required'),'Changing an existing non-meter product to meter must still require explicit length choices.');
 
 if($fail){foreach($fail as $message)fwrite(STDERR,"FAIL: $message\n");exit(1);}echo "product_import_contract_test: OK\n";

@@ -395,6 +395,14 @@ paths:
           description: Invalid signature/payload
         '500':
           description: Server error
+        '503':
+          description: Event is actively processing; provider should retry later
+          headers:
+            Retry-After:
+              description: Suggested delay in seconds before retrying the active event
+              schema:
+                type: integer
+                minimum: 1
 
   /cod-guard-webhook.php:
     get:
@@ -1242,6 +1250,11 @@ paths:
     post:
       tags: [Admin]
       summary: Validate or import an XLSX/CSV product catalogue; revision-protected Product ID rows update the exact simple product
+      description: >-
+        Blank non-media cells preserve current values. An unchanged existing
+        legacy meter product may retain blank meter-length options; new products
+        and products converted to meter require explicit options. Every existing
+        product updated by an import returns to draft for administrator review.
       security:
         - adminSessionAuth: []
       requestBody:

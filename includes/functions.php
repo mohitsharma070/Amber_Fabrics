@@ -11,6 +11,7 @@ require_once __DIR__ . '/integrations/HttpClientPolicy.php';
 require_once __DIR__ . '/integrations/JsonHttpClient.php';
 require_once __DIR__ . '/services/SiteSettingsService.php';
 require_once __DIR__ . '/services/PaymentService.php';
+require_once __DIR__ . '/services/WebhookLifecycleService.php';
 require_once __DIR__ . '/services/ProductReadService.php';
 require_once __DIR__ . '/services/CustomerReadService.php';
 require_once __DIR__ . '/services/CartService.php';

@@ -552,7 +552,16 @@ final class ProductImportService
         if(in_array($unit,['piece','set'],true)&&floor($qty)!=$qty)$errors[]='Quantity must be a whole number for piece/set products.';
         $parsedMeterOptions=CartService::parse_meter_options((string)($row['meter_options']??''),0.01);
         $normalizedMeterOptions=implode(', ',array_map(static fn($value):string=>format_meter_quantity((float)$value),$parsedMeterOptions));
-        if($unit==='meter'&&$normalizedMeterOptions==='')$errors[]='Meter Length Options are required for meter products (for example: 10, 20, 30).';
+        $retainingLegacyBlankMeterOptions=$unit==='meter'
+            &&$updating
+            &&$preservingCurrent
+            &&(string)($existing['unit_type']??'')==='meter'
+            &&trim((string)($existing['meter_options']??''))===''
+            &&$normalizedMeterOptions==='';
+        if($unit==='meter'&&$normalizedMeterOptions===''){
+            if($retainingLegacyBlankMeterOptions)$warnings[]='This existing meter product has no Meter Length Options. The blank legacy value was retained; add options before publishing.';
+            else $errors[]='Meter Length Options are required for meter products (for example: 10, 20, 30).';
+        }
         if($unit!=='meter')$normalizedMeterOptions='';
         $gst=self::number($row['gst_rate'],'GST %',$errors,false,true);if($gst!==null&&$gst>100)$errors[]='GST % must be between 0 and 100.';
         $hsn=trim($row['hsn_code']);if($hsn!==''&&!preg_match('/^[0-9]{4,8}$/',$hsn))$errors[]='HSN Code must contain 4 to 8 digits.';
