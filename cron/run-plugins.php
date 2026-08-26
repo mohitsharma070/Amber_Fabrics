@@ -102,7 +102,7 @@ function cron_readiness_check(mysqli $conn): array
         'inventory_alert_logs' => ['variant_id'],
         'shipping_courier_reverse_pickups' => ['initialization_status', 'claim_token', 'attempt_count', 'last_error'],
         'cod_confirmations' => ['whatsapp_consent_at', 'whatsapp_consent_version'],
-        'categories' => ['uses_variant_size'],
+        'categories' => ['uses_variant_size', 'default_unit_type'],
         'coupon_usages' => ['guest_identity_hash'],
         'commerce_outbox' => ['dedupe_key', 'status', 'attempts', 'available_at', 'claim_token', 'claimed_at'],
         'commerce_outbox_deliveries' => ['outbox_id', 'handler_key', 'status', 'claim_token', 'claimed_at'],
@@ -145,6 +145,7 @@ function cron_readiness_check(mysqli $conn): array
     $requiredMigrations = [
         '2026-08-24-priority-findings-remediation.sql' => 'Priority remediation',
         '2026-08-25-architecture-hardening.sql' => 'Architecture hardening',
+        '2026-08-27-category-default-unit-type.sql' => 'Category default selling unit',
     ];
     foreach ($requiredMigrations as $migrationName => $migrationLabel) {
         $migrationPath = __DIR__ . '/../database/migrations/' . $migrationName;

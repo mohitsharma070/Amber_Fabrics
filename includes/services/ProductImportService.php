@@ -159,8 +159,12 @@ final class ProductImportService
 
     private static function categories(mysqli $conn): array
     {
-        $out=[];$result=$conn->query("SELECT name,slug FROM categories WHERE status='active'");
-        while($r=$result->fetch_assoc()){foreach([$r['name'],$r['slug']] as $value)$out[self::headerKey((string)$value)]=(string)$r['slug'];}return $out;
+        $out=[];$result=$conn->query("SELECT name,slug,default_unit_type FROM categories WHERE status='active'");
+        while($r=$result->fetch_assoc()){
+            $category=['slug'=>(string)$r['slug'],'default_unit_type'=>(string)($r['default_unit_type']??'')];
+            foreach([$r['name'],$r['slug']] as $value)$out[self::headerKey((string)$value)]=$category;
+        }
+        return $out;
     }
 
     private static function validateRow(mysqli $conn,array $row,array $categories,string $defaultUnit): array
@@ -169,7 +173,8 @@ final class ProductImportService
         $sku=ProductAdminService::normalizeSku($row['sku']);if($sku===''||strlen($sku)<3)$errors[]='Sku Id must contain at least 3 valid characters.';
         $code=strtoupper(trim($row['product_code']));if($code!==''&&!preg_match('/^[A-Z0-9_-]{1,100}$/',$code))$errors[]='Product Code has invalid characters.';
         $asin=strtoupper(trim($row['amazon_asin']));if($asin!==''&&!preg_match('/^[A-Z0-9]{10}$/',$asin))$errors[]='Amazon ASIN must contain exactly 10 letters or numbers.';
-        $category=$categories[self::headerKey($row['category'])]??'';if($category==='')$errors[]='Product Type must match an active category.';
+        $categoryData=$categories[self::headerKey($row['category'])]??null;
+        $category=is_array($categoryData)?(string)($categoryData['slug']??''):'';if($category==='')$errors[]='Product Type must match an active category.';
         $price=self::number($row['price'],'MRP',$errors,true);$sale=self::number($row['sale_price'],'Selling Price',$errors,false,true);$cost=self::number($row['cost_price'],'Cost Price',$errors,false,true)??0.0;
         if($sale!==null&&$price!==null&&$sale>=$price)$errors[]='Selling Price must be below MRP.';
         $qty=self::number($row['quantity'],'Quantity',$errors,false)??0.0;
@@ -183,6 +188,10 @@ final class ProductImportService
             $sizeType=mb_strtolower((string)$row['size_type']);
             $unit=(str_contains($sizeType,'meter')||str_contains($sizeType,'metre'))?'meter':(str_contains($sizeType,'set')?'set':$defaultUnit);
         }
+        $categoryDefaultUnit=is_array($categoryData)?(string)($categoryData['default_unit_type']??''):'';
+        $normalizedUnit=ProductAdminService::normalizeDraftUnitType((string)$unit,$categoryDefaultUnit);
+        if($normalizedUnit!==$unit)$warnings[]='Selling Unit changed to '.ucfirst($normalizedUnit).' because the selected product type requires it.';
+        $unit=$normalizedUnit;
         if(in_array($unit,['piece','set'],true)&&floor($qty)!=$qty)$errors[]='Quantity must be a whole number for piece/set products.';
         $gst=self::number($row['gst_rate'],'GST %',$errors,false,true);if($gst!==null&&$gst>100)$errors[]='GST % must be between 0 and 100.';
         $hsn=trim($row['hsn_code']);if($hsn!==''&&!preg_match('/^[0-9]{4,8}$/',$hsn))$errors[]='HSN Code must contain 4 to 8 digits.';

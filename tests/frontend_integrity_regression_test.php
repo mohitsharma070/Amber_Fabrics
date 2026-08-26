@@ -12,6 +12,7 @@ $editor = (string) file_get_contents($root . '/admin/edit-fabric.php');
 $editorForm = (string) file_get_contents($root . '/admin/partials/fabric-product-form.php');
 $editorScript = (string) file_get_contents($root . '/admin/partials/fabric-product-form-script.php');
 $draft = (string) file_get_contents($root . '/admin/add-fabric.php');
+$admin = (string) file_get_contents($root . '/js/admin.js');
 
 $assert(
     str_contains($fabric, 'currentPricePerUnit')
@@ -58,9 +59,26 @@ $assert(
     'Global editor save failures must be visible to the administrator.'
 );
 $assert(
-    str_contains($draft, '<select name="unit_type" required')
+    str_contains($draft, 'name="unit_type" required')
         && !str_contains($draft, '<input type="hidden" name="unit_type" value="piece">'),
     'Draft creation must allow the administrator to choose the selling unit.'
+);
+$assert(
+    str_contains($editorForm, '<select id="unit_type" name="unit_type"')
+        && !str_contains($editorForm, '<input type="hidden" name="unit_type"')
+        && str_contains($editorForm, 'name="meter_options"')
+        && str_contains($admin, 'function syncUnitType()')
+        && str_contains($admin, 'holder.hidden = !isMeter')
+        && str_contains($editor, '$requestedStatus = $unitTypeChanged ? \'draft\' : $status;'),
+    'Existing products must allow safe selling-unit changes and meter length configuration.'
+);
+$assert(
+    str_contains($draft, 'ProductAdminService::normalizeDraftUnitType')
+        && str_contains($draft, 'data-default-unit-type=')
+        && str_contains($admin, 'function initCategoryUnitType(form)')
+        && str_contains($admin, 'unitType.value = requiredUnit')
+        && str_contains($editor, 'ProductAdminService::normalizeDraftUnitType'),
+    'Category selling-unit metadata must drive browser and backend unit enforcement.'
 );
 $assert(
     !str_contains($editor, "\$size = (string) (\$fabric['size'] ?? '');")

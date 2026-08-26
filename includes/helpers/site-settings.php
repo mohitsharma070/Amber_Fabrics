@@ -39,7 +39,7 @@ function storefront_categories_fetch(mysqli $conn): array
         $orderCaseParts[] = "WHEN '" . $conn->real_escape_string($slug) . "' THEN " . ($idx + 1);
     }
     $orderCase = implode(' ', $orderCaseParts);
-    $sql = "SELECT id, name, slug, parent_id
+    $sql = "SELECT id, name, slug, parent_id, default_unit_type
             FROM categories
             WHERE status = 'active' AND slug IN ($placeholders)
             ORDER BY CASE slug {$orderCase} ELSE 999 END, name ASC";
