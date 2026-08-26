@@ -15,7 +15,7 @@ $assert(in_array('Product Code',ProductImportService::HEADERS,true)&&in_array('a
 $assert(in_array('Selling Unit',ProductImportService::HEADERS,true),'Catalogue template must expose a per-row Selling Unit column.');
 $assert(ProductImportService::HEADERS[0]==='Product ID'&&ProductImportService::HEADERS[1]==='Product Revision'&&in_array('Meter Length Options',ProductImportService::HEADERS,true),'Round-trip identifiers, revisions, or meter options are missing from the catalogue.');
 $assert(str_contains($page,'require_admin()')&&str_contains($page,'verify_csrf()'),'Importer must require admin authentication and CSRF validation.');
-$assert(str_contains($page,'Validate Only')&&str_contains($page,'Validate &amp; Import'),'Importer must separate validation from writes.');
+$assert(str_contains($page,'Validate Only')&&str_contains($page,'Validate, Import &amp; Publish Active'),'Importer must separate validation from readiness-checked writes and publishing.');
 $assert(str_contains($page,"'product_catalogue_import','product',0,"),'Batch imports must use the integer no-target sentinel required by the admin activity logger.');
 $assert(str_contains($list,'product-import.php')&&str_contains($page,'download=products')&&str_contains($page,'Download Current Products'),'Products administration must expose the catalogue round-trip export.');
 $assert(str_contains($service,'is_uploaded_file')&&str_contains($service,'MAX_ROWS')&&str_contains($service,'finfo'),'Upload size, row count and MIME protections are missing.');
@@ -23,6 +23,7 @@ $assert(ProductImportService::MAX_BYTES===10485760&&str_contains($service,'$work
 $assert(str_contains($service,"['skip','update']")&&str_contains($service,'begin_transaction()')&&str_contains($service,'rollback()'),'Duplicate modes or per-row transaction handling is missing.');
 $assert(str_contains($service,'fabric_upload_path')&&!str_contains($service,'file_get_contents($row'),'Media import must only reference safe existing files and never fetch arbitrary URLs.');
 $assert(str_contains($service,'ProductAdminService::publish')&&str_contains($service,'Imported as draft'),'Visible products must pass normal readiness checks or remain drafts.');
+$assert(str_contains($service,"if (\$data['requested_status'] === 'active')")&&!str_contains($service,"if (!\$existing && \$data['requested_status'] === 'active')"),'Active visibility must use the normal publish-readiness service for both new and existing imports.');
 $assert(str_contains($service,'SELECT name,slug,default_unit_type,status FROM categories')&&str_contains($service,'ProductAdminService::normalizeDraftUnitType((string)$unit,$categoryDefaultUnit)'),'Catalogue imports must enforce category-required selling units while retaining inactive-category status.');
 $assert(str_contains($service,'Selling Unit changed to ')&&str_contains($service,'because the selected product type requires it.'),'CSV validation must explain category-driven unit overrides.');
 $assert(str_contains($page,'Fallback selling unit')&&str_contains($page,'Used only when a row has no Selling Unit'),'Importer UI must explain that the selected unit is only a fallback.');
@@ -40,6 +41,7 @@ $assert(str_contains($service,'mediaMatches($conn')&&str_contains($service,'more
 $assert(str_contains($service,'assertCurrentRevision')&&str_contains($service,'hash_equals')&&str_contains($service,'FOR UPDATE'),'Round-trip updates must reject stale product revisions again inside the write transaction.');
 $assert(str_contains($page,'catch (ProductCatalogueException $e)')&&str_contains($page,"flash('error', \$e->getMessage())"),'Expected export-limit failures must give administrators an actionable message.');
 $assert(str_contains($openapi,'enum: [template, products]')&&str_contains($architecture,'immutable Product IDs'),'The product export endpoint contract and architecture documentation must describe round-trip exports.');
+$assert(str_contains($openapi,'requested Visibility is active')&&str_contains($architecture,'requested `Visibility` is `active`'),'Import documentation must describe readiness-checked publishing for active new and existing rows.');
 $assert(str_contains($service,'normalizeXlsxZipHeaders')&&str_contains($openapi,'desktop Excel-compatible')&&str_contains($architecture,'without recovery'),'Product exports must declare desktop Excel-compatible ZIP metadata and document the compatibility contract.');
 
 $method=new ReflectionMethod(ProductImportService::class,'headerKey');$method->setAccessible(true);

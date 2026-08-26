@@ -187,7 +187,7 @@ final class ProductImportService
                 $results[]=['row'=>$rowNumber,'name'=>$row['name'] ?? '','status'=>'error','message'=>implode(' ',array_unique($errors))];
                 continue;
             }
-            if($existing)$rowWarnings[]='Existing product will be saved as draft for review.';
+            if($existing&&$data['requested_status']!=='active')$rowWarnings[]='Existing product will be saved as draft for review.';
             if (!$import) {
                 $warnings += count($rowWarnings);
                 $results[]=['row'=>$rowNumber,'name'=>$data['name'],'status'=>'valid','message'=>$rowWarnings ? implode(' ', $rowWarnings) : 'Ready to import.'];
@@ -198,17 +198,22 @@ final class ProductImportService
                 if($existing&&$submittedRevision!=='')self::assertCurrentRevision($conn,(int)$existing['id'],$submittedRevision);
                 $id = $existing ? self::updateProduct($conn,(int)$existing['id'],$data) : self::createProduct($conn,$data);
                 self::replaceMedia($conn,$id,$data['media'],$data['media_action']);
-                if (!$existing && $data['requested_status'] === 'active') {
+                $wasPublished=false;
+                if ($data['requested_status'] === 'active') {
                     $published=ProductAdminService::publish($conn,$id,$adminId);
                     if (empty($published['ready'])) {
                         $rowWarnings[]='Imported as draft: '.implode(' ',array_values((array)($published['checks']??[])));
-                    }
+                    }else{$wasPublished=true;}
                 }
-                log_admin_activity($conn,$adminId,$existing?'product_import_updated':'product_import_created','product',$id,$existing?'Product updated from round-trip catalogue file and moved to draft.':'Product imported from catalogue file.','ok');
+                $activityDetails=$existing
+                    ?($wasPublished?'Product updated from round-trip catalogue file and published.':'Product updated from round-trip catalogue file and moved to draft.')
+                    :($wasPublished?'Product imported from catalogue file and published.':'Product imported from catalogue file.');
+                log_admin_activity($conn,$adminId,$existing?'product_import_updated':'product_import_created','product',$id,$activityDetails,'ok');
                 $conn->commit();
                 $warnings += count($rowWarnings);
                 $existing ? $updated++ : $created++;
-                $results[]=['row'=>$rowNumber,'name'=>$data['name'],'status'=>$existing?'updated':'created','message'=>$rowWarnings?implode(' ',$rowWarnings):'Imported successfully.','id'=>$id];
+                $resultMessages=$rowWarnings;if($wasPublished)$resultMessages[]='Published successfully because Visibility is active.';
+                $results[]=['row'=>$rowNumber,'name'=>$data['name'],'status'=>$existing?'updated':'created','message'=>$resultMessages?implode(' ',$resultMessages):'Imported successfully.','id'=>$id];
             } catch (Throwable $e) {
                 $conn->rollback();$failed++;
                 $results[]=['row'=>$rowNumber,'name'=>$data['name'],'status'=>'error','message'=>'Import failed: '.$e->getMessage()];

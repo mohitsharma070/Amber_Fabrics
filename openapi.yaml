@@ -1253,8 +1253,9 @@ paths:
       description: >-
         Blank non-media cells preserve current values. An unchanged existing
         legacy meter product may retain blank meter-length options; new products
-        and products converted to meter require explicit options. Every existing
-        product updated by an import returns to draft for administrator review.
+        and products converted to meter require explicit options. New and existing
+        rows whose requested Visibility is active are published through the normal
+        readiness checks; rows that are not ready remain drafts with the reasons.
       security:
         - adminSessionAuth: []
       requestBody:
