@@ -136,7 +136,7 @@ include 'partials/header.php';
         <p class="text-muted mb-0">Showing <?php echo count($products); ?> of <?php echo $total; ?> products</p>
     </div>
     <div class="d-flex gap-2">
-        <a class="btn btn-outline-primary" href="product-import.php">Import CSV</a>
+        <a class="btn btn-outline-primary" href="product-import.php">Export / Import CSV</a>
         <a class="btn btn-primary" href="add-fabric.php">Add Product</a>
     </div>
 </div>
