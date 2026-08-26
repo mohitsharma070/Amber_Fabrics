@@ -1213,7 +1213,7 @@ paths:
   /admin/product-import.php:
     get:
       tags: [Admin]
-      summary: Product CSV import form or downloadable template
+      summary: Product Excel round-trip form, current-product workbook export, or blank CSV template
       security:
         - adminSessionAuth: []
       parameters:
@@ -1221,13 +1221,27 @@ paths:
           name: download
           schema:
             type: string
-            enum: [template]
+            enum: [template, products]
       responses:
         '200':
-          description: HTML import page or CSV template
+          description: HTML import page, populated simple-product Excel workbook, or blank CSV template
+          content:
+            text/html:
+              schema:
+                type: string
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '302':
+          description: Authentication redirect or actionable workbook-export constraint
     post:
       tags: [Admin]
-      summary: Validate or import a product catalogue CSV
+      summary: Validate or import an XLSX/CSV product catalogue; revision-protected Product ID rows update the exact simple product
       security:
         - adminSessionAuth: []
       requestBody:
@@ -1243,6 +1257,7 @@ paths:
                 catalogue:
                   type: string
                   format: binary
+                  description: XLSX or UTF-8 CSV file, maximum 10 MB and 5,000 non-empty product rows
                 action:
                   type: string
                   enum: [validate, import]
