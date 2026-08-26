@@ -16,6 +16,7 @@ $assert(in_array('Selling Unit',ProductImportService::HEADERS,true),'Catalogue t
 $assert(ProductImportService::HEADERS[0]==='Product ID'&&ProductImportService::HEADERS[1]==='Product Revision'&&in_array('Meter Length Options',ProductImportService::HEADERS,true),'Round-trip identifiers, revisions, or meter options are missing from the catalogue.');
 $assert(str_contains($page,'require_admin()')&&str_contains($page,'verify_csrf()'),'Importer must require admin authentication and CSRF validation.');
 $assert(str_contains($page,'Validate Only')&&str_contains($page,'Validate &amp; Import'),'Importer must separate validation from writes.');
+$assert(str_contains($page,"'product_catalogue_import','product',0,"),'Batch imports must use the integer no-target sentinel required by the admin activity logger.');
 $assert(str_contains($list,'product-import.php')&&str_contains($page,'download=products')&&str_contains($page,'Download Current Products'),'Products administration must expose the catalogue round-trip export.');
 $assert(str_contains($service,'is_uploaded_file')&&str_contains($service,'MAX_ROWS')&&str_contains($service,'finfo'),'Upload size, row count and MIME protections are missing.');
 $assert(ProductImportService::MAX_BYTES===10485760&&str_contains($service,'$workbookSize > self::MAX_BYTES')&&str_contains($page,'Maximum 10 MB'),'Generated workbooks and uploads must share the documented 10 MB limit.');

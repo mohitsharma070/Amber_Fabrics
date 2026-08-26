@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $doImport
             );
             if ($doImport) {
-                log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_catalogue_import','product',null,
+                log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_catalogue_import','product',0,
                     sprintf('Catalogue file processed: %d created, %d updated, %d skipped, %d failed.', $summary['created'],$summary['updated'],$summary['skipped'],$summary['failed']),'ok');
             }
         } catch (Throwable $e) {
