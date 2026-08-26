@@ -5,6 +5,19 @@ require_admin();
 if (isset($_GET['download']) && $_GET['download'] === 'template') {
     ProductImportService::streamTemplate();
 }
+if (isset($_GET['download']) && $_GET['download'] === 'products') {
+    try {
+        ProductImportService::streamCurrentProducts($conn);
+    } catch (ProductCatalogueException $e) {
+        error_log('[product-export] blocked: ' . $e->getMessage());
+        flash('error', $e->getMessage());
+        redirect('product-import.php');
+    } catch (Throwable $e) {
+        error_log('[product-export] failed: ' . $e->getMessage());
+        flash('error', 'Could not export the current product catalogue. Please try again.');
+        redirect('product-import.php');
+    }
+}
 
 $summary = null;
 $error = '';
@@ -26,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             if ($doImport) {
                 log_admin_activity($conn,(int)$_SESSION['admin_id'],'product_catalogue_import','product',null,
-                    sprintf('Catalogue CSV processed: %d created, %d updated, %d skipped, %d failed.', $summary['created'],$summary['updated'],$summary['skipped'],$summary['failed']),'ok');
+                    sprintf('Catalogue file processed: %d created, %d updated, %d skipped, %d failed.', $summary['created'],$summary['updated'],$summary['skipped'],$summary['failed']),'ok');
             }
         } catch (Throwable $e) {
             $error = $e->getMessage();
@@ -34,12 +47,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$metaTitle = SiteContext::title('Import Products');
+$metaTitle = SiteContext::title('Export or Import Products');
 include 'partials/header.php';
 ?>
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-  <div><h1 class="mb-1">Import Products</h1><p class="text-muted mb-0">Fill the catalogue in Excel, save it as CSV UTF-8, validate it, then import.</p></div>
-  <div class="d-flex gap-2"><a class="btn btn-outline-primary" href="product-import.php?download=template">Download CSV Template</a><a class="btn btn-outline-secondary" href="fabrics.php">Back to Products</a></div>
+  <div><h1 class="mb-1">Export or Import Products</h1><p class="text-muted mb-0">Download existing simple products as Excel, edit the workbook, validate it, and import.</p></div>
+  <div class="d-flex flex-wrap gap-2"><a class="btn btn-primary" href="product-import.php?download=products">Download Current Products (.xlsx)</a><a class="btn btn-outline-primary" href="product-import.php?download=template">Download Blank CSV Template</a><a class="btn btn-outline-secondary" href="fabrics.php">Back to Products</a></div>
 </div>
 
 <?php if ($error !== ''): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
@@ -50,12 +63,12 @@ include 'partials/header.php';
       <div class="card-body">
         <?php echo csrf_field(); ?>
         <div class="mb-3">
-          <label class="form-label" for="catalogue">Catalogue CSV *</label>
-          <input class="form-control" id="catalogue" name="catalogue" type="file" accept=".csv,text/csv" required>
-          <div class="form-text">Maximum 5 MB and 5,000 non-empty product rows. Empty template rows are ignored.</div>
+          <label class="form-label" for="catalogue">Catalogue Excel or CSV file *</label>
+          <input class="form-control" id="catalogue" name="catalogue" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
+          <div class="form-text">Maximum 10 MB and 5,000 non-empty product rows. Empty template rows are ignored.</div>
         </div>
         <div class="row g-3">
-          <div class="col-md-6"><label class="form-label" for="duplicate_mode">When SKU or Product Code exists</label><select class="form-select" id="duplicate_mode" name="duplicate_mode"><option value="skip" <?php echo $duplicateMode==='skip'?'selected':''; ?>>Skip existing product (recommended)</option><option value="update" <?php echo $duplicateMode==='update'?'selected':''; ?>>Update existing simple product</option></select></div>
+          <div class="col-md-6"><label class="form-label" for="duplicate_mode">When SKU or Product Code exists without Product ID</label><select class="form-select" id="duplicate_mode" name="duplicate_mode"><option value="skip" <?php echo $duplicateMode==='skip'?'selected':''; ?>>Skip existing product (recommended)</option><option value="update" <?php echo $duplicateMode==='update'?'selected':''; ?>>Update existing simple product</option></select><div class="form-text">Rows exported with Product ID always update that exact product.</div></div>
           <div class="col-md-6"><label class="form-label" for="default_unit">Fallback selling unit</label><select class="form-select" id="default_unit" name="default_unit"><option value="piece" <?php echo $defaultUnit==='piece'?'selected':''; ?>>Piece</option><option value="meter" <?php echo $defaultUnit==='meter'?'selected':''; ?>>Meter</option><option value="set" <?php echo $defaultUnit==='set'?'selected':''; ?>>Set</option></select><div class="form-text">Used only when a row has no Selling Unit. Older CSV files can still infer Meter or Set from Size Type.</div></div>
         </div>
       </div>
@@ -63,7 +76,7 @@ include 'partials/header.php';
     </form>
   </div>
   <div class="col-xl-4">
-    <div class="card h-100"><div class="card-body"><h2 class="h5">Import rules</h2><ul class="small mb-0 ps-3"><li class="mb-2">Name, Sku Id, MRP, Quantity and Product Type are required.</li><li class="mb-2">Set Selling Unit per row to Piece, Meter, or Set. The fallback is used only when that cell is blank.</li><li class="mb-2">Product Type must exactly match an active category name or slug.</li><li class="mb-2">Products import as simple products. “Visible” rows publish only when the product readiness checks pass; otherwise they remain drafts.</li><li class="mb-2">Image and video cells may contain filenames already present in <code>images/fabrics</code>. External URLs are not downloaded.</li><li>Use Validate Only first. Invalid rows never write partial product data.</li></ul></div></div>
+    <div class="card h-100"><div class="card-body"><h2 class="h5">Round-trip rules</h2><ul class="small mb-0 ps-3"><li class="mb-2">Do not edit Product ID or Product Revision. Populated values protect the exact product from stale overwrites; leave both blank when adding a new product.</li><li class="mb-2">Blank non-media cells retain existing values during updates. Enter <code><?php echo e(ProductImportService::CLEAR_MARKER); ?></code> to clear an optional field.</li><li class="mb-2">Media cells form one ordered list: leave every media cell blank to retain all media, or edit the filenames to replace that list. To clear all media, put <code><?php echo e(ProductImportService::CLEAR_MARKER); ?></code> in one media cell and clear the others.</li><li class="mb-2">Name, Sku Id, MRP, Quantity and Product Type are required for new products.</li><li class="mb-2">Meter products require Meter Length Options such as <code>10, 20, 30</code>.</li><li class="mb-2">Updated products always return to Draft for review. Existing inactive categories may remain unchanged; new assignments require an active category.</li><li class="mb-2">Variable products are not exported or overwritten. Image and video cells may reference only existing files in <code>images/fabrics</code>.</li><li>Use Validate Only first. Invalid rows never write partial product data.</li></ul></div></div>
   </div>
 </div>
 
