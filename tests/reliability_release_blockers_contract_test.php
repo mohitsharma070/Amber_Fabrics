@@ -11,7 +11,7 @@ $assert = static function (bool $condition, string $message) use (&$failures): v
 $read = static fn(string $path): string => (string) file_get_contents($root . '/' . $path);
 
 $metaCapi = $read('plugins/meta-capi/plugin.php');
-$paymentService = $read('includes/services/PaymentService.php');
+$lifecycleService = $read('includes/services/WebhookLifecycleService.php');
 $webhook = $read('payment/razorpay-webhook.php');
 
 $assert(
@@ -20,14 +20,18 @@ $assert(
     'Meta CAPI COD Purchase delivery must run through the durable post-commit order hook, never inside order.after_create.'
 );
 
-$claimStart = strpos($paymentService, 'public static function payment_webhook_begin_processing');
-$selectStart = $claimStart === false ? false : strpos($paymentService, '$select = $conn->prepare(', $claimStart);
+$claimStart = strpos($lifecycleService, 'public static function beginProcessing');
+$selectStart = $claimStart === false ? false : strpos($lifecycleService, '$select = $conn->prepare(', $claimStart);
 $claimPrefix = ($claimStart !== false && $selectStart !== false)
-    ? substr($paymentService, $claimStart, $selectStart - $claimStart)
+    ? substr($lifecycleService, $claimStart, $selectStart - $claimStart)
     : '';
 $assert(
     $claimPrefix !== '' && !str_contains($claimPrefix, 'updated_at = NOW()'),
     'Webhook duplicate upsert must not refresh updated_at before the stale-processing lease check.'
+);
+$assert(
+    str_contains($webhook, 'WebhookLifecycleService::beginProcessing('),
+    'Razorpay webhook endpoint must use the lease-safe webhook lifecycle service.'
 );
 
 $missingOrderStart = strpos($webhook, "if ($rzpOrderId === '') {");
