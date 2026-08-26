@@ -375,7 +375,7 @@ final class ProductImportService
             $reference=(string)$cell['r'];if(!preg_match('/^([A-Z]+)[0-9]+$/i',$reference,$match))continue;$index=self::columnIndex(strtoupper($match[1]))-1;
             if(($cell->xpath('./*[local-name()="f"]')?:[])!==[])throw new InvalidArgumentException('Excel formulas are not supported. Replace the formula in cell '.$reference.' with its displayed value.');
             $type=(string)$cell['t'];
-            if($type==='inlineStr')$value=self::xlsxText($cell->asXML()?:'');
+            if($type==='inlineStr')$value=self::xlsxNodeText($cell);
             else{$nodes=$cell->xpath('./*[local-name()="v"]')?:[];$raw=isset($nodes[0])?(string)$nodes[0]:'';$value=$type==='s'?($shared[(int)$raw]??''):$raw;}
             $values[$index]=$value;
         }
@@ -384,7 +384,12 @@ final class ProductImportService
 
     private static function xlsxText(string $xml): string
     {
-        $node=simplexml_load_string($xml,SimpleXMLElement::class,LIBXML_NONET|LIBXML_COMPACT|LIBXML_NOERROR|LIBXML_NOWARNING);if($node===false)return '';$value='';foreach($node->xpath('.//*[local-name()="t"]')?:[] as $text)$value.=(string)$text;return $value;
+        $node=simplexml_load_string($xml,SimpleXMLElement::class,LIBXML_NONET|LIBXML_COMPACT|LIBXML_NOERROR|LIBXML_NOWARNING);if($node===false)return '';return self::xlsxNodeText($node);
+    }
+
+    private static function xlsxNodeText(SimpleXMLElement $node): string
+    {
+        $value='';foreach($node->xpath('.//*[local-name()="t"]')?:[] as $text)$value.=(string)$text;return $value;
     }
 
     private static function headerIndexes(array $header,string $source): array

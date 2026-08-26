@@ -50,6 +50,10 @@ $assert($unitMethod->invoke(null,'Pieces')==='piece','Piece selling-unit alias n
 $assert($unitMethod->invoke(null,'metres')==='meter','Meter selling-unit alias normalization failed.');
 $assert($unitMethod->invoke(null,'SETS')==='set','Set selling-unit alias normalization failed.');
 $assert($unitMethod->invoke(null,'pair')===null,'Unsupported selling units must not silently fall back.');
+$parseXlsxRow=new ReflectionMethod(ProductImportService::class,'parseXlsxRow');$parseXlsxRow->setAccessible(true);
+$prefixedRow='<x:row xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" r="2"><x:c r="E2" t="inlineStr"><x:is><x:t xml:space="preserve">Prefixed Product</x:t></x:is></x:c><x:c r="F2" t="inlineStr"><x:is><x:t>SKU-001</x:t></x:is></x:c></x:row>';
+$prefixedValues=$parseXlsxRow->invoke(null,$prefixedRow,[]);
+$assert(($prefixedValues[4]??'')==='Prefixed Product'&&($prefixedValues[5]??'')==='SKU-001','Excel imports must read inline strings from namespace-prefixed worksheet XML.');
 $merge=new ReflectionMethod(ProductImportService::class,'applyRoundTripSemantics');$merge->setAccessible(true);
 $existing=['id'=>7,'product_code'=>'OLD-7','amazon_asin'=>null,'name'=>'Existing Product','sku'=>'OLD-SKU','category'=>'fabric-by-meter','product_type'=>'simple','unit_type'=>'meter','meter_options'=>'10, 20','price'=>100,'sale_price'=>90,'cost_price'=>50,'stock'=>0,'stock_meters'=>20,'size'=>'','color'=>'Blue','description'=>'Existing description','catalog_data'=>'{}','hsn_code'=>null,'gst_rate'=>5,'shipping_weight_kg'=>1,'parcel_length_cm'=>10,'parcel_width_cm'=>10,'parcel_height_cm'=>10,'status'=>'active'];
 [$merged,$mergeErrors]=$merge->invoke(null,['product_id'=>'7','product_code'=>ProductImportService::CLEAR_MARKER,'sku'=>'NEW-SKU','name'=>''], $existing);
