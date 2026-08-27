@@ -539,7 +539,7 @@ img {
 }
 
 .product-media-main {
-    height: 420px;
+    height: clamp(420px, 42vw, 540px);
     border: 1px solid #d6e1ee;
     border-radius: 14px;
     background: linear-gradient(180deg, #f9fcff 0%, #eef3f9 100%);
@@ -575,6 +575,62 @@ img {
     background: #101418;
     color: #fff;
     font-weight: 600;
+}
+
+.product-detail-hero {
+    padding: 1.25rem 0 0;
+}
+
+.product-detail-section {
+    padding-top: 1.25rem;
+}
+
+.product-detail-title {
+    font-size: clamp(2rem, 3vw, 3rem);
+}
+
+.product-availability {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid #cbd6e3;
+    border-radius: 999px;
+    background: #f5f7fa;
+    color: #526274;
+    font-size: 0.8rem;
+}
+
+.product-availability.is-in-stock {
+    border-color: #aadbc8;
+    background: #effaf5;
+    color: #116149;
+}
+
+.product-availability-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.product-availability-count {
+    padding-left: 0.42rem;
+    border-left: 1px solid currentColor;
+}
+
+.product-buy-box {
+    border: 1px solid #d8e1ea;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 12px 30px rgba(21, 48, 72, 0.09);
+}
+
+@media (min-width: 992px) {
+    .product-gallery-column {
+        position: sticky;
+        top: 90px;
+    }
 }
 
 .fabric-out-overlay {
@@ -2753,6 +2809,15 @@ img {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+.product-purchase-controls {
+    align-items: stretch;
+}
+
+.product-quantity-controls .btn,
+.product-purchase-controls .product-add-cart-button {
+    min-height: 44px;
 }
 
 .product-purchase-controls .product-add-cart-button {

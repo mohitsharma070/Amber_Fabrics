@@ -3,17 +3,182 @@
 final class CartService
 {
     /**
+     * Return the greatest quantity that can actually be sold from the supplied stock.
+     *
+     * This is deliberately separate from customer-request normalization: a stock
+     * ceiling must never be raised to the configured minimum quantity.
+     */
+    public static function maximumSellableQuantity(
+        float $availableStock,
+        string $unitType,
+        float $minimumQuantity = 1.0,
+        float $quantityStep = 0.0,
+        ?float $meterLength = null
+    ): float {
+        $unitType = in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
+        if ($unitType === 'piece' || $unitType === 'set') {
+            $minimumUnits = max(1, (int) round($minimumQuantity));
+            $availableUnits = max(0, (int) floor($availableStock + 0.0000001));
+            return $availableUnits >= $minimumUnits ? (float) $availableUnits : 0.0;
+        }
+
+        $stockCents = max(0, (int) floor(($availableStock * 100) + 0.0000001));
+        $stockUnits = $stockCents * 100;
+        $minimumUnits = (int) round(normalize_meter_quantity($minimumQuantity, 1.0) * 10000);
+        if ($stockUnits < $minimumUnits) {
+            return 0.0;
+        }
+
+        $quantityIncrement = 100;
+        if ($meterLength !== null) {
+            $normalizedMeterLength = round($meterLength, 2);
+            if ($normalizedMeterLength <= 0) {
+                return 0.0;
+            }
+            $quantityIncrement = (int) round($normalizedMeterLength * 10000);
+        }
+
+        $maximumMultiplier = intdiv($stockUnits, $quantityIncrement);
+        $minimumMultiplier = max(1, (int) ceil($minimumUnits / $quantityIncrement));
+        if ($maximumMultiplier < $minimumMultiplier) {
+            return 0.0;
+        }
+
+        $stepUnits = (int) round($quantityStep * 10000);
+        if ($stepUnits <= 0) {
+            $candidateUnits = $maximumMultiplier * $quantityIncrement;
+            return $candidateUnits >= $minimumUnits ? round($candidateUnits / 10000, 2) : 0.0;
+        }
+
+        // Solve increment * bundle_count = minimum (mod step) so the result
+        // satisfies both the selected bundle grid and the configured step grid.
+        $divisor = self::greatestCommonDivisor($quantityIncrement, $stepUnits);
+        if ($minimumUnits % $divisor !== 0) {
+            return 0.0;
+        }
+
+        $reducedModulus = intdiv($stepUnits, $divisor);
+        if ($reducedModulus === 1) {
+            $firstMultiplier = 0;
+        } else {
+            $reducedIncrement = intdiv($quantityIncrement, $divisor) % $reducedModulus;
+            $reducedMinimum = intdiv($minimumUnits, $divisor) % $reducedModulus;
+            $inverse = self::modularInverse($reducedIncrement, $reducedModulus);
+            if ($inverse === null) {
+                return 0.0;
+            }
+            $firstMultiplier = self::multiplyModulo($reducedMinimum, $inverse, $reducedModulus);
+        }
+
+        if ($firstMultiplier > $maximumMultiplier) {
+            return 0.0;
+        }
+        $periods = intdiv($maximumMultiplier - $firstMultiplier, $reducedModulus);
+        $sellableMultiplier = $firstMultiplier + ($periods * $reducedModulus);
+        if ($sellableMultiplier < $minimumMultiplier) {
+            return 0.0;
+        }
+
+        return round(($sellableMultiplier * $quantityIncrement) / 10000, 2);
+    }
+
+    /**
+     * Normalize a stored/requested quantity, then cap it to the real sellable ceiling.
+     * A zero result means the line cannot currently satisfy all cart invariants.
+     */
+    public static function reconcileSellableQuantity(
+        $requestedQuantity,
+        float $availableStock,
+        string $unitType,
+        float $minimumQuantity = 1.0,
+        float $quantityStep = 0.0,
+        ?float $meterLength = null
+    ): float {
+        $normalizedQuantity = (float) normalize_quantity_by_unit(
+            $requestedQuantity,
+            $unitType,
+            $minimumQuantity
+        );
+        return CartService::maximumSellableQuantity(
+            min($availableStock, $normalizedQuantity),
+            $unitType,
+            $minimumQuantity,
+            $quantityStep,
+            $meterLength
+        );
+    }
+
+    private static function greatestCommonDivisor(int $left, int $right): int
+    {
+        $left = abs($left);
+        $right = abs($right);
+        while ($right !== 0) {
+            $remainder = $left % $right;
+            $left = $right;
+            $right = $remainder;
+        }
+        return max(1, $left);
+    }
+
+    private static function modularInverse(int $value, int $modulus): ?int
+    {
+        $originalModulus = $modulus;
+        $coefficient = 0;
+        $nextCoefficient = 1;
+        $remainder = $modulus;
+        $nextRemainder = $value % $modulus;
+
+        while ($nextRemainder !== 0) {
+            $quotient = intdiv($remainder, $nextRemainder);
+            [$coefficient, $nextCoefficient] = [
+                $nextCoefficient,
+                $coefficient - ($quotient * $nextCoefficient),
+            ];
+            [$remainder, $nextRemainder] = [
+                $nextRemainder,
+                $remainder - ($quotient * $nextRemainder),
+            ];
+        }
+
+        if ($remainder !== 1) {
+            return null;
+        }
+        return (($coefficient % $originalModulus) + $originalModulus) % $originalModulus;
+    }
+
+    private static function multiplyModulo(int $left, int $right, int $modulus): int
+    {
+        $result = 0;
+        $left %= $modulus;
+        while ($right > 0) {
+            if (($right & 1) === 1) {
+                $result = ($result + $left) % $modulus;
+            }
+            $right = intdiv($right, 2);
+            $left = ($left * 2) % $modulus;
+        }
+        return $result;
+    }
+
+    /**
      * Build normalized cart/wishlist line items from session cart maps.
      *
      * Returns:
      * - items: hydrated cart lines
      * - removed_keys: cart keys rejected due to missing/inactive products/variants
      * - invalid_variant_found: whether any variant mismatch was detected
+     * - quantity_updates: normalized/capped quantities that callers must persist
      */
-    public static function cart_hydrate_items(mysqli $conn, array $source, array $sizeMap = [], array $meterMap = []): array
+    public static function cart_hydrate_items(
+        mysqli $conn,
+        array $source,
+        array $sizeMap = [],
+        array $meterMap = [],
+        bool $enforceSellableQuantity = true
+    ): array
     {
         if (empty($source)) {
-            return ['items' => [], 'removed_keys' => [], 'invalid_variant_found' => false];
+            return ['items' => [], 'removed_keys' => [], 'invalid_variant_found' => false, 'quantity_updates' => []];
         }
 
         $ids = [];
@@ -31,7 +196,7 @@ final class CartService
         $ids = array_values(array_unique($ids));
         $variantIds = array_values(array_unique($variantIds));
         if (empty($ids)) {
-            return ['items' => [], 'removed_keys' => array_keys($source), 'invalid_variant_found' => false];
+            return ['items' => [], 'removed_keys' => array_keys($source), 'invalid_variant_found' => false, 'quantity_updates' => []];
         }
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
@@ -54,6 +219,7 @@ final class CartService
         $items = [];
         $removedKeys = [];
         $invalidVariantFound = false;
+        $quantityUpdates = [];
 
         foreach ($source as $cartKey => $sourceQty) {
             [$pid, $variantId] = CartService::cart_parse_key((string) $cartKey);
@@ -81,11 +247,14 @@ final class CartService
                 : 'meter';
             $minQty = $unitType === 'meter'
                 ? normalize_meter_quantity($row['min_order_meters'] ?? 1, 1.0)
-                : 1.0;
+                : (float) max(1, (int) round((float) ($row['min_order_meters'] ?? 1)));
             $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType, (float) $minQty);
             if ($unitType === 'meter') {
                 $qtyStep = is_numeric($row['qty_step'] ?? null) ? (float) $row['qty_step'] : 0.0;
-                if (!meter_qty_respects_step((float) $qty, (float) $minQty, (float) $qtyStep)) {
+                if (
+                    !$enforceSellableQuantity
+                    && !meter_qty_respects_step((float) $qty, (float) $minQty, (float) $qtyStep)
+                ) {
                     $removedKeys[] = (string) $cartKey;
                     continue;
                 }
@@ -104,11 +273,53 @@ final class CartService
                     continue;
                 }
                 $bundleRatio = $meterLength > 0 ? ($qty / $meterLength) : 0;
-                if ($bundleRatio <= 0 || abs($bundleRatio - round($bundleRatio)) > 0.0001) {
+                if (
+                    !$enforceSellableQuantity
+                    && ($bundleRatio <= 0 || abs($bundleRatio - round($bundleRatio)) > 0.0001)
+                ) {
                     $removedKeys[] = (string) $cartKey;
                     continue;
                 }
                 $bundleQty = max(1, (int) round($bundleRatio));
+            }
+
+            if ($variant) {
+                $displayStock = ($unitType === 'piece' || $unitType === 'set')
+                    ? (float) ($variant['stock'] ?? 0)
+                    : (float) ($variant['stock_meters'] ?? 0);
+            } else {
+                $displayStock = ($unitType === 'piece' || $unitType === 'set')
+                    ? (float) ($row['stock'] ?? 0)
+                    : (float) ($row['stock_meters'] ?? 0);
+            }
+            $maximumSellableQuantity = CartService::maximumSellableQuantity(
+                $displayStock,
+                $unitType,
+                (float) $minQty,
+                $unitType === 'meter' ? $qtyStep : 0.0,
+                $meterLength
+            );
+            if ($enforceSellableQuantity) {
+                $reconciledQuantity = CartService::reconcileSellableQuantity(
+                    $qty,
+                    $displayStock,
+                    $unitType,
+                    (float) $minQty,
+                    $unitType === 'meter' ? $qtyStep : 0.0,
+                    $meterLength
+                );
+                if (empty($row['is_available']) || $reconciledQuantity <= 0) {
+                    $removedKeys[] = (string) $cartKey;
+                    continue;
+                }
+                $storedQuantity = is_numeric($sourceQty) ? (float) $sourceQty : 0.0;
+                if (abs($reconciledQuantity - $storedQuantity) > 0.0001) {
+                    $quantityUpdates[(string) $cartKey] = $reconciledQuantity;
+                }
+                $qty = $reconciledQuantity;
+                if ($unitType === 'meter' && $meterLength !== null && $meterLength > 0) {
+                    $bundleQty = max(1, (int) round($qty / $meterLength));
+                }
             }
 
             $regular = (float) ($row['price'] ?? 0);
@@ -127,19 +338,10 @@ final class CartService
                 $unitLabel = ((float) $qty === 1.0) ? 'set' : 'sets';
             }
 
-            if ($variant) {
-                $displayStock = ($unitType === 'piece' || $unitType === 'set')
-                    ? (float) ($variant['stock'] ?? 0)
-                    : (float) ($variant['stock_meters'] ?? 0);
-            } else {
-                $displayStock = ($unitType === 'piece' || $unitType === 'set')
-                    ? (float) ($row['stock'] ?? 0)
-                    : (float) ($row['stock_meters'] ?? 0);
-            }
-            $inStock = !empty($row['is_available']) && $displayStock > 0;
+            $inStock = !empty($row['is_available']) && $maximumSellableQuantity > 0;
             $maxBundleQty = null;
-            if ($unitType === 'meter' && $meterLength !== null && $meterLength > 0 && $displayStock > 0) {
-                $maxBundleQty = max(1, (int) floor($displayStock / $meterLength));
+            if ($unitType === 'meter' && $meterLength !== null && $meterLength > 0 && $maximumSellableQuantity > 0) {
+                $maxBundleQty = (int) floor(($maximumSellableQuantity / $meterLength) + 0.0001);
             }
 
             $selectedColor = ($variant !== null) ? (string) ($variant['color'] ?? '') : '';
@@ -178,6 +380,7 @@ final class CartService
                 'subtotal' => $lineTotal,
                 'stock' => $displayStock,
                 'in_stock' => $inStock,
+                'maximum_sellable_quantity' => $maximumSellableQuantity,
                 'shipping_weight_kg' => $row['shipping_weight_kg'] ?? null,
                 'parcel_length_cm' => $row['parcel_length_cm'] ?? null,
                 'parcel_width_cm' => $row['parcel_width_cm'] ?? null,
@@ -205,6 +408,7 @@ final class CartService
             'items' => $items,
             'removed_keys' => array_values(array_unique($removedKeys)),
             'invalid_variant_found' => $invalidVariantFound,
+            'quantity_updates' => $quantityUpdates,
         ];
     }
 
@@ -308,6 +512,36 @@ final class CartService
             }
         }
         return false;
+    }
+
+    /**
+     * Check whether a cart mutation preserves the selected meter length for an
+     * existing product/variant line. Existing meter lines fail closed when
+     * either the stored or requested length is missing or invalid.
+     */
+    public static function cartLineAllowsMeterLength(
+        array $cart,
+        array $meterMap,
+        string $cartKey,
+        string $unitType,
+        $requestedMeterLength
+    ): bool {
+        if ($unitType !== 'meter' || !array_key_exists($cartKey, $cart)) {
+            return true;
+        }
+        if (
+            !array_key_exists($cartKey, $meterMap)
+            || !is_numeric($meterMap[$cartKey])
+            || (float) $meterMap[$cartKey] <= 0
+            || !is_numeric($requestedMeterLength)
+            || (float) $requestedMeterLength <= 0
+        ) {
+            return false;
+        }
+
+        $existingLength = round((float) $meterMap[$cartKey], 2);
+        $requestedLength = round((float) $requestedMeterLength, 2);
+        return abs($existingLength - $requestedLength) <= 0.001;
     }
 
     /**
@@ -434,6 +668,123 @@ final class CartService
             ? (int) $variantPart
             : 0;
         return [$fabricId, $variantId];
+    }
+
+    /**
+     * Resolve the immutable identity of an existing cart line for an UPDATE request.
+     * Canonical keys are preferred, while exact legacy simple-product keys remain
+     * updateable for backward compatibility. No resolution path may create a line.
+     *
+     * @return array{cart_key: string, product_id: int, variant_id: int}|null
+     */
+    public static function resolveExistingUpdateIdentity(
+        array $cart,
+        string $rawCartKey,
+        mixed $postedProductId = null,
+        mixed $postedVariantId = null
+    ): ?array {
+        $normalizeIdentity = static function (mixed $value, bool $allowZero): ?int {
+            if (!is_int($value) && !is_string($value)) {
+                return null;
+            }
+            $rawValue = trim((string) $value);
+            if ($rawValue === '' || !ctype_digit($rawValue)) {
+                return null;
+            }
+            $normalized = (int) $rawValue;
+            if ((!$allowZero && $normalized <= 0) || ($allowZero && $normalized < 0)) {
+                return null;
+            }
+            return (string) $normalized === $rawValue ? $normalized : null;
+        };
+
+        $cartKey = trim($rawCartKey);
+        if ($cartKey === '') {
+            $fallbackProductId = $normalizeIdentity($postedProductId, false);
+            $fallbackVariantId = ($postedVariantId === null || $postedVariantId === '')
+                ? 0
+                : $normalizeIdentity($postedVariantId, true);
+            if ($fallbackProductId === null || $fallbackVariantId === null) {
+                return null;
+            }
+            $cartKey = $fallbackProductId . '::' . $fallbackVariantId;
+        }
+        if (!array_key_exists($cartKey, $cart)) {
+            return null;
+        }
+
+        $productId = 0;
+        $variantId = 0;
+        if (preg_match('/\A([1-9][0-9]*)::(0|[1-9][0-9]*)\z/D', $cartKey, $matches)) {
+            $productId = (int) $matches[1];
+            $variantId = (int) $matches[2];
+        } elseif (preg_match('/\A([1-9][0-9]*)\z/D', $cartKey, $matches)) {
+            // Historical simple-product carts used the bare product ID as the key.
+            $productId = (int) $matches[1];
+        } elseif (preg_match('/\A([1-9][0-9]*)::(.+)\z/D', $cartKey, $matches)) {
+            // Historical simple-product carts stored the selected size in the suffix.
+            $legacySuffix = trim((string) $matches[2]);
+            if ($legacySuffix === '' || ctype_digit($legacySuffix)) {
+                return null;
+            }
+            $productId = (int) $matches[1];
+        } else {
+            return null;
+        }
+
+        $postedProduct = ($postedProductId === null || $postedProductId === '')
+            ? $productId
+            : $normalizeIdentity($postedProductId, false);
+        $postedVariant = ($postedVariantId === null || $postedVariantId === '')
+            ? $variantId
+            : $normalizeIdentity($postedVariantId, true);
+
+        if (
+            $postedProduct === null
+            || $postedVariant === null
+            || $postedProduct !== $productId
+            || $postedVariant !== $variantId
+        ) {
+            return null;
+        }
+
+        return [
+            'cart_key' => $cartKey,
+            'product_id' => $productId,
+            'variant_id' => $variantId,
+        ];
+    }
+
+    /**
+     * Enforce the same product/variant identity rules used by hydration and checkout.
+     */
+    public static function isValidUpdateSelection(
+        int $productId,
+        int $variantId,
+        ?array $product,
+        ?array $variant
+    ): bool {
+        if (
+            !$product
+            || (int) ($product['id'] ?? 0) !== $productId
+            || (string) ($product['status'] ?? '') !== 'active'
+            || empty($product['is_available'])
+        ) {
+            return false;
+        }
+
+        $requiresVariant = (($product['product_type'] ?? 'simple') === 'variable');
+        if (($requiresVariant && $variantId <= 0) || (!$requiresVariant && $variantId > 0)) {
+            return false;
+        }
+        if (!$requiresVariant) {
+            return true;
+        }
+
+        return $variant !== null
+            && (int) ($variant['id'] ?? 0) === $variantId
+            && (int) ($variant['fabric_id'] ?? 0) === $productId
+            && (int) ($variant['is_active'] ?? 0) === 1;
     }
 
     /**

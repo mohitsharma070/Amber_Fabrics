@@ -22,6 +22,7 @@ $orderSnapshot=(string)file_get_contents($root.'/includes/services/OrderItemSnap
 $parcel=(string)file_get_contents($root.'/plugins/shipping-courier/modules/bigship-payloads.php');
 require_once $root.'/includes/services/ProductAdminService.php';
 require_once $root.'/includes/services/CartService.php';
+require_once $root.'/includes/helpers/migration-checksum.php';
 $assert(str_contains($migration,"ENUM('draft','active','inactive')")&&str_contains($migration,'fabric_media'),'Draft status or gallery migration missing.');
 $assert(str_contains($migration,'CREATE UNIQUE INDEX uq_fabrics_slug')&&str_contains($migration,'product_type'),'Slug uniqueness or product type migration missing.');
 $assert(str_contains($service,'function readiness')&&str_contains($service,'function publish')&&str_contains($service,'function createDraft'),'Shared draft/readiness/publish service contract missing.');
@@ -39,7 +40,7 @@ $assert(ProductAdminService::normalizeDraftUnitType('piece','')==='piece','Categ
 $assert(str_contains($unitMigration,"COLUMN_NAME = 'default_unit_type'")&&str_contains($unitMigration,"slug = 'fabric-by-meter'")&&!str_contains($unitMigration,'UPDATE fabrics'),'The category unit migration must be idempotent and must not rewrite existing products.');
 foreach([$schema,$setup] as $categorySchemaSource)$assert(str_contains($categorySchemaSource,"default_unit_type ENUM('meter','piece','set')"),'Fresh schema and setup must define category selling-unit metadata.');
 $assert(str_contains($categoryHelper,'default_unit_type'),'Storefront category reads must expose the configured default unit.');
-$unitMigrationChecksum=hash_file('sha256',$root.'/database/migrations/2026-08-27-category-default-unit-type.sql');
+$unitMigrationChecksum=migration_file_checksum($root.'/database/migrations/2026-08-27-category-default-unit-type.sql');
 $assert(is_string($unitMigrationChecksum)&&str_contains($schema,$unitMigrationChecksum),'Fresh schema must baseline the category default-unit migration checksum.');
 $assert(str_contains($categoryAdmin,'name="default_unit_type"')&&str_contains($categoryService,'default_unit_type'),'Category administration must expose and persist required selling units.');
 $assert(str_contains($cron,"'categories' => ['uses_variant_size', 'default_unit_type']")&&str_contains($cron,"'2026-08-27-category-default-unit-type.sql'"),'Cron readiness must require the category unit metadata migration.');

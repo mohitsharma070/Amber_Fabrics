@@ -19,6 +19,7 @@ if (PHP_SAPI === 'cli' && !$isLocalSmoke) {
 }
 
 require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../includes/helpers/migration-checksum.php';
 
 if (PHP_SAPI !== 'cli') {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -149,13 +150,13 @@ function cron_readiness_check(mysqli $conn): array
     ];
     foreach ($requiredMigrations as $migrationName => $migrationLabel) {
         $migrationPath = __DIR__ . '/../database/migrations/' . $migrationName;
-        $migrationChecksum = is_file($migrationPath) ? hash_file('sha256', $migrationPath) : false;
         $migrationReady = false;
-        if (is_string($migrationChecksum) && $migrationChecksum !== '') {
+        if (is_file($migrationPath)) {
             $stmt = $conn->prepare('SELECT checksum FROM schema_migrations WHERE migration = ? LIMIT 1');
             $stmt->bind_param('s', $migrationName);
             $stmt->execute();
-            $migrationReady = hash_equals($migrationChecksum, (string) ($stmt->get_result()->fetch_assoc()['checksum'] ?? ''));
+            $storedChecksum = (string) ($stmt->get_result()->fetch_assoc()['checksum'] ?? '');
+            $migrationReady = migration_file_checksum_matches($migrationPath, $storedChecksum);
         }
         if (!$migrationReady) {
             $issues[] = $migrationLabel . ' migration is missing or has a checksum mismatch.';

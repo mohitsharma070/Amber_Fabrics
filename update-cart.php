@@ -9,34 +9,45 @@ if (!verify_csrf()) {
     redirect('/cart.php');
 }
 
-$cartKey = trim((string) ($_POST['cart_key'] ?? ''));
-$productId = 0;
-$variantId = 0;
-if ($cartKey !== '') {
-    [$productId, $variantId] = CartService::cart_parse_key($cartKey);
+$cart = (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) ? $_SESSION['cart'] : [];
+$identity = CartService::resolveExistingUpdateIdentity(
+    $cart,
+    (string) ($_POST['cart_key'] ?? ''),
+    $_POST['product_id'] ?? null,
+    $_POST['variant_id'] ?? null
+);
+if ($identity === null) {
+    flash('error', 'Invalid cart item. Please refresh your cart and try again.');
+    redirect('/cart.php');
 }
-$productId = $productId > 0 ? $productId : (int) ($_POST['product_id'] ?? 0);
-$cartKey   = $cartKey !== '' ? $cartKey : ($productId > 0 ? ($productId . '::0') : '');
+$cartKey = $identity['cart_key'];
+$productId = $identity['product_id'];
+$variantId = $identity['variant_id'];
 $quantityInput    = $_POST['quantity']       ?? 1;
 $bundleQtyInput   = $_POST['bundle_quantity'] ?? null;
 $meterLengthInput = $_POST['meter_length']    ?? null;
 
-if ($productId <= 0) {
-    flash('error', 'Invalid cart item.');
-    redirect('/cart.php');
-}
-
-if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
-    $_SESSION['cart'] = [];
-}
 if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_length'])) {
     $_SESSION['cart_meter_length'] = [];
 }
 
-$stmt = $conn->prepare("SELECT unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters FROM fabrics WHERE id = ? AND status = 'active' LIMIT 1");
+$stmt = $conn->prepare("SELECT id, product_type, unit_type, meter_options, min_order_meters, qty_step, stock, stock_meters, is_available, status FROM fabrics WHERE id = ? LIMIT 1");
 $stmt->bind_param('i', $productId);
 $stmt->execute();
 $product = $stmt->get_result()->fetch_assoc();
+
+if (!$product || $product['status'] !== 'active' || empty($product['is_available'])) {
+    unset($_SESSION['cart'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
+    flash('error', 'This product is unavailable and was removed from your cart.');
+    redirect('/cart.php');
+}
+
+$variantRow = $variantId > 0 ? InventoryService::get_variant_by_id($conn, $variantId) : null;
+if (!CartService::isValidUpdateSelection($productId, $variantId, $product, $variantRow)) {
+    unset($_SESSION['cart'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
+    flash('error', 'This product selection is unavailable and was removed from your cart.');
+    redirect('/cart.php');
+}
 
 $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
     ? (string) $product['unit_type']
@@ -44,6 +55,7 @@ $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 
 $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+$quantityStep = is_numeric($product['qty_step'] ?? null) ? (float) $product['qty_step'] : 0.0;
 $allowedMeterOptions = ($unitType === 'meter')
     ? CartService::parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
     : [];
@@ -74,6 +86,10 @@ if ($unitType === 'meter') {
     }
     $bundleQty = max(1, (int) round((float) $bundleQtyInput));
     $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
+    if (!meter_qty_respects_step((float) $quantity, (float) $minOrder, $quantityStep)) {
+        flash('error', 'Quantity does not match the allowed meter step.');
+        redirect('/cart.php');
+    }
     $_SESSION['cart_meter_length'][$cartKey] = round($meterLength, 2);
 }
 
@@ -83,20 +99,12 @@ if ($quantity < 1) {
 }
 
 if ($product) {
-    // Use variant stock when available; fall back to fabric-level.
+    // Variable lines use variant stock; simple lines use product stock.
     $stock = 0.0;
     if ($variantId > 0) {
-        $variantRow = InventoryService::get_variant_by_id($conn, $variantId);
-        if (!$variantRow || (int) ($variantRow['fabric_id'] ?? 0) !== $productId || (int) ($variantRow['is_active'] ?? 0) !== 1) {
-            unset($_SESSION['cart'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
-            flash('error', 'Selected variant is unavailable and was removed from your cart.');
-            redirect('/cart.php');
-        }
-        if ($variantRow) {
-            $stock = ($unitType === 'piece' || $unitType === 'set')
-                ? (float) ($variantRow['stock'] ?? 0)
-                : (float) ($variantRow['stock_meters'] ?? 0);
-        }
+        $stock = ($unitType === 'piece' || $unitType === 'set')
+            ? (float) ($variantRow['stock'] ?? 0)
+            : (float) ($variantRow['stock_meters'] ?? 0);
     } else {
         $stock = ($unitType === 'piece' || $unitType === 'set')
             ? (float) ($product['stock'] ?? 0)
@@ -107,8 +115,20 @@ if ($product) {
         flash('error', 'This product is out of stock and was removed from your cart.');
         redirect('/cart.php');
     }
-    if ($stock > 0 && $quantity > $stock) {
-        $quantity = normalize_quantity_by_unit($stock, $unitType, (float) $minOrder);
+    $maximumSellableQuantity = CartService::maximumSellableQuantity(
+        $stock,
+        $unitType,
+        (float) $minOrder,
+        $quantityStep,
+        $unitType === 'meter' ? $meterLength : null
+    );
+    if ($maximumSellableQuantity <= 0) {
+        unset($_SESSION['cart'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
+        flash('error', 'This product is not available in the minimum order quantity and was removed from your cart.');
+        redirect('/cart.php');
+    }
+    if ($quantity > $maximumSellableQuantity) {
+        $quantity = $maximumSellableQuantity;
     }
 }
 

@@ -143,9 +143,34 @@ paths:
             schema:
               type: object
               required: [csrf_token]
+              anyOf:
+                - required: [cart_key]
+                - required: [product_id]
               properties:
                 csrf_token:
                   $ref: '#/components/schemas/CsrfToken'
+                cart_key:
+                  type: string
+                  minLength: 1
+                  description: Exact existing session cart identity; canonical product::variant and preserved legacy simple-product keys are accepted.
+                product_id:
+                  type: integer
+                  minimum: 1
+                  description: Compatibility fallback that can resolve only an already-existing canonical cart line.
+                variant_id:
+                  type: integer
+                  minimum: 0
+                quantity:
+                  type: number
+                  exclusiveMinimum: true
+                  minimum: 0
+                meter_length:
+                  type: number
+                  exclusiveMinimum: true
+                  minimum: 0
+                bundle_quantity:
+                  type: integer
+                  minimum: 1
               additionalProperties: true
       responses:
         '302':
@@ -294,6 +319,25 @@ paths:
                 $ref: '#/components/schemas/ShippingRateResponse'
         '403':
           description: Invalid CSRF token
+        '409':
+          description: Cart stock or quantity changed; reload checkout before requesting another quote
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, code, message, reload]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [false]
+                  code:
+                    type: string
+                    enum: [cart_changed]
+                  message:
+                    type: string
+                  reload:
+                    type: boolean
+                    enum: [true]
         '405':
           description: Method not allowed
         '429':

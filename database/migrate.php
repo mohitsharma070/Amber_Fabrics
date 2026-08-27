@@ -15,6 +15,7 @@ if (PHP_SAPI !== 'cli') {
 }
 
 require __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/helpers/migration-checksum.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     fwrite(STDERR, "DB connection not available.\n");
@@ -110,7 +111,7 @@ foreach ($files as $file) {
         continue;
     }
 
-    $checksum = hash_file('sha256', $file);
+    $checksum = migration_file_checksum($file);
     if ($checksum === false) {
         fwrite(STDERR, "Unable to checksum {$name}\n");
         exit(2);
@@ -121,7 +122,7 @@ foreach ($files as $file) {
     $check->execute();
     $row = $check->get_result()->fetch_assoc();
     if ($row) {
-        if (!hash_equals((string) $row['checksum'], $checksum)) {
+        if (!migration_file_checksum_matches($file, (string) $row['checksum'])) {
             fwrite(STDERR, "Checksum changed for already-applied migration: {$name}\n");
             exit(1);
         }

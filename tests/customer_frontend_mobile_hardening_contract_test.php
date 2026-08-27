@@ -6,6 +6,17 @@ $assert = static function (bool $condition, string $message) use (&$failures): v
     if (!$condition) $failures[] = $message;
 };
 $read = static fn (string $path): string => (string) file_get_contents($root . '/' . $path);
+$cssRuleDeclaresProperty = static function (string $css, string $selector, string $property): bool {
+    $css = (string) preg_replace('#/\*.*?\*/#s', '', $css);
+    preg_match_all('/([^{}]+)\{([^{}]*)\}/', $css, $rules, PREG_SET_ORDER);
+    foreach ($rules as $rule) {
+        if (str_contains($rule[1], $selector)
+            && preg_match('/(?:^|;)\s*' . preg_quote($property, '/') . '\s*:/i', $rule[2]) === 1) {
+            return true;
+        }
+    }
+    return false;
+};
 
 $script = $read('js/script.js');
 $adminScript = $read('js/admin.js');
@@ -54,6 +65,11 @@ $assert(str_contains($checkout, 'id="mobile_place_order_btn"') && str_contains($
 $assert(!str_contains($checkout, 'mobileSubmitBtn.addEventListener'), 'Mobile checkout must not create a second JavaScript submission path.');
 $assert(str_contains($cart, 'saved-cart-item__actions') && str_contains($fabric, 'product-purchase-controls'), 'Cart and product purchase controls must use dedicated responsive components.');
 $assert(!str_contains($fabric, '<style') && str_contains($style, '.product-media-main') && str_contains($style, 'height: 300px;'), 'Product responsive media styling must live in the shared stylesheet.');
+$assert(str_contains($fabric, 'page-hero product-detail-hero') && str_contains($fabric, 'class="app-back-link"') && !str_contains($fabric, 'class="text-white opacity-75 small"'), 'Product detail navigation must remain visible against the light storefront background.');
+$assert(str_contains($fabric, 'class="card product-buy-box') && !str_contains($fabric, 'style="max-width:420px;"') && str_contains($style, '.product-buy-box') && !$cssRuleDeclaresProperty($style, '.product-buy-box', 'max-width'), 'The product buy box must use the available responsive column width instead of an inline or stylesheet cap.');
+$assert($cssRuleDeclaresProperty('.product-buy-box { max-width: 420px; }', '.product-buy-box', 'max-width'), 'The product buy-box width-cap regression guard must detect a capped CSS rule.');
+$assert(str_contains($fabric, 'Select cut length') && str_contains($fabric, 'Number of cuts') && str_contains($fabric, 'qty === 1 ? \' cut\' : \' cuts\''), 'Meter products must distinguish cut length from the number of cuts in their purchase controls and live summary.');
+$assert(str_contains($fabric, '$stockUnitLabel = $displayStock === 1.0') && str_contains($fabric, "e(\$stockUnitLabel)"), 'Product availability must use a singular unit label when exactly one unit remains.');
 $assert((bool) preg_match('/<section class="section-block">\s*<div class="container">\s*<div class="surface-panel text-center">\s*<h5 class="mb-2">Need International Shipping/s', $catalog), 'The catalog inquiry section must retain normal top spacing after recommendations.');
 
 $assert(str_contains($header, 'class="skip-link"') && str_contains($header, '<main id="main-content" tabindex="-1">') && str_starts_with($footer, '</main>'), 'Shared storefront chrome must expose a skip link and one main landmark.');
@@ -84,7 +100,8 @@ $assert(!str_contains($adminConfirmSources, 'onclick="return confirm') && !str_c
 $assert(!str_contains($script . $adminScript . $style . $adminStyle, "\xC3\xA2") && !str_contains($script . $adminScript . $style . $adminStyle, "\xEF\xBF\xBD"), 'First-party assets must not contain mojibake or replacement characters.');
 $assetTemplates = $header . $adminHeader . $adminFooter . $adminLogin . $adminOtp;
 $assert(substr_count($assetTemplates, 'style.css?v=20260822a') === 4 && substr_count($assetTemplates, 'admin.css?v=20260822a') === 3 && substr_count($assetTemplates, 'script.js?v=20260822a') === 4 && substr_count($assetTemplates, 'admin.js?v=20260822a') === 1, 'Storefront, admin, and standalone authentication templates must use the current first-party asset versions.');
-$assetBytes = strlen($style) + strlen($adminStyle) + strlen($script) + strlen($adminScript);
+$canonicalAsset = static fn (string $source): string => str_replace("\r\n", "\n", $source);
+$assetBytes = strlen($canonicalAsset($style)) + strlen($canonicalAsset($adminStyle)) + strlen($canonicalAsset($script)) + strlen($canonicalAsset($adminScript));
 $assert($assetBytes <= 117000, 'Combined first-party interaction assets must remain within the reviewed raw-byte budget.');
 
 if ($failures) {

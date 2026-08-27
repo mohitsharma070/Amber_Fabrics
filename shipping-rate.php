@@ -22,6 +22,15 @@ $cart = isset($_SESSION['cart']) && is_array($_SESSION['cart']) ? $_SESSION['car
 $cartSizes = isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size']) ? $_SESSION['cart_size'] : [];
 $cartMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length']) ? $_SESSION['cart_meter_length'] : [];
 $hydratedCart = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+if (!empty($hydratedCart['quantity_updates']) || !empty($hydratedCart['removed_keys'])) {
+    flash('info', 'Your cart changed because stock availability was updated. Checkout totals have been refreshed.');
+    api_json([
+        'ok' => false,
+        'code' => 'cart_changed',
+        'message' => 'Your cart changed. Reload checkout before requesting another shipping quote.',
+        'reload' => true,
+    ], 409);
+}
 $quoteItems = is_array($hydratedCart['items'] ?? null) ? $hydratedCart['items'] : [];
 $subtotal = CartService::cart_items_subtotal($quoteItems);
 if ($subtotal <= 0 || $quoteItems === []) {

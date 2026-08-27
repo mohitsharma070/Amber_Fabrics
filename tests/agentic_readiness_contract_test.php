@@ -49,7 +49,8 @@ foreach (['PHP 8.2', 'MySQL', 'includes/init.php', 'order access', 'openapi.yaml
 }
 
 $openapi = $read('openapi.yaml');
-$assert(str_starts_with($openapi, "openapi: 3.0.3\n"), 'openapi.yaml must declare OpenAPI 3.0.3.');
+$canonicalOpenapi = str_replace("\r\n", "\n", $openapi);
+$assert(str_starts_with($canonicalOpenapi, "openapi: 3.0.3\n"), 'openapi.yaml must declare OpenAPI 3.0.3.');
 $assert(!str_contains($openapi, 'X-CSRF-Token'), 'OpenAPI must not claim unsupported header-based CSRF.');
 foreach ([
     '/catalog.php:',

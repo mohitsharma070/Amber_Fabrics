@@ -32,10 +32,20 @@ $cartSizes = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size']))
 $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])) ? $_SESSION['cart_meter_length'] : [];
 
 $hydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$cartAdjusted = false;
+if (!empty($hydrated['quantity_updates'])) {
+    foreach ($hydrated['quantity_updates'] as $cartKey => $quantity) {
+        $cart[$cartKey] = $quantity;
+    }
+    $cartAdjusted = true;
+}
 if (!empty($hydrated['removed_keys'])) {
     foreach ($hydrated['removed_keys'] as $badKey) {
         unset($cart[$badKey], $cartSizes[$badKey], $cartMeterMap[$badKey]);
     }
+    $cartAdjusted = true;
+}
+if ($cartAdjusted) {
     $_SESSION['cart'] = $cart;
     $_SESSION['cart_size'] = $cartSizes;
     $_SESSION['cart_meter_length'] = $cartMeterMap;

@@ -82,14 +82,24 @@ $cartMeterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['ca
 
 // Re-hydrate cart from canonical shared logic so checkout and order placement stay consistent.
 $hydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
+$cartAdjusted = false;
+if (!empty($hydrated['quantity_updates'])) {
+    foreach ($hydrated['quantity_updates'] as $cartKey => $quantity) {
+        $_SESSION['cart'][$cartKey] = $quantity;
+    }
+    $cartAdjusted = true;
+}
 if (!empty($hydrated['removed_keys'])) {
     foreach ($hydrated['removed_keys'] as $cartKey) {
         unset($_SESSION['cart'][$cartKey], $_SESSION['cart_size'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
     }
+    $cartAdjusted = true;
+}
+if ($cartAdjusted) {
     if ($customerId > 0) {
         CartService::cart_save_to_db($conn, $customerId, $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
     }
-    flash('error', 'Some unavailable items were removed from your cart. Please review and place your order again.');
+    flash('error', 'Some unavailable items or quantities changed. Please review and place your order again.');
     redirect('/checkout.php');
 }
 $cart = $_SESSION['cart'] ?? [];
