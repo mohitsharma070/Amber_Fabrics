@@ -18,6 +18,28 @@ $emailService = (string) file_get_contents($root . '/includes/services/EmailServ
 $schema = (string) file_get_contents($root . '/database/schema.sql');
 $setup = (string) file_get_contents($root . '/database/setup.php');
 $migration = (string) file_get_contents($root . '/database/migrations/2026-08-19-backend-integrity-hardening.sql');
+$migrationRunner = (string) file_get_contents($root . '/database/migrate.php');
+$cronRunner = (string) file_get_contents($root . '/cron/run-plugins.php');
+$checksumHelperPath = $root . '/includes/helpers/migration-checksum.php';
+$assert(is_file($checksumHelperPath), 'Shared canonical migration checksum helper is missing.');
+if (is_file($checksumHelperPath)) {
+    require_once $checksumHelperPath;
+}
+$assert(function_exists('migration_file_checksum'), 'Canonical migration checksum function is missing.');
+$assert(function_exists('migration_file_checksum_matches'), 'Backward-compatible migration checksum matcher is missing.');
+$assert(str_contains($migrationRunner, 'migration_file_checksum_matches($file,'), 'Migration runner must accept canonical and legacy newline checksums.');
+$assert(str_contains($cronRunner, 'migration_file_checksum_matches($migrationPath,'), 'Cron readiness must accept canonical and legacy newline checksums.');
+
+$categoryMigrationPath = $root . '/database/migrations/2026-08-27-category-default-unit-type.sql';
+$categoryMigrationSource = (string) file_get_contents($categoryMigrationPath);
+$canonicalMigrationSource = str_replace(["\r\n", "\r"], "\n", $categoryMigrationSource);
+$canonicalMigrationChecksum = hash('sha256', $canonicalMigrationSource);
+$legacyCrlfChecksum = hash('sha256', str_replace("\n", "\r\n", $canonicalMigrationSource));
+if (function_exists('migration_file_checksum_matches')) {
+    $assert(migration_file_checksum_matches($categoryMigrationPath, $canonicalMigrationChecksum), 'Canonical migration checksum must be accepted.');
+    $assert(migration_file_checksum_matches($categoryMigrationPath, $legacyCrlfChecksum), 'Legacy CRLF migration checksum must remain accepted.');
+    $assert(!migration_file_checksum_matches($categoryMigrationPath, str_repeat('0', 64)), 'Changed migration content must still be rejected.');
+}
 
 $assert(str_contains($adminService, 'SELECT sku FROM fabric_variants WHERE sku = ?'), 'Product SKU validation must include variant SKUs.');
 $assert(str_contains($skuHelper, 'SELECT sku FROM fabric_variants WHERE sku = ?'), 'Generated product SKUs must include variant SKUs in collision checks.');
@@ -56,7 +78,8 @@ foreach (glob($root . '/database/migrations/*.sql') ?: [] as $file) {
     $name = basename($file);
     if ($name === '0000-README.sql') continue;
     $assert(isset($baselines[$name]), 'Fresh schema does not baseline migration: ' . $name);
-    if (isset($baselines[$name])) $assert(hash_file('sha256', $file) === $baselines[$name], 'Fresh-schema checksum is stale for migration: ' . $name);
+    $canonicalChecksum = function_exists('migration_file_checksum') ? migration_file_checksum($file) : false;
+    if (isset($baselines[$name])) $assert($canonicalChecksum === $baselines[$name], 'Fresh-schema checksum is stale for migration: ' . $name);
 }
 
 if ($failures) {

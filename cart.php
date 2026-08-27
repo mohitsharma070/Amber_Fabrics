@@ -28,9 +28,15 @@ $cartMeterMap = $_SESSION['cart_meter_length'];
 $wishlistMeterMap = $_SESSION['wishlist_meter_length'];
 
 $cartHydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeterMap);
-$wishlistHydrated = CartService::cart_hydrate_items($conn, $wishlist, $wishlistSizes, $wishlistMeterMap);
+$wishlistHydrated = CartService::cart_hydrate_items($conn, $wishlist, $wishlistSizes, $wishlistMeterMap, false);
 
 $sessionAdjusted = false;
+if (!empty($cartHydrated['quantity_updates'])) {
+    foreach ($cartHydrated['quantity_updates'] as $cartKey => $quantity) {
+        $cart[$cartKey] = $quantity;
+    }
+    $sessionAdjusted = true;
+}
 if (!empty($cartHydrated['removed_keys'])) {
     foreach ($cartHydrated['removed_keys'] as $cartKey) {
         unset($cart[$cartKey], $cartSizes[$cartKey], $cartMeterMap[$cartKey]);

@@ -30,6 +30,7 @@ final class CustomerSessionMergeService
             array_merge(array_keys($dbCart), array_keys($sessionCart))
         )), static fn($value): bool => $value > 0));
         $unitMap = self::productUnitMap($conn, $mergedIds);
+        $meterConflictFound = false;
 
         foreach ($sessionCart as $cartKey => $qty) {
             [$productId] = CartService::cart_parse_key((string) $cartKey);
@@ -37,6 +38,16 @@ final class CustomerSessionMergeService
                 continue;
             }
             $unitType = $unitMap[$productId] ?? 'meter';
+            if (!CartService::cartLineAllowsMeterLength(
+                $dbCart,
+                $dbMeterMap,
+                (string) $cartKey,
+                $unitType,
+                $sessionMeterMap[$cartKey] ?? null
+            )) {
+                $meterConflictFound = true;
+                continue;
+            }
             $currentQty = isset($dbCart[$cartKey]) ? normalize_quantity_by_unit($dbCart[$cartKey], $unitType) : 0;
             $incomingQty = normalize_quantity_by_unit($qty, $unitType);
             $dbCart[$cartKey] = $unitType === 'meter'
@@ -56,9 +67,10 @@ final class CustomerSessionMergeService
 
         $_SESSION['cart'] = $dbCart;
         $_SESSION['cart_meter_length'] = $dbMeterMap;
-        if ($dbCart !== []) {
-            CartService::cart_save_to_db($conn, $customerId, $dbCart, $dbMeterMap);
+        if ($meterConflictFound) {
+            flash('error', 'Some meter-based cart items could not be merged because their selected length was missing or different. Please review your cart.');
         }
+        CartService::cart_save_to_db($conn, $customerId, $dbCart, $dbMeterMap);
     }
 
     private static function mergeWishlist(mysqli $conn, int $customerId): void
@@ -144,7 +156,7 @@ final class CustomerSessionMergeService
         }
 
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
-        $stmt = $conn->prepare("SELECT id, unit_type, stock, stock_meters FROM fabrics WHERE id IN ($placeholders)");
+        $stmt = $conn->prepare("SELECT id, unit_type, min_order_meters, qty_step, stock, stock_meters FROM fabrics WHERE id IN ($placeholders)");
         $stmt->bind_param(str_repeat('i', count($productIds)), ...$productIds);
         $stmt->execute();
         $stockMap = [];
@@ -157,6 +169,8 @@ final class CustomerSessionMergeService
                 'unit_type' => in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
                     ? (string) $row['unit_type']
                     : 'meter',
+                'min_order_meters' => (float) ($row['min_order_meters'] ?? 1),
+                'qty_step' => is_numeric($row['qty_step'] ?? null) ? (float) $row['qty_step'] : 0.0,
                 'stock' => (float) ($row['stock'] ?? 0),
                 'stock_meters' => (float) ($row['stock_meters'] ?? 0),
             ];
@@ -170,6 +184,10 @@ final class CustomerSessionMergeService
                 continue;
             }
             $unitType = (string) $stockMap[$productId]['unit_type'];
+            $minimumQuantity = $unitType === 'meter'
+                ? normalize_meter_quantity($stockMap[$productId]['min_order_meters'] ?? 1, 1.0)
+                : (float) max(1, (int) round((float) ($stockMap[$productId]['min_order_meters'] ?? 1)));
+            $quantityStep = $unitType === 'meter' ? (float) $stockMap[$productId]['qty_step'] : 0.0;
             $available = $unitType === 'meter'
                 ? (float) $stockMap[$productId]['stock_meters']
                 : (float) $stockMap[$productId]['stock'];
@@ -187,9 +205,28 @@ final class CustomerSessionMergeService
                 unset($cart[$key], $meterMap[$key]);
                 continue;
             }
-            if ((float) $quantity > $available) {
-                $cart[$key] = $unitType === 'meter' ? round($available, 2) : (int) floor($available);
+            $normalizedQuantity = normalize_quantity_by_unit($quantity, $unitType, (float) $minimumQuantity);
+            $meterLength = null;
+            if ($unitType === 'meter') {
+                if (!isset($meterMap[$key]) || !is_numeric($meterMap[$key]) || (float) $meterMap[$key] <= 0) {
+                    unset($cart[$key], $meterMap[$key]);
+                    continue;
+                }
+                $meterLength = round((float) $meterMap[$key], 2);
             }
+            $reconciledQuantity = CartService::reconcileSellableQuantity(
+                $normalizedQuantity,
+                $available,
+                $unitType,
+                (float) $minimumQuantity,
+                $quantityStep,
+                $meterLength
+            );
+            if ($reconciledQuantity <= 0) {
+                unset($cart[$key], $meterMap[$key]);
+                continue;
+            }
+            $cart[$key] = $reconciledQuantity;
         }
     }
 }

@@ -43,9 +43,19 @@ $removeSource = (string) file_get_contents(__DIR__ . '/../remove-coupon.php');
 $assert(!str_contains($rateSource, "\$_POST['subtotal']"), 'Shipping rate still trusts a browser-supplied subtotal.');
 $assert(str_contains($rateSource, 'CartService::cart_items_subtotal'), 'Shipping rate does not derive subtotal from the server cart.');
 $assert(str_contains($rateSource, "'invoice_value' => \$invoiceValue"), 'Shipping rate does not send the discounted invoice value.');
+$cartChangedPosition = strpos($rateSource, "'code' => 'cart_changed'");
+$quoteStorePosition = strpos($rateSource, 'InventoryService::shipping_quote_store');
+$assert(
+    $cartChangedPosition !== false && $quoteStorePosition !== false && $cartChangedPosition < $quoteStorePosition,
+    'Shipping refresh must reject a reconciled cart before issuing a quote token.'
+);
+$assert(str_contains($rateSource, '], 409);'), 'Shipping refresh must return an HTTP conflict when the cart changed.');
+$assert(str_contains($checkoutSource, 'data = await res.json();'), 'Checkout must read structured error responses from shipping refresh.');
+$assert(str_contains($checkoutSource, "data.code === 'cart_changed'") && str_contains($checkoutSource, 'window.location.reload();'), 'Checkout must reload after server-side cart reconciliation.');
+$assert(!str_contains($checkoutSource, 'res.ok ? await res.json() : null'), 'Checkout must not discard non-2xx cart-change responses.');
 $assert(str_contains($checkoutSource, "'invoice_value' => (float) \$taxableAmount"), 'Initial checkout quote does not use the discounted invoice value.');
 $assert((bool) preg_match('/shipping_quote_store\(\s*\(float\) \$taxableAmount/', $checkoutSource), 'Initial checkout token does not bind the discounted invoice value.');
-$assert(str_contains($rateSource, "shipping_quote_store(\n    (float) \$invoiceValue"), 'Refreshed quote token does not bind the discounted invoice value.');
+$assert((bool) preg_match('/shipping_quote_store\(\s*\(float\) \$invoiceValue/', $rateSource), 'Refreshed quote token does not bind the discounted invoice value.');
 $assert(str_contains($placeOrderSource, 'abs($quoteSubtotal - $quotedInvoiceValue)'), 'Order placement does not validate the coupon-adjusted quote value.');
 $assert(substr_count($checkoutSource, 'data-preserve-checkout-state') >= 2, 'Coupon forms are not both preserving checkout state.');
 $assert(str_contains($pluginSource, "\$context['invoice_value'] ?? \$subtotal"), 'Bigship rate payload ignores the discounted invoice value.');

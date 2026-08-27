@@ -54,6 +54,7 @@ if ($qtyStepUi > 0) {
 $unitLabel = $unitType === 'piece' ? 'pieces' : ($unitType === 'set' ? 'sets' : 'meters');
 $unitSingleLabel = $unitType === 'piece' ? 'piece' : ($unitType === 'set' ? 'set' : 'meter');
 $displayStock = $isWholeUnit ? (float) ($product['stock'] ?? 0) : (float) ($product['stock_meters'] ?? 0);
+$stockUnitLabel = $displayStock === 1.0 ? $unitSingleLabel : $unitLabel;
 $inStock = !empty($product['is_available']) && $displayStock > 0;
 $galleryImages = [];
 $videoFile = '';
@@ -299,28 +300,36 @@ $metaImage = !empty($galleryImages[0])
     : SiteContext::url('/images/fabrics/default.jpg');
 $metaUrl = SiteContext::url(ProductAdminService::publicPath($product));
 include 'includes/header.php';
+$categorySlug = trim((string) ($product['category'] ?? ''));
+$categoryLabel = ucwords(str_replace(['-', '_'], ' ', $categorySlug));
+foreach (($headerCategories ?? []) as $headerCategory) {
+    if ((string) ($headerCategory['slug'] ?? '') === $categorySlug) {
+        $categoryLabel = trim((string) ($headerCategory['name'] ?? $categoryLabel));
+        break;
+    }
+}
 do_action('product.view', [
     'conn' => $conn,
     'product_id' => (int) $product['id'],
     'customer_id' => (int) ($_SESSION['customer_id'] ?? 0),
 ]);
 ?>
-<section class="page-hero py-4">
+<section class="page-hero product-detail-hero">
     <div class="container">
-        <a href="/catalog" class="text-white opacity-75 small">&larr; Back to Shop</a>
+        <a href="/catalog" class="app-back-link">&larr; Back to Shop</a>
     </div>
 </section>
 
-<section class="section-block">
+<section class="section-block product-detail-section">
     <div class="container">
         <div class="row g-3 g-md-5">
-            <div class="col-md-5">
+            <div class="col-lg-6 product-gallery-column">
                 <?php if (!empty($galleryImages)): ?>
                     <?php $mainImageAsset = fabric_image_asset_data((string) $galleryImages[0]); ?>
                     <div class="product-media-main mb-3 shadow-sm overflow-hidden">
                         <picture id="product-main-picture" class="d-block w-100 h-100">
                             <?php if (!empty($mainImageAsset['webp_srcset'])): ?>
-                                <source id="product-main-webp-source" type="image/webp" srcset="<?php echo e($mainImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 100vw, 45vw">
+                                <source id="product-main-webp-source" type="image/webp" srcset="<?php echo e($mainImageAsset['webp_srcset']); ?>" sizes="(max-width: 991px) 100vw, 50vw">
                             <?php else: ?>
                                 <source id="product-main-webp-source" type="image/webp" srcset="">
                             <?php endif; ?>
@@ -445,16 +454,16 @@ do_action('product.view', [
                 <?php endif; ?>
             </div>
 
-            <div class="col-md-7">
-                <h1 class="mb-1"><?php echo e($product['name']); ?></h1>
-                <?php if (!empty($product['category'])): ?>
-                    <p class="text-muted mb-2"><?php echo e($product['category']); ?></p>
+            <div class="col-lg-6 product-detail-info">
+                <?php if ($categorySlug !== ''): ?>
+                    <a class="product-category-link d-inline-flex mb-2 small fw-bold text-secondary text-uppercase text-decoration-none" href="/catalog?category=<?php echo e(rawurlencode($categorySlug)); ?>"><?php echo e($categoryLabel); ?></a>
                 <?php endif; ?>
+                <h1 class="product-detail-title mb-3"><?php echo e($product['name']); ?></h1>
 
-                <div class="mb-3" id="product_price_block">
+                <div class="d-flex flex-wrap align-items-baseline gap-2 mb-3" id="product_price_block">
                     <?php if ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice): ?>
                         <span class="fs-4 fw-bold text-primary"><?php echo e(money($salePrice)); ?> / <?php echo e($unitSingleLabel); ?></span>
-                        <span class="ms-3 text-muted"><del><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></del></span>
+                        <span class="text-muted"><del><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></del></span>
                     <?php elseif ($regularPrice > 0): ?>
                         <span class="fs-4 fw-bold text-primary"><?php echo e(money($regularPrice)); ?> / <?php echo e($unitSingleLabel); ?></span>
                     <?php else: ?>
@@ -462,12 +471,18 @@ do_action('product.view', [
                     <?php endif; ?>
                 </div>
 
-                <div class="d-flex flex-wrap gap-2 mb-3">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
                     <?php if (!empty($product['color'])): ?>
                         <span class="badge-soft">Color: <?php echo e($product['color']); ?></span>
                     <?php endif; ?>
-                    <span class="badge <?php echo $inStock ? 'bg-success' : 'bg-secondary'; ?>" id="base_stock_badge">
-                        <?php echo $inStock ? 'Stock Status: In Stock (' . format_quantity_by_unit($displayStock, $unitType) . ' ' . e($unitLabel) . ')' : 'Stock Status: Out of Stock'; ?>
+                    <span class="product-availability <?php echo $inStock ? 'is-in-stock' : 'is-out-of-stock'; ?>" id="base_stock_badge">
+                        <span class="product-availability-dot" aria-hidden="true"></span>
+                        <?php if ($inStock): ?>
+                            <span class="fw-bold">In stock</span>
+                            <span class="product-availability-count"><?php echo format_quantity_by_unit($displayStock, $unitType) . ' ' . e($stockUnitLabel); ?> available</span>
+                        <?php else: ?>
+                            <span class="fw-bold">Out of stock</span>
+                        <?php endif; ?>
                     </span>
                 </div>
 
@@ -557,8 +572,11 @@ do_action('product.view', [
 <?php endif; ?>
 
                 <?php if (!empty($meterOptions)): ?>
-                <div class="mb-3">
-                    <h6 class="fw-semibold mb-2">Select Meters</h6>
+                <div class="mb-4">
+                    <div class="d-flex flex-wrap align-items-baseline justify-content-between gap-2 mb-2">
+                        <h2 class="h6 fw-semibold mb-0">Select cut length</h2>
+                        <span class="small text-muted">Price shown per meter</span>
+                    </div>
                     <div class="d-flex flex-wrap gap-2">
                         <?php foreach ($meterOptions as $idx => $mval): ?>
                             <button type="button"
@@ -569,12 +587,13 @@ do_action('product.view', [
                             </button>
                         <?php endforeach; ?>
                     </div>
+                    <p class="small text-muted mt-2 mb-0">Choose a length, then select how many cuts you need.</p>
                 </div>
                 <?php endif; ?>
 
-                <div class="card p-3 mb-3" style="max-width:420px;">
+                <div class="card product-buy-box p-3 p-lg-4 mb-3">
                     <label class="form-label fw-semibold">
-                        <?php echo $unitType === 'meter' ? 'Quantity (pieces)' : 'Quantity (' . e($unitLabel) . ')'; ?>
+                        <?php echo $unitType === 'meter' ? 'Number of cuts' : 'Quantity (' . e($unitLabel) . ')'; ?>
                     </label>
                     <form method="POST" action="/add-to-cart.php" id="add_to_cart_form">
                         <?php echo csrf_field(); ?>
@@ -629,9 +648,9 @@ do_action('product.view', [
                         </div>
                         <?php if ($unitType === 'meter'): ?>
                         <div class="small text-muted mt-2" id="meter_purchase_summary">
-                            1 x <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m = <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m
+                            1 cut &times; <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m = <?php echo e(rtrim(rtrim(number_format($defaultMeterLength, 2), '0'), '.')); ?>m
                             <?php if ($effectiveBasePrice > 0): ?>
-                                | Total: <?php echo e(money((float) $effectiveBasePrice * (float) $defaultMeterLength)); ?>
+                                &middot; Total: <?php echo e(money((float) $effectiveBasePrice * (float) $defaultMeterLength)); ?>
                             <?php endif; ?>
                         </div>
                         <?php endif; ?>
@@ -706,9 +725,9 @@ do_action('product.view', [
                                         buyNowMeterLength.value = meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
                                     }
                                     if (meterPurchaseSummary) {
-                                        var line = String(qty) + ' x ' + meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') + 'm = ' + normalized + 'm';
+                                        var line = String(qty) + (qty === 1 ? ' cut' : ' cuts') + ' × ' + meterLen.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') + 'm = ' + normalized + 'm';
                                         if (Number.isFinite(currentPricePerUnit) && currentPricePerUnit > 0) {
-                                            line += ' | Total: Rs ' + (currentPricePerUnit * totalMeters).toFixed(2);
+                                            line += ' · Total: Rs ' + (currentPricePerUnit * totalMeters).toFixed(2);
                                         }
                                         meterPurchaseSummary.textContent = line;
                                     }

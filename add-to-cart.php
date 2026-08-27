@@ -43,6 +43,7 @@ $unitType = in_array((string) ($product['unit_type'] ?? ''), ['meter', 'piece', 
 $minOrder = $unitType === 'meter'
     ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
     : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+$quantityStep = is_numeric($product['qty_step'] ?? null) ? (float) $product['qty_step'] : 0.0;
 $allowedMeterOptions = ($unitType === 'meter')
     ? CartService::parse_meter_options((string) ($product['meter_options'] ?? ''), (float) $minOrder)
     : [];
@@ -81,6 +82,11 @@ if ($unitType === 'meter') {
     $bundleQty = max(1, (int) round((float) $bundleQtyRaw));
     $selectedMeterLength = $meterLength;
     $quantity = normalize_meter_quantity($meterLength * $bundleQty, (float) $minOrder);
+    if (!meter_qty_respects_step((float) $quantity, (float) $minOrder, $quantityStep)) {
+        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Quantity does not match the allowed meter step.']); exit; }
+        flash('error', 'Quantity does not match the allowed meter step.');
+        redirect('/fabric.php?id=' . $productId);
+    }
 }
 
 $sizeOptions = CartService::parse_size_options((string) ($product['size'] ?? ''));
@@ -185,9 +191,21 @@ if ($outOfStock) {
     flash('error', 'This product is out of stock.');
     redirect('/fabric.php?id=' . $productId);
 }
+$maximumSellableQuantity = CartService::maximumSellableQuantity(
+    $stock,
+    $unitType,
+    (float) $minOrder,
+    $quantityStep,
+    $selectedMeterLength
+);
+if ($maximumSellableQuantity <= 0) {
+    if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'This product is not available in the minimum order quantity.']); exit; }
+    flash('error', 'This product is not available in the minimum order quantity.');
+    redirect('/fabric.php?id=' . $productId);
+}
 $cappedByStock = false;
-if ($stock > 0 && $quantity > $stock) {
-    $quantity = normalize_quantity_by_unit($stock, $unitType, (float) $minOrder);
+if ($quantity > $maximumSellableQuantity) {
+    $quantity = $maximumSellableQuantity;
     $cappedByStock = true;
 }
 
@@ -201,12 +219,37 @@ if (!isset($_SESSION['cart_meter_length']) || !is_array($_SESSION['cart_meter_le
 // Cart key format: "{fabricId}::{variantId}"; simple products use variant id 0.
 $cartKey = $productId . '::' . ($variantId > 0 ? $variantId : 0);
 
+if (!CartService::cartLineAllowsMeterLength(
+    $_SESSION['cart'],
+    $_SESSION['cart_meter_length'],
+    $cartKey,
+    $unitType,
+    $selectedMeterLength
+)) {
+    $message = 'This product is already in your cart with a different or invalid meter length. Update or remove that line before choosing another length.';
+    if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $message]); exit; }
+    flash('error', $message);
+    redirect('/fabric.php?id=' . $productId);
+}
+
 $existing = isset($_SESSION['cart'][$cartKey])
     ? normalize_quantity_by_unit($_SESSION['cart'][$cartKey], $unitType, (float) $minOrder)
     : 0;
 $newQty = round($existing + $quantity, 2);
-if ($stock > 0 && $newQty > $stock) {
-    $newQty = normalize_quantity_by_unit($stock, $unitType, (float) $minOrder);
+$sellableNewQty = CartService::maximumSellableQuantity(
+    min($stock, (float) $newQty),
+    $unitType,
+    (float) $minOrder,
+    $quantityStep,
+    $selectedMeterLength
+);
+if ($sellableNewQty <= 0) {
+    if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'This product is not available in the minimum order quantity.']); exit; }
+    flash('error', 'This product is not available in the minimum order quantity.');
+    redirect('/fabric.php?id=' . $productId);
+}
+if ($sellableNewQty < $newQty) {
+    $newQty = $sellableNewQty;
     $cappedByStock = true;
 }
 $_SESSION['cart'][$cartKey] = normalize_quantity_by_unit($newQty, $unitType, (float) $minOrder);
@@ -257,7 +300,7 @@ log_ecommerce_event(
 if ($isAjax) {
     $cartCount = count($_SESSION['cart']);
     $msg = $cappedByStock
-        ? 'Added to cart (only ' . format_quantity_by_unit($stock, $unitType) . CommercePresenter::quantityUnitSuffix($unitType) . ' in stock - quantity adjusted).'
+        ? 'Added to cart (only ' . format_quantity_by_unit($maximumSellableQuantity, $unitType) . CommercePresenter::quantityUnitSuffix($unitType) . ' currently sellable - quantity adjusted).'
         : 'Added to cart: ' . ($product['name'] ?? 'Product');
     header('Content-Type: application/json');
     echo json_encode([
@@ -272,7 +315,7 @@ if ($isAjax) {
 }
 
 $flashMsg = $cappedByStock
-    ? 'Added to cart. Only ' . format_quantity_by_unit($stock, $unitType) . CommercePresenter::quantityUnitSuffix($unitType) . ' available - quantity has been adjusted.'
+    ? 'Added to cart. Only ' . format_quantity_by_unit($maximumSellableQuantity, $unitType) . CommercePresenter::quantityUnitSuffix($unitType) . ' currently sellable - quantity has been adjusted.'
     : 'Added to cart: ' . ($product['name'] ?? 'Product');
 flash('success', $flashMsg);
 $target = ($redirectTo === 'checkout') ? '/checkout.php' : '/cart.php';

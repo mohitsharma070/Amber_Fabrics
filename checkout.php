@@ -14,15 +14,27 @@ $hydrated = CartService::cart_hydrate_items($conn, $cart, $cartSizes, $cartMeter
 $items = $hydrated['items'];
 $subtotal = CartService::cart_items_subtotal($items);
 
+$cartAdjusted = false;
+if (!empty($hydrated['quantity_updates'])) {
+    foreach ($hydrated['quantity_updates'] as $cartKey => $quantity) {
+        $_SESSION['cart'][$cartKey] = $quantity;
+    }
+    $cartAdjusted = true;
+}
 if (!empty($hydrated['removed_keys'])) {
     foreach ($hydrated['removed_keys'] as $cartKey) {
         unset($_SESSION['cart'][$cartKey], $_SESSION['cart_size'][$cartKey], $_SESSION['cart_meter_length'][$cartKey]);
     }
+    $cartAdjusted = true;
+}
+if ($cartAdjusted) {
     if (!empty($_SESSION['customer_id'])) {
         CartService::cart_save_to_db($conn, (int) $_SESSION['customer_id'], $_SESSION['cart'] ?? [], $_SESSION['cart_meter_length'] ?? []);
     }
     if (!empty($hydrated['invalid_variant_found'])) {
         flash('error', 'Some unavailable variants were removed from your cart. Please review before checkout.');
+    } elseif (!empty($hydrated['quantity_updates'])) {
+        flash('info', 'Some cart quantities were adjusted to available stock.');
     }
 }
 
@@ -851,14 +863,23 @@ include __DIR__ . '/includes/header.php';
                 body: body.toString(),
                 signal: controller ? controller.signal : undefined
             });
-            var data = res.ok ? await res.json() : null;
+            var data = null;
+            try {
+                data = await res.json();
+            } catch (jsonError) {
+                data = null;
+            }
+            if (data && data.code === 'cart_changed' && data.reload === true) {
+                window.location.reload();
+                return false;
+            }
             var currentContext = String(countryInput.value || '').trim().toLowerCase()
                 + '|' + String(pincodeInput ? pincodeInput.value : '').trim()
                 + '|' + (codRadio.checked ? 'cod' : 'razorpay');
             if (requestId !== shippingRateRequestId || requestContext !== currentContext) {
                 return false;
             }
-            if (!data || !data.ok) {
+            if (!res.ok || !data || !data.ok) {
                 shippingDebugReason = 'bigship_rate_api_failed';
                 setShippingNote('manual', '', shippingDebugReason, '');
                 return false;
