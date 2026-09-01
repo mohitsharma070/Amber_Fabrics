@@ -194,6 +194,10 @@ try {
     $clear->execute();
     $guessResults = $runConcurrent(array_fill(0, 5, ['otp', $adminId, '000000', $passphrase]));
     $assert(count(array_filter($guessResults, static fn(string $status): bool => $status === 'success')) === 0, 'Concurrent invalid guesses must never authenticate.');
+    $assert(
+        count(array_filter($guessResults, static fn(string $status): bool => $status === 'failed')) === 0,
+        'Concurrent invalid OTP verification must not fail with a database error.'
+    );
     $otpCheck = $conn->prepare('SELECT COUNT(*) AS total FROM admin_login_otps WHERE admin_id = ?');
     $otpCheck->bind_param('i', $adminId);
     $otpCheck->execute();
