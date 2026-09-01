@@ -235,8 +235,11 @@ final class AdminOtpService
 
     private static function ensureAttemptRow(mysqli $conn, string $attemptKey): void
     {
+        // A duplicate-key update takes the exclusive row lock immediately.
+        // INSERT IGNORE would retain a shared lock and deadlock on FOR UPDATE.
         $stmt = $conn->prepare(
-            "INSERT IGNORE INTO admin_login_attempts (attempt_key, attempts, blocked_until) VALUES (?, 0, NULL)"
+            "INSERT INTO admin_login_attempts (attempt_key, attempts, blocked_until) VALUES (?, 0, NULL)
+             ON DUPLICATE KEY UPDATE attempts = attempts"
         );
         $stmt->bind_param('s', $attemptKey);
         $stmt->execute();
