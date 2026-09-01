@@ -9,7 +9,6 @@
     --brand: #0f766e;
     --brand-ink: #083e3a;
     --accent: #c77d2f;
-    --accent: #c77d2f;
     --line: #d8dee7;
     --radius-sm: 10px;
     --radius-md: 16px;
@@ -495,7 +494,7 @@ img {
     background: var(--surface);
 }
 
-.card:hover {
+.product-click-card:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-card);
 }
@@ -526,7 +525,7 @@ img {
     transition: transform 0.3s ease;
 }
 
-.card:hover .fabric-thumb {
+.product-click-card:hover .fabric-thumb {
     transform: scale(1.01);
 }
 

@@ -24,4 +24,4 @@
     </div>
 </div>
 
-<div class="site-toast-region" id="siteToastRegion" aria-label="Notifications" aria-live="polite" aria-atomic="false"></div>
+<div class="site-toast-region" id="siteToastRegion" aria-live="polite" aria-atomic="false"></div>

@@ -376,6 +376,43 @@ function save_fabric_image_upload(array $file, string $label = 'Image'): string
     return $saved;
 }
 
+function image_pipeline_asset_dimensions(string $absolutePath): array
+{
+    static $dimensions = [];
+
+    if (isset($dimensions[$absolutePath])) {
+        return $dimensions[$absolutePath];
+    }
+
+    $result = ['width' => 0, 'height' => 0];
+    if (!is_file($absolutePath)) {
+        return $dimensions[$absolutePath] = $result;
+    }
+
+    $imageInfo = @getimagesize($absolutePath);
+    if (is_array($imageInfo) && isset($imageInfo[0], $imageInfo[1])) {
+        $result = [
+            'width' => max(0, (int) $imageInfo[0]),
+            'height' => max(0, (int) $imageInfo[1]),
+        ];
+    }
+
+    return $dimensions[$absolutePath] = $result;
+}
+
+function image_asset_dimension_attributes(array $asset, string $variant = 'source'): string
+{
+    $prefix = $variant === 'thumb' ? 'thumb_' : '';
+    $width = max(0, (int) ($asset[$prefix . 'width'] ?? 0));
+    $height = max(0, (int) ($asset[$prefix . 'height'] ?? 0));
+
+    if ($width === 0 || $height === 0) {
+        return '';
+    }
+
+    return ' width="' . $width . '" height="' . $height . '"';
+}
+
 function image_pipeline_asset_data(string $relativeDir, string $filename): array
 {
     $filename = trim($filename);
@@ -384,6 +421,10 @@ function image_pipeline_asset_data(string $relativeDir, string $filename): array
             'src' => '',
             'thumb_src' => '',
             'webp_srcset' => '',
+            'width' => 0,
+            'height' => 0,
+            'thumb_width' => 0,
+            'thumb_height' => 0,
         ];
     }
 
@@ -395,6 +436,7 @@ function image_pipeline_asset_data(string $relativeDir, string $filename): array
 
     $baseUrl = '/' . $relativeDir;
     $originalUrl = $baseUrl . '/' . $filename;
+    $originalAbs = $absDir . DIRECTORY_SEPARATOR . $filename;
 
     $thumbWebp = $base . '-thumb.webp';
     $thumbWebpAbs = $absDir . DIRECTORY_SEPARATOR . $thumbWebp;
@@ -403,10 +445,13 @@ function image_pipeline_asset_data(string $relativeDir, string $filename): array
 
     if (is_file($thumbWebpAbs)) {
         $thumbUrl = $baseUrl . '/' . $thumbWebp;
+        $thumbAbs = $thumbWebpAbs;
     } elseif ($thumbFallbackAbs !== '' && is_file($thumbFallbackAbs)) {
         $thumbUrl = $baseUrl . '/' . $thumbFallback;
+        $thumbAbs = $thumbFallbackAbs;
     } else {
         $thumbUrl = $originalUrl;
+        $thumbAbs = $originalAbs;
     }
 
     $srcsetParts = [];
@@ -418,10 +463,17 @@ function image_pipeline_asset_data(string $relativeDir, string $filename): array
         }
     }
 
+    $sourceDimensions = image_pipeline_asset_dimensions($originalAbs);
+    $thumbDimensions = image_pipeline_asset_dimensions($thumbAbs);
+
     return [
         'src' => $originalUrl,
         'thumb_src' => $thumbUrl,
         'webp_srcset' => implode(', ', $srcsetParts),
+        'width' => $sourceDimensions['width'],
+        'height' => $sourceDimensions['height'],
+        'thumb_width' => $thumbDimensions['width'],
+        'thumb_height' => $thumbDimensions['height'],
     ];
 }
 

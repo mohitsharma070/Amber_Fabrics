@@ -1,0 +1,17 @@
+{
+  "name": "amber-fabrics-storefront-e2e",
+  "private": true,
+  "scripts": {
+    "test:e2e:preflight": "node --test tests/e2e/safety.test.js && php tests/e2e/fixture_policy_test.php",
+    "test:e2e:seed": "php tests/e2e/fixtures.php",
+    "test:e2e": "npm run test:e2e:smoke",
+    "test:e2e:smoke": "npm run test:e2e:preflight && npm run test:e2e:seed && playwright test tests/e2e/storefront.spec.js",
+    "test:e2e:a11y": "npm run test:e2e:preflight && npm run test:e2e:seed && playwright test tests/e2e/accessibility.spec.js",
+    "test:e2e:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
+    "bootstrap": "^5.3.3"
+  }
+}

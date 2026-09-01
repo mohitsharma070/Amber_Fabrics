@@ -1,6 +1,34 @@
 <?php
 
 $failures = [];
+$root = dirname(__DIR__);
+$assert = static function (bool $condition, string $message) use (&$failures): void {
+    if (!$condition) {
+        $failures[] = $message;
+    }
+};
+
+require_once $root . '/includes/services/ProductAdminService.php';
+require_once $root . '/includes/helpers/product-cards.php';
+
+$productCardUrlCases = [
+    ['product' => ['id' => 10, 'slug' => 'example-product'], 'variant_id' => 0, 'expected' => '/fabric/example-product', 'label' => 'slug product without a variant'],
+    ['product' => ['id' => 10, 'slug' => 'example-product'], 'variant_id' => 123, 'expected' => '/fabric/example-product?variant=123', 'label' => 'slug product with a variant'],
+    ['product' => ['id' => 10, 'slug' => ''], 'variant_id' => 0, 'expected' => '/fabric.php?id=10', 'label' => 'legacy product without a variant'],
+    ['product' => ['id' => 10, 'slug' => ''], 'variant_id' => 123, 'expected' => '/fabric.php?id=10&variant=123', 'label' => 'legacy product with a variant'],
+];
+
+if (!function_exists('product_card_public_url')) {
+    $failures[] = 'Shared product-card URL composer is missing.';
+} else {
+    foreach ($productCardUrlCases as $case) {
+        $actual = product_card_public_url($case['product'], $case['variant_id']);
+        $assert($actual === $case['expected'], 'Shared product-card URL is incorrect for ' . $case['label'] . '.');
+        $assert(str_starts_with($actual, '/'), 'Shared product-card URL must be root-relative for ' . $case['label'] . '.');
+        $assert(!str_contains($actual, 'example-product&variant='), 'Slug product variants must not use an ampersand without a query string.');
+    }
+}
+
 $htaccess = (string) file_get_contents(__DIR__ . '/../.htaccess');
 $router = (string) file_get_contents(__DIR__ . '/../router.php');
 

@@ -15,8 +15,12 @@ $deliveryEndpoint = (string) file_get_contents($root . '/delivery-estimate.php')
 $rate = (string) file_get_contents($root . '/shipping-rate.php');
 $email = (string) file_get_contents($root . '/includes/services/EmailService.php');
 $checkout = (string) file_get_contents($root . '/checkout.php');
+$checkoutScriptPath = $root . '/js/checkout.js';
+$checkoutScript = is_file($checkoutScriptPath) ? (string) file_get_contents($checkoutScriptPath) : '';
 $cartPage = (string) file_get_contents($root . '/cart.php');
 $frontendScript = (string) file_get_contents($root . '/js/script.js');
+$productDetailPath = $root . '/js/product-detail.js';
+$productDetailScript = is_file($productDetailPath) ? (string) file_get_contents($productDetailPath) : '';
 $activationPage = (string) file_get_contents($root . '/guest/account-activate.php');
 $placeOrder = (string) file_get_contents($root . '/place-order.php');
 $orderPersistence = (string) file_get_contents($root . '/includes/services/OrderPersistenceService.php');
@@ -37,13 +41,13 @@ $assert(str_contains($access, 'IDLE_SECONDS = 1800') && str_contains($access, 'A
 $assert(str_contains($estimate, 'addBusinessDays'), 'Business-day estimate missing.');
 $assert(str_contains($deliveryEndpoint, "\$_POST['payment_method'] ?? 'cod'") && str_contains($deliveryEndpoint, '$paymentInput'), 'PDP delivery estimate must default a missing payment method to COD.');
 $assert(str_contains($deliveryEndpoint, 'Whole units are required') && str_contains($deliveryEndpoint, 'meter_qty_respects_step'), 'Delivery endpoint must enforce unit quantity rules server-side.');
-$assert(str_contains($fabric, 'pdp_delivery_form" class="row g-2 mb-2 js-no-loading') && str_contains($fabric, '} finally {'), 'PDP delivery checker must restore its AJAX loading state.');
+$assert(str_contains($fabric, 'pdp_delivery_form" class="row g-2 mb-2 js-no-loading') && str_contains($productDetailScript, '} finally {'), 'PDP delivery checker must restore its AJAX loading state.');
 $assert(!str_contains($cartPage, 'cart_delivery_form') && !str_contains($cartPage, '<span>Shipping</span>'), 'Cart must omit shipping calculation and presentation.');
 $assert(str_contains($frontendScript, 'if (e.defaultPrevented) return;'), 'Prevented forms must not enter the global loading state.');
 $assert(str_contains($activationPage, 'activation_token_fingerprint') && !str_contains($activationPage, 'name="token"'), 'Activation refresh must reuse only the scoped server session.');
 $assert(str_contains($activationPage, 'begin_transaction()') && str_contains($activationPage, 'FOR UPDATE'), 'Account creation and guest-order claiming must be transactional.');
 $assert(!str_contains($checkout, 'Login is required before the order is created.'), 'Guest Razorpay copy incorrectly requires login.');
-$assert(str_contains($checkout, '$hasCompleteDelivery') && str_contains($checkout, 'checkout_continue_payment') && str_contains($checkout, 'setCheckoutUnlocked'), 'Checkout must gate payment and review behind a validated delivery quote.');
+$assert(str_contains($checkout, '$hasCompleteDelivery') && str_contains($checkout, 'checkout_continue_payment') && str_contains($checkoutScript, 'setCheckoutUnlocked'), 'Checkout must gate payment and review behind a validated delivery quote.');
 $assert(str_contains($rate, "'serviceability_status'"), 'Shipping response lacks serviceability.');
 $assert(str_contains($email, 'send_guest_manage_link') && str_contains($email, 'send_account_activation_email'), 'Transactional guest email methods missing.');
 $assert(str_contains($backendFixMigration, 'account_activation_requested') && str_contains($email, 'send_requested_account_activation_email'), 'Asynchronous activation intent persistence missing.');

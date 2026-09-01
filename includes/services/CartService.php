@@ -201,7 +201,7 @@ final class CartService
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
-        $sql = "SELECT f.id, f.name, COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image, f.product_type, f.unit_type, f.meter_options, f.min_order_meters, f.qty_step, f.price, f.sale_price, f.stock, f.stock_meters, f.is_available,
+        $sql = "SELECT f.id, f.name, f.slug, COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image, f.product_type, f.unit_type, f.meter_options, f.min_order_meters, f.qty_step, f.price, f.sale_price, f.stock, f.stock_meters, f.is_available,
                        shipping_weight_kg, parcel_length_cm, parcel_width_cm, parcel_height_cm, gst_rate, hsn_code
                 FROM fabrics f
                 WHERE f.status = 'active' AND f.id IN ($placeholders)";
@@ -366,6 +366,7 @@ final class CartService
                 'cart_key' => (string) $cartKey,
                 'id' => $pid,
                 'name' => (string) $row['name'],
+                'slug' => (string) ($row['slug'] ?? ''),
                 'image' => $displayImage,
                 'quantity' => $qty,
                 'quantity_text' => format_quantity_by_unit($qty, $unitType),

@@ -113,26 +113,26 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['login.php'], true);
 ?>
 <?php if ($showMobileBottomNav): ?>
 <nav class="mobile-bottom-nav d-md-none" aria-label="Mobile bottom navigation">
-    <a class="mobile-bottom-nav__item <?php echo $currentPage === 'index.php' ? 'is-active' : ''; ?>" href="/" aria-label="Home">
+    <a class="mobile-bottom-nav__item <?php echo $isHomePage ? 'is-active' : ''; ?>"<?php echo $ariaCurrent($isHomePage); ?> href="/" aria-label="Home">
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.354 1.146a.5.5 0 0 0-.708 0l-6 6A.5.5 0 0 0 2 8h1v6a1 1 0 0 0 1 1h3.5a.5.5 0 0 0 .5-.5V11h1v3.5a.5.5 0 0 0 .5.5H13a1 1 0 0 0 1-1V8h1a.5.5 0 0 0 .354-.854z"/></svg>
         <span>Home</span>
     </a>
-    <a class="mobile-bottom-nav__item <?php echo in_array($currentPage, ['catalog.php', 'fabric.php'], true) ? 'is-active' : ''; ?>" href="/catalog" aria-label="Shop">
+    <a class="mobile-bottom-nav__item <?php echo $isShopPage ? 'is-active' : ''; ?>"<?php echo $ariaCurrent($isShopPage); ?> href="/catalog" aria-label="Shop">
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.97 1.35A1 1 0 0 1 3.73 1h8.54a1 1 0 0 1 .76.35l2.609 3.044A1.5 1.5 0 0 1 16 5.37v.255a2.375 2.375 0 0 1-4.25 1.458A2.371 2.371 0 0 1 9.875 8 2.37 2.37 0 0 1 8 7.083 2.37 2.37 0 0 1 6.125 8a2.37 2.37 0 0 1-1.875-.917A2.375 2.375 0 0 1 0 5.625V5.37a1.5 1.5 0 0 1 .361-.976zM1.5 8.5A.5.5 0 0 1 2 8h1a.5.5 0 0 1 .5.5V14h8V8.5A.5.5 0 0 1 12 8h1a.5.5 0 0 1 .5.5V15a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>
         <span>Shop</span>
     </a>
-    <a class="mobile-bottom-nav__item position-relative <?php echo $currentPage === 'cart.php' ? 'is-active' : ''; ?>" href="/cart" aria-label="Cart" data-cart-link>
+    <a class="mobile-bottom-nav__item position-relative <?php echo $isCartPage ? 'is-active' : ''; ?>"<?php echo $ariaCurrent($isCartPage); ?> href="/cart" aria-label="Cart" data-cart-link>
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM3.102 4l1.313 7h8.17l1.313-7H3.102zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
         <?php if (($cartCount ?? 0) > 0): ?><span class="cart-badge" data-cart-badge><?php echo (int) $cartCount; ?></span><?php endif; ?>
         <span>Cart</span>
     </a>
     <?php if ($isLoggedIn): ?>
-        <a class="mobile-bottom-nav__item <?php echo in_array($currentPage, ['orders.php', 'order-view.php'], true) ? 'is-active' : ''; ?>" href="/customer/orders" aria-label="Orders">
+        <a class="mobile-bottom-nav__item <?php echo $isOrdersPage ? 'is-active' : ''; ?>"<?php echo $ariaCurrent($isOrdersPage); ?> href="/customer/orders" aria-label="Orders">
             <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.5A.5.5 0 0 1 .5 1H1v14h14V1h.5a.5.5 0 0 1 .5.5v13a.5.5 0 0 1-.5.5H.5a.5.5 0 0 1-.5-.5v-13A.5.5 0 0 1 0 1.5"/><path d="M2 2h12v11H2zm2.5 2a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1zm0 2a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1zm0 2a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1z"/></svg>
             <span>Orders</span>
         </a>
     <?php else: ?>
-        <a class="mobile-bottom-nav__item <?php echo in_array($currentPage, ['login.php', 'register.php'], true) ? 'is-active' : ''; ?>" href="/customer/login" aria-label="Account">
+        <a class="mobile-bottom-nav__item <?php echo $isAccountBottomPage ? 'is-active' : ''; ?>"<?php echo $ariaCurrent($isAccountBottomPage); ?> href="/customer/login" aria-label="Account">
             <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M14 14s-1-4-6-4-6 4-6 4 1 1 6 1 6-1 6-1Z"/></svg>
             <span>Account</span>
         </a>

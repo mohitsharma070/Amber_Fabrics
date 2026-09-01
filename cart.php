@@ -86,7 +86,7 @@ include __DIR__ . '/includes/header.php';
                 <div class="col-lg-8">
                     <div class="text-center py-5">
                         <p class="text-muted fs-5">Your cart is empty.</p>
-                        <a href="/catalog.php" class="btn btn-primary">Shop Collection</a>
+                        <a href="/catalog" class="btn btn-primary">Shop Collection</a>
                     </div>
 
                     <div class="surface-panel p-3 mt-4">
@@ -97,7 +97,7 @@ include __DIR__ . '/includes/header.php';
                             <?php foreach ($wishlistItems as $w): ?>
                                 <div class="saved-cart-item d-flex justify-content-between align-items-center py-2 border-bottom">
                                     <div class="saved-cart-item__details">
-                                        <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
+                                        <a href="<?php echo e(product_card_public_url($w, (int) $w['variant_id'])); ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
                                         <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
                                         <div class="small text-muted">
                                             <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
@@ -140,7 +140,7 @@ include __DIR__ . '/includes/header.php';
                             <span class="trust-badge-pill">Fast Dispatch</span>
                             <span class="trust-badge-pill">Easy Returns</span>
                         </div>
-                        <a href="/catalog.php" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
+                        <a href="/catalog" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
                     </div>
                 </div>
             </div>
@@ -152,8 +152,8 @@ include __DIR__ . '/includes/header.php';
                     <div class="surface-panel p-3 mb-3">
                         <div class="d-flex gap-3 align-items-start cart-line-item">
                             <?php if ($item['image'] !== ''): ?>
-                                <a href="/fabric.php?id=<?php echo $item['id']; ?>">
-                                    <img src="<?php echo e((string) ($cartImageAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($item['name']); ?>" class="rounded cart-item-img" loading="lazy">
+                                <a href="<?php echo e(product_card_public_url($item, (int) $item['variant_id'])); ?>">
+                                    <img src="<?php echo e((string) ($cartImageAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($item['name']); ?>" class="rounded cart-item-img" loading="lazy"<?php echo image_asset_dimension_attributes($cartImageAsset, 'thumb'); ?>>
                                 </a>
                             <?php else: ?>
                                 <div class="rounded cart-item-img bg-light"></div>
@@ -162,7 +162,7 @@ include __DIR__ . '/includes/header.php';
                             <div class="flex-grow-1">
                                 <div class="d-flex justify-content-between align-items-start">
                                     <div>
-                                        <a href="/fabric.php?id=<?php echo $item['id']; ?>" class="fw-semibold text-decoration-none d-block"><?php echo e($item['name']); ?></a>
+                                        <a href="<?php echo e(product_card_public_url($item, (int) $item['variant_id'])); ?>" class="fw-semibold text-decoration-none d-block"><?php echo e($item['name']); ?></a>
                                         <div class="text-muted small">
                                             <?php if ($item['unit_type'] === 'meter' && !empty($item['meter_length']) && !empty($item['bundle_quantity'])): ?>
                                                 Qty: <?php echo e((string) $item['bundle_quantity']); ?> x <?php echo e(format_meter_quantity((float) $item['meter_length'])); ?>m = <?php echo e($item['quantity_text']); ?>m
@@ -204,6 +204,7 @@ include __DIR__ . '/includes/header.php';
                                         <?php endif; ?>
                                         <button type="button" class="btn btn-sm btn-outline-secondary qty-dec" aria-label="Decrease quantity">-</button>
                                         <input type="number" name="<?php echo ($item['unit_type'] === 'meter') ? 'bundle_quantity' : 'quantity'; ?>" class="form-control form-control-sm cart-qty-input"
+                                               aria-label="Quantity for <?php echo e($item['name']); ?>"
                                                value="<?php echo e(($item['unit_type'] === 'meter') ? (string) max(1, (int) ($item['bundle_quantity'] ?? 1)) : $item['quantity_text']); ?>" min="1"
                                                step="<?php echo ($item['unit_type'] === 'piece' || $item['unit_type'] === 'set' || $item['unit_type'] === 'meter') ? '1' : '0.01'; ?>"
                                                <?php echo ($item['unit_type'] === 'meter' && !empty($item['max_bundle_qty'])) ? 'max="' . (int) $item['max_bundle_qty'] . '"' : ($item['stock'] > 0 ? 'max="' . $item['stock'] . '"' : ''); ?>>
@@ -235,7 +236,7 @@ include __DIR__ . '/includes/header.php';
                             <?php foreach ($wishlistItems as $w): ?>
                                 <div class="saved-cart-item d-flex justify-content-between align-items-center py-2 border-bottom">
                                     <div class="saved-cart-item__details">
-                                        <a href="/fabric.php?id=<?php echo $w['id']; ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
+                                        <a href="<?php echo e(product_card_public_url($w, (int) $w['variant_id'])); ?>" class="fw-semibold text-decoration-none"><?php echo e($w['name']); ?></a>
                                         <div class="small text-muted"><?php echo e(money($w['unit_price'])); ?> / <?php echo e($w['quantity_unit_label'] === 'pieces' ? 'piece' : ($w['quantity_unit_label'] === 'sets' ? 'set' : $w['quantity_unit_label'])); ?></div>
                                         <div class="small text-muted">
                                             <?php if ($w['unit_type'] === 'meter' && !empty($w['meter_length']) && !empty($w['bundle_quantity'])): ?>
@@ -276,7 +277,7 @@ include __DIR__ . '/includes/header.php';
                             <span class="trust-badge-pill">Fast Dispatch</span>
                             <span class="trust-badge-pill">Easy Returns</span>
                         </div>
-                        <a href="/catalog.php" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
+                        <a href="/catalog" class="btn btn-outline-secondary w-100 mt-2">Continue Shopping</a>
                     </div>
                 </div>
             </div>

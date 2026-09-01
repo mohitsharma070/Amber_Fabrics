@@ -19,7 +19,7 @@ $siteUrlForHead = app_url();
 <meta property="og:description" content="<?php echo e(isset($metaDescription) ? $metaDescription : $siteDescriptionForHead); ?>">
 <meta property="og:type" content="website">
 <meta property="og:url" content="<?php echo e(isset($metaUrl) ? $metaUrl : $siteUrlForHead); ?>">
-<meta property="og:image" content="<?php echo e(isset($metaImage) ? $metaImage : 'images/fabrics/default.jpg'); ?>">
+<meta property="og:image" content="<?php echo e(isset($metaImage) ? $metaImage : SiteContext::url('/images/fabrics/default.jpg')); ?>">
 
 <!-- Favicons: Light/Dark theme support -->
 <link rel="icon" type="image/svg+xml" href="/images/favicon-light.svg" media="(prefers-color-scheme: light)">
@@ -60,6 +60,19 @@ if (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) {
     $cartCount = count($_SESSION['cart']);
 }
 $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in();
+$isHomePage = $currentPage === 'index.php';
+$isShopPage = in_array($currentPage, ['catalog.php','fabric.php'], true);
+$isAboutPage = $currentPage === 'about.php';
+$isContactPage = in_array($currentPage, ['contact.php','thank-you.php'], true);
+$isOrdersPage = in_array($currentPage, ['orders.php','order-view.php'], true);
+$isRegisterPage = $currentPage === 'register.php';
+$isLoginPage = $currentPage === 'login.php';
+$isCartPage = $currentPage === 'cart.php';
+$isProfilePage = $currentPage === 'profile.php';
+$isAccountBottomPage = $isLoginPage || $isRegisterPage;
+$ariaCurrent = static function (bool $isCurrent): string {
+    return $isCurrent ? ' aria-current="page"' : '';
+};
 ?>
 <nav class="site-navbar" aria-label="Primary">
     <div class="container">
@@ -92,12 +105,12 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
                         <?php endif; ?>
                     </ul>
                 </div>
-                <a class="header-icon-link position-relative d-none d-lg-inline-flex <?php echo $currentPage === 'cart.php' ? 'active' : ''; ?>" href="/cart" title="Cart" aria-label="Cart" data-cart-link>
+                <a class="header-icon-link position-relative d-none d-lg-inline-flex <?php echo $isCartPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isCartPage); ?> href="/cart" title="Cart" aria-label="Cart" data-cart-link>
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM3.102 4l1.313 7h8.17l1.313-7H3.102zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
                     <?php if ($cartCount > 0): ?><span class="cart-badge" data-cart-badge><?php echo $cartCount; ?></span><?php endif; ?>
                 </a>
                 <?php if ($isLoggedIn): ?>
-                    <a class="header-icon-link d-none d-lg-inline-flex <?php echo $currentPage === 'profile.php' ? 'active' : ''; ?>" href="/customer/profile" title="Account" aria-label="Account">
+                    <a class="header-icon-link d-none d-lg-inline-flex <?php echo $isProfilePage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isProfilePage); ?> href="/customer/profile" title="Account" aria-label="Account">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M14 14s-1-4-6-4-6 4-6 4 1 1 6 1 6-1 6-1Z"/></svg>
                     </a>
                     <form method="POST" action="/customer/logout.php" class="d-none d-lg-inline-flex">
@@ -107,20 +120,20 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
                         </button>
                     </form>
                 <?php else: ?>
-                    <a class="header-chip d-none d-lg-inline-flex" href="/customer/login">Login</a>
+                    <a class="header-chip d-none d-lg-inline-flex"<?php echo $ariaCurrent($isLoginPage); ?> href="/customer/login">Login</a>
                 <?php endif; ?>
             </div>
         </div>
 
         <div class="site-header-nav d-none d-lg-flex">
-            <a class="nav-link <?php echo $currentPage === 'index.php' ? 'active' : ''; ?>" href="/">Home</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['catalog.php','fabric.php'], true) ? 'active' : ''; ?>" href="/catalog">Shop</a>
-            <a class="nav-link <?php echo $currentPage === 'about.php' ? 'active' : ''; ?>" href="/about">About</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['contact.php','thank-you.php'], true) ? 'active' : ''; ?>" href="/contact">Contact</a>
+            <a class="nav-link <?php echo $isHomePage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isHomePage); ?> href="/">Home</a>
+            <a class="nav-link <?php echo $isShopPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isShopPage); ?> href="/catalog">Shop</a>
+            <a class="nav-link <?php echo $isAboutPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isAboutPage); ?> href="/about">About</a>
+            <a class="nav-link <?php echo $isContactPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isContactPage); ?> href="/contact">Contact</a>
             <?php if ($isLoggedIn): ?>
-                <a class="nav-link <?php echo in_array($currentPage, ['orders.php','order-view.php'], true) ? 'active' : ''; ?>" href="/customer/orders">Orders</a>
+                <a class="nav-link <?php echo $isOrdersPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isOrdersPage); ?> href="/customer/orders">Orders</a>
             <?php else: ?>
-                <a class="nav-link <?php echo $currentPage === 'register.php' ? 'active' : ''; ?>" href="/customer/register">Register</a>
+                <a class="nav-link <?php echo $isRegisterPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isRegisterPage); ?> href="/customer/register">Register</a>
             <?php endif; ?>
         </div>
     </div>
@@ -133,23 +146,23 @@ $isLoggedIn = function_exists('is_customer_logged_in') && is_customer_logged_in(
     </div>
     <div class="offcanvas-body">
         <div class="mobile-drawer-links">
-            <a class="nav-link <?php echo $currentPage === 'index.php' ? 'active' : ''; ?>" href="/">Home</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['catalog.php','fabric.php'], true) ? 'active' : ''; ?>" href="/catalog">Shop</a>
-            <a class="nav-link <?php echo $currentPage === 'about.php' ? 'active' : ''; ?>" href="/about">About</a>
-            <a class="nav-link <?php echo in_array($currentPage, ['contact.php','thank-you.php'], true) ? 'active' : ''; ?>" href="/contact">Contact</a>
+            <a class="nav-link <?php echo $isHomePage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isHomePage); ?> href="/">Home</a>
+            <a class="nav-link <?php echo $isShopPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isShopPage); ?> href="/catalog">Shop</a>
+            <a class="nav-link <?php echo $isAboutPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isAboutPage); ?> href="/about">About</a>
+            <a class="nav-link <?php echo $isContactPage ? 'active' : ''; ?>"<?php echo $ariaCurrent($isContactPage); ?> href="/contact">Contact</a>
         </div>
         <div class="mobile-drawer-utility">
-            <a class="drawer-utility-link position-relative" href="/cart" data-cart-link>Cart <?php if ($cartCount > 0): ?><span class="cart-badge" data-cart-badge><?php echo $cartCount; ?></span><?php endif; ?></a>
+            <a class="drawer-utility-link position-relative"<?php echo $ariaCurrent($isCartPage); ?> href="/cart" data-cart-link>Cart <?php if ($cartCount > 0): ?><span class="cart-badge" data-cart-badge><?php echo $cartCount; ?></span><?php endif; ?></a>
             <?php if ($isLoggedIn): ?>
-                <a class="drawer-utility-link" href="/customer/orders">My Orders</a>
-                <a class="drawer-utility-link" href="/customer/profile">Account</a>
+                <a class="drawer-utility-link"<?php echo $ariaCurrent($isOrdersPage); ?> href="/customer/orders">My Orders</a>
+                <a class="drawer-utility-link"<?php echo $ariaCurrent($isProfilePage); ?> href="/customer/profile">Account</a>
                 <form method="POST" action="/customer/logout.php">
                     <?php echo csrf_field(); ?>
                     <button type="submit" class="drawer-utility-link border-0 w-100 text-start">Log out</button>
                 </form>
             <?php else: ?>
-                <a class="drawer-utility-link" href="/customer/login">Login</a>
-                <a class="drawer-utility-link" href="/customer/register">Register</a>
+                <a class="drawer-utility-link"<?php echo $ariaCurrent($isLoginPage); ?> href="/customer/login">Login</a>
+                <a class="drawer-utility-link"<?php echo $ariaCurrent($isRegisterPage); ?> href="/customer/register">Register</a>
             <?php endif; ?>
         </div>
     </div>

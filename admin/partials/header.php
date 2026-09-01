@@ -105,7 +105,7 @@ if (!function_exists('admin_nav_plugin_items')) {
 $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -117,7 +117,7 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
     <meta property="og:description" content="<?php echo e(isset($metaDescription) ? $metaDescription : ('Admin panel for ' . $siteName . '.')); ?>">
     <meta property="og:type" content="website">
     <meta property="og:url" content="<?php echo e(isset($metaUrl) ? $metaUrl : SiteContext::url('/admin')); ?>">
-    <meta property="og:image" content="<?php echo (isset($metaImage) ? $metaImage : '../images/fabrics/default.jpg'); ?>">
+    <meta property="og:image" content="<?php echo e(isset($metaImage) ? $metaImage : SiteContext::url('/images/fabrics/default.jpg')); ?>">
     <!-- Favicons: Light/Dark theme support -->
     <link rel="icon" type="image/svg+xml" href="../images/favicon-light.svg" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/svg+xml" href="../images/favicon-dark.svg" media="(prefers-color-scheme: dark)">
@@ -132,19 +132,12 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
 <nav class="navbar navbar-expand-lg navbar-dark">
     <div class="container">
         <a class="navbar-brand brand-mark text-white d-flex align-items-center" href="dashboard.php">
-            <?php
-            // Mobile-specific logo logic
-            $isMobile = false;
-            if (isset($_SERVER['HTTP_USER_AGENT'])) {
-                $ua = strtolower($_SERVER['HTTP_USER_AGENT']);
-                $isMobile = strpos($ua, 'mobile') !== false || strpos($ua, 'android') !== false || strpos($ua, 'iphone') !== false;
-            }
-            $logoLight = $isMobile ? '../images/logo-mobile.svg' : (!empty($siteLogo) ? '../' . $siteLogo : '../images/logo-brand-light.svg');
-            $logoDark = $isMobile ? '../images/logo-mobile-dark.svg' : (!empty($siteLogo) ? '../' . $siteLogo : '../images/logo-brand-light.svg');
-            ?>
+            <?php $desktopLogo = !empty($siteLogo) ? '../' . ltrim((string) $siteLogo, '/') : '../images/logo-brand-light.svg'; ?>
             <picture>
-                <source srcset="<?php echo $logoDark; ?>" media="(prefers-color-scheme: dark)">
-                <img src="<?php echo e($logoLight); ?>" alt="<?php echo e($siteName); ?>" class="admin-logo">
+                <source srcset="<?php echo e('../images/logo-mobile-dark.svg'); ?>" media="(max-width: 767.98px) and (prefers-color-scheme: dark)">
+                <source srcset="<?php echo e('../images/logo-mobile.svg'); ?>" media="(max-width: 767.98px)">
+                <source srcset="<?php echo e($desktopLogo); ?>" media="(prefers-color-scheme: dark)">
+                <img src="<?php echo e($desktopLogo); ?>" alt="<?php echo e($siteName); ?>" class="admin-logo">
             </picture>
         </a>
         <button class="navbar-toggler admin-nav-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#adminNav" aria-controls="adminNav" aria-expanded="false" aria-label="Toggle navigation">

@@ -11,6 +11,9 @@ tmp_sessions/*
 vendor/
 dist/
 node_modules/
+test-results/
+playwright-report/
+blob-report/
 
 # Runtime uploads are stored outside public_html and exposed via symlinks.
 /images/fabrics
