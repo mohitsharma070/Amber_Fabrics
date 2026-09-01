@@ -1352,7 +1352,13 @@ function ensure_tables(mysqli $conn): void
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) UNIQUE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            role ENUM('viewer','catalog_manager','operations_manager','super_admin') NOT NULL DEFAULT 'viewer',
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            last_login_at DATETIME DEFAULT NULL,
+            last_login_ip VARCHAR(45) DEFAULT NULL,
+            last_login_user_agent VARCHAR(500) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_admins_role_active (role, is_active)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
     if ($columnExists($conn, 'admins', 'force_password_reset')) {
@@ -1408,9 +1414,18 @@ function ensure_tables(mysqli $conn): void
             provider VARCHAR(32) NOT NULL,
             event_id VARCHAR(191) NOT NULL,
             signature VARCHAR(255) DEFAULT NULL,
-            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            payload_hash CHAR(64) DEFAULT NULL,
+            raw_payload LONGTEXT DEFAULT NULL,
+            status ENUM('received','processing','processed','failed') NOT NULL DEFAULT 'received',
+            attempts INT NOT NULL DEFAULT 0,
+            last_error TEXT DEFAULT NULL,
+            processed_at DATETIME DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uq_payment_webhook_event (provider, event_id),
-            INDEX idx_payment_webhook_received_at (received_at)
+            INDEX idx_payment_webhook_status (provider, status),
+            INDEX idx_payment_webhook_processed_at (processed_at),
+            INDEX idx_payment_webhook_created_at (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 

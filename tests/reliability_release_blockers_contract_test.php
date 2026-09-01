@@ -19,6 +19,61 @@ $webhook = $read('payment/razorpay-webhook.php');
 $placeOrder = $read('place-order.php');
 $openApi = $read('openapi.yaml');
 $architecture = $read('docs/repo-architecture.md');
+$databaseSetup = $read('database/setup.php');
+
+$paymentWebhookSetupStart = strpos($databaseSetup, 'CREATE TABLE IF NOT EXISTS payment_webhook_events');
+$paymentWebhookSetupEnd = $paymentWebhookSetupStart === false
+    ? false
+    : strpos($databaseSetup, 'CREATE TABLE IF NOT EXISTS order_activity_logs', $paymentWebhookSetupStart);
+$paymentWebhookSetupBlock = ($paymentWebhookSetupStart !== false && $paymentWebhookSetupEnd !== false)
+    ? substr($databaseSetup, $paymentWebhookSetupStart, $paymentWebhookSetupEnd - $paymentWebhookSetupStart)
+    : '';
+$requiredPaymentWebhookSetupFragments = [
+    'payload_hash CHAR(64)',
+    'raw_payload LONGTEXT',
+    "status ENUM('received','processing','processed','failed')",
+    'attempts INT',
+    'last_error TEXT',
+    'processed_at DATETIME',
+    'updated_at TIMESTAMP',
+    'INDEX idx_payment_webhook_status (provider, status)',
+    'INDEX idx_payment_webhook_processed_at (processed_at)',
+    'INDEX idx_payment_webhook_created_at (created_at)',
+];
+$paymentWebhookSetupComplete = $paymentWebhookSetupBlock !== '';
+foreach ($requiredPaymentWebhookSetupFragments as $fragment) {
+    $paymentWebhookSetupComplete = $paymentWebhookSetupComplete
+        && str_contains($paymentWebhookSetupBlock, $fragment);
+}
+$assert(
+    $paymentWebhookSetupComplete,
+    'Fresh database setup must create the complete payment webhook lifecycle schema required by runtime processing.'
+);
+
+$adminsSetupStart = strpos($databaseSetup, 'CREATE TABLE IF NOT EXISTS admins');
+$adminsSetupEnd = $adminsSetupStart === false
+    ? false
+    : strpos($databaseSetup, 'CREATE TABLE IF NOT EXISTS inquiry_activity_logs', $adminsSetupStart);
+$adminsSetupBlock = ($adminsSetupStart !== false && $adminsSetupEnd !== false)
+    ? substr($databaseSetup, $adminsSetupStart, $adminsSetupEnd - $adminsSetupStart)
+    : '';
+$requiredAdminsSetupFragments = [
+    "role ENUM('viewer','catalog_manager','operations_manager','super_admin')",
+    'is_active TINYINT(1)',
+    'last_login_at DATETIME',
+    'last_login_ip VARCHAR(45)',
+    'last_login_user_agent VARCHAR(500)',
+    'INDEX idx_admins_role_active (role, is_active)',
+];
+$adminsSetupComplete = $adminsSetupBlock !== '';
+foreach ($requiredAdminsSetupFragments as $fragment) {
+    $adminsSetupComplete = $adminsSetupComplete
+        && str_contains($adminsSetupBlock, $fragment);
+}
+$assert(
+    $adminsSetupComplete,
+    'Fresh database setup must create the complete administrator schema required by OTP verification.'
+);
 
 $assert(
     str_contains($metaCapi, "add_action('order.after_commit', 'meta_capi_handle_cod_purchase', 30);")

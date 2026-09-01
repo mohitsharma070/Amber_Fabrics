@@ -32,3 +32,51 @@ jobs:
 
       - name: Source contract tests
         run: composer test
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0.46
+        env:
+          MYSQL_DATABASE: amber_ci_test
+          MYSQL_USER: amber_ci
+          MYSQL_PASSWORD: amber_ci_password
+          MYSQL_ROOT_PASSWORD: root_ci_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      APP_MODE: local
+      APP_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: amber_ci_test
+      DB_USER: amber_ci
+      DB_PASSWORD: amber_ci_password
+      AMBER_RUN_DISPOSABLE_MYSQL_TESTS: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, fileinfo, json, mbstring, mysqli, openssl
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Initialize disposable database
+        run: php database/setup.php
+
+      - name: MySQL integration tests
+        run: composer test:integration
