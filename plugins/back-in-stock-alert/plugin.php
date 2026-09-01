@@ -450,7 +450,16 @@ function back_in_stock_alert_render_signup_form(array $context): void
                 var block = document.getElementById('back-in-stock-alert-block');
                 var variantInput = document.getElementById('back_in_stock_alert_variant_id');
                 var selectedVariantInput = document.getElementById('selected_variant_id_add');
-                var variants = Array.isArray(window.FABRIC_VARIANTS) ? window.FABRIC_VARIANTS : [];
+                var productDataElement = document.getElementById('product-detail-data');
+                var variants = [];
+                if (productDataElement) {
+                    try {
+                        var productData = JSON.parse(productDataElement.textContent || '{}');
+                        variants = Array.isArray(productData.variants) ? productData.variants : [];
+                    } catch (error) {
+                        variants = [];
+                    }
+                }
                 var unitType = <?php echo json_encode($unitType); ?>;
                 if (!block || !variantInput || variants.length === 0) return;
 

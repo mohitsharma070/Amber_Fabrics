@@ -39,6 +39,146 @@ function product_card_select_columns(array $extraColumns = []): string
     return implode(",\n                ", $columns);
 }
 
+function product_card_public_url(array $product, int $variantId = 0): string
+{
+    $productUrl = ProductAdminService::publicPath($product);
+    if ($variantId > 0) {
+        $productUrl .= str_contains($productUrl, '?') ? '&' : '?';
+        $productUrl .= 'variant=' . $variantId;
+    }
+
+    return $productUrl;
+}
+
+function product_card_unit_type(array $product): string
+{
+    $unitType = (string) ($product['unit_type'] ?? '');
+    return in_array($unitType, ['meter', 'piece', 'set'], true) ? $unitType : 'meter';
+}
+
+function product_card_stock_for_unit(
+    array $record,
+    string $unitType,
+    string $stockKey = 'stock',
+    string $meterStockKey = 'stock_meters'
+): float {
+    return ($unitType === 'piece' || $unitType === 'set')
+        ? (float) ($record[$stockKey] ?? 0)
+        : (float) ($record[$meterStockKey] ?? 0);
+}
+
+function product_card_first_image(array $candidates): string
+{
+    foreach ($candidates as $candidate) {
+        $candidate = trim((string) $candidate);
+        if ($candidate !== '') {
+            return $candidate;
+        }
+    }
+
+    return '';
+}
+
+function product_card_price_state(float $regularPrice, float $salePrice, float $variantPriceOverride = 0.0): array
+{
+    $basePrice = ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice)
+        ? $salePrice
+        : $regularPrice;
+    $unitPrice = $variantPriceOverride > 0 ? $variantPriceOverride : $basePrice;
+
+    return [
+        'regular_price' => $regularPrice,
+        'unit_price' => $unitPrice,
+        'show_strike_price' => $regularPrice > 0 && $unitPrice > 0 && $unitPrice < $regularPrice,
+    ];
+}
+
+function product_card_unit_suffix(string $unitType): string
+{
+    return ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m';
+}
+
+function product_card_build_home_context(array $row, array $activeVariants): array
+{
+    $unitType = product_card_unit_type($row);
+    $activeVariantCount = (int) ($row['active_variant_count'] ?? 0);
+    $hasActiveVariants = $activeVariantCount > 0;
+    $displayStock = product_card_stock_for_unit($row, $unitType);
+    $hasSellableVariant = false;
+    $firstVariantImage = '';
+    $firstInStockVariantImage = '';
+    $representativeVariantPrice = 0.0;
+    $representativeVariantFound = false;
+
+    if ($hasActiveVariants) {
+        $displayStock = 0.0;
+        foreach ($activeVariants as $variant) {
+            if (!is_array($variant)) {
+                continue;
+            }
+            $variantStock = product_card_stock_for_unit($variant, $unitType);
+            $displayStock += max(0.0, $variantStock);
+            $variantImage = product_card_first_image([
+                $variant['image'] ?? '',
+                $variant['image2'] ?? '',
+                $variant['image3'] ?? '',
+                $variant['image4'] ?? '',
+            ]);
+            if ($firstVariantImage === '' && $variantImage !== '') {
+                $firstVariantImage = $variantImage;
+            }
+            if ($variantStock > 0) {
+                $hasSellableVariant = true;
+                if (!$representativeVariantFound) {
+                    $representativeVariantFound = true;
+                    $representativeVariantPrice = max(0.0, (float) ($variant['price_override'] ?? 0));
+                }
+                if ($firstInStockVariantImage === '' && $variantImage !== '') {
+                    $firstInStockVariantImage = $variantImage;
+                }
+            }
+        }
+    }
+
+    $cardImage = (string) ($row['image'] ?? '');
+    if ($cardImage === '') {
+        $cardImage = $firstInStockVariantImage !== '' ? $firstInStockVariantImage : $firstVariantImage;
+    }
+
+    $inStock = !empty($row['is_available'])
+        && ($hasActiveVariants ? $hasSellableVariant : $displayStock > 0);
+    $hasSizeOptions = !empty(CartService::parse_size_options((string) ($row['size'] ?? '')));
+    $needsVariantSelection = $activeVariantCount > 1;
+    $priceState = product_card_price_state(
+        (float) ($row['price'] ?? 0),
+        (float) ($row['sale_price'] ?? 0),
+        $representativeVariantPrice
+    );
+
+    if (!$inStock) {
+        $ctaMode = 'unavailable';
+    } elseif ($unitType === 'meter' || $needsVariantSelection || $hasSizeOptions) {
+        $ctaMode = 'view_options';
+    } else {
+        $ctaMode = 'add_simple_ajax';
+    }
+
+    return [
+        'unit_type' => $unitType,
+        'stock' => $displayStock,
+        'has_sellable_variant' => $hasSellableVariant,
+        'card_image' => $cardImage,
+        'in_stock' => $inStock,
+        'has_size_options' => $hasSizeOptions,
+        'needs_variant_selection' => $needsVariantSelection,
+        'regular_price' => $priceState['regular_price'],
+        'unit_price' => $priceState['unit_price'],
+        'unit_suffix' => product_card_unit_suffix($unitType),
+        'show_strike_price' => $priceState['show_strike_price'],
+        'cta_mode' => $ctaMode,
+    ];
+}
+
 function product_card_build_context(mysqli $conn, array $row): array
 {
     $regularPrice = (float) ($row['price'] ?? 0);
@@ -48,7 +188,7 @@ function product_card_build_context(mysqli $conn, array $row): array
     $variantRawSize = trim((string) ($row['variant_size'] ?? ''));
     $variantPackLabel = trim((string) ($row['variant_pack_label'] ?? ''));
     $variantUnitsPerSet = (int) ($row['variant_units_per_set'] ?? 0);
-    $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true) ? (string) $row['unit_type'] : 'meter';
+    $unitType = product_card_unit_type($row);
 
     $variantSizeLabel = '';
     if ($variantId > 0) {
@@ -80,39 +220,32 @@ function product_card_build_context(mysqli $conn, array $row): array
     }
     $imageCandidates[] = (string) ($row['image'] ?? '');
 
-    $cardImage = '';
-    foreach ($imageCandidates as $candidateImage) {
-        $candidateImage = trim((string) $candidateImage);
-        if ($candidateImage !== '') {
-            $cardImage = $candidateImage;
-            break;
-        }
-    }
+    $cardImage = product_card_first_image($imageCandidates);
 
     $cardImageAsset = $cardImage !== '' ? fabric_image_asset_data($cardImage) : null;
 
     if ($variantId > 0) {
-        $displayStock = ($unitType === 'piece' || $unitType === 'set')
-            ? (float) ($row['variant_stock'] ?? 0)
-            : (float) ($row['variant_stock_meters'] ?? 0);
+        $displayStock = product_card_stock_for_unit(
+            $row,
+            $unitType,
+            'variant_stock',
+            'variant_stock_meters'
+        );
     } else {
-        $displayStock = ($unitType === 'piece' || $unitType === 'set') ? (float) ($row['stock'] ?? 0) : (float) ($row['stock_meters'] ?? 0);
+        $displayStock = product_card_stock_for_unit($row, $unitType);
     }
     $inStock = !empty($row['is_available']) && $displayStock > 0;
 
-    $variantPriceOverride = ($variantId > 0) ? (float) ($row['variant_price_override'] ?? 0) : 0.0;
-    if ($variantPriceOverride > 0) {
-        $unitPrice = $variantPriceOverride;
-    } else {
-        $unitPrice = ($salePrice > 0 && $regularPrice > 0 && $salePrice < $regularPrice) ? $salePrice : $regularPrice;
-    }
-    $showStrikePrice = $regularPrice > 0 && $unitPrice > 0 && $unitPrice < $regularPrice;
+    $priceState = product_card_price_state(
+        $regularPrice,
+        $salePrice,
+        $variantId > 0 ? (float) ($row['variant_price_override'] ?? 0) : 0.0
+    );
+    $unitPrice = $priceState['unit_price'];
+    $showStrikePrice = $priceState['show_strike_price'];
 
     $hasSizeOptions = !empty(CartService::parse_size_options((string) ($row['size'] ?? '')));
-    $productUrl = ltrim(ProductAdminService::publicPath($row), '/');
-    if ($variantId > 0) {
-        $productUrl .= '&variant=' . $variantId;
-    }
+    $productUrl = product_card_public_url($row, $variantId);
 
     if (!$inStock) {
         $ctaMode = 'unavailable';
@@ -178,7 +311,7 @@ function product_card_render(array $card): string
                             <?php if (!empty($cardImageAsset['webp_srcset'])): ?>
                                 <source type="image/webp" srcset="<?php echo e($cardImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 80vw, (max-width: 1199px) 40vw, 320px">
                             <?php endif; ?>
-                            <img src="<?php echo e((string) ($cardImageAsset['src'] ?? '')); ?>" class="fabric-thumb" alt="<?php echo e($displayName); ?>" loading="lazy" width="600" height="800">
+                            <img src="<?php echo e((string) ($cardImageAsset['src'] ?? '')); ?>" class="fabric-thumb" alt="<?php echo e($displayName); ?>" loading="lazy"<?php echo image_asset_dimension_attributes($cardImageAsset); ?>>
                         </picture>
                     <?php else: ?>
                         <div class="fabric-thumb-empty">No image</div>
@@ -215,7 +348,7 @@ function product_card_render(array $card): string
                         <span class="price-inr fw-bold"><?php echo e(money($unitPrice)); ?></span>
                         <span class="text-muted small ms-1"><del><?php echo e(money($regularPrice)); ?></del></span>
                     <?php elseif ($unitPrice > 0): ?>
-                        <span class="price-inr"><?php echo e(money($unitPrice)); ?><?php echo ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m'; ?></span>
+                        <span class="price-inr"><?php echo e(money($unitPrice)); ?><?php echo e(product_card_unit_suffix($unitType)); ?></span>
                     <?php else: ?>
                         <span class="text-muted small">Price on request</span>
                     <?php endif; ?>

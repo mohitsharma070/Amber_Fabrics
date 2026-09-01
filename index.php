@@ -207,73 +207,33 @@ $announcementKey = md5(implode('|', $announcementMessages));
 
             <?php foreach ($homeProductRows as $row): ?>
             <?php
-                $unitType = in_array((string) ($row['unit_type'] ?? ''), ['meter', 'piece', 'set'], true)
-                    ? (string) $row['unit_type']
-                    : 'meter';
-                $activeVariantCount = (int) ($row['active_variant_count'] ?? 0);
-                $hasActiveVariants = $activeVariantCount > 0;
-                $displayStock = $unitType === 'meter' ? (float) ($row['stock_meters'] ?? 0) : (float) ($row['stock'] ?? 0);
-                $hasSellableVariant = false;
                 $variantRows = $homeVariantRowsByFabric[(int) ($row['id'] ?? 0)] ?? [];
-                $firstVariantImage = '';
-                $firstInStockVariantImage = '';
-                $representativeVariantPrice = 0.0;
-                $representativeVariantFound = false;
-
-                if ($hasActiveVariants) {
-                    $displayStock = 0.0;
-                    foreach ($variantRows as $variantRow) {
-                        $variantStock = ($unitType === 'meter')
-                            ? (float) ($variantRow['stock_meters'] ?? 0)
-                            : (float) ($variantRow['stock'] ?? 0);
-                        $displayStock += max(0.0, $variantStock);
-                        $variantImage = '';
-                        foreach (['image', 'image2', 'image3', 'image4'] as $ik) {
-                            $cand = trim((string) ($variantRow[$ik] ?? ''));
-                            if ($cand !== '') {
-                                $variantImage = $cand;
-                                break;
-                            }
-                        }
-                        if ($firstVariantImage === '' && $variantImage !== '') {
-                            $firstVariantImage = $variantImage;
-                        }
-                        if ($variantStock > 0) {
-                            $hasSellableVariant = true;
-                            if (!$representativeVariantFound) {
-                                $representativeVariantFound = true;
-                                $representativeVariantPrice = max(0.0, (float) ($variantRow['price_override'] ?? 0));
-                            }
-                            if ($firstInStockVariantImage === '' && $variantImage !== '') {
-                                $firstInStockVariantImage = $variantImage;
-                            }
-                        }
-                    }
-                }
-
-                $cardImage = (string) ($row['image'] ?? '');
-                if ($cardImage === '') {
-                    $cardImage = ($firstInStockVariantImage !== '') ? $firstInStockVariantImage : $firstVariantImage;
-                }
+                $homeCard = product_card_build_home_context($row, $variantRows);
+                $cardImage = (string) $homeCard['card_image'];
                 $cardImageAsset = $cardImage !== '' ? fabric_image_asset_data($cardImage) : null;
-                $cardIsInStock = !empty($row['is_available']) && ($hasActiveVariants ? $hasSellableVariant : ($displayStock > 0));
-                $hasSizeOptions = !empty(CartService::parse_size_options((string) ($row['size'] ?? '')));
-                $needsVariantSelection = $activeVariantCount > 1;
+                $cardIsInStock = !empty($homeCard['in_stock']);
+                $cardRegular = (float) $homeCard['regular_price'];
+                $cardUnitPrice = (float) $homeCard['unit_price'];
+                $cardUnitSuffix = (string) $homeCard['unit_suffix'];
+                $showCardStrikePrice = !empty($homeCard['show_strike_price']);
+                $homeCtaMode = (string) $homeCard['cta_mode'];
                 $productUrl = ProductAdminService::publicPath($row);
             ?>
             <div class="prod-slide">
                 <article class="card h-100 product-click-card" data-href="<?php echo e($productUrl); ?>">
                     <div class="fabric-thumb-wrap">
-                        <?php if ($cardImage !== ''): ?>
-                            <picture>
-                                <?php if (!empty($cardImageAsset['webp_srcset'])): ?>
-                                    <source type="image/webp" srcset="<?php echo e($cardImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 80vw, 280px">
-                                <?php endif; ?>
-                                <img src="<?php echo e((string) ($cardImageAsset['thumb_src'] ?? '')); ?>" class="fabric-thumb" alt="<?php echo e($row['name']); ?>" loading="lazy">
-                            </picture>
-                        <?php else: ?>
-                            <div class="fabric-thumb-empty">No image</div>
-                        <?php endif; ?>
+                        <a href="<?php echo e($productUrl); ?>" class="fabric-thumb-link" aria-label="View <?php echo e($row['name']); ?>">
+                            <?php if ($cardImage !== ''): ?>
+                                <picture>
+                                    <?php if (!empty($cardImageAsset['webp_srcset'])): ?>
+                                        <source type="image/webp" srcset="<?php echo e($cardImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 80vw, 280px">
+                                    <?php endif; ?>
+                                    <img src="<?php echo e((string) ($cardImageAsset['thumb_src'] ?? '')); ?>" class="fabric-thumb" alt="<?php echo e($row['name']); ?>" loading="lazy"<?php echo image_asset_dimension_attributes($cardImageAsset, 'thumb'); ?>>
+                                </picture>
+                            <?php else: ?>
+                                <div class="fabric-thumb-empty">No image</div>
+                            <?php endif; ?>
+                        </a>
                         <?php if (!$cardIsInStock): ?>
                             <div class="fabric-out-overlay">Out of Stock</div>
                         <?php endif; ?>
@@ -282,15 +242,9 @@ $announcementKey = md5(implode('|', $announcementMessages));
                         <?php $homeCatalogData = ProductAdminService::catalogData($row); if ($homeCatalogData['attr_material'] !== '' || $homeCatalogData['attr_fabric'] !== ''): ?>
                             <p class="fabric-card-category"><?php echo e((string) ($homeCatalogData['attr_material'] ?: $homeCatalogData['attr_fabric'])); ?></p>
                         <?php endif; ?>
-                        <p class="fabric-card-title"><?php echo e($row['name']); ?></p>
-                        <?php
-                            $cardRegular = (float) ($row['price'] ?? 0);
-                            $cardSale    = (float) ($row['sale_price'] ?? 0);
-                            $cardBasePrice = ($cardSale > 0 && $cardRegular > 0 && $cardSale < $cardRegular) ? $cardSale : $cardRegular;
-                            $cardUnitPrice = $representativeVariantPrice > 0 ? $representativeVariantPrice : $cardBasePrice;
-                            $cardUnitSuffix = ($unitType === 'piece' || $unitType === 'set') ? ' each' : '/m';
-                            $showCardStrikePrice = $cardRegular > 0 && $cardUnitPrice > 0 && $cardUnitPrice < $cardRegular;
-                        ?>
+                        <a href="<?php echo e($productUrl); ?>" class="fabric-card-title-link">
+                            <p class="fabric-card-title"><?php echo e($row['name']); ?></p>
+                        </a>
                         <?php if ($cardUnitPrice > 0): ?>
                             <div class="fabric-price mb-2">
                                 <?php if ($showCardStrikePrice): ?>
@@ -302,21 +256,15 @@ $announcementKey = md5(implode('|', $announcementMessages));
                             </div>
                         <?php endif; ?>
                         <div class="d-flex gap-1 mt-auto">
-                            <?php if ($cardIsInStock): ?>
-                                <?php if ($unitType === 'meter'): ?>
-                                    <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
-                                <?php elseif ($needsVariantSelection): ?>
-                                    <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
-                                <?php elseif ($hasSizeOptions): ?>
-                                    <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
-                                <?php else: ?>
-                                    <button class="btn btn-primary btn-sm flex-grow-1 add-to-cart-btn"
-                                        data-fabric-id="<?php echo (int)$row['id']; ?>"
-                                        data-name="<?php echo e($row['name']); ?>"
-                                        data-min="<?php echo (int)$row['min_order_meters']; ?>">
-                                        Add to Cart
-                                    </button>
-                                <?php endif; ?>
+                            <?php if ($homeCtaMode === 'view_options'): ?>
+                                <a href="<?php echo e($productUrl); ?>" class="btn btn-primary btn-sm flex-grow-1">View Options</a>
+                            <?php elseif ($homeCtaMode === 'add_simple_ajax'): ?>
+                                <button class="btn btn-primary btn-sm flex-grow-1 add-to-cart-btn"
+                                    data-fabric-id="<?php echo (int)$row['id']; ?>"
+                                    data-name="<?php echo e($row['name']); ?>"
+                                    data-min="<?php echo (int)$row['min_order_meters']; ?>">
+                                    Add to Cart
+                                </button>
                             <?php else: ?>
                                 <button class="btn btn-secondary btn-sm flex-grow-1" disabled>Unavailable</button>
                             <?php endif; ?>

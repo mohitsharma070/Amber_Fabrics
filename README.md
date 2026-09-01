@@ -123,6 +123,67 @@ npx --yes @apidevtools/swagger-cli validate openapi.yaml
 
 The default tests are intentionally lightweight and do not replace browser, payment-provider, courier sandbox, or broader database integration testing.
 
+### Local Playwright storefront tests
+
+The Playwright suite uses the real PHP router, a local MySQL database, PHP sessions, CSRF protection, cart endpoints, and the checkout shipping-quote endpoint. It is guarded so it cannot target a remote storefront or seed an ordinary database.
+
+Install the browser-test dependency and Chromium once:
+
+```bash
+npm install
+npm run test:e2e:install
+```
+
+Create a disposable local database whose name ends in `_test` or `_e2e`, such as `amber_fabrics_e2e`. Do not reuse a development or production database. In PowerShell, point the application at that database and disable outbound integrations before running setup:
+
+```powershell
+$env:APP_MODE = 'local'
+$env:APP_ENV = 'test'
+$env:DB_NAME = 'amber_fabrics_e2e'
+$env:SHIPPING_COURIER_ENABLED = '0'
+$env:GOOGLE_ANALYTICS_ENABLED = '0'
+$env:META_PIXEL_ID = ''
+$env:META_CAPI_PIXEL_ID = ''
+$env:META_CAPI_ACCESS_TOKEN = ''
+$env:MAIL_DRIVER = 'log'
+php database/setup.php
+```
+
+Keep those values in the terminal that starts the local application:
+
+```powershell
+php -S 127.0.0.1:8000 router.php
+```
+
+In a second terminal, set the same local database variables plus the explicit browser and fixture authorization values, then run:
+
+```powershell
+$env:APP_MODE = 'local'
+$env:APP_ENV = 'test'
+$env:DB_NAME = 'amber_fabrics_e2e'
+$env:E2E_BASE_URL = 'http://127.0.0.1:8000'
+$env:E2E_FIXTURE_CONFIRM = '1'
+$env:SHIPPING_COURIER_ENABLED = '0'
+$env:GOOGLE_ANALYTICS_ENABLED = '0'
+$env:META_PIXEL_ID = ''
+$env:META_CAPI_PIXEL_ID = ''
+$env:META_CAPI_ACCESS_TOKEN = ''
+$env:MAIL_DRIVER = 'log'
+npm run test:e2e
+```
+
+`E2E_BASE_URL` has no default and accepts only an HTTP loopback origin. Fixture seeding additionally requires local mode, explicit confirmation, and the `_test` or `_e2e` database suffix.
+
+Run the axe browser baseline separately with the same environment values:
+
+```powershell
+npm run test:e2e:a11y
+```
+
+It scans the homepage, catalog, selected product states, cart, checkout payment/review, customer login, and mobile filter/navigation drawers. The baseline permits no serious or critical axe violations; it uses the existing local Bootstrap mirror and does not suppress first-party rules.
+
+The suite stops at checkout payment/review. It does not submit an order, initialize or complete Razorpay, create courier shipments, send analytics events, or deliver outbound mail. Browser requests to Razorpay, Bigship, Meta/Facebook, or Google Analytics hosts fail the test.
+
 ## Database changes
 
 - Add schema changes as a new dated file under `database/migrations/`.

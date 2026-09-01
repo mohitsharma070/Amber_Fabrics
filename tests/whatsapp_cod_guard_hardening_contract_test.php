@@ -15,6 +15,7 @@ $read = static function (string $path) use ($root, $assert): string {
 };
 
 $checkout = $read('checkout.php');
+$checkoutScript = $read('js/checkout.js');
 $placeOrder = $read('place-order.php');
 $coupon = $read('includes/helpers/coupon-functions.php');
 $plugin = $read('plugins/cod-guard/plugin.php');
@@ -29,7 +30,7 @@ $openapi = $read('openapi.yaml');
 $architecture = $read('docs/repo-architecture.md');
 
 $assert(str_contains($checkout, 'name="cod_whatsapp_consent"') && str_contains($checkout, 'This does not include marketing messages.'), 'Checkout must obtain explicit transactional-only WhatsApp consent.');
-$assert(str_contains($checkout, 'checkoutCurrentTotal >= codWhatsappThreshold') && str_contains($checkout, 'codRequiresWhatsappConsent()') && str_contains($checkout, 'okWhatsappConsent'), 'Checkout JavaScript must require consent only when the COD amount selects message confirmation.');
+$assert(str_contains($checkoutScript, 'checkoutCurrentTotal >= codWhatsappThreshold') && str_contains($checkoutScript, 'codRequiresWhatsappConsent()') && str_contains($checkoutScript, 'okWhatsappConsent'), 'Checkout JavaScript must require consent only when the COD amount selects message confirmation.');
 $assert(str_contains($placeOrder, "'cod_whatsapp_consent' => 'Agree to receive transactional WhatsApp messages") && str_contains($placeOrder, "'whatsapp_transactional_consent' => \$codWhatsappConsent"), 'Order placement must enforce and pass consent server-side.');
 $assert(str_contains($placeOrder, "['whatsapp', 'call']") && str_contains($placeOrder, 'cod_guard_plan_for_amount($totalAmount)'), 'Canonical order placement must not require WhatsApp consent for auto-confirmed low-value COD orders.');
 $assert(str_contains($coupon, "\$state['cod_whatsapp_consent']"), 'Coupon refreshes must preserve the consent choice.');

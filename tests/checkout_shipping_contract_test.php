@@ -34,6 +34,8 @@ $assert(($state['country'] ?? '') === 'India', 'Coupon redirect did not enforce 
 
 $rateSource = (string) file_get_contents(__DIR__ . '/../shipping-rate.php');
 $checkoutSource = (string) file_get_contents(__DIR__ . '/../checkout.php');
+$checkoutScriptPath = __DIR__ . '/../js/checkout.js';
+$checkoutScript = is_file($checkoutScriptPath) ? (string) file_get_contents($checkoutScriptPath) : '';
 $pluginSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/modules/reference-and-rates.php');
 $emailServiceSource = (string) file_get_contents(__DIR__ . '/../includes/services/EmailService.php');
 $placeOrderSource = (string) file_get_contents(__DIR__ . '/../place-order.php');
@@ -50,9 +52,9 @@ $assert(
     'Shipping refresh must reject a reconciled cart before issuing a quote token.'
 );
 $assert(str_contains($rateSource, '], 409);'), 'Shipping refresh must return an HTTP conflict when the cart changed.');
-$assert(str_contains($checkoutSource, 'data = await res.json();'), 'Checkout must read structured error responses from shipping refresh.');
-$assert(str_contains($checkoutSource, "data.code === 'cart_changed'") && str_contains($checkoutSource, 'window.location.reload();'), 'Checkout must reload after server-side cart reconciliation.');
-$assert(!str_contains($checkoutSource, 'res.ok ? await res.json() : null'), 'Checkout must not discard non-2xx cart-change responses.');
+$assert(str_contains($checkoutScript, 'data = await res.json();'), 'Checkout must read structured error responses from shipping refresh.');
+$assert(str_contains($checkoutScript, "data.code === 'cart_changed'") && str_contains($checkoutScript, 'window.location.reload();'), 'Checkout must reload after server-side cart reconciliation.');
+$assert(!str_contains($checkoutScript, 'res.ok ? await res.json() : null'), 'Checkout must not discard non-2xx cart-change responses.');
 $assert(str_contains($checkoutSource, "'invoice_value' => (float) \$taxableAmount"), 'Initial checkout quote does not use the discounted invoice value.');
 $assert((bool) preg_match('/shipping_quote_store\(\s*\(float\) \$taxableAmount/', $checkoutSource), 'Initial checkout token does not bind the discounted invoice value.');
 $assert((bool) preg_match('/shipping_quote_store\(\s*\(float\) \$invoiceValue/', $rateSource), 'Refreshed quote token does not bind the discounted invoice value.');

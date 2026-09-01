@@ -33,7 +33,6 @@ $state = [
     'per_page' => list_sanitize_per_page((int) ($_GET['per_page'] ?? $perPageOptions[0]), $perPageOptions),
     'page' => list_sanitize_page((int) ($_GET['page'] ?? 1)),
     'cursor' => trim((string) ($_GET['cursor'] ?? '')),
-    'debug_explain' => (string) ($_GET['debug_explain'] ?? '') === '1' ? '1' : '',
 ];
 $search = $state['q'];
 $category = $state['category'];
@@ -54,7 +53,9 @@ $colorFilter = $state['color'];
 $sizeFilter = $state['size'];
 $dispatchFilter = $state['dispatch'];
 $cursor = $state['cursor'];
-$debugExplain = $state['debug_explain'] === '1';
+$debugExplainAuthorized = (($GLOBALS['_app_mode'] ?? '') === 'local');
+$debugExplainRequested = (string) ($_GET['debug_explain'] ?? '') === '1';
+$debugExplain = $debugExplainAuthorized && $debugExplainRequested;
 if ($maxPrice > 0 && $maxPrice < $minPrice) {
     $maxPrice = $minPrice;
     $state['max_price'] = $maxPrice;
@@ -249,7 +250,10 @@ if ($debugExplain) {
         $expStmt->execute();
         $explainRows = $expStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     } catch (Throwable $explainError) {
-        $explainRows = [['error' => $explainError->getMessage()]];
+        app_log('warning', 'catalog_explain_failed', [
+            'exception_type' => get_class($explainError),
+        ]);
+        $explainRows = [['error' => 'Catalog query plan unavailable.']];
     }
 }
 
@@ -315,9 +319,38 @@ if ($dispatchFilter !== '') {
 }
 
 function catalog_query(array $params): string {
+    unset($params['debug_explain']);
     $query = http_build_query($params);
     return $query !== '' ? '/catalog?' . $query : '/catalog';
 }
+
+$catalogCategoryOptions = [['value' => '', 'label' => 'All Categories']];
+foreach ($categories as $cat) {
+    $catalogCategoryOptions[] = [
+        'value' => (string) ($cat['slug'] ?? ''),
+        'label' => (string) ($cat['name'] ?? ''),
+    ];
+}
+$catalogFilterFields = [
+    'category' => ['name' => 'category', 'label' => 'Category', 'type' => 'select', 'value' => $category, 'options' => $catalogCategoryOptions],
+    'min_price' => ['name' => 'min_price', 'label' => 'Minimum Price', 'type' => 'number', 'value' => $minPrice, 'min' => 0, 'placeholder' => 'Min'],
+    'max_price' => ['name' => 'max_price', 'label' => 'Maximum Price', 'type' => 'number', 'value' => $maxPrice, 'min' => 0, 'placeholder' => 'Max'],
+    'in_stock' => ['name' => 'in_stock', 'label' => 'In Stock Only', 'type' => 'checkbox', 'value' => '1', 'checked' => $inStock === '1'],
+    'material' => ['name' => 'material', 'label' => 'Material', 'type' => 'text', 'value' => $materialFilter, 'placeholder' => 'Cotton, Linen...'],
+    'color' => ['name' => 'color', 'label' => 'Color', 'type' => 'text', 'value' => $colorFilter, 'placeholder' => 'Indigo, Red...'],
+    'size' => ['name' => 'size', 'label' => 'Size / Pack', 'type' => 'text', 'value' => $sizeFilter, 'placeholder' => 'L, Queen, Pack of 2...'],
+    'dispatch' => ['name' => 'dispatch', 'label' => 'Dispatch Time', 'type' => 'text', 'value' => $dispatchFilter, 'placeholder' => '2-3 days, 1 week...'],
+    'sort' => [
+        'name' => 'sort', 'label' => 'Sort', 'type' => 'select', 'value' => $sort,
+        'options' => [
+            ['value' => 'newest', 'label' => 'Newest First'], ['value' => 'oldest', 'label' => 'Oldest First'],
+            ['value' => 'name_asc', 'label' => 'Name A-Z'], ['value' => 'name_desc', 'label' => 'Name Z-A'],
+            ['value' => 'price_asc', 'label' => 'Price Low-High'], ['value' => 'price_desc', 'label' => 'Price High-Low'],
+        ],
+    ],
+    'per_page' => ['name' => 'per_page', 'label' => 'Per Page', 'type' => 'select', 'value' => $perPage, 'options' => array_map(static fn (int $size): array => ['value' => $size, 'label' => (string) $size], $perPageOptions)],
+];
+$catalogFilterAdvancedOpen = $materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0];
 ?>
 
 <section class="page-hero">
@@ -367,63 +400,11 @@ function catalog_query(array $params): string {
                     <h2 class="h5 mb-3">Filters</h2>
                     <form class="row g-2" method="GET" action="/catalog">
                             <input type="hidden" name="q" value="<?php echo e($search); ?>">
-                            <div class="col-12">
-                                <label class="form-label">Category</label>
-                                <select class="form-select" name="category">
-                                    <option value="">All Categories</option>
-                                    <?php foreach ($categories as $cat): ?>
-                                        <option value="<?php echo e($cat['slug']); ?>" <?php echo $category === $cat['slug'] ? 'selected' : ''; ?>>
-                                            <?php echo e($cat['name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Price Range (Rs)</label>
-                                <div class="row g-2">
-                                    <div class="col-6"><input type="number" min="0" name="min_price" class="form-control" value="<?php echo (int) $minPrice; ?>" placeholder="Min"></div>
-                                    <div class="col-6"><input type="number" min="0" name="max_price" class="form-control" value="<?php echo (int) $maxPrice; ?>" placeholder="Max"></div>
-                                </div>
-                            </div>
-                            <div class="col-12 form-check mt-2 ms-1">
-                                <input class="form-check-input" type="checkbox" value="1" id="in_stock_only" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="in_stock_only">In Stock Only</label>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Material</label>
-                                <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>" placeholder="Cotton, Linen...">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Color</label>
-                                <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>" placeholder="Indigo, Red...">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Size / Pack</label>
-                                <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>" placeholder="L, Queen, Pack of 2...">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Dispatch Time</label>
-                                <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>" placeholder="2-3 days, 1 week...">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Sort</label>
-                                <select class="form-select" name="sort">
-                                    <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
-                                    <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
-                                    <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
-                                    <option value="name_desc" <?php echo $sort === 'name_desc' ? 'selected' : ''; ?>>Name Z-A</option>
-                                    <option value="price_asc" <?php echo $sort === 'price_asc' ? 'selected' : ''; ?>>Price Low-High</option>
-                                    <option value="price_desc" <?php echo $sort === 'price_desc' ? 'selected' : ''; ?>>Price High-Low</option>
-                                </select>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Per Page</label>
-                                <select class="form-select" name="per_page">
-                                    <?php foreach ($perPageOptions as $size): ?>
-                                        <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
+                            <?php
+                            $catalogFilterMode = 'desktop';
+                            $catalogFilterIdPrefix = 'catalog_';
+                            include __DIR__ . '/includes/partials/catalog-filter-fields.php';
+                            ?>
                             <div class="col-12">
                                 <button class="btn btn-primary w-100" type="submit">Apply Filters</button>
                             </div>
@@ -553,80 +534,11 @@ function catalog_query(array $params): string {
     <div class="offcanvas-body">
         <form class="row g-3" method="GET" action="/catalog">
             <input type="hidden" name="q" value="<?php echo e($search); ?>">
-            <div class="col-12">
-                <label class="form-label fw-semibold">Category</label>
-                <select class="form-select" name="category">
-                    <option value="">All Categories</option>
-                    <?php foreach ($categories as $cat): ?>
-                        <option value="<?php echo e($cat['slug']); ?>" <?php echo $category === $cat['slug'] ? 'selected' : ''; ?>>
-                            <?php echo e($cat['name']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Sort</label>
-                <select class="form-select" name="sort">
-                    <option value="newest" <?php echo $sort === 'newest' ? 'selected' : ''; ?>>Newest First</option>
-                    <option value="oldest" <?php echo $sort === 'oldest' ? 'selected' : ''; ?>>Oldest First</option>
-                    <option value="name_asc" <?php echo $sort === 'name_asc' ? 'selected' : ''; ?>>Name A-Z</option>
-                    <option value="name_desc" <?php echo $sort === 'name_desc' ? 'selected' : ''; ?>>Name Z-A</option>
-                    <option value="price_asc" <?php echo $sort === 'price_asc' ? 'selected' : ''; ?>>Price Low-High</option>
-                    <option value="price_desc" <?php echo $sort === 'price_desc' ? 'selected' : ''; ?>>Price High-Low</option>
-                </select>
-            </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Min Price</label>
-                <input type="number" min="0" name="min_price" class="form-control" value="<?php echo (int) $minPrice; ?>">
-            </div>
-            <div class="col-6">
-                <label class="form-label fw-semibold">Max Price</label>
-                <input type="number" min="0" name="max_price" class="form-control" value="<?php echo (int) $maxPrice; ?>">
-            </div>
-            <div class="col-12 form-check ms-1">
-                <input class="form-check-input" type="checkbox" value="1" id="in_stock_only_mobile" name="in_stock" <?php echo $inStock === '1' ? 'checked' : ''; ?>>
-                <label class="form-check-label" for="in_stock_only_mobile">In Stock Only</label>
-            </div>
-            <div class="col-12">
-                <button
-                    type="button"
-                    class="btn btn-outline-secondary w-100 mobile-advanced-toggle"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#mobileAdvancedFilters"
-                    aria-expanded="<?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? 'true' : 'false'; ?>"
-                    aria-controls="mobileAdvancedFilters"
-                >
-                    Advanced Filters
-                </button>
-            </div>
-            <div class="col-12 collapse <?php echo ($materialFilter !== '' || $colorFilter !== '' || $sizeFilter !== '' || $dispatchFilter !== '' || $perPage !== $perPageOptions[0]) ? 'show' : ''; ?>" id="mobileAdvancedFilters">
-                <div class="row g-3 mobile-advanced-group">
-                    <div class="col-12">
-                        <label class="form-label fw-semibold">Per Page</label>
-                        <select class="form-select" name="per_page">
-                            <?php foreach ($perPageOptions as $size): ?>
-                                <option value="<?php echo $size; ?>" <?php echo $perPage === $size ? 'selected' : ''; ?>><?php echo $size; ?> items</option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Material</label>
-                        <input type="text" class="form-control" name="material" value="<?php echo e($materialFilter); ?>">
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Color</label>
-                        <input type="text" class="form-control" name="color" value="<?php echo e($colorFilter); ?>">
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Size/Pack</label>
-                        <input type="text" class="form-control" name="size" value="<?php echo e($sizeFilter); ?>">
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label fw-semibold">Dispatch</label>
-                        <input type="text" class="form-control" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
-                    </div>
-                </div>
-            </div>
+            <?php
+            $catalogFilterMode = 'mobile';
+            $catalogFilterIdPrefix = 'catalog_mobile_';
+            include __DIR__ . '/includes/partials/catalog-filter-fields.php';
+            ?>
             <div class="col-12 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1" data-bs-dismiss="offcanvas">Apply Filters</button>
                 <a href="/catalog" class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Reset</a>
