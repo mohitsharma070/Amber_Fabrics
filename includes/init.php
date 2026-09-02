@@ -36,7 +36,7 @@ if (!headers_sent()) {
     }
     $cspDirectives = apply_filters('security.csp_directives', [
         'default-src' => ["'self'"],
-        'connect-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com'],
+        'connect-src' => ["'self'", 'https://*.razorpay.com'],
         'img-src' => ["'self'", 'data:', 'https:'],
         'style-src' => ["'self'", 'https://cdn.jsdelivr.net', "'unsafe-inline'"],
         'script-src' => ["'self'", 'https://cdn.jsdelivr.net', 'https://*.razorpay.com', "'nonce-{$cspNonce}'"],

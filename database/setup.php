@@ -131,6 +131,10 @@ function ensure_tables(mysqli $conn): void
 
     $ensureColumns($conn, 'fabrics', $fabricColumnDefinitions);
 
+    if (!$indexExists($conn, 'fabrics', 'idx_fabrics_catalog_created')) {
+        $conn->query('CREATE INDEX idx_fabrics_catalog_created ON fabrics(status, category, created_at, id)');
+    }
+
     $conn->query(
         "UPDATE fabrics
          SET slug = CONCAT(

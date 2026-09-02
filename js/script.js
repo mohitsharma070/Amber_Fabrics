@@ -82,17 +82,36 @@
         };
     }
 
+    function degradedConfirmation(options) {
+        var title = options.title || "";
+        var message = options.message || "Are you sure you want to continue?";
+        var prompt = title ? title + "\n\n" + message : message;
+        var accepted = false;
+        if (typeof window.confirm === "function") {
+            try {
+                accepted = window.confirm(prompt);
+            } catch (_error) {}
+        }
+        return new Promise(function (resolve) {
+            window.setTimeout(function () { resolve(accepted); }, 0);
+        });
+    }
+
     AmberUI.confirm = function (options) {
         options = options || {};
         var dialog = document.getElementById("uiConfirmDialog");
         var Modal = window.bootstrap && window.bootstrap.Modal;
-        if (!dialog || !Modal || activeConfirmation) return Promise.resolve(false);
+        if (activeConfirmation) return Promise.resolve(false);
+        if (!dialog || !Modal) return degradedConfirmation(options);
 
         var title = document.getElementById("uiConfirmDialogTitle");
         var message = document.getElementById("uiConfirmDialogMessage");
         var icon = document.getElementById("uiConfirmDialogIcon");
         var cancel = document.getElementById("uiConfirmDialogCancel");
         var confirm = document.getElementById("uiConfirmDialogOk");
+        if (!title || !message || !icon || !cancel || !confirm) {
+            return degradedConfirmation(options);
+        }
         var requestedVariant = options.variant || (/delete|remove|cancel|archive|refund/i.test(
             (options.title || "") + " " + (options.okText || "") + " " + (options.message || "")
         ) ? "danger" : "primary");
@@ -106,20 +125,68 @@
         confirm.className = "btn btn-" + (variant === "warning" ? "warning" : variant);
         dialog.dataset.variant = variant;
 
-        var modal = Modal.getOrCreateInstance(dialog, { backdrop: "static", keyboard: true, focus: true });
+        var modal;
+        try {
+            modal = Modal.getOrCreateInstance(dialog, { backdrop: "static", keyboard: true, focus: true });
+        } catch (_error) {
+            return degradedConfirmation(options);
+        }
         return new Promise(function (resolve) {
             activeConfirmation = {
                 accepted: false,
                 resolve: resolve,
                 trigger: options.trigger instanceof HTMLElement ? options.trigger : document.activeElement
             };
-            modal.show();
+            try {
+                modal.show();
+            } catch (_error) {
+                activeConfirmation = null;
+                resolve(degradedConfirmation(options));
+            }
         });
     };
 
     window.adminConfirm = function (options) {
         return AmberUI.confirm(options);
     };
+
+    function submitConfirmedForm(form, submitter) {
+        form.dataset.confirmed = "1";
+        form.dataset.confirmSubmitting = "1";
+        if (typeof form.requestSubmit === "function") {
+            try {
+                form.requestSubmit(submitter || undefined);
+            } catch (_error) {
+                delete form.dataset.confirmed;
+                delete form.dataset.confirmSubmitting;
+                return;
+            }
+            if (form.dataset.confirmed === "1") {
+                delete form.dataset.confirmed;
+                delete form.dataset.confirmSubmitting;
+            }
+            return;
+        }
+
+        var submitterField = null;
+        if (submitter && submitter.name) {
+            submitterField = document.createElement("input");
+            submitterField.type = "hidden";
+            submitterField.name = submitter.name;
+            submitterField.value = submitter.value;
+            form.appendChild(submitterField);
+        }
+        if (submitter && typeof AmberUI.setButtonLoading === "function") {
+            AmberUI.setButtonLoading(submitter, true, "Processing");
+        }
+        try {
+            HTMLFormElement.prototype.submit.call(form);
+        } catch (_error) {
+            if (submitterField) submitterField.remove();
+            delete form.dataset.confirmed;
+            delete form.dataset.confirmSubmitting;
+        }
+    }
 
     function initConfirmations() {
         var dialog = document.getElementById("uiConfirmDialog");
@@ -145,9 +212,15 @@
         document.addEventListener("submit", function (event) {
             var form = event.target;
             if (!(form instanceof HTMLFormElement)) return;
-            if (event.defaultPrevented) return;
             if (form.dataset.confirmed === "1") {
                 delete form.dataset.confirmed;
+                if (event.defaultPrevented) delete form.dataset.confirmSubmitting;
+                return;
+            }
+            if (event.defaultPrevented) return;
+            if (form.dataset.confirmSubmitting === "1") {
+                event.preventDefault();
+                event.stopImmediatePropagation();
                 return;
             }
 
@@ -162,12 +235,9 @@
             AmberUI.confirm(options).then(function (confirmed) {
                 delete form.dataset.confirmPending;
                 if (!confirmed) return;
-                form.dataset.confirmed = "1";
-                if (typeof form.requestSubmit === "function") {
-                    form.requestSubmit(submitter || undefined);
-                } else {
-                    form.submit();
-                }
+                submitConfirmedForm(form, submitter);
+            }, function () {
+                delete form.dataset.confirmPending;
             });
         });
     }
@@ -243,6 +313,11 @@
         window.addEventListener("pageshow", function (event) {
             if (!event.persisted) return;
             document.querySelectorAll(".btn.is-loading").forEach(restoreLoadingButton);
+            document.querySelectorAll("form[data-confirm-submitting]").forEach(function (form) {
+                delete form.dataset.confirmSubmitting;
+                delete form.dataset.confirmed;
+                delete form.dataset.confirmPending;
+            });
         });
     }
 

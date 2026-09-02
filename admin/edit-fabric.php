@@ -108,8 +108,8 @@ if (isset($_POST['submit'])) {
     } else {
         $minOrder = normalize_meter_quantity($minOrder, 1.0);
     }
-    $qtyStepRaw    = (string)($fabric['qty_step']??'');
-    $qtyStep       = ($qtyStepRaw !== '' && is_numeric($qtyStepRaw) && (float) $qtyStepRaw > 0) ? round((float) $qtyStepRaw, 4) : 0.0;
+    $qtyStepRaw    = trim((string)($_POST['qty_step']??($fabric['qty_step']??'')));
+    $qtyStep       = ($qtyStepRaw !== '' && is_numeric($qtyStepRaw) && (float) $qtyStepRaw > 0) ? round((float) $qtyStepRaw, 2) : 0.0;
     $lowStockUnitsRaw = (string)($fabric['low_stock_threshold_units']??'');
     $lowStockMetersRaw = (string)($fabric['low_stock_threshold_meters']??'');
     $lowStockUnits = ($lowStockUnitsRaw !== '' && is_numeric($lowStockUnitsRaw) && (float) $lowStockUnitsRaw >= 0)

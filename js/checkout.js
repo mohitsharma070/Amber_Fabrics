@@ -37,6 +37,7 @@
         var shippingCourierName = String(checkoutData.shippingCourierName || '');
         var shippingDebugReason = String(checkoutData.shippingDebugReason || '');
         var shippingDebugMessage = String(checkoutData.shippingDebugMessage || '');
+        var SHIPPING_RATE_TIMEOUT_MS = 10000;
         var shippingRateTimer = null;
         var shippingRateRequestId = 0;
         var shippingRateAbortController = null;
@@ -337,8 +338,17 @@
             body.set('payment_method', paymentMethod);
             setDeliveryRequestPending(true);
             if (shippingNoteEl) shippingNoteEl.textContent = 'Checking delivery service and shipping…';
+            var timedOut = false;
+            var timeoutId = null;
+            var timeoutPromise = new Promise(function (_, reject) {
+                timeoutId = window.setTimeout(function () {
+                    timedOut = true;
+                    if (controller) controller.abort();
+                    reject(new Error('shipping_rate_timeout'));
+                }, SHIPPING_RATE_TIMEOUT_MS);
+            });
             try {
-                var res = await fetch('/shipping-rate.php', {
+                var shippingRequest = fetch('/shipping-rate.php', {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',
@@ -347,6 +357,7 @@
                     body: body.toString(),
                     signal: controller ? controller.signal : undefined
                 });
+                var res = await Promise.race([shippingRequest, timeoutPromise]);
                 var data = null;
                 try {
                     data = await res.json();
@@ -398,6 +409,12 @@
                     : 'Delivery address verified with an estimated shipping rate.';
                 return true;
             } catch (error) {
+                if (timedOut && requestId === shippingRateRequestId) {
+                    if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
+                    setCheckoutUnlocked(false);
+                    if (deliveryStatusEl) deliveryStatusEl.textContent = 'Shipping calculation timed out. Please try again.';
+                    return null;
+                }
                 if (error && error.name === 'AbortError') return false;
                 if (requestId === shippingRateRequestId) {
                     shippingDebugReason = 'bigship_rate_api_failed';
@@ -405,6 +422,7 @@
                 }
                 return false;
             } finally {
+                window.clearTimeout(timeoutId);
                 if (requestId === shippingRateRequestId) {
                     shippingRateAbortController = null;
                     setDeliveryRequestPending(false);
@@ -511,7 +529,7 @@
                 var quoted = await maybeFetchLiveRate();
                 if (!quoted) {
                     setCheckoutUnlocked(false);
-                    if (deliveryStatusEl) deliveryStatusEl.textContent = 'We could not calculate shipping. Please check the pincode and try again.';
+                    if (quoted !== null && deliveryStatusEl) deliveryStatusEl.textContent = 'We could not calculate shipping. Please check the pincode and try again.';
                     return;
                 }
                 updateSectionSummaries();

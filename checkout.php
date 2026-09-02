@@ -456,9 +456,9 @@ include __DIR__ . '/includes/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="redirect_to" value="checkout">
                         <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
-                        <label class="form-label">Coupon Code</label>
+                        <label class="form-label" for="checkout_coupon_code">Coupon Code</label>
                         <div class="d-flex gap-2">
-                            <input type="text" name="coupon_code" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
+                            <input type="text" id="checkout_coupon_code" name="coupon_code" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
                             <button class="btn btn-outline-dark" type="submit">Apply</button>
                         </div>
                     </form>
@@ -549,7 +549,7 @@ if (!is_string($checkoutClientStateJson)) {
 }
 ?>
 <script type="application/json" id="checkout-data" nonce="<?php echo $cspNonce; ?>"><?php echo $checkoutClientStateJson; ?></script>
-<script src="/js/checkout.js?v=20260831a"></script>
+<script src="/js/checkout.js?v=20260901a"></script>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>
 

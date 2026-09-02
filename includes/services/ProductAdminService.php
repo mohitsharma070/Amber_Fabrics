@@ -146,7 +146,10 @@ final class ProductAdminService
             if(floor($stock)!=$stock)$errors['stock']='Piece and set stock must be a whole number.';
             if($minimum>0&&floor($minimum)!=$minimum)$errors['min_order_meters']='Piece and set minimums must be whole numbers.';
             if($step!==''&&(!is_numeric($step)||(float)$step<1||floor((float)$step)!=(float)$step))$errors['qty_step']='Piece and set quantity steps must be whole numbers.';
-        }elseif($unit==='meter'&&$step!==''&&(!is_numeric($step)||(float)$step<=0))$errors['qty_step']='Meter quantity step must be greater than zero.';
+        }elseif($unit==='meter'&&$step!==''){
+            if(!is_numeric($step)||(float)$step<=0)$errors['qty_step']='Meter quantity step must be greater than zero.';
+            elseif(!meter_qty_step_is_representable($step))$errors['qty_step']='Meter quantity step must use no more than two decimal places.';
+        }
         return ['errors' => $errors, 'warnings' => $warnings, 'sku' => $sku];
     }
 

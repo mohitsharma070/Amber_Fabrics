@@ -9,8 +9,14 @@ if (PHP_SAPI !== 'cli') {
 }
 
 $requestedMode = (string) (getenv('APP_MODE') ?: '');
+$requestedAppEnvironment = (string) (getenv('APP_ENV') ?: '');
 $confirmation = (string) (getenv('E2E_FIXTURE_CONFIRM') ?: '');
-$preflightErrors = e2e_fixture_policy_errors($requestedMode, $confirmation, 'pending_e2e');
+$preflightErrors = e2e_fixture_policy_errors(
+    $requestedMode,
+    $confirmation,
+    $requestedAppEnvironment,
+    'pending_e2e'
+);
 if ($preflightErrors !== []) {
     fwrite(STDERR, implode(PHP_EOL, $preflightErrors) . PHP_EOL);
     exit(1);
@@ -24,6 +30,7 @@ $databaseName = trim((string) ($databaseRow['database_name'] ?? ''));
 $policyErrors = e2e_fixture_policy_errors(
     (string) ($GLOBALS['_app_mode'] ?? ''),
     $confirmation,
+    (string) ($GLOBALS['_app_config']['APP_ENV'] ?? ''),
     $databaseName
 );
 if ($policyErrors !== []) {
@@ -98,6 +105,116 @@ $products = [
         'status' => 'active',
         'is_available' => 1,
     ],
+    [
+        'product_code' => 'E2E-HIGH-MOQ-50',
+        'name' => 'E2E High MOQ 50 Product',
+        'sku' => 'E2E-HIGH-MOQ-50-SKU',
+        'category' => 'bedsheets',
+        'product_type' => 'simple',
+        'slug' => 'e2e-high-moq-50-product',
+        'unit_type' => 'piece',
+        'meter_options' => '',
+        'size' => '',
+        'color' => 'Amber',
+        'description' => 'Deterministic high minimum-order simple product for local Playwright tests.',
+        'price' => 199.00,
+        'sale_price' => null,
+        'cost_price' => 100.00,
+        'stock' => 100.00,
+        'stock_meters' => 0.00,
+        'min_order_meters' => 50.00,
+        'qty_step' => 5.00,
+        'status' => 'active',
+        'is_available' => 1,
+    ],
+    [
+        'product_code' => 'E2E-HIGH-MOQ-25',
+        'name' => 'E2E High MOQ 25 Product',
+        'sku' => 'E2E-HIGH-MOQ-25-SKU',
+        'category' => 'bedsheets',
+        'product_type' => 'simple',
+        'slug' => 'e2e-high-moq-25-product',
+        'unit_type' => 'piece',
+        'meter_options' => '',
+        'size' => '',
+        'color' => 'Amber',
+        'description' => 'Deterministic minimum-equals-stock simple product for local Playwright tests.',
+        'price' => 199.00,
+        'sale_price' => null,
+        'cost_price' => 100.00,
+        'stock' => 25.00,
+        'stock_meters' => 0.00,
+        'min_order_meters' => 25.00,
+        'qty_step' => 1.00,
+        'status' => 'active',
+        'is_available' => 1,
+    ],
+    [
+        'product_code' => 'E2E-MOQ-1-STOCK-10',
+        'name' => 'E2E MOQ 1 Stock 10 Product',
+        'sku' => 'E2E-MOQ-1-STOCK-10-SKU',
+        'category' => 'bedsheets',
+        'product_type' => 'simple',
+        'slug' => 'e2e-moq-1-stock-10-product',
+        'unit_type' => 'piece',
+        'meter_options' => '',
+        'size' => '',
+        'color' => 'Amber',
+        'description' => 'Deterministic ordinary quantity-range product for local Playwright tests.',
+        'price' => 199.00,
+        'sale_price' => null,
+        'cost_price' => 100.00,
+        'stock' => 10.00,
+        'stock_meters' => 0.00,
+        'min_order_meters' => 1.00,
+        'qty_step' => 1.00,
+        'status' => 'active',
+        'is_available' => 1,
+    ],
+    [
+        'product_code' => 'E2E-HIGH-MOQ-LOW-STOCK',
+        'name' => 'E2E High MOQ Low Stock Product',
+        'sku' => 'E2E-HIGH-MOQ-LOW-STOCK-SKU',
+        'category' => 'bedsheets',
+        'product_type' => 'simple',
+        'slug' => 'e2e-high-moq-low-stock-product',
+        'unit_type' => 'piece',
+        'meter_options' => '',
+        'size' => '',
+        'color' => 'Amber',
+        'description' => 'Deterministic below-minimum stock product for local Playwright tests.',
+        'price' => 199.00,
+        'sale_price' => null,
+        'cost_price' => 100.00,
+        'stock' => 24.00,
+        'stock_meters' => 0.00,
+        'min_order_meters' => 25.00,
+        'qty_step' => 1.00,
+        'status' => 'active',
+        'is_available' => 1,
+    ],
+    [
+        'product_code' => 'E2E-HIGH-MOQ-VARIANT',
+        'name' => 'E2E High MOQ Variant Product',
+        'sku' => 'E2E-HIGH-MOQ-VARIANT-PARENT',
+        'category' => 'bedsheets',
+        'product_type' => 'variable',
+        'slug' => 'e2e-high-moq-variant-product',
+        'unit_type' => 'piece',
+        'meter_options' => '',
+        'size' => '',
+        'color' => '',
+        'description' => 'Deterministic high minimum-order variant product for local Playwright tests.',
+        'price' => 249.00,
+        'sale_price' => null,
+        'cost_price' => 120.00,
+        'stock' => 0.00,
+        'stock_meters' => 0.00,
+        'min_order_meters' => 25.00,
+        'qty_step' => 1.00,
+        'status' => 'active',
+        'is_available' => 1,
+    ],
 ];
 
 $inTransaction = false;
@@ -161,8 +278,10 @@ try {
     }
 
     $variantProductId = (int) ($productIds['E2E-VARIANT'] ?? 0);
+    $highMoqVariantProductId = (int) ($productIds['E2E-HIGH-MOQ-VARIANT'] ?? 0);
     $deleteVariantsStmt = $conn->prepare('DELETE FROM fabric_variants WHERE fabric_id = ?');
     $deleteVariantsStmt->execute([$variantProductId]);
+    $deleteVariantsStmt->execute([$highMoqVariantProductId]);
 
     $variantStmt = $conn->prepare(
         "INSERT INTO fabric_variants (
@@ -172,6 +291,9 @@ try {
     );
     $variantStmt->execute([$variantProductId, 'Navy', 'Small', 'E2E-VAR-NAVY-S', 249.00, 15.00, 1]);
     $variantStmt->execute([$variantProductId, 'Amber', 'Large', 'E2E-VAR-AMBER-L', 279.00, 15.00, 2]);
+    $variantStmt->execute([$highMoqVariantProductId, 'Navy', 'Standard', 'E2E-HIGH-MOQ-VAR-NAVY', 249.00, 100.00, 1]);
+    $variantStmt->execute([$highMoqVariantProductId, 'Amber', 'Standard', 'E2E-HIGH-MOQ-VAR-AMBER', 249.00, 25.00, 2]);
+    $variantStmt->execute([$highMoqVariantProductId, 'Stone', 'Standard', 'E2E-HIGH-MOQ-VAR-STONE', 249.00, 24.00, 3]);
 
     $conn->commit();
     $inTransaction = false;

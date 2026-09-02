@@ -24,18 +24,18 @@ $siteUrlForHead = app_url();
 <!-- Favicons: Light/Dark theme support -->
 <link rel="icon" type="image/svg+xml" href="/images/favicon-light.svg" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/svg+xml" href="/images/favicon-dark.svg" media="(prefers-color-scheme: dark)">
-<link rel="alternate icon" type="image/png" href="/images/favicon-light.svg">
+<link rel="alternate icon" type="image/svg+xml" href="/images/favicon-light.svg">
 
 <!-- Apple Touch Icon -->
 <link rel="apple-touch-icon" href="/images/favicon-light.svg">
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-5.3.3.min.css" rel="stylesheet">
 
-<link rel="stylesheet" href="/css/style.css?v=20260822a">
+<link rel="stylesheet" href="/css/style.css?v=20260901a">
 
 <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
 
-<script src="/js/script.js?v=20260822a" defer></script>
+<script src="/js/script.js?v=20260902a" defer></script>
 
 <?php do_action('page.head', [
     'page' => basename($_SERVER['PHP_SELF'] ?? ''),

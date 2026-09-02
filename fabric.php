@@ -74,6 +74,17 @@ $catalogData = ProductAdminService::catalogData($product);
 $variants = (($product['product_type'] ?? 'simple') === 'variable')
     ? InventoryService::get_fabric_variants($conn, (int) $product['id'])
     : [];
+foreach ($variants as &$variantRow) {
+    $variantRow['media'] = (int) ($variantRow['is_active'] ?? 0) === 1
+        ? fabric_product_media_descriptors([
+            (string) ($variantRow['image'] ?? ''),
+            (string) ($variantRow['image2'] ?? ''),
+            (string) ($variantRow['image3'] ?? ''),
+            (string) ($variantRow['image4'] ?? ''),
+        ], (string) ($variantRow['video'] ?? ''), (string) $product['name'])
+        : [];
+}
+unset($variantRow);
 $firstVariantWithMedia = null;
 foreach ($variants as $vv) {
     if ((int) ($vv['is_active'] ?? 0) !== 1) {
@@ -100,6 +111,22 @@ if (empty($galleryImages) && is_array($firstVariantWithMedia)) {
     ]));
     if ($videoFile === '') {
         $videoFile = (string) ($firstVariantWithMedia['video'] ?? '');
+    }
+}
+$defaultMediaDescriptors = fabric_product_media_descriptors(
+    array_values($galleryImages),
+    (string) $videoFile,
+    (string) $product['name']
+);
+$defaultImageMediaDescriptors = array_values(array_filter(
+    $defaultMediaDescriptors,
+    static fn(array $descriptor): bool => ($descriptor['type'] ?? '') === 'image'
+));
+$defaultVideoDescriptor = null;
+foreach ($defaultMediaDescriptors as $mediaDescriptor) {
+    if (($mediaDescriptor['type'] ?? '') === 'video') {
+        $defaultVideoDescriptor = $mediaDescriptor;
+        break;
     }
 }
 $variantSizePolicy = get_variant_size_policy_by_unit_type($unitType);
@@ -271,19 +298,24 @@ if ($unitType === 'meter') {
 } else {
     $qtyStart = $minOrderQty;
     $qtyStep = $qtyStepUi;
-    $qtyLimit = $displayStock > 0 ? min($displayStock, 20.0) : 20.0;
-    if ($qtyLimit < $qtyStart) {
-        $qtyLimit = $qtyStart;
-    }
-    for ($q = $qtyStart; $q <= $qtyLimit + 0.0001; $q += $qtyStep) {
-        $normalized = $isWholeUnit ? (float) round($q) : (float) round($q, 2);
-        if ($normalized > 0) {
-            $quantityOptions[] = $normalized;
+    $quantityStock = $defaultVariant !== null ? (float) ($defaultVariant['stock'] ?? 0) : $displayStock;
+    $availableWholeUnits = max(0, (int) floor($quantityStock + 0.0000001));
+    if ($availableWholeUnits >= $qtyStart) {
+        // Keep the existing compact selector while making its 20 options relative to the configured MOQ.
+        $qtyLimit = min($availableWholeUnits, $qtyStart + (19 * $qtyStep));
+        for ($q = $qtyStart; $q <= $qtyLimit + 0.0001; $q += $qtyStep) {
+            $normalized = $isWholeUnit ? (float) round($q) : (float) round($q, 2);
+            if ($normalized > 0) {
+                $quantityOptions[] = $normalized;
+            }
         }
     }
 }
 $quantityOptions = array_values(array_unique($quantityOptions));
 sort($quantityOptions);
+if ($isWholeUnit && $quantityOptions === [] && ($product['product_type'] ?? 'simple') !== 'variable') {
+    $inStock = false;
+}
 
 $metaTitle = (string) $product['name'] . ' | ' . SiteContext::name();
 $metaDescriptionRaw = (string) ($product['description'] ?? '');
@@ -324,8 +356,8 @@ do_action('product.view', [
     <div class="container">
         <div class="row g-3 g-md-5">
             <div class="col-lg-6 product-gallery-column">
-                <?php if (!empty($galleryImages)): ?>
-                    <?php $mainImageAsset = fabric_image_asset_data((string) $galleryImages[0]); ?>
+                <?php if (!empty($defaultImageMediaDescriptors)): ?>
+                    <?php $mainImageAsset = $defaultImageMediaDescriptors[0]; ?>
                     <div class="product-media-main mb-3 shadow-sm overflow-hidden">
                         <picture id="product-main-picture" class="d-block w-100 h-100">
                             <?php if (!empty($mainImageAsset['webp_srcset'])): ?>
@@ -335,33 +367,34 @@ do_action('product.view', [
                             <?php endif; ?>
                             <img id="product-main-image"
                                  src="<?php echo e($mainImageAsset['src']); ?>"
-                                 alt="<?php echo e($product['name']); ?>"
+                                 alt="<?php echo e((string) ($mainImageAsset['alt'] ?? $product['name'])); ?>"
                                  class="w-100 h-100"<?php echo image_asset_dimension_attributes($mainImageAsset); ?>>
                         </picture>
-                        <?php if ($videoFile !== ''): ?>
-                            <video id="product-main-video" class="w-100 h-100 d-none" style="object-fit:contain;background:#101418;" controls preload="metadata">
-                                <source src="/images/fabrics/<?php echo e(rawurlencode($videoFile)); ?>">
-                            </video>
-                        <?php endif; ?>
+                        <video id="product-main-video" class="w-100 h-100 d-none" style="object-fit:contain;background:#101418;" controls preload="metadata">
+                            <source<?php if (is_array($defaultVideoDescriptor)): ?> src="<?php echo e((string) $defaultVideoDescriptor['src']); ?>"<?php endif; ?>>
+                        </video>
                     </div>
                     <div id="product-media-thumbs" class="d-flex flex-wrap gap-2">
-                        <?php foreach ($galleryImages as $index => $img): ?>
-                            <?php $thumbAsset = fabric_image_asset_data((string) $img); ?>
+                        <?php foreach ($defaultImageMediaDescriptors as $index => $thumbAsset): ?>
                             <button type="button"
                                     class="btn p-0 border rounded media-thumb product-media-thumb <?php echo $index === 0 ? 'border-primary' : 'border-light'; ?>"
                                     data-type="image"
                                     data-src="<?php echo e($thumbAsset['src']); ?>"
                                     data-webp-srcset="<?php echo e((string) ($thumbAsset['webp_srcset'] ?? '')); ?>"
+                                    data-width="<?php echo (int) ($thumbAsset['width'] ?? 0); ?>"
+                                    data-height="<?php echo (int) ($thumbAsset['height'] ?? 0); ?>"
+                                    data-alt="<?php echo e((string) ($thumbAsset['alt'] ?? $product['name'])); ?>"
                                     aria-label="View <?php echo e($product['name']); ?> image <?php echo $index + 1; ?>"
                                     aria-current="<?php echo $index === 0 ? 'true' : 'false'; ?>">
                                 <img src="<?php echo e((string) ($thumbAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($product['name']); ?> thumbnail <?php echo $index + 1; ?>" loading="lazy"<?php echo image_asset_dimension_attributes($thumbAsset, 'thumb'); ?>>
                             </button>
                         <?php endforeach; ?>
-                        <?php if ($videoFile !== ''): ?>
+                        <?php if (is_array($defaultVideoDescriptor)): ?>
                             <button type="button"
                                     class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative"
                                     data-type="video"
-                                    data-src="/images/fabrics/<?php echo e(rawurlencode($videoFile)); ?>"
+                                    data-src="<?php echo e((string) $defaultVideoDescriptor['src']); ?>"
+                                    data-alt="<?php echo e((string) ($defaultVideoDescriptor['alt'] ?? ($product['name'] . ' video'))); ?>"
                                     aria-label="Play <?php echo e($product['name']); ?> video"
                                     aria-current="false">
                                 <div class="product-media-thumb-video">Video</div>
@@ -417,8 +450,7 @@ do_action('product.view', [
                     'unitSingleLabel' => $unitSingleLabel,
                     'minimumOrderQty' => (float) $minOrderQty,
                     'quantityStep' => (float) $qtyStepUi,
-                    'defaultGalleryImages' => array_values($galleryImages),
-                    'defaultVideoFile' => (string) $videoFile,
+                    'defaultMedia' => array_values($defaultMediaDescriptors),
                 ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                 ?></script>
 
@@ -679,6 +711,6 @@ do_action('product.view', [
     </div>
 </section>
 
-<script src="/js/product-detail.js?v=20260831a" defer></script>
+<script src="/js/product-detail.js?v=20260901b" defer></script>
 
 <?php include 'includes/footer.php'; ?>

@@ -121,11 +121,11 @@ $pluginNavItems = admin_nav_plugin_items($conn, $currentPage);
     <!-- Favicons: Light/Dark theme support -->
     <link rel="icon" type="image/svg+xml" href="../images/favicon-light.svg" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/svg+xml" href="../images/favicon-dark.svg" media="(prefers-color-scheme: dark)">
-    <link rel="alternate icon" type="image/png" href="../images/favicon-light.svg">
+    <link rel="alternate icon" type="image/svg+xml" href="../images/favicon-light.svg">
     <link rel="apple-touch-icon" href="../images/favicon-light.svg">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/bootstrap-5.3.3.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260822a">
+    <link rel="stylesheet" href="../css/style.css?v=20260901a">
     <link rel="stylesheet" href="../css/admin.css?v=20260822a">
 </head>
 <body class="admin-shell<?php echo $adminCanMutateCurrentPage ? '' : ' admin-read-only'; ?>" data-admin-can-mutate="<?php echo $adminCanMutateCurrentPage ? '1' : '0'; ?>">

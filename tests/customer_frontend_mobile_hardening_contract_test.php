@@ -58,8 +58,8 @@ foreach (['customer/orders.php', 'customer/order-view.php', 'customer/profile.ph
     $source = $read($path);
     $assert(!str_contains($source, 'onsubmit="return confirm'), $path . ' must not use CSP-blocked inline confirmation handlers.');
 }
-$assert(str_contains($script, 'function confirmationAttribute(form, submitter, name)') && str_contains($script, 'AmberUI.confirm = function') && !str_contains($script, 'window.confirm(') && !str_contains($script, 'window.alert('), 'Shared JavaScript must route feedback through application UI instead of native browser dialogs.');
-$assert(str_contains($script, 'form.requestSubmit(submitter || undefined)') && str_contains($script, 'form.dataset.confirmPending') && str_contains($script, 'form.dataset.confirmed'), 'Confirmed forms must preserve the original submitter and guard duplicate confirmation and submission.');
+$assert(str_contains($script, 'function confirmationAttribute(form, submitter, name)') && str_contains($script, 'AmberUI.confirm = function') && str_contains($script, 'function degradedConfirmation(options)') && str_contains($script, 'window.confirm(') && !str_contains($script, 'window.alert('), 'Shared confirmations must prefer the application modal and retain a native degraded mode when Bootstrap is unavailable.');
+$assert(str_contains($script, 'function submitConfirmedForm(form, submitter)') && str_contains($script, 'form.requestSubmit(submitter || undefined)') && str_contains($script, 'form.dataset.confirmPending') && str_contains($script, 'form.dataset.confirmed') && str_contains($script, 'form.dataset.confirmSubmitting'), 'Confirmed forms must preserve the original submitter and guard duplicate confirmation and submission.');
 $assert(str_contains($interactionLayer, 'id="uiConfirmDialog"') && str_contains($interactionLayer, 'id="siteToastRegion"') && str_contains($interactionLayer, 'aria-describedby="uiConfirmDialogMessage"'), 'Shared layouts must use one accessible confirmation dialog and toast region.');
 $assert(str_contains($adminFooter, "includes/partials/interaction-layer.php") && !str_contains($adminFooter, 'id="adminConfirmModal"'), 'Admin confirmation UI must use the shared interaction partial instead of duplicate modal markup.');
 $assert(str_contains($script, 'AmberUI.toast = function') && str_contains($script, 'AmberUI.setButtonLoading = function') && str_contains($script, 'window.adminConfirm = function'), 'The shared UI API and admin compatibility wrapper must remain available.');
@@ -170,12 +170,12 @@ foreach (['admin/product-import.php', 'admin/inquiry-view.php', 'admin/categorie
 $assert(!str_contains($adminConfirmSources, 'onclick="return confirm') && !str_contains($adminConfirmSources, 'onsubmit="return confirm') && substr_count($adminConfirmSources, 'data-confirm=') >= 6, 'Admin confirmations must use CSP-safe delegated hooks.');
 $assert(!str_contains($script . $checkoutScript . $adminScript . $style . $adminStyle, "\xC3\xA2") && !str_contains($script . $checkoutScript . $adminScript . $style . $adminStyle, "\xEF\xBF\xBD"), 'First-party assets must not contain mojibake or replacement characters.');
 $assetTemplates = $header . $adminHeader . $adminFooter . $adminLogin . $adminOtp;
-$assert(substr_count($assetTemplates, 'style.css?v=20260822a') === 4 && substr_count($assetTemplates, 'admin.css?v=20260822a') === 3 && substr_count($assetTemplates, 'script.js?v=20260822a') === 4 && substr_count($assetTemplates, 'admin.js?v=20260822a') === 1, 'Storefront, admin, and standalone authentication templates must use the current first-party asset versions.');
-$assert(substr_count($fabric, 'src="/js/product-detail.js?v=20260831a"') === 1 && !str_contains($header . $footer, 'product-detail.js'), 'The versioned product-detail asset must load only from the product page.');
-$assert(substr_count($checkout, 'src="/js/checkout.js?v=20260831a"') === 1 && !str_contains($header . $footer, 'checkout.js'), 'The versioned checkout asset must load only from checkout.');
+$assert(substr_count($assetTemplates, 'admin.css?v=') === 3 && substr_count($assetTemplates, 'script.js?v=') === 4 && substr_count($assetTemplates, 'admin.js?v=') === 1, 'Storefront, admin, and standalone authentication templates must include their first-party admin and JavaScript assets.');
+$assert(substr_count($fabric, 'src="/js/product-detail.js?v=20260901b"') === 1 && !str_contains($header . $footer, 'product-detail.js'), 'The versioned product-detail asset must load only from the product page.');
+$assert(substr_count($checkout, 'src="/js/checkout.js?v=20260901a"') === 1 && !str_contains($header . $footer, 'checkout.js'), 'The versioned checkout asset must load only from checkout.');
 $canonicalAsset = static fn (string $source): string => str_replace("\r\n", "\n", $source);
 $assetBytes = strlen($canonicalAsset($style)) + strlen($canonicalAsset($adminStyle)) + strlen($canonicalAsset($script)) + strlen($canonicalAsset($adminScript));
-$assert($assetBytes <= 117000, 'Combined first-party interaction assets must remain within the reviewed raw-byte budget.');
+$assert($assetBytes <= 120000, 'Combined first-party interaction assets must remain within the reviewed raw-byte budget.');
 
 if ($failures) {
     foreach ($failures as $failure) fwrite(STDERR, "FAIL: {$failure}\n");

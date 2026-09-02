@@ -22,6 +22,13 @@ final class CartService
             return $availableUnits >= $minimumUnits ? (float) $availableUnits : 0.0;
         }
 
+        // Legacy four-decimal steps cannot safely produce new two-decimal cart,
+        // stock, or order quantities. Keep historical rows unchanged and fail
+        // closed for new cart reconciliation until an administrator corrects it.
+        if ($quantityStep != 0.0 && !meter_qty_step_is_representable($quantityStep)) {
+            return 0.0;
+        }
+
         $stockCents = max(0, (int) floor(($availableStock * 100) + 0.0000001));
         $stockUnits = $stockCents * 100;
         $minimumUnits = (int) round(normalize_meter_quantity($minimumQuantity, 1.0) * 10000);

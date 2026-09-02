@@ -1,12 +1,15 @@
 <?php
 
-function product_card_select_columns(array $extraColumns = []): string
+function product_card_select_columns(array $extraColumns = [], bool $includePrimaryMedia = true): string
 {
+    $imageColumn = $includePrimaryMedia
+        ? "COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image"
+        : "'' AS image";
     $columns = [
         'f.id',
         'f.name',
         'f.category',
-        "COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image",
+        $imageColumn,
         'f.size',
         'f.unit_type',
         'f.price',
@@ -37,6 +40,25 @@ function product_card_select_columns(array $extraColumns = []): string
     }
 
     return implode(",\n                ", $columns);
+}
+
+function product_card_apply_primary_media(array $rows, array $orderedMedia): array
+{
+    $primaryMediaByFabricId = [];
+    foreach ($orderedMedia as $media) {
+        $fabricId = (int) ($media['fabric_id'] ?? 0);
+        if ($fabricId > 0 && !array_key_exists($fabricId, $primaryMediaByFabricId)) {
+            $primaryMediaByFabricId[$fabricId] = (string) ($media['filename'] ?? '');
+        }
+    }
+
+    foreach ($rows as &$row) {
+        $fabricId = (int) ($row['id'] ?? 0);
+        $row['image'] = $primaryMediaByFabricId[$fabricId] ?? '';
+    }
+    unset($row);
+
+    return $rows;
 }
 
 function product_card_public_url(array $product, int $variantId = 0): string

@@ -182,7 +182,7 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['login.php'], true);
 
 <?php require dirname(__DIR__, 2) . '/partials/interaction-layer.php'; ?>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/bootstrap.bundle-5.3.3.min.js"></script>
 <?php do_action('page.footer', [
     'page' => basename($_SERVER['PHP_SELF'] ?? ''),
 ]); ?>

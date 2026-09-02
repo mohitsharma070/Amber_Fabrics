@@ -80,3 +80,129 @@ jobs:
 
       - name: MySQL integration tests
         run: composer test:integration
+
+  browser-smoke:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0.46
+        env:
+          MYSQL_DATABASE: amber_fabrics_e2e
+          MYSQL_USER: amber_e2e
+          MYSQL_PASSWORD: amber_e2e_password
+          MYSQL_ROOT_PASSWORD: root_e2e_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      CI: 1
+      APP_MODE: local
+      APP_ENV: test
+      APP_DEBUG: 0
+      APP_URL: http://127.0.0.1:8000
+      APP_FORCE_HTTPS: 0
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: amber_fabrics_e2e
+      DB_USER: amber_e2e
+      DB_PASSWORD: amber_e2e_password
+      E2E_FIXTURE_CONFIRM: 1
+      E2E_BASE_URL: http://127.0.0.1:8000
+      SHIPPING_COURIER_ENABLED: 0
+      SHIPPING_COURIER_PROVIDER: ''
+      SHIPPING_COURIER_AUTO_CREATE: 0
+      SHIPPING_COURIER_TRACKING_SYNC: 0
+      BIGSHIP_BASE_URL: ''
+      BIGSHIP_TEST_BASE_URL: ''
+      BIGSHIP_USERNAME: ''
+      BIGSHIP_PASSWORD: ''
+      BIGSHIP_ACCESS_KEY: ''
+      RAZORPAY_KEY_ID: ''
+      RAZORPAY_KEY_SECRET: ''
+      RAZORPAY_WEBHOOK_SECRET: ''
+      GOOGLE_ANALYTICS_ENABLED: 0
+      GOOGLE_ANALYTICS_MEASUREMENT_ID: ''
+      META_PIXEL_ID: ''
+      META_CAPI_PIXEL_ID: ''
+      META_CAPI_ACCESS_TOKEN: ''
+      COD_GUARD_WHATSAPP_PROVIDER: ''
+      COD_GUARD_WHATSAPP_PHONE_NUMBER_ID: ''
+      COD_GUARD_WHATSAPP_ACCESS_TOKEN: ''
+      COD_GUARD_WHATSAPP_TEMPLATE_NAME: ''
+      COD_GUARD_WHATSAPP_APP_SECRET: ''
+      COD_GUARD_WEBHOOK_VERIFY_TOKEN: ''
+      COD_GUARD_WEBHOOK_TOKEN: ''
+      MAIL_DRIVER: log
+      MAIL_FROM: browser-ci@example.test
+      ADMIN_NOTIFICATION_EMAIL: browser-ci@example.test
+      ABANDONED_CART_EMAIL_ENABLED: 0
+      INVENTORY_ALERT_ENABLED: 0
+      BACK_IN_STOCK_ALERT_ENABLED: 0
+      PRODUCT_FEED_ENABLED: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, fileinfo, json, mbstring, mysqli, openssl
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Browser CI workflow contract
+        run: php tests/browser_ci_workflow_contract_test.php
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npm run test:e2e:install -- --with-deps
+
+      - name: Initialize disposable E2E database
+        run: php database/setup.php
+
+      - name: Start loopback PHP server
+        shell: bash
+        run: |
+          mkdir -p tmp
+          php -S 127.0.0.1:8000 router.php > tmp/e2e-php-server.log 2>&1 &
+
+      - name: Wait for storefront readiness
+        run: >-
+          curl --fail --silent --show-error --retry-connrefused
+          --retry 30 --retry-delay 1 --max-time 5
+          http://127.0.0.1:8000/ > /dev/null
+
+      - name: Storefront browser smoke tests
+        run: npm run test:e2e:smoke
+
+      - name: Axe accessibility tests
+        run: npm run test:e2e:a11y
+
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+            tmp/e2e-php-server.log
+          if-no-files-found: ignore
+          retention-days: 7

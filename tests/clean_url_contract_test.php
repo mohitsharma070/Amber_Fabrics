@@ -41,6 +41,11 @@ foreach ([
         $failures[] = $message;
     }
 }
+$assert(
+    str_contains($htaccess, 'RewriteRule ^(about|catalog|cart|checkout|contact|fabric|faq|')
+        && str_contains($router, "'about', 'catalog', 'cart', 'checkout'"),
+    'The clean /catalog route must remain available through Apache and the local router.'
+);
 
 if (str_contains($htaccess, '[R=307,L,NE]')) {
     $failures[] = 'Admin POST requests must not be redirected.';

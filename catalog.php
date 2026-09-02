@@ -125,45 +125,54 @@ if ($dispatchFilter !== '') {
     $params[] = '%' . $dispatchFilter . '%';
 }
 
-$whereSql = 'WHERE ' . implode(' AND ', $where);
+$baseWhereSql = 'WHERE ' . implode(' AND ', $where);
+$listWhereSql = $baseWhereSql;
+$listTypes = $types;
+$listParams = $params;
 $keysetMode = false;
 $nextCursor = '';
-if ($cursor !== '' && in_array($sort, ['newest', 'oldest'], true)) {
-    $decoded = json_decode(base64_decode(strtr($cursor, '-_', '+/')), true);
-    $cursorCreatedAt = trim((string) ($decoded['created_at'] ?? ''));
-    $cursorFabricId = (int) ($decoded['fabric_id'] ?? 0);
-    $cursorVariantId = (int) ($decoded['variant_id'] ?? 0);
+$cursorContext = catalog_pagination_context($state);
+$paginationState = catalog_pagination_resolve($page, $sort, $cursor, $cursorContext);
+if (($paginationState['mode'] ?? '') === 'cursor') {
+    $cursorData = (array) ($paginationState['cursor_data'] ?? []);
+    $cursorCreatedAt = (string) ($cursorData['created_at'] ?? '');
+    $cursorFabricId = (int) ($cursorData['fabric_id'] ?? 0);
+    $cursorVariantId = (int) ($cursorData['variant_id'] ?? 0);
     if ($cursorCreatedAt !== '' && $cursorFabricId > 0) {
         if ($sort === 'newest') {
-            $whereSql .= " AND (
+            $listWhereSql .= " AND (
                 f.created_at < ? OR
                 (f.created_at = ? AND f.id < ?) OR
                 (f.created_at = ? AND f.id = ? AND COALESCE(v.id, 0) < ?)
             )";
         } else {
-            $whereSql .= " AND (
+            $listWhereSql .= " AND (
                 f.created_at > ? OR
                 (f.created_at = ? AND f.id > ?) OR
                 (f.created_at = ? AND f.id = ? AND COALESCE(v.id, 0) > ?)
             )";
         }
-        $types .= 'ssisii';
-        $params[] = $cursorCreatedAt;
-        $params[] = $cursorCreatedAt;
-        $params[] = $cursorFabricId;
-        $params[] = $cursorCreatedAt;
-        $params[] = $cursorFabricId;
-        $params[] = $cursorVariantId;
+        $listTypes .= 'ssisii';
+        $listParams[] = $cursorCreatedAt;
+        $listParams[] = $cursorCreatedAt;
+        $listParams[] = $cursorFabricId;
+        $listParams[] = $cursorCreatedAt;
+        $listParams[] = $cursorFabricId;
+        $listParams[] = $cursorVariantId;
         $keysetMode = true;
         $page = 1;
-        $state['page'] = 1;
         $offset = 0;
+        $state = catalog_cursor_page_state($state, (string) ($paginationState['cursor'] ?? ''));
     }
+}
+if (!$keysetMode) {
+    $cursor = '';
+    $state = catalog_numbered_page_state($state, $page);
 }
 
 $countSql = "SELECT COUNT(*) AS total
              {$fromSql}
-             {$whereSql}";
+             {$baseWhereSql}";
 
 // Avoid repeating expensive count on every page hit for the same filters.
 $countCacheKey = 'catalog_count_' . hash('sha256', json_encode([
@@ -195,22 +204,22 @@ if (is_int($countCached) && $countCached >= 0 && (time() - $countCachedAt) <= $c
 }
 $pages = max(1, (int) ceil($total / $perPage));
 
-if ($page > $pages) {
+if (!$keysetMode && $page > $pages) {
     $page = list_clamp_page($page, $pages);
-    $state['page'] = $page;
+    $state = catalog_numbered_page_state($state, $page);
     $offset = ($page - 1) * $perPage;
 }
 
 $listSql = "SELECT
-                " . product_card_select_columns(["{$effectivePriceExpr} AS effective_price"]) . "
+                " . product_card_select_columns(["{$effectivePriceExpr} AS effective_price"], false) . "
             {$fromSql}
-            {$whereSql}
+            {$listWhereSql}
             ORDER BY {$orderBy} LIMIT ?" . ($keysetMode ? '' : ' OFFSET ?');
 $stmt = $conn->prepare($listSql);
 
-if (!empty($params)) {
-    $typesWithLimit = $types . ($keysetMode ? 'i' : 'ii');
-    $paramsWithLimit = array_merge($params, $keysetMode ? [$perPage] : [$perPage, $offset]);
+if (!empty($listParams)) {
+    $typesWithLimit = $listTypes . ($keysetMode ? 'i' : 'ii');
+    $paramsWithLimit = array_merge($listParams, $keysetMode ? [$perPage] : [$perPage, $offset]);
     $stmt->bind_param($typesWithLimit, ...$paramsWithLimit);
 } else {
     if ($keysetMode) {
@@ -222,13 +231,37 @@ if (!empty($params)) {
 $stmt->execute();
 $result = $stmt->get_result();
 $rows = $result->fetch_all(MYSQLI_ASSOC);
-if (in_array($sort, ['newest', 'oldest'], true) && count($rows) === $perPage) {
+$fabricIds = [];
+foreach ($rows as $row) {
+    $fabricId = (int) ($row['id'] ?? 0);
+    if ($fabricId > 0) {
+        $fabricIds[$fabricId] = $fabricId;
+    }
+}
+$primaryMediaRows = [];
+if ($fabricIds !== []) {
+    $fabricIds = array_values($fabricIds);
+    $mediaPlaceholders = implode(',', array_fill(0, count($fabricIds), '?'));
+    $mediaStmt = $conn->prepare(
+        "SELECT fabric_id, filename
+         FROM fabric_media
+         WHERE media_type = 'image' AND fabric_id IN ({$mediaPlaceholders})
+         ORDER BY fabric_id, is_primary DESC, sort_order, id"
+    );
+    $mediaTypes = str_repeat('i', count($fabricIds));
+    $mediaStmt->bind_param($mediaTypes, ...$fabricIds);
+    $mediaStmt->execute();
+    $primaryMediaRows = $mediaStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+$rows = product_card_apply_primary_media($rows, $primaryMediaRows);
+if ($keysetMode && count($rows) === $perPage) {
     $last = $rows[count($rows) - 1];
-    $nextCursor = rtrim(strtr(base64_encode(json_encode([
-        'created_at' => (string) ($last['created_at'] ?? ''),
-        'fabric_id' => (int) ($last['id'] ?? 0),
-        'variant_id' => (int) ($last['variant_id'] ?? 0),
-    ], JSON_UNESCAPED_UNICODE)), '+/', '-_'), '=');
+    $nextCursor = catalog_cursor_encode(
+        (string) ($last['created_at'] ?? ''),
+        (int) ($last['id'] ?? 0),
+        (int) ($last['variant_id'] ?? 0),
+        $cursorContext
+    );
 }
 
 $explainRows = [];
@@ -236,9 +269,9 @@ if ($debugExplain) {
     try {
         $explainSql = "EXPLAIN " . $listSql;
         $expStmt = $conn->prepare($explainSql);
-        if (!empty($params)) {
-            $expTypes = $types . ($keysetMode ? 'i' : 'ii');
-            $expParams = array_merge($params, $keysetMode ? [$perPage] : [$perPage, $offset]);
+        if (!empty($listParams)) {
+            $expTypes = $listTypes . ($keysetMode ? 'i' : 'ii');
+            $expParams = array_merge($listParams, $keysetMode ? [$perPage] : [$perPage, $offset]);
             $expStmt->bind_param($expTypes, ...$expParams);
         } else {
             if ($keysetMode) {
@@ -317,12 +350,10 @@ if ($dispatchFilter !== '') {
         'remove_state' => array_merge($state, ['dispatch' => '', 'page' => 1]),
     ];
 }
-
-function catalog_query(array $params): string {
-    unset($params['debug_explain']);
-    $query = http_build_query($params);
-    return $query !== '' ? '/catalog?' . $query : '/catalog';
+foreach ($activeFilters as &$activeFilter) {
+    $activeFilter['remove_state'] = catalog_reset_pagination_state((array) ($activeFilter['remove_state'] ?? []));
 }
+unset($activeFilter);
 
 $catalogCategoryOptions = [['value' => '', 'label' => 'All Categories']];
 foreach ($categories as $cat) {
@@ -388,7 +419,6 @@ $catalogFilterAdvancedOpen = $materialFilter !== '' || $colorFilter !== '' || $s
                 <input type="hidden" name="dispatch" value="<?php echo e($dispatchFilter); ?>">
                 <input type="hidden" name="sort" value="<?php echo e($sort); ?>">
                 <input type="hidden" name="per_page" value="<?php echo $perPage; ?>">
-                <input type="hidden" name="page" value="1">
                 <input class="form-control" type="search" name="q" value="<?php echo e($search); ?>" placeholder="Search products..." aria-label="Search products">
                 <button class="btn btn-primary" type="submit">Search</button>
             </form>
@@ -493,11 +523,13 @@ $catalogFilterAdvancedOpen = $materialFilter !== '' || $colorFilter !== '' || $s
 </section>
 <?php endif; ?>
 
-<?php echo render_pagination($page, $pages, $state, 'page', $total, $perPage); ?>
-<?php if ($nextCursor !== '' && ($page >= 3 || $keysetMode)): ?>
+<?php if (!$keysetMode): ?>
+    <?php echo render_pagination($page, $pages, $state, 'page', $total, $perPage); ?>
+<?php endif; ?>
+<?php if ($keysetMode && $nextCursor !== ''): ?>
 <section class="section-block pt-0">
     <div class="container text-end">
-        <a class="btn btn-outline-primary" href="<?php echo e(catalog_query(array_merge($state, ['cursor' => $nextCursor, 'page' => 1]))); ?>">Next Page (Fast)</a>
+        <a class="btn btn-outline-primary" href="<?php echo e(catalog_query(catalog_cursor_page_state($state, $nextCursor))); ?>">Next Page</a>
     </div>
 </section>
 <?php endif; ?>
