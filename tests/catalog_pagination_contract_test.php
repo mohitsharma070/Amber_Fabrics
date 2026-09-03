@@ -169,6 +169,45 @@ $assert(
     'Catalog filter and search submissions must reset pagination by omitting both page and cursor.'
 );
 
+$style = (string) file_get_contents($root . '/css/style.css');
+$disabledPaginationColors = [];
+if (preg_match('/\.pagination\s+\.page-item\.disabled\s+\.page-link\s*\{(?<rules>[^}]*)\}/s', $style, $disabledPaginationRule) === 1) {
+    preg_match('/\bcolor\s*:\s*(?<color>#[0-9a-f]{6})\s*;/i', $disabledPaginationRule['rules'], $foregroundMatch);
+    preg_match('/\bbackground\s*:\s*(?<color>#[0-9a-f]{6})\s*;/i', $disabledPaginationRule['rules'], $backgroundMatch);
+    $disabledPaginationColors = [
+        'foreground' => strtolower((string) ($foregroundMatch['color'] ?? '')),
+        'background' => strtolower((string) ($backgroundMatch['color'] ?? '')),
+    ];
+}
+
+$relativeLuminance = static function (string $hex): float {
+    $channels = [
+        hexdec(substr($hex, 1, 2)) / 255,
+        hexdec(substr($hex, 3, 2)) / 255,
+        hexdec(substr($hex, 5, 2)) / 255,
+    ];
+    $linear = array_map(
+        static fn (float $channel): float => $channel <= 0.04045
+            ? $channel / 12.92
+            : (($channel + 0.055) / 1.055) ** 2.4,
+        $channels
+    );
+    return 0.2126 * $linear[0] + 0.7152 * $linear[1] + 0.0722 * $linear[2];
+};
+
+$contrastRatio = 0.0;
+if (preg_match('/^#[0-9a-f]{6}$/', $disabledPaginationColors['foreground'] ?? '') === 1
+    && preg_match('/^#[0-9a-f]{6}$/', $disabledPaginationColors['background'] ?? '') === 1) {
+    $foregroundLuminance = $relativeLuminance($disabledPaginationColors['foreground']);
+    $backgroundLuminance = $relativeLuminance($disabledPaginationColors['background']);
+    $contrastRatio = (max($foregroundLuminance, $backgroundLuminance) + 0.05)
+        / (min($foregroundLuminance, $backgroundLuminance) + 0.05);
+}
+$assert(
+    $contrastRatio >= 4.5,
+    'Disabled pagination text must retain at least 4.5:1 contrast against its background.'
+);
+
 if ($failures !== []) {
     foreach ($failures as $failure) {
         fwrite(STDERR, 'FAIL: ' . $failure . PHP_EOL);
