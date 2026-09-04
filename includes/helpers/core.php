@@ -309,7 +309,7 @@ function normalize_meter_quantity($value, float $min = 1.0): float
 }
 
 /**
- * Whether a positive meter quantity step fits the persisted four-decimal policy.
+ * Whether a positive meter quantity step fits the persisted two-decimal policy.
  */
 function meter_qty_step_is_representable($value): bool
 {
@@ -317,7 +317,7 @@ function meter_qty_step_is_representable($value): bool
         return false;
     }
     $step = (float) $value;
-    return $step > 0 && abs($step - round($step, 4)) < 0.00000001;
+    return $step > 0 && abs($step - round($step, 2)) < 0.00000001;
 }
 
 /**
@@ -365,9 +365,9 @@ function meter_qty_respects_step(float $qty, float $minQty, float $step): bool
     if (!meter_qty_step_is_representable($step)) {
         return false;
     }
-    $qtyUnits = (int) round($qty * 10000);
-    $minimumUnits = (int) round($minQty * 10000);
-    $stepUnits = (int) round($step * 10000);
+    $qtyUnits = (int) round($qty * 100);
+    $minimumUnits = (int) round($minQty * 100);
+    $stepUnits = (int) round($step * 100);
     if ($qtyUnits < $minimumUnits || $stepUnits <= 0) {
         return false;
     }

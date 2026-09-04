@@ -27,19 +27,19 @@ final class CartService
         }
 
         $stockCents = max(0, (int) floor(($availableStock * 100) + 0.0000001));
-        $stockUnits = $stockCents * 100;
-        $minimumUnits = (int) round(normalize_meter_quantity($minimumQuantity, 1.0) * 10000);
+        $stockUnits = $stockCents;
+        $minimumUnits = (int) round(normalize_meter_quantity($minimumQuantity, 1.0) * 100);
         if ($stockUnits < $minimumUnits) {
             return 0.0;
         }
 
-        $quantityIncrement = 100;
+        $quantityIncrement = 1;
         if ($meterLength !== null) {
             $normalizedMeterLength = round($meterLength, 2);
             if ($normalizedMeterLength <= 0) {
                 return 0.0;
             }
-            $quantityIncrement = (int) round($normalizedMeterLength * 10000);
+            $quantityIncrement = (int) round($normalizedMeterLength * 100);
         }
 
         $maximumMultiplier = intdiv($stockUnits, $quantityIncrement);
@@ -48,10 +48,10 @@ final class CartService
             return 0.0;
         }
 
-        $stepUnits = (int) round($quantityStep * 10000);
+        $stepUnits = (int) round($quantityStep * 100);
         if ($stepUnits <= 0) {
             $candidateUnits = $maximumMultiplier * $quantityIncrement;
-            return $candidateUnits >= $minimumUnits ? round($candidateUnits / 10000, 2) : 0.0;
+            return $candidateUnits >= $minimumUnits ? round($candidateUnits / 100, 2) : 0.0;
         }
 
         // Solve increment * bundle_count = minimum (mod step) so the result
@@ -83,7 +83,7 @@ final class CartService
             return 0.0;
         }
 
-        return round(($sellableMultiplier * $quantityIncrement) / 10000, 2);
+        return round(($sellableMultiplier * $quantityIncrement) / 100, 2);
     }
 
     /**

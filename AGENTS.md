@@ -35,16 +35,27 @@ Read `docs/repo-architecture.md` before changing authentication, checkout, payme
 
 When endpoint behavior changes, update `openapi.yaml`, `docs/repo-architecture.md`, and the relevant contract test.
 
-## Verification
+## Command Execution Policy (Verification & Safety)
 
-Safe local commands include:
-
+**AUTO ALLOW** (Agents may run these locally without asking):
 ```bash
 composer test
 php tests/<test-file>.php
 php -l <changed-php-file>
+composer validate
+git status
+git diff
+npm run test:e2e:preflight
 npx --yes @apidevtools/swagger-cli validate openapi.yaml
 ```
+
+**KEEP ASKING** (Agents MUST wait for explicit user approval):
+- `composer test:integration`
+- `php database/setup.php` or `php database/migrate.php`
+- `npm run test:e2e:seed`, `test:e2e:smoke`, `test:e2e:a11y`
+- `git commit` and `git push`
+- Any SQL/migrations
+- External mutations (payment commands, courier commands)
 
 Prefer source-contract tests when database fixtures are unavailable. Tests must describe current behavior and must not require production credentials, network calls, or writes to production services.
 
