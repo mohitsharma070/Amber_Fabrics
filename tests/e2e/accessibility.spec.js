@@ -1,11 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { AxeBuilder } = require('@axe-core/playwright');
 
-const bootstrapCssPath = require.resolve('bootstrap/dist/css/bootstrap.min.css');
-const bootstrapBundlePath = require.resolve('bootstrap/dist/js/bootstrap.bundle.min.js');
-const bootstrapCssUrl = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css';
-const bootstrapBundleUrl = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js';
-
 const forbiddenProviderHosts = [
   /(^|\.)razorpay\.com$/i,
   /(^|\.)bigship\.in$/i,
@@ -52,14 +47,6 @@ test.beforeEach(async ({ page }) => {
     }
     await route.continue();
   });
-  await page.route(bootstrapCssUrl, (route) => route.fulfill({
-    path: bootstrapCssPath,
-    contentType: 'text/css',
-  }));
-  await page.route(bootstrapBundleUrl, (route) => route.fulfill({
-    path: bootstrapBundlePath,
-    contentType: 'application/javascript',
-  }));
   page.on('pageerror', (error) => {
     pageErrors.get(page).push(error.message);
   });
@@ -138,6 +125,16 @@ test('@axe @desktop enforces the serious-and-critical axe baseline across requir
 
   await page.goto('/customer/login');
   await scanForBaseline(page, 'customer login');
+
+  for (const [path, state] of [
+    ['/contact', 'contact form'],
+    ['/customer/register', 'customer registration'],
+    ['/customer/forgot-password', 'forgot password'],
+    ['/guest/order-access', 'guest order access'],
+  ]) {
+    await page.goto(path);
+    await scanForBaseline(page, state);
+  }
 });
 
 test('@axe @mobile enforces the serious-and-critical axe baseline for mobile filter and navigation drawers', async ({ page }) => {

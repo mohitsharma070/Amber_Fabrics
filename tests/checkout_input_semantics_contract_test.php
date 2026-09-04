@@ -37,6 +37,27 @@ $assert($hasAttributes('checkout_state', ['autocomplete' => 'address-level1']), 
 $assert($hasAttributes('checkout_pincode', ['autocomplete' => 'postal-code', 'inputmode' => 'numeric']), 'Pincode must provide postal-code autocomplete and numeric inputmode hints.');
 $assert($hasAttributes('checkout_country', ['autocomplete' => 'country-name']), 'Country must use country-name autocomplete.');
 $assert(!str_contains($controlTag('checkout_order_notes'), 'autocomplete='), 'Order notes must not declare misleading autocomplete semantics.');
+$couponFormStart = strpos($checkoutSource, '<form method="POST" action="/apply-coupon.php"');
+$couponFormEnd = strpos($checkoutSource, '</form>', $couponFormStart === false ? 0 : $couponFormStart);
+$couponForm = ($couponFormStart !== false && $couponFormEnd !== false)
+    ? substr($checkoutSource, $couponFormStart, $couponFormEnd - $couponFormStart)
+    : '';
+$assert(
+    substr_count($checkoutSource, 'id="checkout_coupon_code"') === 1
+        && str_contains($controlTag('checkout_coupon_code'), 'name="coupon_code"')
+        && str_contains($couponForm, 'id="checkout_coupon_code"'),
+    'The checkout coupon input must retain name="coupon_code", have one stable ID, and remain inside the existing apply-coupon form.'
+);
+$assert(
+    (bool) preg_match('/<label\b[^>]*\bfor="checkout_coupon_code"[^>]*>\s*Coupon Code\s*<\/label>/s', $checkoutSource),
+    'The visible Coupon Code label must be natively associated with checkout_coupon_code.'
+);
+$assert(
+    str_contains($couponForm, 'name="redirect_to"')
+        && str_contains($couponForm, 'name="shipping_address_id"')
+        && str_contains($couponForm, 'data-preserve-checkout-state'),
+    'The coupon form must retain redirect and checkout-state preservation fields.'
+);
 $assert((bool) preg_match('/<form\\b(?=[^>]*\\bid="checkout_form")(?=[^>]*\\bnovalidate\\b)[^>]*>/s', $checkoutSource), 'Checkout form must retain novalidate.');
 
 if ($failures !== []) {

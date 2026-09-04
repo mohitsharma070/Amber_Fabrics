@@ -131,6 +131,10 @@ function ensure_tables(mysqli $conn): void
 
     $ensureColumns($conn, 'fabrics', $fabricColumnDefinitions);
 
+    if (!$indexExists($conn, 'fabrics', 'idx_fabrics_catalog_created')) {
+        $conn->query('CREATE INDEX idx_fabrics_catalog_created ON fabrics(status, category, created_at, id)');
+    }
+
     $conn->query(
         "UPDATE fabrics
          SET slug = CONCAT(
@@ -2018,6 +2022,96 @@ function ensure_tables(mysqli $conn): void
              FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE"
         );
     }
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS customer_login_attempts (
+            attempt_key   CHAR(64)  PRIMARY KEY,
+            attempts      INT       NOT NULL DEFAULT 0,
+            blocked_until DATETIME  DEFAULT NULL,
+            updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS ecommerce_event_logs (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            event_type VARCHAR(64) NOT NULL,
+            customer_id INT DEFAULT NULL,
+            order_id INT DEFAULT NULL,
+            product_id INT DEFAULT NULL,
+            unit_type ENUM('meter','piece','set') DEFAULT NULL,
+            quantity DECIMAL(10,2) DEFAULT NULL,
+            amount DECIMAL(12,2) DEFAULT NULL,
+            payload_json JSON DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_event_type_created (event_type, created_at),
+            INDEX idx_event_customer (customer_id),
+            INDEX idx_event_order (order_id),
+            INDEX idx_event_product (product_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS admin_activity_logs (
+            id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+            admin_id    INT NOT NULL,
+            action      VARCHAR(120) NOT NULL,
+            target_type VARCHAR(80) DEFAULT NULL,
+            target_id   INT DEFAULT NULL,
+            route       VARCHAR(255) DEFAULT NULL,
+            request_ip  VARCHAR(45) DEFAULT NULL,
+            user_agent  VARCHAR(500) DEFAULT NULL,
+            status      ENUM('ok','failed','denied') NOT NULL DEFAULT 'ok',
+            details     TEXT DEFAULT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_admin_activity_admin_created (admin_id, created_at),
+            INDEX idx_admin_activity_action_created (action, created_at),
+            INDEX idx_admin_activity_status_created (status, created_at),
+            CONSTRAINT fk_admin_activity_admin FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS support_tickets (
+            id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+            ticket_number    VARCHAR(32) NOT NULL,
+            customer_id      INT DEFAULT NULL,
+            requester_name   VARCHAR(255) DEFAULT NULL,
+            requester_email  VARCHAR(255) DEFAULT NULL,
+            order_id         INT DEFAULT NULL,
+            subject          VARCHAR(160) NOT NULL,
+            category         ENUM('order','shipping','payment','product','account','other') NOT NULL DEFAULT 'other',
+            priority         ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+            status           ENUM('open','waiting_customer','waiting_admin','resolved','closed') NOT NULL DEFAULT 'open',
+            last_message_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            closed_at        DATETIME DEFAULT NULL,
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_support_tickets_number (ticket_number),
+            INDEX idx_support_tickets_customer_status (customer_id, status, last_message_at),
+            INDEX idx_support_tickets_order (order_id),
+            INDEX idx_support_tickets_admin_queue (status, priority, last_message_at),
+            INDEX idx_support_tickets_status_updated (status, updated_at),
+            CONSTRAINT fk_support_tickets_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+            CONSTRAINT fk_support_tickets_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS support_ticket_messages (
+            id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+            ticket_id       BIGINT NOT NULL,
+            sender_type     ENUM('customer','admin','system') NOT NULL,
+            sender_id       INT DEFAULT NULL,
+            sender_name     VARCHAR(255) DEFAULT NULL,
+            message         TEXT NOT NULL,
+            is_internal     TINYINT(1) NOT NULL DEFAULT 0,
+            attachment_path VARCHAR(500) DEFAULT NULL,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_support_ticket_messages_ticket_created (ticket_id, created_at),
+            CONSTRAINT fk_support_ticket_messages_ticket FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
 
     $result = $conn->query("SELECT COUNT(*) AS total FROM admins");
     $count = (int) $result->fetch_assoc()['total'];

@@ -7,7 +7,34 @@
  */
 
 $requestPath = (string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?? '/');
-$requestPath = rawurldecode($requestPath);
+
+// Decode repeatedly until stable to defeat multiple-encoding bypasses
+$prevPath = '';
+while ($requestPath !== $prevPath) {
+    $prevPath = $requestPath;
+    $requestPath = rawurldecode($requestPath);
+}
+
+// Convert backslashes to forward slashes for unified traversal checks
+$requestPath = str_replace('\\', '/', $requestPath);
+
+// Reject NUL bytes
+if (strpos($requestPath, "\0") !== false) {
+    http_response_code(400);
+    exit('Bad Request');
+}
+
+// Reject any directory traversal segments
+$segments = explode('/', $requestPath);
+foreach ($segments as $seg) {
+    // A segment of '.' or '..' indicates traversal
+    if ($seg === '..' || $seg === '.') {
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=UTF-8');
+        exit('Forbidden');
+    }
+}
+
 $route = trim($requestPath, '/');
 
 $publicRoutes = [
@@ -23,11 +50,14 @@ $customerRoutes = [
 ];
 $guestRoutes = ['order-access', 'order-auth', 'order', 'account-activate', 'support'];
 
-// Mirror the private-directory protection from .htaccess. This is especially
-// important for tmp/local-mail.log because local messages can contain OTPs.
+// Mirror the private-directory protection from .htaccess.
 $firstSegment = strtolower((string) (explode('/', $route, 2)[0] ?? ''));
-$blockedSegments = ['.git', 'config', 'database', 'includes', 'plugins', 'scripts', 'tmp', 'tmp_sessions', 'vendor'];
-if (in_array($firstSegment, $blockedSegments, true)) {
+$blockedSegments = ['.git', 'config', 'database', 'docs', 'includes', 'plugins', 'scripts', 'tests', 'tmp', 'tmp_sessions', 'vendor'];
+$basename = basename($requestPath);
+$normalizedBasename = rtrim($basename, ". ");
+$isFileBlocked = preg_match('/^(\.env(\..*)?|secure-config(\..*)?\.php|app-config(\..*)?\.php|composer\.(json|lock|phar)|phpunit\.xml|\.git.*|\.htaccess.*|README(\.md)?|AGENTS\.md|CLAUDE\.md|openapi\.yaml|CHANGELOG\.md|GO_LIVE_CHECKLIST\.md|SECURITY\.md|query)$/i', $normalizedBasename);
+
+if ($isFileBlocked || in_array($firstSegment, $blockedSegments, true)) {
     http_response_code(403);
     header('Content-Type: text/plain; charset=UTF-8');
     exit('Forbidden');
@@ -63,6 +93,19 @@ if ($canonicalPath !== '') {
 // Let the built-in server handle real PHP handlers and static assets.
 $requestedFile = __DIR__ . str_replace('/', DIRECTORY_SEPARATOR, $requestPath);
 if ($requestPath !== '/' && is_file($requestedFile)) {
+    $realRequestedFile = realpath($requestedFile);
+    $realBase = realpath(__DIR__);
+    $basePrefix = $realBase === false ? '' : rtrim($realBase, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    $isContained = $realRequestedFile !== false && $basePrefix !== '';
+    if ($isContained) {
+        $isContained = DIRECTORY_SEPARATOR === '\\'
+            ? strncasecmp($realRequestedFile, $basePrefix, strlen($basePrefix)) === 0
+            : strncmp($realRequestedFile, $basePrefix, strlen($basePrefix)) === 0;
+    }
+    if (!$isContained) {
+        http_response_code(403);
+        exit('Forbidden');
+    }
     return false;
 }
 

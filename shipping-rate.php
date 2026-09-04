@@ -13,6 +13,9 @@ if (!public_form_rate_limit_allow('shipping_quote', 30, 300)) {
 }
 
 $pincode = trim((string) ($_POST['pincode'] ?? ''));
+if (!preg_match('/^[1-9][0-9]{5}$/', $pincode)) {
+    api_json(['ok' => false, 'message' => 'Please enter a valid 6-digit Indian pincode.'], 422);
+}
 $paymentMethod = strtolower(trim((string) ($_POST['payment_method'] ?? 'cod')));
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) {
     $paymentMethod = 'cod';
@@ -46,22 +49,31 @@ $discountAmount = $couponInfo['valid'] ? min((float) $couponInfo['discount'], $s
 $invoiceValue = max(0.0, round($subtotal - $discountAmount, 2));
 
 $manual = CartService::checkout_shipping_breakdown($subtotal, 'India', $paymentMethod, $paymentMethod === 'cod');
-$quote = apply_filters('shipping.quote', [
+$quote = [
     'base_shipping' => (float) $manual['base_shipping'],
     'cod_fee' => (float) $manual['cod_fee'],
     'shipping_total' => (float) $manual['shipping_total'],
     'source' => 'manual',
     'courier_name' => '',
     'courier_id' => 0,
-], [
-    'conn' => $conn,
-    'subtotal' => $subtotal,
-    'invoice_value' => $invoiceValue,
-    'country' => 'India',
-    'pincode' => $pincode,
-    'payment_method' => $paymentMethod,
-    'items' => $quoteItems,
-]);
+];
+try {
+    $quote = apply_filters('shipping.quote', $quote, [
+        'conn' => $conn,
+        'subtotal' => $subtotal,
+        'invoice_value' => $invoiceValue,
+        'country' => 'India',
+        'pincode' => $pincode,
+        'payment_method' => $paymentMethod,
+        'items' => $quoteItems,
+    ], true);
+} catch (Throwable $e) {
+    app_log('error', 'shipping_quote_failed', [
+        'exception_type' => get_class($e),
+        'payment_method' => $paymentMethod,
+    ]);
+    $quote['debug_reason'] = 'bigship_rate_api_failed';
+}
 
 $baseShipping = max(0.0, round((float) ($quote['base_shipping'] ?? $manual['base_shipping']), 2));
 $codFee = max(0.0, round((float) ($quote['cod_fee'] ?? $manual['cod_fee']), 2));

@@ -280,6 +280,7 @@ include __DIR__ . '/../includes/header.php';
                                     <div class="small text-muted"><?php echo e((string) ($item['fabric_name_snapshot'] ?? 'Item')); ?> (max <?php echo e(format_quantity_by_unit($riQty, $riUnitType)); ?><?php echo CommercePresenter::quantityUnitSuffix($riUnitType); ?>)</div>
                                     <input type="number"
                                            class="form-control form-control-sm"
+                                           aria-label="Return quantity for <?php echo e((string) ($item['fabric_name_snapshot'] ?? 'item')); ?>"
                                            name="return_qty[<?php echo $riOrderItemId; ?>]"
                                            min="0"
                                            max="<?php echo e((string) $riQty); ?>"
@@ -292,7 +293,7 @@ include __DIR__ . '/../includes/header.php';
                         </div>
                         <div class="small text-muted mb-2">Step 2: Tell us why</div>
                         <div class="mb-2">
-                            <select name="reason" class="form-select form-select-sm" required>
+                            <select name="reason" class="form-select form-select-sm" aria-label="Return reason" required>
                                 <option value="">Select return reason</option>
                                 <option value="Damaged Item">Damaged Item</option>
                                 <option value="Wrong Item Delivered">Wrong Item Delivered</option>
@@ -302,16 +303,16 @@ include __DIR__ . '/../includes/header.php';
                             </select>
                         </div>
                         <div class="mb-2">
-                            <textarea name="customer_note" class="form-control form-control-sm" rows="2" placeholder="Optional note"></textarea>
+                            <textarea name="customer_note" class="form-control form-control-sm" aria-label="Optional return note" rows="2" placeholder="Optional note"></textarea>
                         </div>
                         <div class="small text-muted mb-2">Step 3: Upload issue photos</div>
                         <div class="mb-2">
-                            <label class="form-label small mb-1">Image 1 (required)</label>
-                            <input type="file" name="image_1" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
+                            <label class="form-label small mb-1" for="return_image_1">Image 1 (required)</label>
+                            <input id="return_image_1" type="file" name="image_1" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
                         </div>
                         <div class="mb-2">
-                            <label class="form-label small mb-1">Image 2 (required)</label>
-                            <input type="file" name="image_2" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
+                            <label class="form-label small mb-1" for="return_image_2">Image 2 (required)</label>
+                            <input id="return_image_2" type="file" name="image_2" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp" required>
                         </div>
                         <div class="small text-muted mb-2">Step 4: Review and submit. Refund returns are allowed within <?php echo return_request_window_days(); ?> calendar days of delivery.</div>
                         <button type="submit" class="btn btn-outline-secondary w-100">Submit Return Request</button>

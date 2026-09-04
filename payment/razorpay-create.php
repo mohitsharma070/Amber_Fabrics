@@ -275,8 +275,13 @@ include __DIR__ . '/../includes/header.php';
                     <p class="mb-1 text-muted">Order</p>
                     <h5 class="mb-3"><?php echo e((string) $order['order_number']); ?></h5>
                     <p class="fs-4 fw-bold mb-4"><?php echo e(money((float) $order['total_amount'])); ?></p>
-                    <button id="rzpPayBtn" class="btn btn-primary btn-lg w-100">Pay with Razorpay</button>
+                    <button id="rzpPayBtn" class="btn btn-primary btn-lg w-100" disabled>Pay with Razorpay</button>
                     <p id="rzpPayHint" class="text-muted small mt-3">Your order will be marked paid only after secure verification.</p>
+                    <div id="rzpPayStatus" class="alert alert-danger d-none mt-3" role="alert" aria-live="assertive"></div>
+                    <div id="rzpPayRecovery" class="d-none mt-3">
+                        <button type="button" id="rzpRetrySdk" class="btn btn-outline-primary btn-sm">Retry secure checkout</button>
+                        <a class="btn btn-link btn-sm" href="<?php echo e($ordersFallback); ?>">Return to orders</a>
+                    </div>
                     <div id="rzpPayLoading" class="d-none mt-3">
                         <div class="spinner-border spinner-border-sm text-primary me-2" role="status" aria-hidden="true"></div>
                         <span class="small text-muted">Verifying payment, please wait...</span>
@@ -287,9 +292,10 @@ include __DIR__ . '/../includes/header.php';
     </div>
 </section>
 
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script nonce="<?php echo $cspNonce; ?>">
 var isSubmitting = false;
+var razorpaySdkState = 'idle';
+var razorpayAutoOpened = false;
 
 function setPayLoadingState(on) {
     var btn = document.getElementById('rzpPayBtn');
@@ -298,7 +304,7 @@ function setPayLoadingState(on) {
     if (!btn || !hint || !loading) {
         return;
     }
-    btn.disabled = !!on;
+    btn.disabled = !!on || razorpaySdkState !== 'ready';
     btn.textContent = on ? 'Processing Payment...' : 'Pay with Razorpay';
     hint.classList.toggle('d-none', !!on);
     loading.classList.toggle('d-none', !on);
@@ -379,11 +385,72 @@ var options = {
     }
 };
 
+function setRazorpaySdkFailure(message) {
+    razorpaySdkState = 'failed';
+    var status = document.getElementById('rzpPayStatus');
+    var recovery = document.getElementById('rzpPayRecovery');
+    if (status) {
+        status.textContent = message || 'Secure checkout could not be loaded. Please retry or return to your orders.';
+        status.classList.remove('d-none');
+    }
+    if (recovery) recovery.classList.remove('d-none');
+    setPayLoadingState(false);
+}
+
+function setRazorpaySdkReady() {
+    razorpaySdkState = 'ready';
+    var status = document.getElementById('rzpPayStatus');
+    var recovery = document.getElementById('rzpPayRecovery');
+    if (status) status.classList.add('d-none');
+    if (recovery) recovery.classList.add('d-none');
+    setPayLoadingState(false);
+}
+
+function loadRazorpaySdk(forceReload) {
+    if (typeof window.Razorpay === 'function' && !forceReload) {
+        setRazorpaySdkReady();
+        return Promise.resolve();
+    }
+    if (razorpaySdkState === 'loading' && !forceReload) return Promise.resolve();
+    var existing = document.getElementById('razorpayCheckoutSdk');
+    if (existing) existing.remove();
+    razorpaySdkState = 'loading';
+    setPayLoadingState(false);
+    return new Promise(function (resolve, reject) {
+        var script = document.createElement('script');
+        script.id = 'razorpayCheckoutSdk';
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        script.nonce = <?php echo json_encode($cspNonce); ?>;
+        script.onload = function () {
+            if (typeof window.Razorpay !== 'function') {
+                setRazorpaySdkFailure('Secure checkout loaded incorrectly. Please retry.');
+                reject(new Error('razorpay_constructor_missing'));
+                return;
+            }
+            setRazorpaySdkReady();
+            resolve();
+        };
+        script.onerror = function () {
+            setRazorpaySdkFailure('Secure checkout could not be loaded. Check your connection and retry.');
+            reject(new Error('razorpay_sdk_load_failed'));
+        };
+        document.head.appendChild(script);
+    });
+}
+
 function openRazorpayCheckout() {
-    if (isSubmitting) {
+    if (isSubmitting || razorpaySdkState !== 'ready' || typeof window.Razorpay !== 'function') {
+        if (razorpaySdkState === 'failed') setRazorpaySdkFailure();
         return;
     }
-    var rzp = new Razorpay(options);
+    var rzp;
+    try {
+        rzp = new window.Razorpay(options);
+    } catch (error) {
+        setRazorpaySdkFailure('Secure checkout could not be started. Please retry.');
+        return;
+    }
     rzp.on('payment.failed', function (response) {
         if (isSubmitting) {
             return;
@@ -397,16 +464,32 @@ function openRazorpayCheckout() {
             error_description: err.description || ''
         });
     });
-    rzp.open();
+    try {
+        rzp.open();
+    } catch (error) {
+        setRazorpaySdkFailure('Secure checkout could not be opened. Please retry.');
+    }
 }
 
 document.getElementById('rzpPayBtn').addEventListener('click', function () {
     openRazorpayCheckout();
 });
+document.getElementById('rzpRetrySdk').addEventListener('click', function () {
+    loadRazorpaySdk(true).catch(function () {});
+});
 
-window.addEventListener('load', function () {
-    // Auto-open for smoother flow after redirect from checkout.
+window.addEventListener('pageshow', function () {
+    isSubmitting = false;
+    setPayLoadingState(false);
+    if (typeof window.Razorpay === 'function') setRazorpaySdkReady();
+});
+
+loadRazorpaySdk(false).then(function () {
+    if (razorpayAutoOpened) return;
+    razorpayAutoOpened = true;
     setTimeout(openRazorpayCheckout, 250);
+}).catch(function () {
+    // The accessible retry state is already visible.
 });
 </script>
 

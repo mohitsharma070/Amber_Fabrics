@@ -229,10 +229,35 @@ final class PaymentService
         }
         $timeoutSec = max(5, (int) _cfg('RAZORPAY_HTTP_TIMEOUT_SEC', '15'));
         $connectTimeoutSec = max(2, (int) _cfg('RAZORPAY_HTTP_CONNECT_TIMEOUT_SEC', '5'));
-        $url = 'https://api.razorpay.com' . $path;
+        $baseUrl = 'https://api.razorpay.com';
+        $allowedHosts = ['api.razorpay.com'];
+        $requireHttps = true;
+        $testBaseUrl = rtrim(trim((string) _cfg('RAZORPAY_TEST_BASE_URL', '')), '/');
+        if ($testBaseUrl !== '') {
+            $parts = parse_url($testBaseUrl);
+            $testHost = strtolower((string) ($parts['host'] ?? ''));
+            $testAllowed = ($GLOBALS['_app_mode'] ?? '') === 'local'
+                && strtolower(trim((string) _cfg('APP_ENV', ''))) === 'test'
+                && (string) getenv('E2E_FIXTURE_CONFIRM') === '1'
+                && is_array($parts)
+                && strtolower((string) ($parts['scheme'] ?? '')) === 'http'
+                && in_array($testHost, ['127.0.0.1', 'localhost', '::1'], true)
+                && empty($parts['user'])
+                && empty($parts['pass'])
+                && empty($parts['query'])
+                && empty($parts['fragment']);
+            if (!$testAllowed) {
+                return ['ok' => false, 'error' => 'razorpay_test_base_url_invalid', 'status' => 0, 'duration_ms' => 0];
+            }
+            $baseUrl = $testBaseUrl;
+            $allowedHosts = [$testHost];
+            $requireHttps = false;
+        }
+        $url = $baseUrl . $path;
         $skipTlsVerify = strtolower(trim((string) _cfg('RAZORPAY_HTTP_SKIP_TLS_VERIFY', '0')));
         $response = JsonHttpClient::request($method, $url, [], $payload, [
-            'allowed_hosts' => ['api.razorpay.com'],
+            'allowed_hosts' => $allowedHosts,
+            'require_https' => $requireHttps,
             'timeout_sec' => $timeoutSec,
             'connect_timeout_sec' => $connectTimeoutSec,
             'basic_auth' => $keyId . ':' . $keySecret,

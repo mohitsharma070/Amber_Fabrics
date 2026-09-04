@@ -17,9 +17,137 @@
         var mainVideo = document.getElementById('product-main-video');
         var mainWebpSource = document.getElementById('product-main-webp-source');
         var thumbsWrap = document.getElementById('product-media-thumbs');
+        var mediaStatus = document.getElementById('product-media-status');
         if (!mainImage || !thumbsWrap) return null;
+        var lastImageDescriptor = null;
+        var recoveringVideo = false;
+        var intentionalVideoReset = false;
+
+        function positiveDimension(value) {
+            var dimension = parseInt(String(value || '0'), 10);
+            return Number.isFinite(dimension) && dimension > 0 ? dimension : 0;
+        }
+
+        function normalizeDescriptor(value) {
+            if (!value || typeof value !== 'object') return null;
+            var type = value.type === 'video' ? 'video' : 'image';
+            var src = String(value.src || '').trim();
+            if (src === '') return null;
+            return {
+                type: type,
+                src: src,
+                thumb_src: String(value.thumb_src || value.src || '').trim(),
+                webp_srcset: String(value.webp_srcset || '').trim(),
+                width: positiveDimension(value.width),
+                height: positiveDimension(value.height),
+                thumb_width: positiveDimension(value.thumb_width),
+                thumb_height: positiveDimension(value.thumb_height),
+                alt: String(value.alt || '').trim()
+            };
+        }
+
+        function descriptorFromThumb(thumb) {
+            return normalizeDescriptor({
+                type: thumb.getAttribute('data-type'),
+                src: thumb.getAttribute('data-src'),
+                webp_srcset: thumb.getAttribute('data-webp-srcset'),
+                width: thumb.getAttribute('data-width'),
+                height: thumb.getAttribute('data-height'),
+                alt: thumb.getAttribute('data-alt')
+            });
+        }
+
+        function applyDimension(element, attribute, value) {
+            if (value > 0) {
+                element.setAttribute(attribute, String(value));
+            } else {
+                element.removeAttribute(attribute);
+            }
+        }
+
+        function clearVideoSource() {
+            if (!mainVideo) return;
+            mainVideo.pause();
+            mainVideo.classList.add('d-none');
+            var source = mainVideo.querySelector('source');
+            if (source && source.getAttribute('src')) {
+                intentionalVideoReset = true;
+                source.removeAttribute('src');
+                mainVideo.load();
+                window.setTimeout(function () { intentionalVideoReset = false; }, 0);
+            }
+            mainVideo.removeAttribute('aria-label');
+        }
+
+        function showImage(descriptor) {
+            lastImageDescriptor = descriptor;
+            if (mainVideo) {
+                mainVideo.pause();
+                mainVideo.classList.add('d-none');
+            }
+            if (mainWebpSource) {
+                if (descriptor.webp_srcset !== '') {
+                    mainWebpSource.setAttribute('srcset', descriptor.webp_srcset);
+                } else {
+                    mainWebpSource.removeAttribute('srcset');
+                }
+            }
+            mainImage.classList.remove('d-none');
+            mainImage.setAttribute('src', descriptor.src);
+            mainImage.setAttribute('alt', descriptor.alt || 'Product image');
+            applyDimension(mainImage, 'width', descriptor.width);
+            applyDimension(mainImage, 'height', descriptor.height);
+        }
+
+        function showVideo(descriptor) {
+            if (!mainVideo) return;
+            mainImage.classList.add('d-none');
+            var source = mainVideo.querySelector('source');
+            if (source && source.getAttribute('src') !== descriptor.src) {
+                source.setAttribute('src', descriptor.src);
+                mainVideo.load();
+            }
+            mainVideo.setAttribute('aria-label', descriptor.alt || 'Product video');
+            mainVideo.classList.remove('d-none');
+        }
+
+        function restoreImageAfterVideoFailure(event) {
+            if (event && event.type === 'abort' && intentionalVideoReset) {
+                intentionalVideoReset = false;
+                return;
+            }
+            if (recoveringVideo) return;
+            recoveringVideo = true;
+            clearVideoSource();
+            if (lastImageDescriptor) {
+                showImage(lastImageDescriptor);
+            } else {
+                mainImage.classList.add('d-none');
+            }
+            if (mediaStatus) {
+                mediaStatus.textContent = 'Product video could not be played. The product image has been restored.';
+            }
+            recoveringVideo = false;
+        }
+
+        if (mainVideo) {
+            ['error', 'abort', 'stalled'].forEach(function (eventName) {
+                mainVideo.addEventListener(eventName, restoreImageAfterVideoFailure);
+            });
+        }
+
+        lastImageDescriptor = normalizeDescriptor({
+            type: 'image',
+            src: mainImage.getAttribute('src'),
+            webp_srcset: mainWebpSource ? mainWebpSource.getAttribute('srcset') : '',
+            width: mainImage.getAttribute('width'),
+            height: mainImage.getAttribute('height'),
+            alt: mainImage.getAttribute('alt')
+        });
 
         function activateThumb(thumb) {
+            var descriptor = descriptorFromThumb(thumb);
+            if (!descriptor) return;
             var thumbs = thumbsWrap.querySelectorAll('.media-thumb');
             thumbs.forEach(function (item) {
                 item.classList.remove('border-primary');
@@ -30,30 +158,10 @@
             thumb.classList.add('border-primary');
             thumb.setAttribute('aria-current', 'true');
 
-            var type = thumb.getAttribute('data-type');
-            var src = thumb.getAttribute('data-src') || '';
-            var webpSrcset = thumb.getAttribute('data-webp-srcset') || '';
-            if (type === 'video' && mainVideo) {
-                mainImage.classList.add('d-none');
-                mainVideo.classList.remove('d-none');
-                if (mainWebpSource) {
-                    mainWebpSource.setAttribute('srcset', '');
-                }
-                var source = mainVideo.querySelector('source');
-                if (source && source.getAttribute('src') !== src) {
-                    source.setAttribute('src', src);
-                    mainVideo.load();
-                }
+            if (descriptor.type === 'video') {
+                showVideo(descriptor);
             } else {
-                if (mainVideo) {
-                    mainVideo.pause();
-                    mainVideo.classList.add('d-none');
-                }
-                if (mainWebpSource) {
-                    mainWebpSource.setAttribute('srcset', webpSrcset);
-                }
-                mainImage.classList.remove('d-none');
-                mainImage.setAttribute('src', src);
+                showImage(descriptor);
             }
         }
 
@@ -64,27 +172,59 @@
         });
 
         return {
-            setMedia: function (images, videoFile) {
-                var html = '';
-                (images || []).forEach(function (image, index) {
-                    var src = '/images/fabrics/' + encodeURIComponent(image);
-                    html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb '
-                        + (index === 0 ? 'border-primary' : 'border-light')
-                        + '" data-type="image" data-src="' + src + '" data-webp-srcset="" aria-label="View product image ' + (index + 1) + '" aria-current="' + (index === 0 ? 'true' : 'false') + '">'
-                        + '<img src="' + src + '" alt="Product thumbnail ' + (index + 1) + '">'
-                        + '</button>';
+            setMedia: function (media) {
+                var descriptors = (Array.isArray(media) ? media : []).map(normalizeDescriptor).filter(Boolean);
+                clearVideoSource();
+
+                var imageNumber = 0;
+                var controls = descriptors.map(function (descriptor, index) {
+                    var thumb = document.createElement('button');
+                    thumb.type = 'button';
+                    thumb.className = 'btn p-0 border rounded media-thumb product-media-thumb '
+                        + (index === 0 ? 'border-primary' : 'border-light');
+                    thumb.setAttribute('data-type', descriptor.type);
+                    thumb.setAttribute('data-src', descriptor.src);
+                    thumb.setAttribute('data-alt', descriptor.alt);
+                    thumb.setAttribute('aria-current', index === 0 ? 'true' : 'false');
+
+                    if (descriptor.type === 'video') {
+                        thumb.classList.add('position-relative');
+                        thumb.setAttribute('aria-label', descriptor.alt || 'Product video');
+                        var videoLabel = document.createElement('div');
+                        videoLabel.className = 'product-media-thumb-video';
+                        videoLabel.textContent = 'Video';
+                        thumb.appendChild(videoLabel);
+                        return thumb;
+                    }
+
+                    imageNumber++;
+                    thumb.setAttribute('data-webp-srcset', descriptor.webp_srcset);
+                    thumb.setAttribute('data-width', String(descriptor.width));
+                    thumb.setAttribute('data-height', String(descriptor.height));
+                    thumb.setAttribute('aria-label', 'View ' + (descriptor.alt || 'product image') + ' ' + imageNumber);
+
+                    var thumbnailImage = document.createElement('img');
+                    thumbnailImage.setAttribute('src', descriptor.thumb_src || descriptor.src);
+                    thumbnailImage.setAttribute('alt', (descriptor.alt || 'Product') + ' thumbnail ' + imageNumber);
+                    thumbnailImage.setAttribute('loading', 'lazy');
+                    applyDimension(thumbnailImage, 'width', descriptor.thumb_width);
+                    applyDimension(thumbnailImage, 'height', descriptor.thumb_height);
+                    thumb.appendChild(thumbnailImage);
+                    return thumb;
                 });
-                if (videoFile) {
-                    var videoSrc = '/images/fabrics/' + encodeURIComponent(videoFile);
-                    html += '<button type="button" class="btn p-0 border rounded media-thumb product-media-thumb border-light position-relative" data-type="video" data-src="' + videoSrc + '" aria-label="Play product video" aria-current="false">'
-                        + '<div class="product-media-thumb-video">Video</div>'
-                        + '</button>';
-                }
-                thumbsWrap.innerHTML = html;
+                thumbsWrap.replaceChildren.apply(thumbsWrap, controls);
 
                 var firstThumb = thumbsWrap.querySelector('.media-thumb');
                 if (firstThumb) {
                     activateThumb(firstThumb);
+                } else {
+                    clearVideoSource();
+                    mainImage.classList.add('d-none');
+                    if (mainWebpSource) mainWebpSource.removeAttribute('srcset');
+                    mainImage.removeAttribute('src');
+                    mainImage.setAttribute('alt', '');
+                    mainImage.removeAttribute('width');
+                    mainImage.removeAttribute('height');
                 }
             }
         };
@@ -180,8 +320,7 @@
         var mainWebpSourceEl = document.getElementById('product-main-webp-source');
         var defaultMainImageSrc = mainImageEl ? String(mainImageEl.getAttribute('src') || '') : '';
         var defaultMainWebpSrcset = mainWebpSourceEl ? String(mainWebpSourceEl.getAttribute('srcset') || '') : '';
-        var defaultGalleryImages = Array.isArray(data.defaultGalleryImages) ? data.defaultGalleryImages : [];
-        var defaultVideoFile = String(data.defaultVideoFile || '');
+        var defaultMedia = Array.isArray(data.defaultMedia) ? data.defaultMedia : [];
         var colorSwatches = document.querySelectorAll('.color-swatch-btn');
         var sizeButtons = document.querySelectorAll('.size-option-btn');
         var sizeSection = document.getElementById('size-picker-section');
@@ -337,7 +476,8 @@
                 qtyInput.innerHTML = '';
                 var start = Math.max(1, Math.ceil(minimumOrderQty));
                 var step = Math.max(1, Math.round(quantityStep));
-                var limit = Math.min(Math.floor(stock), 20);
+                var available = Math.max(0, Math.floor(stock));
+                var limit = available >= start ? Math.min(available, start + ((20 - 1) * step)) : 0;
                 for (var quantity = start; quantity <= limit; quantity += step) {
                     var option = document.createElement('option');
                     option.value = String(quantity);
@@ -382,17 +522,11 @@
             }
 
             if (mediaController && typeof mediaController.setMedia === 'function') {
-                var variantImages = [];
-                ['image', 'image2', 'image3', 'image4'].forEach(function (key) {
-                    if (v && v[key] && String(v[key]).trim() !== '') {
-                        variantImages.push(String(v[key]).trim());
-                    }
-                });
-                var variantVideo = (v && v.video) ? String(v.video).trim() : '';
-                if (variantImages.length > 0 || variantVideo !== '') {
-                    mediaController.setMedia(variantImages, variantVideo);
+                var variantMedia = v && Array.isArray(v.media) ? v.media : [];
+                if (variantMedia.length > 0) {
+                    mediaController.setMedia(variantMedia);
                 } else {
-                    mediaController.setMedia(defaultGalleryImages, defaultVideoFile);
+                    mediaController.setMedia(defaultMedia);
                 }
             } else if (mainImageEl && defaultMainImageSrc !== '') {
                 mainImageEl.setAttribute('src', defaultMainImageSrc);
@@ -410,7 +544,7 @@
                 if (!v) {
                     stockBadgeEl.innerHTML = '';
                 } else {
-                    var stockNumber = parseFloat(v.stock_meters) > 0 ? parseFloat(v.stock_meters) : parseFloat(v.stock);
+                    var stockNumber = selectedVariantStock(v);
                     var inStock = stockNumber > 0;
                     var badgeClass = inStock ? 'bg-success' : 'bg-secondary';
                     var label = inStock ? 'In Stock (' + stockNumber + ')' : 'Out of Stock';

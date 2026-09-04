@@ -85,8 +85,8 @@ include __DIR__ . '/../includes/header.php';
                             <?php echo csrf_field(); ?>
 
                             <div class="mb-3">
-                                <label class="form-label">Email Address *</label>
-                                <input type="email" name="email"
+                                <label class="form-label" for="resend_email">Email Address *</label>
+                                <input id="resend_email" type="email" name="email"
                                     class="<?php echo form_class($errors, 'email'); ?>"
                                     value="<?php echo e($_POST['email'] ?? ''); ?>"
                                     required autofocus>

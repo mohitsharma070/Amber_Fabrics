@@ -32,6 +32,23 @@ body.mobile-nav-open {
     overflow: hidden;
 }
 
+body.native-offcanvas-open {
+    overflow: hidden;
+}
+
+.offcanvas.is-native-open {
+    visibility: visible;
+    transform: none;
+    z-index: 1045;
+}
+
+.native-offcanvas-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1040;
+    background: rgba(0, 0, 0, 0.5);
+}
+
 html {
     scroll-behavior: smooth;
 }
@@ -1846,7 +1863,7 @@ img {
 }
 
 .pagination .page-item.disabled .page-link {
-    color: #8a97aa;
+    color: #596579;
     background: #eef2f7;
     border-color: #d9e0ea;
 }

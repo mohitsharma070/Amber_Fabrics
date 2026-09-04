@@ -154,7 +154,13 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['login.php'], true);
     <span aria-hidden="true">&uarr;</span>
 </button>
 
-<?php $marketingConsentStatus = function_exists('marketing_consent_status') ? marketing_consent_status() : 'unknown'; ?>
+<?php
+$marketingConsentStatus = function_exists('marketing_consent_status') ? marketing_consent_status() : 'unknown';
+$marketingConsentReturnTo = trim((string) ($_SERVER['REQUEST_URI'] ?? '/'));
+if ($marketingConsentReturnTo === '') {
+    $marketingConsentReturnTo = '/';
+}
+?>
 <div
     id="cookieConsentBanner"
     data-consent-status="<?php echo e($marketingConsentStatus); ?>"
@@ -171,10 +177,22 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['login.php'], true);
                         You can review details in our <a href="/privacy-policy">Privacy Policy</a>.
                     </p>
                 </div>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2" data-consent-js-actions>
                     <button type="button" class="btn btn-outline-secondary btn-sm" data-consent-choice="reject">Reject</button>
                     <button type="button" class="btn btn-dark btn-sm" data-consent-choice="accept">Accept</button>
                 </div>
+                <noscript>
+                    <style>
+                        #cookieConsentBanner { position: static !important; }
+                        #cookieConsentBanner [data-consent-js-actions] { display: none !important; }
+                    </style>
+                    <form method="post" action="/cookie-consent.php" class="d-flex gap-2" data-consent-noscript-actions>
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="return_to" value="<?php echo e($marketingConsentReturnTo); ?>">
+                        <button type="submit" name="choice" value="reject" class="btn btn-outline-secondary btn-sm">Reject</button>
+                        <button type="submit" name="choice" value="accept" class="btn btn-dark btn-sm">Accept</button>
+                    </form>
+                </noscript>
             </div>
         </div>
     </div>
@@ -182,7 +200,7 @@ $showMobileBottomNav = !in_array($currentPage ?? '', ['login.php'], true);
 
 <?php require dirname(__DIR__, 2) . '/partials/interaction-layer.php'; ?>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/bootstrap.bundle-5.3.3.min.js"></script>
 <?php do_action('page.footer', [
     'page' => basename($_SERVER['PHP_SELF'] ?? ''),
 ]); ?>

@@ -129,7 +129,7 @@ function customer_rate_limit_key(string $email, string $ip): string
     return hash('sha256', strtolower(trim($email)) . '|' . $ip);
 }
 
-function customer_check_rate_limit(mysqli $conn, string $email, string $ip): bool
+function customer_check_rate_limit(mysqli $conn, string $email, string $ip): ?bool
 {
     $key = customer_rate_limit_key($email, $ip);
     try {
@@ -147,8 +147,8 @@ function customer_check_rate_limit(mysqli $conn, string $email, string $ip): boo
         $row = $stmt->get_result()->fetch_assoc();
     } catch (Throwable $e) {
         try { $conn->rollback(); } catch (Throwable $ignored) {}
-        error_log('[customer-auth] rate limit check unavailable: ' . $e->getMessage());
-        return true;
+        app_log('error', 'customer_rate_limit_unavailable', ['exception_type' => get_class($e)]);
+        return null;
     }
 
     $now = new DateTimeImmutable('now');

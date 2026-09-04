@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
+require_once $root . '/includes/helpers/core.php';
 require_once $root . '/includes/services/CartService.php';
 require_once $root . '/includes/services/ProductAdminService.php';
 require_once $root . '/includes/helpers/product-cards.php';
@@ -31,6 +32,9 @@ $baseProduct = [
     'sale_price' => 0,
     'stock' => 5,
     'stock_meters' => 0,
+    'min_order_meters' => 1,
+    'qty_step' => 1,
+    'meter_options' => '',
     'is_available' => 1,
     'active_variant_count' => 0,
     'image' => 'parent.jpg',
@@ -43,14 +47,30 @@ $assertSame(5.0, $simplePiece['stock'], 'Simple piece products must use parent p
 $assertSame(' each', $simplePiece['unit_suffix'], 'Simple piece prices must retain the each suffix.');
 $assertSame('add_simple_ajax', $simplePiece['cta_mode'], 'Sellable simple piece products must retain AJAX Add to Cart.');
 
+$belowMinimumPiece = product_card_build_home_context(array_replace($baseProduct, [
+    'stock' => 4,
+    'min_order_meters' => 5,
+]), []);
+$assertSame(false, $belowMinimumPiece['in_stock'], 'Piece stock below MOQ must not expose a purchase CTA.');
+
 $simpleMeter = product_card_build_home_context(array_replace($baseProduct, [
     'unit_type' => 'meter',
     'stock' => 0,
     'stock_meters' => 7.5,
+    'meter_options' => '2.5',
 ]), []);
 $assertSame(7.5, $simpleMeter['stock'], 'Simple meter products must use parent meter stock.');
 $assertSame('/m', $simpleMeter['unit_suffix'], 'Meter prices must retain the per-meter suffix.');
 $assertSame('view_options', $simpleMeter['cta_mode'], 'Meter products must retain View Options.');
+
+$belowMinimumMeter = product_card_build_home_context(array_replace($baseProduct, [
+    'unit_type' => 'meter',
+    'stock' => 0,
+    'stock_meters' => 1.5,
+    'min_order_meters' => 2,
+    'meter_options' => '2',
+]), []);
+$assertSame(false, $belowMinimumMeter['in_stock'], 'Meter stock below MOQ must not expose View Options as purchasable.');
 
 $variableProduct = array_replace($baseProduct, ['active_variant_count' => 2]);
 $variableVariants = [

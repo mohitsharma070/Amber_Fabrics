@@ -1147,7 +1147,9 @@ INSERT IGNORE INTO schema_migrations (migration, checksum) VALUES
 ('2026-08-23-whatsapp-consent-webhook-idempotency.sql','e8fe165d3381970a641d3b8b969cfcbae7a8ad4dfe6f2a58ce5c96b5fd72ee86'),
 ('2026-08-24-priority-findings-remediation.sql','224b7a6ef0c8ba68082eb0706817eec13594fe023d80849fc145b695aea2f8af'),
 ('2026-08-25-architecture-hardening.sql','fd33ec7d3cd331c1c32bf451117a49241fcab0f3bb625c256c5f8fe91772cf84'),
-('2026-08-27-category-default-unit-type.sql','624e98e00f36859fb718f8eaf13572319ed0575c0cd8ea3961e03a2073dc7530');
+('2026-08-27-category-default-unit-type.sql','624e98e00f36859fb718f8eaf13572319ed0575c0cd8ea3961e03a2073dc7530'),
+('2026-09-02-catalog-query-performance.sql','4f330a68fb5372d52d4f1c2d8b13509accbb65b2eb0006976a132cf8451c98b8'),
+('2026-09-03-add-missing-operational-logs.sql','89903eea631a599c4bcc650efc676343b05ea90cbb68bc5d43cea6b4ca7c16ff');
 
 -- Bootstrap admin is created by database/setup.php when no admin exists.
 -- Run from project root: php database/setup.php   (CLI only, never via browser)

@@ -53,7 +53,7 @@ function app_log(string $level, string $event, array $context = []): void
     if (!in_array($level, ['debug', 'info', 'warning', 'error', 'critical'], true)) {
         $level = 'error';
     }
-    $event = strtolower(trim((string) preg_replace('/[^a-zA-Z0-9._-]+/', '_', $event)), '_');
+    $event = strtolower(trim((string) preg_replace('/[^a-zA-Z0-9._-]+/', '_', $event), '_'));
     if ($event === '') {
         $event = 'application_event';
     }

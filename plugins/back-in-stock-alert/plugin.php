@@ -251,7 +251,7 @@ function back_in_stock_alert_render_unsubscribe_page(string $title, string $mess
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8">';
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
     echo '<title>' . $safeTitle . ' | ' . $siteName . '</title>';
-    echo '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">';
+    echo '<link href="/css/bootstrap-5.3.3.min.css" rel="stylesheet">';
     echo '</head><body class="bg-light">';
     echo '<main class="container py-5">';
     echo '<div class="mx-auto bg-white border rounded p-4 shadow-sm" style="max-width:560px">';

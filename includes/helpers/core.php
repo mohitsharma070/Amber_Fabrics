@@ -309,6 +309,18 @@ function normalize_meter_quantity($value, float $min = 1.0): float
 }
 
 /**
+ * Whether a positive meter quantity step fits the persisted two-decimal policy.
+ */
+function meter_qty_step_is_representable($value): bool
+{
+    if (!is_numeric($value)) {
+        return false;
+    }
+    $step = (float) $value;
+    return $step > 0 && abs($step - round($step, 2)) < 0.00000001;
+}
+
+/**
  * Display meter quantities without unnecessary trailing zeros.
  */
 function format_meter_quantity($value): string
@@ -347,16 +359,19 @@ function normalize_quantity_by_unit($value, string $unitType, float $minQty = 1.
  */
 function meter_qty_respects_step(float $qty, float $minQty, float $step): bool
 {
-    $step = round($step, 4);
-    if ($step <= 0) {
+    if ($step == 0.0) {
         return true;
     }
-    if ($qty < $minQty) {
+    if (!meter_qty_step_is_representable($step)) {
         return false;
     }
-    $delta = $qty - $minQty;
-    $ratio = $delta / $step;
-    return abs($ratio - round($ratio)) < 0.0001;
+    $qtyUnits = (int) round($qty * 100);
+    $minimumUnits = (int) round($minQty * 100);
+    $stepUnits = (int) round($step * 100);
+    if ($qtyUnits < $minimumUnits || $stepUnits <= 0) {
+        return false;
+    }
+    return ($qtyUnits - $minimumUnits) % $stepUnits === 0;
 }
 
 /**

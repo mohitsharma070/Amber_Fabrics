@@ -173,6 +173,8 @@ function render_pagination(int $page, int $pages, array $queryState, string $pag
 
     $pool = range($start, $end);
 
+    // Cursor and numbered pagination are mutually exclusive URL states.
+    unset($queryState['cursor']);
     $mkUrl = static fn(int $p): string => '?' . list_build_query(array_merge($queryState, [$pageKey => $p]));
 
     $html  = '<nav aria-label="Pagination" class="mt-3">';

@@ -25,7 +25,9 @@ $cases = [
     ['piece minimum exceeds stock', 1.0, 'piece', 2.0, 0.0, null, 0.0],
     ['piece stock exactly meets minimum', 2.0, 'piece', 2.0, 0.0, null, 2.0],
     ['piece ceiling never exceeds stock', 5.0, 'piece', 2.0, 0.0, null, 5.0],
-    ['set ceiling stays in whole sellable units', 5.75, 'set', 2.0, 3.0, null, 5.0],
+    ['set ceiling follows the MOQ-relative step', 5.75, 'set', 2.0, 3.0, null, 5.0],
+    ['piece stock between step points reconciles to MOQ', 4.0, 'piece', 2.0, 3.0, null, 2.0],
+    ['piece stock reaches the next step point', 5.0, 'piece', 2.0, 3.0, null, 5.0],
     ['meter minimum exceeds stock', 0.75, 'meter', 1.0, 0.0, null, 0.0],
     ['meter stock exactly meets minimum', 1.0, 'meter', 1.0, 0.0, null, 1.0],
     ['meter zero step allows cent precision', 1.37, 'meter', 1.0, 0.0, null, 1.37],
@@ -48,6 +50,7 @@ foreach ($cases as [$label, $stock, $unitType, $minimum, $step, $meterLength, $e
 
 $reconciliationCases = [
     ['stale piece quantity is capped', 10.0, 5.0, 'piece', 2.0, 0.0, null, 5.0],
+    ['off-grid stored piece quantity reconciles downward', 3.0, 10.0, 'piece', 2.0, 3.0, null, 2.0],
     ['piece request below minimum is normalized', 1.0, 5.0, 'piece', 2.0, 0.0, null, 2.0],
     ['piece line is removed below minimum stock', 10.0, 1.0, 'piece', 2.0, 0.0, null, 0.0],
     ['merged meter quantity is reconciled to step', 2.0, 10.0, 'meter', 1.0, 0.30, null, 1.90],
@@ -78,7 +81,9 @@ $couponEndpoint = $read('apply-coupon.php');
 $placeOrderEndpoint = $read('place-order.php');
 $shippingEndpoint = $read('shipping-rate.php');
 $assertQuantity(str_contains($addEndpoint, 'CartService::maximumSellableQuantity') ? 1 : 0, 1, 'Add endpoint must use the sellable ceiling.');
+$assertQuantity(str_contains($addEndpoint, 'CartService::quantityRespectsStep') ? 1 : 0, 1, 'Add endpoint must reject an explicit off-grid whole-unit request.');
 $assertQuantity(str_contains($updateEndpoint, 'CartService::maximumSellableQuantity') ? 1 : 0, 1, 'Update endpoint must use the sellable ceiling.');
+$assertQuantity(str_contains($updateEndpoint, 'CartService::quantityRespectsStep') ? 1 : 0, 1, 'Update endpoint must reject an explicit off-grid whole-unit request.');
 $assertQuantity(str_contains($cartServiceSource, 'CartService::reconcileSellableQuantity') ? 1 : 0, 1, 'Hydration must reconcile stored cart quantities.');
 $assertQuantity(str_contains($mergeServiceSource, 'CartService::reconcileSellableQuantity') ? 1 : 0, 1, 'Login merge must reconcile merged quantities to the sellable grid.');
 $assertQuantity(str_contains($moveEndpoint, "maximum_sellable_quantity") ? 1 : 0, 1, 'Wishlist-to-cart must enforce the hydrated sellable ceiling.');

@@ -437,6 +437,17 @@ function image_pipeline_asset_data(string $relativeDir, string $filename): array
     $baseUrl = '/' . $relativeDir;
     $originalUrl = $baseUrl . '/' . $filename;
     $originalAbs = $absDir . DIRECTORY_SEPARATOR . $filename;
+    if (!is_file($originalAbs)) {
+        return [
+            'src' => '',
+            'thumb_src' => '',
+            'webp_srcset' => '',
+            'width' => 0,
+            'height' => 0,
+            'thumb_width' => 0,
+            'thumb_height' => 0,
+        ];
+    }
 
     $thumbWebp = $base . '-thumb.webp';
     $thumbWebpAbs = $absDir . DIRECTORY_SEPARATOR . $thumbWebp;
@@ -480,4 +491,50 @@ function image_pipeline_asset_data(string $relativeDir, string $filename): array
 function fabric_image_asset_data(string $filename): array
 {
     return image_pipeline_asset_data('images/fabrics', $filename);
+}
+
+/**
+ * Build the browser-facing PDP media contract from server-owned asset metadata.
+ * Images retain upload-pipeline derivatives and dimensions; videos expose only
+ * their validated public asset URL.
+ */
+function fabric_product_media_descriptors(array $imageFilenames, string $videoFilename = '', string $alt = ''): array
+{
+    $descriptors = [];
+
+    foreach ($imageFilenames as $imageFilename) {
+        $filename = trim((string) $imageFilename);
+        if ($filename === '') {
+            continue;
+        }
+
+        $asset = fabric_image_asset_data($filename);
+        if ((string) ($asset['src'] ?? '') === '') {
+            continue;
+        }
+
+        $descriptors[] = [
+            'type' => 'image',
+            'src' => (string) $asset['src'],
+            'thumb_src' => (string) ($asset['thumb_src'] ?? $asset['src']),
+            'webp_srcset' => (string) ($asset['webp_srcset'] ?? ''),
+            'width' => max(0, (int) ($asset['width'] ?? 0)),
+            'height' => max(0, (int) ($asset['height'] ?? 0)),
+            'thumb_width' => max(0, (int) ($asset['thumb_width'] ?? 0)),
+            'thumb_height' => max(0, (int) ($asset['thumb_height'] ?? 0)),
+            'alt' => trim($alt),
+        ];
+    }
+
+    $videoFilename = basename(str_replace('\\', '/', trim($videoFilename)));
+    $videoAbsolutePath = __DIR__ . '/../../images/fabrics/' . $videoFilename;
+    if ($videoFilename !== '' && is_file($videoAbsolutePath)) {
+        $descriptors[] = [
+            'type' => 'video',
+            'src' => '/images/fabrics/' . rawurlencode($videoFilename),
+            'alt' => trim($alt) !== '' ? trim($alt) . ' video' : 'Product video',
+        ];
+    }
+
+    return $descriptors;
 }

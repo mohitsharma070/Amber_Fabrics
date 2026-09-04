@@ -66,7 +66,7 @@ function app_config_apply_env_overrides(array $config): array
         'APP_HTTP_TIMEOUT_SEC', 'APP_HTTP_CONNECT_TIMEOUT_SEC',
         'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET',
         'RAZORPAY_HTTP_TIMEOUT_SEC', 'RAZORPAY_HTTP_CONNECT_TIMEOUT_SEC',
-        'RAZORPAY_HTTP_CA_BUNDLE', 'RAZORPAY_HTTP_SKIP_TLS_VERIFY',
+        'RAZORPAY_HTTP_CA_BUNDLE', 'RAZORPAY_HTTP_SKIP_TLS_VERIFY', 'RAZORPAY_TEST_BASE_URL',
         'COD_GUARD_WHATSAPP_THRESHOLD', 'COD_GUARD_CALL_THRESHOLD',
         'COD_GUARD_CONFIRMATION_HOURS', 'COD_GUARD_MESSAGE_MAX_ATTEMPTS',
         'COD_GUARD_WHATSAPP_PROVIDER', 'COD_GUARD_WHATSAPP_API_BASE_URL',
@@ -341,18 +341,13 @@ function app_config_validate_production(array $config): void
 
 $allConfig = [];
 
-$httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-$isLocalHost =
-    $httpHost === 'localhost' ||
-    $httpHost === '127.0.0.1' ||
-    strpos($httpHost, 'localhost:') === 0 ||
-    strpos($httpHost, '127.0.0.1:') === 0;
 $isCliServer = PHP_SAPI === 'cli-server';
 $isCli = PHP_SAPI === 'cli';
 
 // CLI should default to local mode so setup/migration scripts don't target production by accident.
-$mode = ($isLocalHost || $isCliServer || $isCli) ? 'local' : 'production';
-$modeOverride = strtolower(trim((string) (getenv('APP_MODE') ?: ($_SERVER['APP_MODE'] ?? ''))));
+// HTTP Host is client-controlled and must not be used to authorize local mode.
+$mode = ($isCliServer || $isCli) ? 'local' : 'production';
+$modeOverride = strtolower(trim((string) app_config_env('APP_MODE')));
 if ($modeOverride === 'prod') {
     $modeOverride = 'production';
 }

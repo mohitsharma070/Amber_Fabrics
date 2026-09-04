@@ -172,7 +172,7 @@ $env:MAIL_DRIVER = 'log'
 npm run test:e2e
 ```
 
-`E2E_BASE_URL` has no default and accepts only an HTTP loopback origin. Fixture seeding additionally requires local mode, explicit confirmation, and the `_test` or `_e2e` database suffix.
+`E2E_BASE_URL` has no default and accepts only an HTTP loopback origin. Fixture seeding additionally requires `APP_MODE=local`, `APP_ENV=test`, explicit confirmation, and the `_test` or `_e2e` database suffix.
 
 Run the axe browser baseline separately with the same environment values:
 

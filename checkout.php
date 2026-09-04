@@ -3,6 +3,16 @@ require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/helpers/coupon-functions.php';
 require_once __DIR__ . '/includes/security/customer-auth.php';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'refresh_quote') {
+    if (!verify_csrf()) {
+        flash('error', 'Security session expired. Please verify your details and try again.');
+        redirect('/checkout.php');
+    }
+    $normalized = CheckoutInput::fromRequest($_POST, (int) ($_SESSION['customer_id'] ?? 0));
+    $_SESSION['checkout_old'] = CheckoutInput::sessionState($normalized);
+    redirect('/checkout.php');
+}
+
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
@@ -50,7 +60,6 @@ $old = array_merge($old, CheckoutReadService::customerPrefill($conn, $customerId
 
 if (!empty($_SESSION['checkout_old']) && is_array($_SESSION['checkout_old'])) {
     $old = array_merge($old, $_SESSION['checkout_old']);
-    unset($_SESSION['checkout_old']);
 }
 
 if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'])) {
@@ -105,15 +114,22 @@ $shippingQuote = [
     'courier_id' => 0,
 ];
 if ($hasCompleteDelivery) {
-    $shippingQuote = apply_filters('shipping.quote', $shippingQuote, [
-        'conn' => $conn,
-        'subtotal' => (float) $subtotal,
-        'invoice_value' => (float) $taxableAmount,
-        'country' => $countryForCalc,
-        'pincode' => (string) ($old['pincode'] ?? ''),
-        'payment_method' => $selectedPayment,
-        'items' => $items,
-    ]);
+    try {
+        $shippingQuote = apply_filters('shipping.quote', $shippingQuote, [
+            'conn' => $conn,
+            'subtotal' => (float) $subtotal,
+            'invoice_value' => (float) $taxableAmount,
+            'country' => $countryForCalc,
+            'pincode' => (string) ($old['pincode'] ?? ''),
+            'payment_method' => $selectedPayment,
+            'items' => $items,
+        ], true);
+    } catch (Throwable $e) {
+        app_log('error', 'checkout_shipping_quote_failed', [
+            'exception_type' => get_class($e),
+            'payment_method' => $selectedPayment,
+        ]);
+    }
 }
 $baseShippingAmount = max(0.0, round((float) ($shippingQuote['base_shipping'] ?? $shipping['base_shipping']), 2));
 $codFeeAmount = max(0.0, round((float) ($shippingQuote['cod_fee'] ?? $shipping['cod_fee']), 2));
@@ -185,6 +201,9 @@ include __DIR__ . '/includes/header.php';
     <div class="container">
         <?php if (!empty($errors['_cart'])): ?>
             <div class="alert alert-danger"><?php echo e($errors['_cart']); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($errors['_checkout'])): ?>
+            <div class="alert alert-danger" role="alert"><?php echo e($errors['_checkout']); ?></div>
         <?php endif; ?>
         <?php if (!$isIndia): ?>
             <div class="alert alert-warning">
@@ -308,7 +327,7 @@ include __DIR__ . '/includes/header.php';
                                 <textarea id="checkout_order_notes" name="order_notes" class="form-control" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
                             <div class="col-12">
-                                <button type="button" class="btn btn-primary w-100" id="checkout_continue_payment">Continue to Payment</button>
+                                <button type="submit" name="action" value="refresh_quote" formaction="/checkout.php" class="btn btn-primary w-100" id="checkout_continue_payment">Continue to Payment</button>
                                 <div class="small mt-2" id="checkout_delivery_status" aria-live="polite">
                                     <?php echo $hasCompleteDelivery ? 'Delivery details verified. You can continue to payment.' : 'Complete your delivery address to calculate shipping.'; ?>
                                 </div>
@@ -369,16 +388,6 @@ include __DIR__ . '/includes/header.php';
                                     <button type="button" class="checkout-online-method" data-online-method="card" aria-pressed="false">Card</button>
                                     <button type="button" class="checkout-online-method" data-online-method="emi" aria-pressed="false">EMI</button>
                                 </div>
-                                <noscript>
-                                    <div class="mb-3">
-                                        <label class="form-label mb-1" for="online_method_noscript">Online payment type</label>
-                                        <select class="form-select" id="online_method_noscript" name="online_method">
-                                            <option value="upi" <?php echo $selectedOnlineMethod === 'upi' ? 'selected' : ''; ?>>UPI</option>
-                                            <option value="card" <?php echo $selectedOnlineMethod === 'card' ? 'selected' : ''; ?>>Card</option>
-                                            <option value="emi" <?php echo $selectedOnlineMethod === 'emi' ? 'selected' : ''; ?>>EMI</option>
-                                        </select>
-                                    </div>
-                                </noscript>
                                 <div class="checkout-online-panels">
                                     <div class="checkout-online-panel is-active" data-online-panel="upi">
                                         <div class="small text-muted mb-2">Pay instantly with any UPI app in secure Razorpay checkout.</div>
@@ -409,6 +418,16 @@ include __DIR__ . '/includes/header.php';
                                     </div>
                                 </div>
                             </div>
+                            <noscript>
+                                <div class="mb-3" data-noscript-online-method>
+                                    <label class="form-label mb-1" for="online_method_noscript">Online payment type</label>
+                                    <select class="form-select" id="online_method_noscript" name="online_method">
+                                        <option value="upi" <?php echo $selectedOnlineMethod === 'upi' ? 'selected' : ''; ?>>UPI</option>
+                                        <option value="card" <?php echo $selectedOnlineMethod === 'card' ? 'selected' : ''; ?>>Card</option>
+                                        <option value="emi" <?php echo $selectedOnlineMethod === 'emi' ? 'selected' : ''; ?>>EMI</option>
+                                    </select>
+                                </div>
+                            </noscript>
                         </div>
                         </div>
                     </div>
@@ -456,9 +475,9 @@ include __DIR__ . '/includes/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="redirect_to" value="checkout">
                         <input type="hidden" name="shipping_address_id" value="<?php echo (int) ($old['shipping_address_id'] ?? 0); ?>">
-                        <label class="form-label">Coupon Code</label>
+                        <label class="form-label" for="checkout_coupon_code">Coupon Code</label>
                         <div class="d-flex gap-2">
-                            <input type="text" name="coupon_code" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
+                            <input type="text" id="checkout_coupon_code" name="coupon_code" class="form-control" placeholder="Enter code" value="<?php echo e((string) ($couponInfo['code'] ?? '')); ?>">
                             <button class="btn btn-outline-dark" type="submit">Apply</button>
                         </div>
                     </form>
@@ -549,7 +568,7 @@ if (!is_string($checkoutClientStateJson)) {
 }
 ?>
 <script type="application/json" id="checkout-data" nonce="<?php echo $cspNonce; ?>"><?php echo $checkoutClientStateJson; ?></script>
-<script src="/js/checkout.js?v=20260831a"></script>
+<script src="/js/checkout.js?v=20260901a"></script>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>
 

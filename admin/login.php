@@ -107,8 +107,8 @@ render_login:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo e(SiteContext::title('Admin Login')); ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css?v=20260822a">
+    <link href="/css/bootstrap-5.3.3.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css?v=20260901a">
     <link rel="stylesheet" href="../css/admin.css?v=20260822a">
 </head>
 <body class="bg-light">
@@ -158,7 +158,7 @@ render_login:
     </div>
 </div>
 <?php require dirname(__DIR__) . '/includes/partials/interaction-layer.php'; ?>
-<script src="../js/script.js?v=20260822a" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../js/script.js?v=20260902a" defer></script>
+<script src="/js/bootstrap.bundle-5.3.3.min.js"></script>
 </body>
 </html>

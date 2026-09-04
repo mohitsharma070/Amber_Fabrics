@@ -66,7 +66,7 @@ $assert(
 $assert(
     str_contains($fabric, '<script type="application/json" id="product-detail-data"')
         && str_contains($fabric, 'JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT')
-        && str_contains($fabric, '<script src="/js/product-detail.js?v=20260831a" defer></script>')
+        && str_contains($fabric, '<script src="/js/product-detail.js?v=20260901b" defer></script>')
         && !str_contains($fabric, 'window.FABRIC_VARIANTS')
         && !str_contains($fabric, 'window.productMediaController'),
     'Product detail behavior must use the page-scoped JSON contract and dedicated versioned asset without global bootstrap state.'

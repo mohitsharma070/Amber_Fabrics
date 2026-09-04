@@ -19,23 +19,31 @@ final class CartService
         if ($unitType === 'piece' || $unitType === 'set') {
             $minimumUnits = max(1, (int) round($minimumQuantity));
             $availableUnits = max(0, (int) floor($availableStock + 0.0000001));
-            return $availableUnits >= $minimumUnits ? (float) $availableUnits : 0.0;
+            if ($availableUnits < $minimumUnits) {
+                return 0.0;
+            }
+            $stepUnits = max(1, (int) round($quantityStep));
+            return (float) ($minimumUnits + (intdiv($availableUnits - $minimumUnits, $stepUnits) * $stepUnits));
+        }
+
+        if ($quantityStep > 0.0000001 && !meter_qty_step_is_representable($quantityStep)) {
+            return 0.0;
         }
 
         $stockCents = max(0, (int) floor(($availableStock * 100) + 0.0000001));
-        $stockUnits = $stockCents * 100;
-        $minimumUnits = (int) round(normalize_meter_quantity($minimumQuantity, 1.0) * 10000);
+        $stockUnits = $stockCents;
+        $minimumUnits = (int) round(normalize_meter_quantity($minimumQuantity, 1.0) * 100);
         if ($stockUnits < $minimumUnits) {
             return 0.0;
         }
 
-        $quantityIncrement = 100;
+        $quantityIncrement = 1;
         if ($meterLength !== null) {
             $normalizedMeterLength = round($meterLength, 2);
             if ($normalizedMeterLength <= 0) {
                 return 0.0;
             }
-            $quantityIncrement = (int) round($normalizedMeterLength * 10000);
+            $quantityIncrement = (int) round($normalizedMeterLength * 100);
         }
 
         $maximumMultiplier = intdiv($stockUnits, $quantityIncrement);
@@ -44,10 +52,10 @@ final class CartService
             return 0.0;
         }
 
-        $stepUnits = (int) round($quantityStep * 10000);
+        $stepUnits = (int) round($quantityStep * 100);
         if ($stepUnits <= 0) {
             $candidateUnits = $maximumMultiplier * $quantityIncrement;
-            return $candidateUnits >= $minimumUnits ? round($candidateUnits / 10000, 2) : 0.0;
+            return $candidateUnits >= $minimumUnits ? round($candidateUnits / 100, 2) : 0.0;
         }
 
         // Solve increment * bundle_count = minimum (mod step) so the result
@@ -79,7 +87,7 @@ final class CartService
             return 0.0;
         }
 
-        return round(($sellableMultiplier * $quantityIncrement) / 10000, 2);
+        return round(($sellableMultiplier * $quantityIncrement) / 100, 2);
     }
 
     /**
@@ -106,6 +114,25 @@ final class CartService
             $quantityStep,
             $meterLength
         );
+    }
+
+    public static function quantityRespectsStep(
+        float $quantity,
+        string $unitType,
+        float $minimumQuantity = 1.0,
+        float $quantityStep = 0.0
+    ): bool {
+        if ($unitType === 'piece' || $unitType === 'set') {
+            if (abs($quantity - round($quantity)) > 0.0001) {
+                return false;
+            }
+            $quantityUnits = (int) round($quantity);
+            $minimumUnits = max(1, (int) round($minimumQuantity));
+            $stepUnits = max(1, (int) round($quantityStep));
+            return $quantityUnits >= $minimumUnits
+                && ($quantityUnits - $minimumUnits) % $stepUnits === 0;
+        }
+        return meter_qty_respects_step($quantity, $minimumQuantity, $quantityStep);
     }
 
     private static function greatestCommonDivisor(int $left, int $right): int
@@ -249,8 +276,8 @@ final class CartService
                 ? normalize_meter_quantity($row['min_order_meters'] ?? 1, 1.0)
                 : (float) max(1, (int) round((float) ($row['min_order_meters'] ?? 1)));
             $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType, (float) $minQty);
+            $qtyStep = is_numeric($row['qty_step'] ?? null) ? (float) $row['qty_step'] : 0.0;
             if ($unitType === 'meter') {
-                $qtyStep = is_numeric($row['qty_step'] ?? null) ? (float) $row['qty_step'] : 0.0;
                 if (
                     !$enforceSellableQuantity
                     && !meter_qty_respects_step((float) $qty, (float) $minQty, (float) $qtyStep)
@@ -296,7 +323,7 @@ final class CartService
                 $displayStock,
                 $unitType,
                 (float) $minQty,
-                $unitType === 'meter' ? $qtyStep : 0.0,
+                $qtyStep,
                 $meterLength
             );
             if ($enforceSellableQuantity) {
@@ -305,7 +332,7 @@ final class CartService
                     $displayStock,
                     $unitType,
                     (float) $minQty,
-                    $unitType === 'meter' ? $qtyStep : 0.0,
+                    $qtyStep,
                     $meterLength
                 );
                 if (empty($row['is_available']) || $reconciledQuantity <= 0) {
@@ -837,13 +864,18 @@ final class CartService
         return $supports;
     }
 
-    public static function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null): void
+    public static function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null, ?array $sizeMap = null): void
     {
         try {
             $conn->begin_transaction();
             if ($meterMap === null) {
                 $meterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length']))
                     ? $_SESSION['cart_meter_length']
+                    : [];
+            }
+            if ($sizeMap === null) {
+                $sizeMap = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size']))
+                    ? $_SESSION['cart_size']
                     : [];
             }
             $cartId = CartService::cart_get_or_create_db_cart($conn, $customerId);
@@ -952,7 +984,7 @@ final class CartService
                 // Simple products preserve the selected base-product size.
                 $selectedSize = '';
                 if ($variantId <= 0) {
-                    $selectedSize = trim((string) ($_SESSION['cart_size'][$rawKey] ?? ''));
+                    $selectedSize = trim((string) ($sizeMap[$rawKey] ?? ''));
                     if ($selectedSize === '') {
                         $parts = explode('::', $rawKey, 2);
                         $legacyToken = trim((string) ($parts[1] ?? ''));
@@ -1010,7 +1042,7 @@ final class CartService
 
     /**
      * Load the saved cart and meter metadata from DB for a logged-in customer.
-     * Returns ['cart' => [product_id => quantity], 'meter_map' => [product_id => meter_length]].
+     * Returns ['cart' => [product_id => quantity], 'meter_map' => [product_id => meter_length], 'size_map' => [cart_key => selected_size]].
      */
     public static function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
     {
@@ -1096,6 +1128,7 @@ final class CartService
             $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $cart     = [];
             $meterMap = [];
+            $sizeMap  = [];
             foreach ($rows as $row) {
                 if ((int) $row['product_id'] > 0) {
                     $pid       = (int) $row['product_id'];
@@ -1116,12 +1149,18 @@ final class CartService
                     if ($supportsMeterLength && isset($row['meter_length']) && is_numeric($row['meter_length']) && (float) $row['meter_length'] > 0) {
                         $meterMap[$cartKey] = round((float) $row['meter_length'], 2);
                     }
+                    if ($supportsKeyColumns && isset($row['selected_size'])) {
+                        $sizeVal = trim((string) $row['selected_size']);
+                        if ($sizeVal !== '') {
+                            $sizeMap[$cartKey] = $sizeVal;
+                        }
+                    }
                 }
             }
-            return ['cart' => $cart, 'meter_map' => $meterMap];
+            return ['cart' => $cart, 'meter_map' => $meterMap, 'size_map' => $sizeMap];
         } catch (Throwable $e) {
             error_log('[app] cart_load_from_db failed: ' . $e->getMessage());
-            return ['cart' => [], 'meter_map' => []];
+            return ['cart' => [], 'meter_map' => [], 'size_map' => []];
         }
     }
 

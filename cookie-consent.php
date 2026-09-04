@@ -2,11 +2,10 @@
 require_once __DIR__ . '/includes/init.php';
 
 $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
-if (!$isAjax) {
+$method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+if (!$isAjax && $method !== 'POST') {
     api_json(['success' => false, 'message' => 'Invalid request.'], 400);
 }
-
-$method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 if ($method !== 'POST') {
     api_json(['success' => false, 'message' => 'Method not allowed.'], 405);
 }
@@ -35,7 +34,32 @@ if (!$ok) {
     api_json(['success' => false, 'message' => 'Unable to save consent.'], 500);
 }
 
-api_json([
-    'success' => true,
-    'status' => $status,
-]);
+if ($isAjax) {
+    api_json([
+        'success' => true,
+        'status' => $status,
+    ]);
+}
+
+function cookie_consent_safe_return_path(string $candidate): string
+{
+    $candidate = trim($candidate);
+    if ($candidate === ''
+        || !str_starts_with($candidate, '/')
+        || str_starts_with($candidate, '//')
+        || preg_match('/[\\x00-\\x1F\\x7F\\\\]/', $candidate)
+    ) {
+        return '/';
+    }
+
+    $parts = parse_url($candidate);
+    if ($parts === false || isset($parts['scheme']) || isset($parts['host']) || isset($parts['user'])) {
+        return '/';
+    }
+
+    return $candidate;
+}
+
+$returnTo = cookie_consent_safe_return_path((string) ($_POST['return_to'] ?? '/'));
+header('Location: ' . $returnTo, true, 303);
+exit;

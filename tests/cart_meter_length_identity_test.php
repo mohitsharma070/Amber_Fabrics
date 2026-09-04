@@ -65,6 +65,7 @@ $read = static fn(string $path): string => (string) file_get_contents($root . '/
 $consumerSources = [
     'add-to-cart.php' => ['label' => 'Add-to-cart', 'write' => "\$_SESSION['cart'][\$cartKey] ="],
     'move-to-cart.php' => ['label' => 'Wishlist-to-cart', 'write' => "\$_SESSION['cart'][\$cartKey] ="],
+    'move-to-wishlist.php' => ['label' => 'Cart-to-wishlist', 'write' => "\$_SESSION['wishlist'][\$cartKey] ="],
     'includes/services/CustomerSessionMergeService.php' => ['label' => 'Login cart merge', 'write' => '$currentQty ='],
 ];
 foreach ($consumerSources as $path => $contract) {
@@ -78,7 +79,30 @@ foreach ($consumerSources as $path => $contract) {
     );
 }
 
+foreach (['move-to-cart.php', 'move-to-wishlist.php'] as $transitionPath) {
+    $transitionSource = $read($transitionPath);
+    $assertSame(
+        str_contains($transitionSource, '$combinedQuantity')
+            && str_contains($transitionSource, 'CartService::cart_hydrate_items')
+            && str_contains($transitionSource, '$quantityAdjusted'),
+        true,
+        $transitionPath . ' must add colliding quantities and reconcile the result before removing the source line.'
+    );
+}
+
 $mergeSource = $read('includes/services/CustomerSessionMergeService.php');
+$mergeWishlistStart = strpos($mergeSource, 'private static function mergeWishlist');
+$mergeWishlistEnd = strpos($mergeSource, 'private static function productUnitMap', $mergeWishlistStart === false ? 0 : $mergeWishlistStart);
+$mergeWishlistSource = $mergeWishlistStart === false
+    ? ''
+    : substr($mergeSource, $mergeWishlistStart, $mergeWishlistEnd === false ? null : $mergeWishlistEnd - $mergeWishlistStart);
+$assertSame(
+    str_contains($mergeWishlistSource, 'CartService::cartLineAllowsMeterLength')
+        && str_contains($mergeWishlistSource, '$existingQty + $incomingQty')
+        && str_contains($mergeWishlistSource, 'CartService::cart_hydrate_items'),
+    true,
+    'Login wishlist collisions must add compatible quantities and reconcile them without overwriting incompatible meter identities.'
+);
 $assertSame(
     str_contains($mergeSource, 'if ($dbCart !== [])'),
     false,

@@ -75,52 +75,60 @@ function shipping_courier_webhook_begin_processing(
     }
 
     $payloadHash = hash('sha256', $rawPayload);
-    $insert = $conn->prepare(
-        "INSERT IGNORE INTO shipping_courier_webhook_events
-            (provider, event_id, signature, payload_hash, raw_payload, status, attempts)
-         VALUES (?, ?, ?, ?, ?, 'processing', 1)"
-    );
-    $insert->bind_param('sssss', $provider, $eventId, $signature, $payloadHash, $rawPayload);
-    $insert->execute();
-    if ((int) $insert->affected_rows > 0) {
-        return ['state' => 'claimed', 'payload_hash' => $payloadHash];
-    }
+    $conn->begin_transaction();
+    try {
+        $insert = $conn->prepare(
+            "INSERT IGNORE INTO shipping_courier_webhook_events
+                (provider, event_id, signature, payload_hash, raw_payload, status, attempts)
+             VALUES (?, ?, ?, ?, ?, 'processing', 1)"
+        );
+        $insert->bind_param('sssss', $provider, $eventId, $signature, $payloadHash, $rawPayload);
+        $insert->execute();
 
-    $stmt = $conn->prepare(
-        "SELECT status
-         FROM shipping_courier_webhook_events
-         WHERE provider = ? AND event_id = ?
-         LIMIT 1"
-    );
-    $stmt->bind_param('ss', $provider, $eventId);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc() ?: [];
-    if (($row['status'] ?? '') === 'processed') {
-        return ['state' => 'already_processed', 'payload_hash' => $payloadHash];
-    }
+        $stmt = $conn->prepare(
+            "SELECT status, attempts, updated_at
+             FROM shipping_courier_webhook_events
+             WHERE provider = ? AND event_id = ?
+             LIMIT 1 FOR UPDATE"
+        );
+        $stmt->bind_param('ss', $provider, $eventId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        $attempts = max(1, (int) ($row['attempts'] ?? 1));
+        if ((int) $insert->affected_rows > 0) {
+            $conn->commit();
+            return ['state' => 'claimed', 'payload_hash' => $payloadHash, 'attempts' => $attempts];
+        }
+        if (($row['status'] ?? '') === 'processed') {
+            $conn->commit();
+            return ['state' => 'already_processed', 'payload_hash' => $payloadHash, 'attempts' => $attempts];
+        }
 
-    $claim = $conn->prepare(
-        "UPDATE shipping_courier_webhook_events
-         SET signature = ?,
-             payload_hash = ?,
-             raw_payload = ?,
-             status = 'processing',
-             attempts = attempts + 1,
-             last_error = NULL,
-             updated_at = NOW()
-         WHERE provider = ?
-           AND event_id = ?
-           AND (
-                status IN ('received', 'failed')
-                OR (status = 'processing' AND updated_at < (NOW() - INTERVAL 10 MINUTE))
-           )"
-    );
-    $claim->bind_param('sssss', $signature, $payloadHash, $rawPayload, $provider, $eventId);
-    $claim->execute();
-    return [
-        'state' => (int) $claim->affected_rows > 0 ? 'claimed' : 'in_progress',
-        'payload_hash' => $payloadHash,
-    ];
+        $updatedAt = strtotime((string) ($row['updated_at'] ?? '')) ?: 0;
+        $isStale = ($row['status'] ?? '') === 'processing' && $updatedAt < time() - 600;
+        if (!in_array((string) ($row['status'] ?? ''), ['received', 'failed'], true) && !$isStale) {
+            $conn->commit();
+            return ['state' => 'in_progress', 'payload_hash' => $payloadHash, 'attempts' => $attempts];
+        }
+
+        $claim = $conn->prepare(
+            "UPDATE shipping_courier_webhook_events
+             SET signature = ?, payload_hash = ?, raw_payload = ?, status = 'processing',
+                 attempts = attempts + 1, last_error = NULL, updated_at = NOW()
+             WHERE provider = ? AND event_id = ? AND attempts = ?"
+        );
+        $claim->bind_param('sssssi', $signature, $payloadHash, $rawPayload, $provider, $eventId, $attempts);
+        $claim->execute();
+        if ($claim->affected_rows !== 1) {
+            throw new RuntimeException('Courier webhook claim was superseded.');
+        }
+        $attempts++;
+        $conn->commit();
+        return ['state' => 'claimed', 'payload_hash' => $payloadHash, 'attempts' => $attempts];
+    } catch (Throwable $e) {
+        try { $conn->rollback(); } catch (Throwable $ignored) {}
+        throw $e;
+    }
 }
 
 function shipping_courier_webhook_mark_processed(
@@ -128,7 +136,8 @@ function shipping_courier_webhook_mark_processed(
     string $provider,
     string $eventId,
     string $signature,
-    string $rawPayload
+    string $rawPayload,
+    int $claimedAttempt
 ): void {
     $payloadHash = hash('sha256', $rawPayload);
     $stmt = $conn->prepare(
@@ -140,10 +149,14 @@ function shipping_courier_webhook_mark_processed(
              last_error = NULL,
              processed_at = NOW(),
              updated_at = NOW()
-         WHERE provider = ? AND event_id = ?"
+         WHERE provider = ? AND event_id = ?
+           AND status = 'processing' AND attempts = ?"
     );
-    $stmt->bind_param('sssss', $signature, $payloadHash, $rawPayload, $provider, $eventId);
+    $stmt->bind_param('sssssi', $signature, $payloadHash, $rawPayload, $provider, $eventId, $claimedAttempt);
     $stmt->execute();
+    if ($stmt->affected_rows !== 1) {
+        throw new RuntimeException('Courier webhook processing lease was superseded.');
+    }
 }
 
 function shipping_courier_webhook_mark_failed(
@@ -151,7 +164,8 @@ function shipping_courier_webhook_mark_failed(
     string $provider,
     string $eventId,
     string $error,
-    string $signature
+    string $signature,
+    int $claimedAttempt
 ): void {
     $error = substr($error, 0, 2000);
     $stmt = $conn->prepare(
@@ -160,10 +174,14 @@ function shipping_courier_webhook_mark_failed(
              status = 'failed',
              last_error = ?,
              updated_at = NOW()
-         WHERE provider = ? AND event_id = ?"
+         WHERE provider = ? AND event_id = ?
+           AND status = 'processing' AND attempts = ?"
     );
-    $stmt->bind_param('ssss', $signature, $error, $provider, $eventId);
+    $stmt->bind_param('ssssi', $signature, $error, $provider, $eventId, $claimedAttempt);
     $stmt->execute();
+    if ($stmt->affected_rows !== 1) {
+        throw new RuntimeException('Courier webhook failure lease was superseded.');
+    }
 }
 
 function shipping_courier_find_webhook_shipment(mysqli $conn, array $payload): ?array

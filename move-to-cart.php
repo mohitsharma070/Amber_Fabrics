@@ -41,11 +41,25 @@ if (!isset($_SESSION['wishlist_meter_length']) || !is_array($_SESSION['wishlist_
 }
 
 if (isset($_SESSION['wishlist'][$cartKey])) {
+    $sourceQuantity = (float) $_SESSION['wishlist'][$cartKey];
+    $destinationQuantity = (float) ($_SESSION['cart'][$cartKey] ?? 0);
+    $combinedQuantity = $sourceQuantity + $destinationQuantity;
+    $sourceMeterLength = isset($_SESSION['wishlist_meter_length'][$cartKey])
+        ? (float) $_SESSION['wishlist_meter_length'][$cartKey]
+        : null;
+    $combinedSizeMap = $_SESSION['cart_size'];
+    if (!isset($combinedSizeMap[$cartKey]) && isset($_SESSION['wishlist_size'][$cartKey])) {
+        $combinedSizeMap[$cartKey] = $_SESSION['wishlist_size'][$cartKey];
+    }
+    $combinedMeterMap = $_SESSION['cart_meter_length'];
+    if (!isset($combinedMeterMap[$cartKey]) && isset($_SESSION['wishlist_meter_length'][$cartKey])) {
+        $combinedMeterMap[$cartKey] = $_SESSION['wishlist_meter_length'][$cartKey];
+    }
     $hydrated = CartService::cart_hydrate_items(
         $conn,
-        [$cartKey => $_SESSION['wishlist'][$cartKey]],
-        $_SESSION['wishlist_size'] ?? [],
-        $_SESSION['wishlist_meter_length'] ?? []
+        [$cartKey => $combinedQuantity],
+        $combinedSizeMap,
+        $combinedMeterMap
     );
     $item = $hydrated['items'][0] ?? null;
     $maximumSellableQuantity = is_array($item)
@@ -60,28 +74,33 @@ if (isset($_SESSION['wishlist'][$cartKey])) {
         $_SESSION['cart_meter_length'],
         $cartKey,
         (string) ($item['unit_type'] ?? ''),
-        $item['meter_length'] ?? null
+        $sourceMeterLength
     )) {
         flash('error', 'This product is already in your cart with a different or invalid meter length. Update or remove that line before moving it from your wishlist.');
         redirect('/cart.php');
     }
 
-    $wishlistQuantity = (float) ($item['quantity'] ?? 0);
-    $_SESSION['cart'][$cartKey] = min($wishlistQuantity, $maximumSellableQuantity);
+    $_SESSION['cart'][$cartKey] = (float) ($item['quantity'] ?? 0);
     unset($_SESSION['wishlist'][$cartKey]);
 
-    if (isset($_SESSION['wishlist_size'][$cartKey])) {
+    if (!isset($_SESSION['cart_size'][$cartKey]) && isset($_SESSION['wishlist_size'][$cartKey])) {
         $_SESSION['cart_size'][$cartKey] = $_SESSION['wishlist_size'][$cartKey];
-        unset($_SESSION['wishlist_size'][$cartKey]);
     }
-    if (isset($_SESSION['wishlist_meter_length'][$cartKey])) {
+    unset($_SESSION['wishlist_size'][$cartKey]);
+    if (!isset($_SESSION['cart_meter_length'][$cartKey]) && isset($_SESSION['wishlist_meter_length'][$cartKey])) {
         $_SESSION['cart_meter_length'][$cartKey] = $_SESSION['wishlist_meter_length'][$cartKey];
-        unset($_SESSION['wishlist_meter_length'][$cartKey]);
     }
+    unset($_SESSION['wishlist_meter_length'][$cartKey]);
 
     if (!empty($_SESSION['customer_id'])) {
         $cid = (int) $_SESSION['customer_id'];
-        CartService::cart_save_to_db($conn, $cid, $_SESSION['cart']);
+        CartService::cart_save_to_db(
+            $conn,
+            $cid,
+            $_SESSION['cart'],
+            $_SESSION['cart_meter_length'] ?? [],
+            $_SESSION['cart_size'] ?? []
+        );
         wishlist_save_to_db(
             $conn,
             $cid,
@@ -92,7 +111,7 @@ if (isset($_SESSION['wishlist'][$cartKey])) {
         $_SESSION['wishlist_loaded_for'] = $cid;
     }
 
-    $quantityAdjusted = !empty($hydrated['quantity_updates']);
+    $quantityAdjusted = abs((float) ($_SESSION['cart'][$cartKey] ?? 0) - $combinedQuantity) > 0.0001;
     flash('success', $quantityAdjusted ? 'Item moved to cart with quantity adjusted to available stock.' : 'Item moved to cart.');
 } else {
     flash('error', 'Item not found in wishlist.');

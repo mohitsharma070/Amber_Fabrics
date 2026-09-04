@@ -66,6 +66,10 @@ if (($unitType === 'piece' || $unitType === 'set') && is_numeric($quantityInput)
         flash('error', 'Quantity must be a whole number for this product.');
         redirect('/cart.php');
     }
+    if (!CartService::quantityRespectsStep($rawWholeQty, $unitType, (float) $minOrder, $quantityStep)) {
+        flash('error', 'Quantity does not match the allowed quantity step.');
+        redirect('/cart.php');
+    }
 }
 if ($unitType === 'meter') {
     $meterLength = null;

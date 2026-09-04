@@ -79,9 +79,17 @@ final class OrderItemSnapshotService
             $minimumQuantity = $unitType === 'meter'
                 ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
                 : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+            $quantityStep = is_numeric($product['qty_step'] ?? null) ? (float) $product['qty_step'] : 0.0;
+            if (!is_numeric($quantityRaw) || !CartService::quantityRespectsStep(
+                (float) $quantityRaw,
+                $unitType,
+                (float) $minimumQuantity,
+                $quantityStep
+            )) {
+                throw new RuntimeException('Invalid quantity step for ' . ($product['name'] ?? 'product'));
+            }
             $quantity = normalize_quantity_by_unit($quantityRaw, $unitType, (float) $minimumQuantity);
             if ($unitType === 'meter') {
-                $quantityStep = is_numeric($product['qty_step'] ?? null) ? (float) $product['qty_step'] : 0.0;
                 if (!meter_qty_respects_step((float) $quantity, (float) $minimumQuantity, (float) $quantityStep)) {
                     throw new RuntimeException('Invalid meter quantity step for ' . ($product['name'] ?? 'product'));
                 }

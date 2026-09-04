@@ -192,6 +192,7 @@ and cron cannot duplicate customer email, shipment creation, or analytics purcha
 - Browser and webhook paths converge on the same idempotent payment transition and
   outbox event.
 - Production cannot disable Razorpay or Bigship TLS certificate verification.
+- Razorpay browser initialization keeps payment disabled until the nonce-bearing SDK is ready and exposes retry/return recovery when loading or opening fails. A provider API base override is permitted only for explicitly confirmed local/test E2E runs and loopback HTTP.
 
 ### Order lifecycle
 
@@ -312,8 +313,9 @@ another general-purpose layer.
 - Versioned API-envelope normalization if browser consumers are migrated together.
 - Plugin lazy loading based on profiling.
 - Composer autoload/namespaces if they reduce real maintenance cost.
-- Expanded disposable-MySQL concurrency, browser accessibility, Razorpay test-mode,
-  courier sandbox, and failure-injection suites.
+- Expanded disposable-MySQL concurrency and courier sandbox coverage.
+- Guarded browser commerce, accessibility, local Razorpay initialization, missing-media,
+  Bootstrap-degradation, and courier failure-injection suites run without live providers.
 
 ## Change checklist
 

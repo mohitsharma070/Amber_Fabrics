@@ -50,14 +50,17 @@ try {
         $signature,
         $rawPayload
     );
+    $lifecycleAttempt = (int) ($lifecycle['attempts'] ?? 0);
     if (($lifecycle['state'] ?? '') === 'already_processed') {
         header('Content-Type: application/json');
         echo json_encode(['ok' => true, 'state' => 'already_processed'], JSON_UNESCAPED_SLASHES);
         exit;
     }
     if (($lifecycle['state'] ?? '') === 'in_progress') {
+        http_response_code(503);
+        header('Retry-After: 5');
         header('Content-Type: application/json');
-        echo json_encode(['ok' => true, 'state' => 'in_progress'], JSON_UNESCAPED_SLASHES);
+        echo json_encode(['ok' => false, 'state' => 'in_progress'], JSON_UNESCAPED_SLASHES);
         exit;
     }
 } catch (Throwable $e) {
@@ -70,7 +73,7 @@ try {
 try {
     $conn->begin_transaction();
     $result = shipping_courier_handle_webhook_payload($conn, $payload);
-    shipping_courier_webhook_mark_processed($conn, $provider, $eventId, $signature, $rawPayload);
+    shipping_courier_webhook_mark_processed($conn, $provider, $eventId, $signature, $rawPayload, $lifecycleAttempt);
     $conn->commit();
 
     if (!empty($result['tracking_changed'])) {
@@ -94,7 +97,7 @@ try {
     } catch (Throwable $rollbackException) {
     }
     try {
-        shipping_courier_webhook_mark_failed($conn, $provider, $eventId, $e->getMessage(), $signature);
+        shipping_courier_webhook_mark_failed($conn, $provider, $eventId, $e->getMessage(), $signature, $lifecycleAttempt);
     } catch (Throwable $markFailedException) {
         error_log('[shipping-courier] webhook failure state could not be saved: ' . $markFailedException->getMessage());
     }

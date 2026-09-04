@@ -82,17 +82,36 @@
         };
     }
 
+    function degradedConfirmation(options) {
+        var title = options.title || "";
+        var message = options.message || "Are you sure you want to continue?";
+        var prompt = title ? title + "\n\n" + message : message;
+        var accepted = false;
+        if (typeof window.confirm === "function") {
+            try {
+                accepted = window.confirm(prompt);
+            } catch (_error) {}
+        }
+        return new Promise(function (resolve) {
+            window.setTimeout(function () { resolve(accepted); }, 0);
+        });
+    }
+
     AmberUI.confirm = function (options) {
         options = options || {};
         var dialog = document.getElementById("uiConfirmDialog");
         var Modal = window.bootstrap && window.bootstrap.Modal;
-        if (!dialog || !Modal || activeConfirmation) return Promise.resolve(false);
+        if (activeConfirmation) return Promise.resolve(false);
+        if (!dialog || !Modal) return degradedConfirmation(options);
 
         var title = document.getElementById("uiConfirmDialogTitle");
         var message = document.getElementById("uiConfirmDialogMessage");
         var icon = document.getElementById("uiConfirmDialogIcon");
         var cancel = document.getElementById("uiConfirmDialogCancel");
         var confirm = document.getElementById("uiConfirmDialogOk");
+        if (!title || !message || !icon || !cancel || !confirm) {
+            return degradedConfirmation(options);
+        }
         var requestedVariant = options.variant || (/delete|remove|cancel|archive|refund/i.test(
             (options.title || "") + " " + (options.okText || "") + " " + (options.message || "")
         ) ? "danger" : "primary");
@@ -106,20 +125,68 @@
         confirm.className = "btn btn-" + (variant === "warning" ? "warning" : variant);
         dialog.dataset.variant = variant;
 
-        var modal = Modal.getOrCreateInstance(dialog, { backdrop: "static", keyboard: true, focus: true });
+        var modal;
+        try {
+            modal = Modal.getOrCreateInstance(dialog, { backdrop: "static", keyboard: true, focus: true });
+        } catch (_error) {
+            return degradedConfirmation(options);
+        }
         return new Promise(function (resolve) {
             activeConfirmation = {
                 accepted: false,
                 resolve: resolve,
                 trigger: options.trigger instanceof HTMLElement ? options.trigger : document.activeElement
             };
-            modal.show();
+            try {
+                modal.show();
+            } catch (_error) {
+                activeConfirmation = null;
+                resolve(degradedConfirmation(options));
+            }
         });
     };
 
     window.adminConfirm = function (options) {
         return AmberUI.confirm(options);
     };
+
+    function submitConfirmedForm(form, submitter) {
+        form.dataset.confirmed = "1";
+        form.dataset.confirmSubmitting = "1";
+        if (typeof form.requestSubmit === "function") {
+            try {
+                form.requestSubmit(submitter || undefined);
+            } catch (_error) {
+                delete form.dataset.confirmed;
+                delete form.dataset.confirmSubmitting;
+                return;
+            }
+            if (form.dataset.confirmed === "1") {
+                delete form.dataset.confirmed;
+                delete form.dataset.confirmSubmitting;
+            }
+            return;
+        }
+
+        var submitterField = null;
+        if (submitter && submitter.name) {
+            submitterField = document.createElement("input");
+            submitterField.type = "hidden";
+            submitterField.name = submitter.name;
+            submitterField.value = submitter.value;
+            form.appendChild(submitterField);
+        }
+        if (submitter && typeof AmberUI.setButtonLoading === "function") {
+            AmberUI.setButtonLoading(submitter, true, "Processing");
+        }
+        try {
+            HTMLFormElement.prototype.submit.call(form);
+        } catch (_error) {
+            if (submitterField) submitterField.remove();
+            delete form.dataset.confirmed;
+            delete form.dataset.confirmSubmitting;
+        }
+    }
 
     function initConfirmations() {
         var dialog = document.getElementById("uiConfirmDialog");
@@ -145,9 +212,15 @@
         document.addEventListener("submit", function (event) {
             var form = event.target;
             if (!(form instanceof HTMLFormElement)) return;
-            if (event.defaultPrevented) return;
             if (form.dataset.confirmed === "1") {
                 delete form.dataset.confirmed;
+                if (event.defaultPrevented) delete form.dataset.confirmSubmitting;
+                return;
+            }
+            if (event.defaultPrevented) return;
+            if (form.dataset.confirmSubmitting === "1") {
+                event.preventDefault();
+                event.stopImmediatePropagation();
                 return;
             }
 
@@ -162,12 +235,9 @@
             AmberUI.confirm(options).then(function (confirmed) {
                 delete form.dataset.confirmPending;
                 if (!confirmed) return;
-                form.dataset.confirmed = "1";
-                if (typeof form.requestSubmit === "function") {
-                    form.requestSubmit(submitter || undefined);
-                } else {
-                    form.submit();
-                }
+                submitConfirmedForm(form, submitter);
+            }, function () {
+                delete form.dataset.confirmPending;
             });
         });
     }
@@ -243,6 +313,11 @@
         window.addEventListener("pageshow", function (event) {
             if (!event.persisted) return;
             document.querySelectorAll(".btn.is-loading").forEach(restoreLoadingButton);
+            document.querySelectorAll("form[data-confirm-submitting]").forEach(function (form) {
+                delete form.dataset.confirmSubmitting;
+                delete form.dataset.confirmed;
+                delete form.dataset.confirmPending;
+            });
         });
     }
 
@@ -279,6 +354,143 @@
 
     function bootstrapComponent(name) {
         return window.bootstrap && window.bootstrap[name] ? window.bootstrap[name] : null;
+    }
+
+    function nativeFocusableElements(container) {
+        return Array.from(container.querySelectorAll(interactiveSelector)).filter(function (element) {
+            return !element.disabled
+                && element.getAttribute("aria-hidden") !== "true"
+                && element.getAttribute("tabindex") !== "-1"
+                && element.getClientRects().length > 0;
+        });
+    }
+
+    function initNativeOffcanvasFallback() {
+        if (bootstrapComponent("Offcanvas")) return;
+
+        var openDrawer = null;
+        var openTrigger = null;
+        var backdrop = null;
+
+        function triggersFor(drawer) {
+            return Array.from(document.querySelectorAll('[aria-controls="' + drawer.id + '"], [data-bs-target="#' + drawer.id + '"]'));
+        }
+
+        function syncDrawer(drawer, expanded) {
+            drawer.classList.toggle("is-native-open", expanded);
+            drawer.setAttribute("aria-hidden", expanded ? "false" : "true");
+            triggersFor(drawer).forEach(function (trigger) {
+                trigger.setAttribute("aria-expanded", expanded ? "true" : "false");
+            });
+            if (drawer.id === "mobileNavDrawer") {
+                document.body.classList.toggle("mobile-nav-open", expanded);
+            }
+        }
+
+        function closeDrawer(restoreFocus) {
+            if (!openDrawer) return;
+            var trigger = openTrigger;
+            syncDrawer(openDrawer, false);
+            openDrawer = null;
+            openTrigger = null;
+            document.body.classList.remove("native-offcanvas-open");
+            if (backdrop) backdrop.remove();
+            backdrop = null;
+            if (restoreFocus && trigger && document.contains(trigger)) trigger.focus();
+        }
+
+        function showDrawer(drawer, trigger) {
+            if (openDrawer && openDrawer !== drawer) closeDrawer(false);
+            openDrawer = drawer;
+            openTrigger = trigger;
+            syncDrawer(drawer, true);
+            document.body.classList.add("native-offcanvas-open");
+            backdrop = document.createElement("div");
+            backdrop.className = "native-offcanvas-backdrop";
+            backdrop.addEventListener("click", function () { closeDrawer(true); });
+            document.body.appendChild(backdrop);
+            var focusable = nativeFocusableElements(drawer);
+            (focusable[0] || drawer).focus();
+        }
+
+        document.querySelectorAll(".offcanvas").forEach(function (drawer) {
+            drawer.setAttribute("aria-hidden", "true");
+        });
+
+        document.addEventListener("click", function (event) {
+            var target = eventElement(event);
+            if (!target) return;
+            var trigger = target.closest('[data-bs-toggle="offcanvas"], [data-mobile-nav-menu], [data-mobile-bottom-menu]');
+            if (trigger) {
+                var selector = trigger.getAttribute("data-bs-target") || "#mobileNavDrawer";
+                var drawer = selector.charAt(0) === "#" ? document.querySelector(selector) : null;
+                if (!drawer) return;
+                event.preventDefault();
+                showDrawer(drawer, trigger);
+                return;
+            }
+            if (!openDrawer) return;
+            if (target.closest('[data-bs-dismiss="offcanvas"]') || target.closest("a.nav-link, a.drawer-utility-link")) {
+                closeDrawer(true);
+            }
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (!openDrawer) return;
+            if (event.key === "Escape") {
+                event.preventDefault();
+                closeDrawer(true);
+                return;
+            }
+            if (event.key !== "Tab") return;
+            var focusable = nativeFocusableElements(openDrawer);
+            if (!focusable.length) {
+                event.preventDefault();
+                openDrawer.focus();
+                return;
+            }
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+
+        window.addEventListener("pageshow", function () { closeDrawer(false); });
+    }
+
+    function initNativeCollapseFallback() {
+        if (bootstrapComponent("Collapse")) return;
+        document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function (button) {
+            var selector = button.getAttribute("data-bs-target");
+            var panel = selector && selector.charAt(0) === "#" ? document.querySelector(selector) : null;
+            if (!panel) return;
+            button.addEventListener("click", function () {
+                var willOpen = !panel.classList.contains("show");
+                var parentSelector = panel.getAttribute("data-bs-parent");
+                var parent = parentSelector ? document.querySelector(parentSelector) : null;
+                if (willOpen && parent) {
+                    parent.querySelectorAll(".accordion-collapse.show").forEach(function (sibling) {
+                        sibling.classList.remove("show");
+                        sibling.setAttribute("aria-hidden", "true");
+                        var siblingButton = parent.querySelector('[aria-controls="' + sibling.id + '"]');
+                        if (siblingButton) {
+                            siblingButton.classList.add("collapsed");
+                            siblingButton.setAttribute("aria-expanded", "false");
+                        }
+                    });
+                }
+                panel.classList.toggle("show", willOpen);
+                panel.setAttribute("aria-hidden", willOpen ? "false" : "true");
+                button.classList.toggle("collapsed", !willOpen);
+                button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+            });
+            panel.setAttribute("aria-hidden", panel.classList.contains("show") ? "false" : "true");
+        });
     }
 
     function initMobileDrawer() {
@@ -822,6 +1034,8 @@
         initFormLoading();
         initDelegatedClicks();
         initRevealAnimations();
+        initNativeOffcanvasFallback();
+        initNativeCollapseFallback();
         initMobileDrawer();
         initMobileViewport();
         initNavigationState();

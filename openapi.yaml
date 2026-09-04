@@ -544,7 +544,13 @@ paths:
         '500':
           description: Processing error
         '503':
-          description: Lifecycle storage unavailable
+          description: Lifecycle storage unavailable or another worker holds the active processing lease
+          headers:
+            Retry-After:
+              description: Seconds before retrying an actively processed event
+              schema:
+                type: integer
+                minimum: 1
 
   /announcement-dismiss.php:
     get:

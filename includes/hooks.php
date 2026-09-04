@@ -109,7 +109,7 @@ function add_filter(string $hook, callable $callback, int $priority = 10): void
     $GLOBALS['amber_hooks']['filters'][$hook][$priority][] = $callback;
 }
 
-function apply_filters(string $hook, $value, array $context = [])
+function apply_filters(string $hook, $value, array $context = [], bool $throwOnFailure = false)
 {
     if (empty($GLOBALS['amber_hooks']['filters'][$hook]) || !is_array($GLOBALS['amber_hooks']['filters'][$hook])) {
         return $value;
@@ -121,7 +121,17 @@ function apply_filters(string $hook, $value, array $context = [])
             try {
                 $value = $callback($value, $context);
             } catch (Throwable $e) {
-                error_log('[amber-plugin] filter "' . $hook . '" failed: ' . $e->getMessage());
+                if ($throwOnFailure) {
+                    throw $e;
+                }
+                if (function_exists('app_log')) {
+                    app_log('error', 'plugin_filter_failed', [
+                        'hook' => $hook,
+                        'exception_type' => get_class($e),
+                    ]);
+                } else {
+                    error_log('[amber-plugin] filter failed: ' . $hook . ' (' . get_class($e) . ')');
+                }
             }
         }
     }

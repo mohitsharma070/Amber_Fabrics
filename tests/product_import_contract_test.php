@@ -101,6 +101,9 @@ $assert($preservedData['category']==='archived-category'&&$preservedData['unit_t
 $assert(str_contains(implode(' ',$newInactiveErrors),'active category'),'New products must not be assigned to inactive categories.');
 
 $activeMeterCategories=['fabricbymeter'=>['slug'=>'fabric-by-meter','default_unit_type'=>'meter','status'=>'active']];
+$legacyStepInput=$normalizeRow->invoke(null,['name'=>'Legacy Step Product','skuid'=>'LEGACY-STEP','mrp'=>'100','quantity'=>'20','sellingunit'=>'meter','meterlengthoptions'=>'2.5,5','producttype'=>'fabric-by-meter']);
+[, $legacyStepErrors]=$validateRow->invoke(null,$validationConn,$legacyStepInput,$activeMeterCategories,'piece',array_merge($existing,['qty_step'=>'0.00001']));
+$assert(str_contains(implode(' ',$legacyStepErrors),'Meter Quantity Step must use no more than two decimal places'),'Catalogue validation must reject an existing unrepresentable meter step before writing the row.');
 $legacyMeterExisting=array_merge($existing,['meter_options'=>'']);
 $legacyMeterWorkbookRow=array_fill(0,count(ProductImportService::HEADERS),'');
 $legacyMeterWorkbookValues=['Product ID'=>'7','Product Revision'=>$revisionToken->invoke(null,$legacyMeterExisting,['image'=>[],'video'=>[]]),'Name'=>'Existing Product','Sku Id'=>'OLD-SKU','MRP'=>'100','Quantity'=>'20','Selling Unit'=>'meter','Meter Length Options'=>'','Product Type'=>'fabric-by-meter'];

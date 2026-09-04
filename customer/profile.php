@@ -151,22 +151,22 @@ include __DIR__ . '/../includes/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="update_info">
                         <div class="mb-3">
-                            <label class="form-label">Full Name</label>
-                            <input type="text" name="name" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'name'); ?>" required value="<?php echo e($cust['name']); ?>">
+                            <label class="form-label" for="profile_name">Full Name</label>
+                            <input id="profile_name" type="text" name="name" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'name'); ?>" required value="<?php echo e($cust['name']); ?>">
                             <?php if ($activeForm === 'info') echo form_error($errors, 'name'); ?>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Email <small class="text-muted">(read only)</small></label>
-                            <input type="email" class="form-control" value="<?php echo e($cust['email']); ?>" disabled>
+                            <label class="form-label" for="profile_email">Email <small class="text-muted">(read only)</small></label>
+                            <input id="profile_email" type="email" class="form-control" value="<?php echo e($cust['email']); ?>" disabled>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Phone</label>
-                            <input type="tel" name="phone" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'phone'); ?>" value="<?php echo e($cust['phone'] ?? ''); ?>">
+                            <label class="form-label" for="profile_phone">Phone</label>
+                            <input id="profile_phone" type="tel" name="phone" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'phone'); ?>" value="<?php echo e($cust['phone'] ?? ''); ?>">
                             <?php if ($activeForm === 'info') echo form_error($errors, 'phone'); ?>
                         </div>
                         <div class="mb-4">
-                            <label class="form-label">Country</label>
-                            <input type="text" name="country" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'country'); ?>" value="<?php echo e($cust['country'] ?? ''); ?>">
+                            <label class="form-label" for="profile_country">Country</label>
+                            <input id="profile_country" type="text" name="country" class="<?php echo form_class($activeForm === 'info' ? $errors : [], 'country'); ?>" value="<?php echo e($cust['country'] ?? ''); ?>">
                             <?php if ($activeForm === 'info') echo form_error($errors, 'country'); ?>
                         </div>
                         <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -224,40 +224,40 @@ include __DIR__ . '/../includes/header.php';
                         <input type="hidden" name="action" value="save_address">
                         <input type="hidden" name="address_id" value="<?php echo (int) ($addressForm['id'] ?? 0); ?>">
                         <div class="mb-2">
-                            <label class="form-label">Label</label>
-                            <input type="text" name="label" class="form-control" placeholder="Home / Office" value="<?php echo e((string) ($addressForm['label'] ?? '')); ?>">
+                            <label class="form-label" for="address_label">Label</label>
+                            <input id="address_label" type="text" name="label" class="form-control" placeholder="Home / Office" value="<?php echo e((string) ($addressForm['label'] ?? '')); ?>">
                         </div>
                         <div class="mb-2">
-                            <label class="form-label">Full Name *</label>
-                            <input type="text" name="full_name" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'full_name'); ?>" value="<?php echo e((string) ($addressForm['full_name'] ?? '')); ?>">
+                            <label class="form-label" for="address_full_name">Full Name *</label>
+                            <input id="address_full_name" type="text" name="full_name" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'full_name'); ?>" value="<?php echo e((string) ($addressForm['full_name'] ?? '')); ?>">
                             <?php if ($activeForm === 'address') echo form_error($errors, 'full_name'); ?>
                         </div>
                         <div class="mb-2">
-                            <label class="form-label">Phone</label>
-                            <input type="text" name="address_phone" class="form-control" value="<?php echo e((string) ($addressForm['phone'] ?? '')); ?>">
+                            <label class="form-label" for="address_phone">Phone</label>
+                            <input id="address_phone" type="text" name="address_phone" class="form-control" value="<?php echo e((string) ($addressForm['phone'] ?? '')); ?>">
                         </div>
                         <div class="mb-2">
-                            <label class="form-label">Address *</label>
-                            <textarea name="address_line" rows="2" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_line'); ?>"><?php echo e((string) ($addressForm['address_line'] ?? '')); ?></textarea>
+                            <label class="form-label" for="address_line">Address *</label>
+                            <textarea id="address_line" name="address_line" rows="2" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_line'); ?>"><?php echo e((string) ($addressForm['address_line'] ?? '')); ?></textarea>
                             <?php if ($activeForm === 'address') echo form_error($errors, 'address_line'); ?>
                         </div>
                         <div class="row g-2">
                             <div class="col-sm-6">
-                                <label class="form-label">City *</label>
-                                <input type="text" name="address_city" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_city'); ?>" value="<?php echo e((string) ($addressForm['city'] ?? '')); ?>">
+                                <label class="form-label" for="address_city">City *</label>
+                                <input id="address_city" type="text" name="address_city" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_city'); ?>" value="<?php echo e((string) ($addressForm['city'] ?? '')); ?>">
                                 <?php if ($activeForm === 'address') echo form_error($errors, 'address_city'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">State</label>
-                                <input type="text" name="address_state" class="form-control" value="<?php echo e((string) ($addressForm['state'] ?? '')); ?>">
+                                <label class="form-label" for="address_state">State</label>
+                                <input id="address_state" type="text" name="address_state" class="form-control" value="<?php echo e((string) ($addressForm['state'] ?? '')); ?>">
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Pincode</label>
-                                <input type="text" name="address_pincode" class="form-control" value="<?php echo e((string) ($addressForm['pincode'] ?? '')); ?>">
+                                <label class="form-label" for="address_pincode">Pincode</label>
+                                <input id="address_pincode" type="text" name="address_pincode" class="form-control" value="<?php echo e((string) ($addressForm['pincode'] ?? '')); ?>">
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Country *</label>
-                                <input type="text" name="address_country" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_country'); ?>" value="<?php echo e((string) ($addressForm['country'] ?? 'India')); ?>">
+                                <label class="form-label" for="address_country">Country *</label>
+                                <input id="address_country" type="text" name="address_country" class="<?php echo form_class($activeForm === 'address' ? $errors : [], 'address_country'); ?>" value="<?php echo e((string) ($addressForm['country'] ?? 'India')); ?>">
                                 <?php if ($activeForm === 'address') echo form_error($errors, 'address_country'); ?>
                             </div>
                         </div>
@@ -285,18 +285,18 @@ include __DIR__ . '/../includes/header.php';
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="change_password">
                         <div class="mb-3">
-                            <label class="form-label">Current Password</label>
-                            <input type="password" name="current_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'current_password'); ?>" required>
+                            <label class="form-label" for="current_password">Current Password</label>
+                            <input id="current_password" type="password" name="current_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'current_password'); ?>" required>
                             <?php if ($activeForm === 'password') echo form_error($errors, 'current_password'); ?>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">New Password <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
-                            <input type="password" name="new_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'new_password'); ?>" required>
+                            <label class="form-label" for="new_password">New Password <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
+                            <input id="new_password" type="password" name="new_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'new_password'); ?>" required>
                             <?php if ($activeForm === 'password') echo form_error($errors, 'new_password'); ?>
                         </div>
                         <div class="mb-4">
-                            <label class="form-label">Confirm New Password</label>
-                            <input type="password" name="confirm_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'confirm_password'); ?>" required>
+                            <label class="form-label" for="confirm_new_password">Confirm New Password</label>
+                            <input id="confirm_new_password" type="password" name="confirm_password" class="<?php echo form_class($activeForm === 'password' ? $errors : [], 'confirm_password'); ?>" required>
                             <?php if ($activeForm === 'password') echo form_error($errors, 'confirm_password'); ?>
                         </div>
                         <button type="submit" class="btn btn-outline-primary">Update Password</button>

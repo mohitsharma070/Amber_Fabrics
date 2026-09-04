@@ -45,6 +45,7 @@ $helperFiles = [
     'helpers/media.php',
     'helpers/product-cards.php',
     'helpers/admin.php',
+    'helpers/catalog-pagination.php',
     'helpers/inquiries-ledger.php',
     'helpers/payments.php',
     'helpers/site-settings.php',

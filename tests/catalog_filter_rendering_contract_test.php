@@ -17,6 +17,11 @@ if (!function_exists('e')) {
 }
 
 $catalog = (string) file_get_contents($root . '/catalog.php');
+$assert(
+    str_contains($catalog, "COALESCE(v.stock, f.stock) >= GREATEST(1, CEIL(f.min_order_meters))")
+        && str_contains($catalog, "COALESCE(v.stock_meters, f.stock_meters) >= f.min_order_meters"),
+    'The in-stock catalog filter must exclude product and variant rows whose stock is below MOQ.'
+);
 $partialPath = $root . '/includes/partials/catalog-filter-fields.php';
 $assert(is_file($partialPath), 'Catalog filter fields must be rendered by a focused shared partial.');
 $assert(

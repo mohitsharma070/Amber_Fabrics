@@ -29,6 +29,13 @@ $assert(
     'First-party image assets must expose exact source and thumbnail dimensions only when the local file can be inspected.'
 );
 $assert(
+    str_contains($media, 'if (!is_file($originalAbs))')
+        && str_contains($media, '$videoFilename !== \'\' && is_file($videoAbsolutePath)')
+        && str_contains($home, "!empty(\$cardImageAsset['src'])")
+        && str_contains($cards, "!empty(\$cardImageAsset['src'])"),
+    'Stale database filenames must render the established no-image fallback instead of broken media URLs.'
+);
+$assert(
     str_contains($media, 'function image_asset_dimension_attributes(')
         && str_contains($media, "'thumb_width'")
         && str_contains($media, "'thumb_height'")

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $catalog = (string) file_get_contents($root . '/catalog.php');
+$catalogPagination = (string) file_get_contents($root . '/includes/helpers/catalog-pagination.php');
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
     if (!$condition) {
@@ -21,7 +22,7 @@ $assert(
 );
 $assert(
     !preg_match("/'debug_explain'\s*=>/", $catalog)
-        && str_contains($catalog, "unset(\$params['debug_explain']);"),
+        && str_contains($catalogPagination, "unset(\$params['debug_explain']);"),
     'Unauthorized debug state must be excluded from catalog state and removed from generated catalog URLs.'
 );
 

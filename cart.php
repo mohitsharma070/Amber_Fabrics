@@ -151,7 +151,7 @@ include __DIR__ . '/includes/header.php';
                     <?php $cartImageAsset = ($item['image'] !== '') ? fabric_image_asset_data((string) $item['image']) : null; ?>
                     <div class="surface-panel p-3 mb-3">
                         <div class="d-flex gap-3 align-items-start cart-line-item">
-                            <?php if ($item['image'] !== ''): ?>
+                            <?php if (is_array($cartImageAsset) && !empty($cartImageAsset['src'])): ?>
                                 <a href="<?php echo e(product_card_public_url($item, (int) $item['variant_id'])); ?>">
                                     <img src="<?php echo e((string) ($cartImageAsset['thumb_src'] ?? '')); ?>" alt="<?php echo e($item['name']); ?>" class="rounded cart-item-img" loading="lazy"<?php echo image_asset_dimension_attributes($cartImageAsset, 'thumb'); ?>>
                                 </a>
