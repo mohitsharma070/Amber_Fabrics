@@ -11,7 +11,11 @@ function product_card_select_columns(array $extraColumns = [], bool $includePrim
         'f.category',
         $imageColumn,
         'f.size',
+        'f.product_type',
         'f.unit_type',
+        'f.meter_options',
+        'f.min_order_meters',
+        'f.qty_step',
         'f.price',
         'f.sale_price',
         'f.stock',
@@ -89,10 +93,34 @@ function product_card_stock_for_unit(
         : (float) ($record[$meterStockKey] ?? 0);
 }
 
+function product_card_maximum_sellable(array $product, float $stock, string $unitType): float
+{
+    $minimum = $unitType === 'meter'
+        ? normalize_meter_quantity($product['min_order_meters'] ?? 1, 1.0)
+        : (float) max(1, (int) round((float) ($product['min_order_meters'] ?? 1)));
+    $step = is_numeric($product['qty_step'] ?? null) ? (float) $product['qty_step'] : 0.0;
+    if ($unitType !== 'meter') {
+        return CartService::maximumSellableQuantity($stock, $unitType, $minimum, $step);
+    }
+
+    $meterOptions = CartService::parse_meter_options((string) ($product['meter_options'] ?? ''), $minimum);
+    if ($meterOptions === []) {
+        return CartService::maximumSellableQuantity($stock, $unitType, $minimum, $step);
+    }
+    $maximum = 0.0;
+    foreach ($meterOptions as $meterLength) {
+        $maximum = max(
+            $maximum,
+            CartService::maximumSellableQuantity($stock, $unitType, $minimum, $step, (float) $meterLength)
+        );
+    }
+    return $maximum;
+}
+
 function product_card_first_image(array $candidates): string
 {
     foreach ($candidates as $candidate) {
-        $candidate = trim((string) $candidate);
+        $candidate = basename(str_replace('\\', '/', trim((string) $candidate)));
         if ($candidate !== '') {
             return $candidate;
         }
@@ -149,7 +177,7 @@ function product_card_build_home_context(array $row, array $activeVariants): arr
             if ($firstVariantImage === '' && $variantImage !== '') {
                 $firstVariantImage = $variantImage;
             }
-            if ($variantStock > 0) {
+            if (product_card_maximum_sellable($row, $variantStock, $unitType) > 0) {
                 $hasSellableVariant = true;
                 if (!$representativeVariantFound) {
                     $representativeVariantFound = true;
@@ -168,7 +196,9 @@ function product_card_build_home_context(array $row, array $activeVariants): arr
     }
 
     $inStock = !empty($row['is_available'])
-        && ($hasActiveVariants ? $hasSellableVariant : $displayStock > 0);
+        && ($hasActiveVariants
+            ? $hasSellableVariant
+            : product_card_maximum_sellable($row, $displayStock, $unitType) > 0);
     $hasSizeOptions = !empty(CartService::parse_size_options((string) ($row['size'] ?? '')));
     $needsVariantSelection = $activeVariantCount > 1;
     $priceState = product_card_price_state(
@@ -256,7 +286,8 @@ function product_card_build_context(mysqli $conn, array $row): array
     } else {
         $displayStock = product_card_stock_for_unit($row, $unitType);
     }
-    $inStock = !empty($row['is_available']) && $displayStock > 0;
+    $inStock = !empty($row['is_available'])
+        && product_card_maximum_sellable($row, $displayStock, $unitType) > 0;
 
     $priceState = product_card_price_state(
         $regularPrice,
@@ -328,7 +359,7 @@ function product_card_render(array $card): string
         <article class="card h-100 product-click-card" data-href="<?php echo e($productUrl); ?>">
             <div class="fabric-thumb-wrap">
                 <a href="<?php echo e($productUrl); ?>" class="fabric-thumb-link" aria-label="View <?php echo e($displayName); ?>">
-                    <?php if ($cardImage !== ''): ?>
+                    <?php if (is_array($cardImageAsset) && !empty($cardImageAsset['src'])): ?>
                         <picture>
                             <?php if (!empty($cardImageAsset['webp_srcset'])): ?>
                                 <source type="image/webp" srcset="<?php echo e($cardImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 80vw, (max-width: 1199px) 40vw, 320px">

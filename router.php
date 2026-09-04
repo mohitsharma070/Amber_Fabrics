@@ -95,7 +95,14 @@ $requestedFile = __DIR__ . str_replace('/', DIRECTORY_SEPARATOR, $requestPath);
 if ($requestPath !== '/' && is_file($requestedFile)) {
     $realRequestedFile = realpath($requestedFile);
     $realBase = realpath(__DIR__);
-    if ($realRequestedFile === false || strpos($realRequestedFile, $realBase) !== 0) {
+    $basePrefix = $realBase === false ? '' : rtrim($realBase, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    $isContained = $realRequestedFile !== false && $basePrefix !== '';
+    if ($isContained) {
+        $isContained = DIRECTORY_SEPARATOR === '\\'
+            ? strncasecmp($realRequestedFile, $basePrefix, strlen($basePrefix)) === 0
+            : strncmp($realRequestedFile, $basePrefix, strlen($basePrefix)) === 0;
+    }
+    if (!$isContained) {
         http_response_code(403);
         exit('Forbidden');
     }

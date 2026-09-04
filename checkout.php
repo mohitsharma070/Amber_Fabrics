@@ -60,7 +60,6 @@ $old = array_merge($old, CheckoutReadService::customerPrefill($conn, $customerId
 
 if (!empty($_SESSION['checkout_old']) && is_array($_SESSION['checkout_old'])) {
     $old = array_merge($old, $_SESSION['checkout_old']);
-    unset($_SESSION['checkout_old']);
 }
 
 if (!empty($_SESSION['checkout_errors']) && is_array($_SESSION['checkout_errors'])) {
@@ -115,15 +114,22 @@ $shippingQuote = [
     'courier_id' => 0,
 ];
 if ($hasCompleteDelivery) {
-    $shippingQuote = apply_filters('shipping.quote', $shippingQuote, [
-        'conn' => $conn,
-        'subtotal' => (float) $subtotal,
-        'invoice_value' => (float) $taxableAmount,
-        'country' => $countryForCalc,
-        'pincode' => (string) ($old['pincode'] ?? ''),
-        'payment_method' => $selectedPayment,
-        'items' => $items,
-    ]);
+    try {
+        $shippingQuote = apply_filters('shipping.quote', $shippingQuote, [
+            'conn' => $conn,
+            'subtotal' => (float) $subtotal,
+            'invoice_value' => (float) $taxableAmount,
+            'country' => $countryForCalc,
+            'pincode' => (string) ($old['pincode'] ?? ''),
+            'payment_method' => $selectedPayment,
+            'items' => $items,
+        ], true);
+    } catch (Throwable $e) {
+        app_log('error', 'checkout_shipping_quote_failed', [
+            'exception_type' => get_class($e),
+            'payment_method' => $selectedPayment,
+        ]);
+    }
 }
 $baseShippingAmount = max(0.0, round((float) ($shippingQuote['base_shipping'] ?? $shipping['base_shipping']), 2));
 $codFeeAmount = max(0.0, round((float) ($shippingQuote['cod_fee'] ?? $shipping['cod_fee']), 2));

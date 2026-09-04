@@ -125,6 +125,16 @@ test('@axe @desktop enforces the serious-and-critical axe baseline across requir
 
   await page.goto('/customer/login');
   await scanForBaseline(page, 'customer login');
+
+  for (const [path, state] of [
+    ['/contact', 'contact form'],
+    ['/customer/register', 'customer registration'],
+    ['/customer/forgot-password', 'forgot password'],
+    ['/guest/order-access', 'guest order access'],
+  ]) {
+    await page.goto(path);
+    await scanForBaseline(page, state);
+  }
 });
 
 test('@axe @mobile enforces the serious-and-critical axe baseline for mobile filter and navigation drawers', async ({ page }) => {

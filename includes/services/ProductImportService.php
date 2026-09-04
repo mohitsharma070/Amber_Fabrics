@@ -586,7 +586,7 @@ final class ProductImportService
         $unit=$normalizedUnit;
         if($unit==='meter'&&$updating){
             $existingStep=trim((string)($existing['qty_step']??''));
-            if($existingStep!==''&&(!is_numeric($existingStep)||((float)$existingStep!=0.0&&!meter_qty_step_is_representable($existingStep))))$errors[]='Existing Meter Quantity Step must use no more than two decimal places. Correct it in the product editor before importing this row.';
+            if($existingStep!==''&&(!is_numeric($existingStep)||((float)$existingStep!=0.0&&!meter_qty_step_is_representable($existingStep))))$errors[]='Existing Meter Quantity Step must use no more than four decimal places. Correct it in the product editor before importing this row.';
         }
         if(in_array($unit,['piece','set'],true)&&floor($qty)!=$qty)$errors[]='Quantity must be a whole number for piece/set products.';
         $parsedMeterOptions=CartService::parse_meter_options((string)($row['meter_options']??''),0.01);

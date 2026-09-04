@@ -12,7 +12,7 @@ $siteName = SiteContext::name();
 // Latest 8 active fabrics — no filter/pagination on home page
 $stmt = $conn->prepare(
     "SELECT
-        f.id, f.name, f.slug, f.catalog_data, f.size, f.unit_type, f.price, f.sale_price,
+        f.id, f.name, f.slug, f.catalog_data, f.size, f.product_type, f.unit_type, f.meter_options, f.qty_step, f.price, f.sale_price,
         COALESCE((SELECT fm.filename FROM fabric_media fm WHERE fm.fabric_id=f.id AND fm.media_type='image' ORDER BY fm.is_primary DESC, fm.sort_order, fm.id LIMIT 1), '') AS image,
         f.min_order_meters, f.stock, f.stock_meters, f.is_available,
         COALESCE(vs.active_variant_count, 0) AS active_variant_count
@@ -223,7 +223,7 @@ $announcementKey = md5(implode('|', $announcementMessages));
                 <article class="card h-100 product-click-card" data-href="<?php echo e($productUrl); ?>">
                     <div class="fabric-thumb-wrap">
                         <a href="<?php echo e($productUrl); ?>" class="fabric-thumb-link" aria-label="View <?php echo e($row['name']); ?>">
-                            <?php if ($cardImage !== ''): ?>
+                            <?php if (is_array($cardImageAsset) && !empty($cardImageAsset['src'])): ?>
                                 <picture>
                                     <?php if (!empty($cardImageAsset['webp_srcset'])): ?>
                                         <source type="image/webp" srcset="<?php echo e($cardImageAsset['webp_srcset']); ?>" sizes="(max-width: 767px) 80vw, 280px">

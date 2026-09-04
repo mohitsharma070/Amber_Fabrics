@@ -437,6 +437,17 @@ function image_pipeline_asset_data(string $relativeDir, string $filename): array
     $baseUrl = '/' . $relativeDir;
     $originalUrl = $baseUrl . '/' . $filename;
     $originalAbs = $absDir . DIRECTORY_SEPARATOR . $filename;
+    if (!is_file($originalAbs)) {
+        return [
+            'src' => '',
+            'thumb_src' => '',
+            'webp_srcset' => '',
+            'width' => 0,
+            'height' => 0,
+            'thumb_width' => 0,
+            'thumb_height' => 0,
+        ];
+    }
 
     $thumbWebp = $base . '-thumb.webp';
     $thumbWebpAbs = $absDir . DIRECTORY_SEPARATOR . $thumbWebp;
@@ -516,7 +527,8 @@ function fabric_product_media_descriptors(array $imageFilenames, string $videoFi
     }
 
     $videoFilename = basename(str_replace('\\', '/', trim($videoFilename)));
-    if ($videoFilename !== '') {
+    $videoAbsolutePath = __DIR__ . '/../../images/fabrics/' . $videoFilename;
+    if ($videoFilename !== '' && is_file($videoAbsolutePath)) {
         $descriptors[] = [
             'type' => 'video',
             'src' => '/images/fabrics/' . rawurlencode($videoFilename),

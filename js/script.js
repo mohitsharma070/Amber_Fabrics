@@ -356,6 +356,143 @@
         return window.bootstrap && window.bootstrap[name] ? window.bootstrap[name] : null;
     }
 
+    function nativeFocusableElements(container) {
+        return Array.from(container.querySelectorAll(interactiveSelector)).filter(function (element) {
+            return !element.disabled
+                && element.getAttribute("aria-hidden") !== "true"
+                && element.getAttribute("tabindex") !== "-1"
+                && element.getClientRects().length > 0;
+        });
+    }
+
+    function initNativeOffcanvasFallback() {
+        if (bootstrapComponent("Offcanvas")) return;
+
+        var openDrawer = null;
+        var openTrigger = null;
+        var backdrop = null;
+
+        function triggersFor(drawer) {
+            return Array.from(document.querySelectorAll('[aria-controls="' + drawer.id + '"], [data-bs-target="#' + drawer.id + '"]'));
+        }
+
+        function syncDrawer(drawer, expanded) {
+            drawer.classList.toggle("is-native-open", expanded);
+            drawer.setAttribute("aria-hidden", expanded ? "false" : "true");
+            triggersFor(drawer).forEach(function (trigger) {
+                trigger.setAttribute("aria-expanded", expanded ? "true" : "false");
+            });
+            if (drawer.id === "mobileNavDrawer") {
+                document.body.classList.toggle("mobile-nav-open", expanded);
+            }
+        }
+
+        function closeDrawer(restoreFocus) {
+            if (!openDrawer) return;
+            var trigger = openTrigger;
+            syncDrawer(openDrawer, false);
+            openDrawer = null;
+            openTrigger = null;
+            document.body.classList.remove("native-offcanvas-open");
+            if (backdrop) backdrop.remove();
+            backdrop = null;
+            if (restoreFocus && trigger && document.contains(trigger)) trigger.focus();
+        }
+
+        function showDrawer(drawer, trigger) {
+            if (openDrawer && openDrawer !== drawer) closeDrawer(false);
+            openDrawer = drawer;
+            openTrigger = trigger;
+            syncDrawer(drawer, true);
+            document.body.classList.add("native-offcanvas-open");
+            backdrop = document.createElement("div");
+            backdrop.className = "native-offcanvas-backdrop";
+            backdrop.addEventListener("click", function () { closeDrawer(true); });
+            document.body.appendChild(backdrop);
+            var focusable = nativeFocusableElements(drawer);
+            (focusable[0] || drawer).focus();
+        }
+
+        document.querySelectorAll(".offcanvas").forEach(function (drawer) {
+            drawer.setAttribute("aria-hidden", "true");
+        });
+
+        document.addEventListener("click", function (event) {
+            var target = eventElement(event);
+            if (!target) return;
+            var trigger = target.closest('[data-bs-toggle="offcanvas"], [data-mobile-nav-menu], [data-mobile-bottom-menu]');
+            if (trigger) {
+                var selector = trigger.getAttribute("data-bs-target") || "#mobileNavDrawer";
+                var drawer = selector.charAt(0) === "#" ? document.querySelector(selector) : null;
+                if (!drawer) return;
+                event.preventDefault();
+                showDrawer(drawer, trigger);
+                return;
+            }
+            if (!openDrawer) return;
+            if (target.closest('[data-bs-dismiss="offcanvas"]') || target.closest("a.nav-link, a.drawer-utility-link")) {
+                closeDrawer(true);
+            }
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (!openDrawer) return;
+            if (event.key === "Escape") {
+                event.preventDefault();
+                closeDrawer(true);
+                return;
+            }
+            if (event.key !== "Tab") return;
+            var focusable = nativeFocusableElements(openDrawer);
+            if (!focusable.length) {
+                event.preventDefault();
+                openDrawer.focus();
+                return;
+            }
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+
+        window.addEventListener("pageshow", function () { closeDrawer(false); });
+    }
+
+    function initNativeCollapseFallback() {
+        if (bootstrapComponent("Collapse")) return;
+        document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function (button) {
+            var selector = button.getAttribute("data-bs-target");
+            var panel = selector && selector.charAt(0) === "#" ? document.querySelector(selector) : null;
+            if (!panel) return;
+            button.addEventListener("click", function () {
+                var willOpen = !panel.classList.contains("show");
+                var parentSelector = panel.getAttribute("data-bs-parent");
+                var parent = parentSelector ? document.querySelector(parentSelector) : null;
+                if (willOpen && parent) {
+                    parent.querySelectorAll(".accordion-collapse.show").forEach(function (sibling) {
+                        sibling.classList.remove("show");
+                        sibling.setAttribute("aria-hidden", "true");
+                        var siblingButton = parent.querySelector('[aria-controls="' + sibling.id + '"]');
+                        if (siblingButton) {
+                            siblingButton.classList.add("collapsed");
+                            siblingButton.setAttribute("aria-expanded", "false");
+                        }
+                    });
+                }
+                panel.classList.toggle("show", willOpen);
+                panel.setAttribute("aria-hidden", willOpen ? "false" : "true");
+                button.classList.toggle("collapsed", !willOpen);
+                button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+            });
+            panel.setAttribute("aria-hidden", panel.classList.contains("show") ? "false" : "true");
+        });
+    }
+
     function initMobileDrawer() {
         var drawer = document.getElementById("mobileNavDrawer");
         if (!drawer) return;
@@ -897,6 +1034,8 @@
         initFormLoading();
         initDelegatedClicks();
         initRevealAnimations();
+        initNativeOffcanvasFallback();
+        initNativeCollapseFallback();
         initMobileDrawer();
         initMobileViewport();
         initNavigationState();

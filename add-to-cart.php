@@ -57,6 +57,12 @@ if (($unitType === 'piece' || $unitType === 'set') && isset($_POST['quantity']) 
         flash('error', 'Quantity must be a whole number for this product.');
         redirect('/fabric.php?id=' . $productId);
     }
+    if (!CartService::quantityRespectsStep($rawWholeQty, $unitType, (float) $minOrder, $quantityStep)) {
+        $message = 'Quantity does not match the allowed quantity step.';
+        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $message]); exit; }
+        flash('error', $message);
+        redirect('/fabric.php?id=' . $productId);
+    }
 }
 
 // Meter products can be posted as: selected meter length + bundle quantity (pieces).

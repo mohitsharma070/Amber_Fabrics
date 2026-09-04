@@ -31,9 +31,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors['email'] = 'Enter a valid email address.';
-    } elseif (!customer_check_rate_limit($conn, $email, $ip)) {
-        $errors['_login'] = 'Too many failed attempts. Please wait ' . CUSTOMER_LOCK_MINUTES . ' minutes before trying again.';
     } else {
+        $rateLimitAllowed = customer_check_rate_limit($conn, $email, $ip);
+        if ($rateLimitAllowed === null) {
+            $errors['_login'] = 'Sign-in is temporarily unavailable. Please try again shortly.';
+        } elseif ($rateLimitAllowed === false) {
+            $errors['_login'] = 'Too many failed attempts. Please wait ' . CUSTOMER_LOCK_MINUTES . ' minutes before trying again.';
+        } else {
         $authentication = CustomerAuthenticationService::authenticate($conn, $email, $password);
         $authenticationStatus = (string) ($authentication['status'] ?? 'invalid');
         $customer = is_array($authentication['customer'] ?? null) ? $authentication['customer'] : [];
@@ -59,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect($returnTo ?: '/index.php');
         } else {
             $errors['_login'] = 'Invalid email or password.';
+        }
         }
     }
 }

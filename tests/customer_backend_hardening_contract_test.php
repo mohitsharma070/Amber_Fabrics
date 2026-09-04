@@ -80,6 +80,8 @@ $customerLimitStart = strpos($auth, 'function customer_check_rate_limit');
 $customerLimitEnd = strpos($auth, 'function customer_record_attempt', $customerLimitStart === false ? 0 : $customerLimitStart);
 $customerLimit = $customerLimitStart === false ? '' : substr($auth, $customerLimitStart, $customerLimitEnd === false ? null : $customerLimitEnd - $customerLimitStart);
 $assert(str_contains($customerLimit, 'begin_transaction') && str_contains($customerLimit, 'FOR UPDATE'), 'Customer login limiting must serialize concurrent counters.');
+$assert(str_contains($customerLimit, 'return null;') && !str_contains($customerLimit, 'return true;\n    } catch'), 'Customer login limiting must fail closed when its storage is unavailable.');
+$assert(str_contains($login, '$rateLimitAllowed = customer_check_rate_limit') && str_contains($login, '$rateLimitAllowed === null'), 'Login must distinguish limiter unavailability from a genuine throttle.');
 $publicLimitStart = strpos($adminHelpers, 'function public_form_rate_limit_allow');
 $publicLimitEnd = strpos($adminHelpers, 'function admin_notification_email', $publicLimitStart === false ? 0 : $publicLimitStart);
 $publicLimit = $publicLimitStart === false ? '' : substr($adminHelpers, $publicLimitStart, $publicLimitEnd === false ? null : $publicLimitEnd - $publicLimitStart);
@@ -102,6 +104,14 @@ $assert(str_contains($profile, 'CustomerAddressService::save') && str_contains($
 $assert(str_contains($register, 'mb_strlen($name)') && str_contains($register, '$e->getCode() === 1062'), 'Registration must enforce DB lengths and handle duplicate-email races.');
 $assert(str_contains($accountService, 'mb_strlen($name)') && str_contains($profile, 'Unable to update your profile right now.') && str_contains($profile, 'CustomerAccountService::updateProfile'), 'Profile updates must validate lengths, delegate persistence, and return generic database errors.');
 $assert(str_contains($cancelOrder, '$e instanceof mysqli_sql_exception') && str_contains($cancelOrder, "flash('error', 'Unable to cancel order right now.')"), 'Customer cancellation must not expose database exceptions.');
+
+$guestCancelOrder = (string) file_get_contents($root . '/guest/cancel-order.php');
+$supportPlugin = (string) file_get_contents($root . '/plugins/support-tickets/plugin.php');
+$customerSupportStart = strpos($supportPlugin, 'function support_tickets_handle_customer_post');
+$customerSupportEnd = strpos($supportPlugin, 'function support_tickets_customer_orders', $customerSupportStart === false ? 0 : $customerSupportStart);
+$customerSupportHandler = $customerSupportStart === false ? '' : substr($supportPlugin, $customerSupportStart, $customerSupportEnd === false ? null : $customerSupportEnd - $customerSupportStart);
+$assert(!str_contains($guestCancelOrder, "flash('error',\$e->getMessage())") && str_contains($guestCancelOrder, '$safeMessages'), 'Guest cancellation must expose only allow-listed workflow messages.');
+$assert(str_contains($customerSupportHandler, '$safeCustomerMessages') && !str_contains($customerSupportHandler, "flash('error', \$e->getMessage() !== '' ? \$e->getMessage() : 'Unable to update support ticket.');"), 'Customer support actions must not flash arbitrary exception text.');
 
 if ($failures) {
     foreach ($failures as $failureMessage) {

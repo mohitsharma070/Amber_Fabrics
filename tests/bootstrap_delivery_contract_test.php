@@ -91,6 +91,15 @@ foreach (['tests/e2e/storefront.spec.js', 'tests/e2e/accessibility.spec.js'] as 
     $assert(str_contains($source, 'forbiddenProviderHosts'), $path . ' must retain unrelated provider network blocking.');
 }
 
+$storefrontJs = $read('js/script.js');
+$storefrontCss = $read('css/style.css');
+$catalog = $read('catalog.php');
+$assert(str_contains($storefrontJs, 'function initNativeOffcanvasFallback()') && str_contains($storefrontJs, 'if (bootstrapComponent("Offcanvas")) return;'), 'Storefront JavaScript must provide an offcanvas fallback only when Bootstrap Offcanvas is unavailable.');
+$assert(str_contains($storefrontJs, 'event.key === "Escape"') && str_contains($storefrontJs, 'nativeFocusableElements(openDrawer)'), 'Native offcanvas fallback must support Escape and focus containment.');
+$assert(str_contains($storefrontJs, 'function initNativeCollapseFallback()') && str_contains($storefrontJs, 'data-bs-parent'), 'Footer accordions must retain grouped native collapse behavior without Bootstrap JavaScript.');
+$assert(str_contains($storefrontCss, '.offcanvas.is-native-open') && str_contains($storefrontCss, 'body.native-offcanvas-open'), 'Native offcanvas fallback must expose the drawer and lock body scrolling.');
+$assert(str_contains($catalog, 'aria-controls="catalogFiltersDrawer" aria-expanded="false"'), 'Catalog filter trigger must expose a synchronized collapsed state.');
+
 if ($failures !== []) {
     fwrite(STDERR, "Bootstrap delivery contract failures:\n- " . implode("\n- ", $failures) . "\n");
     exit(1);

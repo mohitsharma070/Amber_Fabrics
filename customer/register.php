@@ -108,33 +108,33 @@ include __DIR__ . '/../includes/header.php';
                         <?php echo csrf_field(); ?>
 
                         <div class="mb-3">
-                            <label class="form-label">Full Name *</label>
-                            <input type="text" name="name" class="<?php echo form_class($errors, 'name'); ?>" value="<?php echo e($old['name']); ?>" required>
+                            <label class="form-label" for="register_name">Full Name *</label>
+                            <input id="register_name" type="text" name="name" class="<?php echo form_class($errors, 'name'); ?>" value="<?php echo e($old['name']); ?>" required>
                             <?php echo form_error($errors, 'name'); ?>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Email Address *</label>
-                            <input type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" value="<?php echo e($old['email']); ?>" required>
+                            <label class="form-label" for="register_email">Email Address *</label>
+                            <input id="register_email" type="email" name="email" class="<?php echo form_class($errors, 'email'); ?>" value="<?php echo e($old['email']); ?>" required>
                             <?php echo form_error($errors, 'email'); ?>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Phone Number</label>
-                            <input type="tel" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" value="<?php echo e($old['phone']); ?>">
+                            <label class="form-label" for="register_phone">Phone Number</label>
+                            <input id="register_phone" type="tel" name="phone" class="<?php echo form_class($errors, 'phone'); ?>" value="<?php echo e($old['phone']); ?>">
                             <?php echo form_error($errors, 'phone'); ?>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Country</label>
-                            <input type="text" name="country" class="<?php echo form_class($errors, 'country'); ?>" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
+                            <label class="form-label" for="register_country">Country</label>
+                            <input id="register_country" type="text" name="country" class="<?php echo form_class($errors, 'country'); ?>" value="<?php echo e($old['country']); ?>" placeholder="e.g. India, USA, Germany">
                             <?php echo form_error($errors, 'country'); ?>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Password * <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
-                            <input type="password" name="password" class="<?php echo form_class($errors, 'password'); ?>" required>
+                            <label class="form-label" for="register_password">Password * <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
+                            <input id="register_password" type="password" name="password" class="<?php echo form_class($errors, 'password'); ?>" required>
                             <?php echo form_error($errors, 'password'); ?>
                         </div>
                         <div class="mb-4">
-                            <label class="form-label">Confirm Password *</label>
-                            <input type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password'); ?>" required>
+                            <label class="form-label" for="register_confirm_password">Confirm Password *</label>
+                            <input id="register_confirm_password" type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password'); ?>" required>
                             <?php echo form_error($errors, 'confirm_password'); ?>
                         </div>
 

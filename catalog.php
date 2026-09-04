@@ -102,7 +102,7 @@ if ($maxPrice > 0) {
     $params[] = (float) $maxPrice;
 }
 if ($inStock === '1') {
-    $where[] = "(f.is_available = 1 AND ((f.unit_type IN ('piece','set') AND (COALESCE(v.stock, f.stock) > 0)) OR (f.unit_type = 'meter' AND (COALESCE(v.stock_meters, f.stock_meters) > 0))))";
+    $where[] = "(f.is_available = 1 AND ((f.unit_type IN ('piece','set') AND (COALESCE(v.stock, f.stock) >= GREATEST(1, CEIL(f.min_order_meters)))) OR (f.unit_type = 'meter' AND (COALESCE(v.stock_meters, f.stock_meters) >= f.min_order_meters))))";
 }
 if ($materialFilter !== '') {
     $where[] = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_material')), JSON_UNQUOTE(JSON_EXTRACT(f.catalog_data, '$.attr_fabric')), '') LIKE ?";
@@ -450,7 +450,7 @@ $catalogFilterAdvancedOpen = $materialFilter !== '' || $colorFilter !== '' || $s
                 <?php $activeFilterCount = count($activeFilters); ?>
                 <!-- Mobile filter bar (hidden on desktop) -->
                 <div class="d-lg-none mobile-filter-bar mb-3">
-                    <button type="button" class="mobile-filter-btn" data-bs-toggle="offcanvas" data-bs-target="#catalogFiltersDrawer" aria-controls="catalogFiltersDrawer">
+                    <button type="button" class="mobile-filter-btn" data-bs-toggle="offcanvas" data-bs-target="#catalogFiltersDrawer" aria-controls="catalogFiltersDrawer" aria-expanded="false">
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16"><path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2z"/></svg>
                         Filters
                         <?php if ($activeFilterCount > 0): ?>

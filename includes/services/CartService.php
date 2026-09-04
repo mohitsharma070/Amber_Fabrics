@@ -19,14 +19,11 @@ final class CartService
         if ($unitType === 'piece' || $unitType === 'set') {
             $minimumUnits = max(1, (int) round($minimumQuantity));
             $availableUnits = max(0, (int) floor($availableStock + 0.0000001));
-            return $availableUnits >= $minimumUnits ? (float) $availableUnits : 0.0;
-        }
-
-        // Legacy four-decimal steps cannot safely produce new two-decimal cart,
-        // stock, or order quantities. Keep historical rows unchanged and fail
-        // closed for new cart reconciliation until an administrator corrects it.
-        if ($quantityStep != 0.0 && !meter_qty_step_is_representable($quantityStep)) {
-            return 0.0;
+            if ($availableUnits < $minimumUnits) {
+                return 0.0;
+            }
+            $stepUnits = max(1, (int) round($quantityStep));
+            return (float) ($minimumUnits + (intdiv($availableUnits - $minimumUnits, $stepUnits) * $stepUnits));
         }
 
         $stockCents = max(0, (int) floor(($availableStock * 100) + 0.0000001));
@@ -113,6 +110,25 @@ final class CartService
             $quantityStep,
             $meterLength
         );
+    }
+
+    public static function quantityRespectsStep(
+        float $quantity,
+        string $unitType,
+        float $minimumQuantity = 1.0,
+        float $quantityStep = 0.0
+    ): bool {
+        if ($unitType === 'piece' || $unitType === 'set') {
+            if (abs($quantity - round($quantity)) > 0.0001) {
+                return false;
+            }
+            $quantityUnits = (int) round($quantity);
+            $minimumUnits = max(1, (int) round($minimumQuantity));
+            $stepUnits = max(1, (int) round($quantityStep));
+            return $quantityUnits >= $minimumUnits
+                && ($quantityUnits - $minimumUnits) % $stepUnits === 0;
+        }
+        return meter_qty_respects_step($quantity, $minimumQuantity, $quantityStep);
     }
 
     private static function greatestCommonDivisor(int $left, int $right): int
@@ -256,8 +272,8 @@ final class CartService
                 ? normalize_meter_quantity($row['min_order_meters'] ?? 1, 1.0)
                 : (float) max(1, (int) round((float) ($row['min_order_meters'] ?? 1)));
             $qty = normalize_quantity_by_unit($sourceQty ?? 1, $unitType, (float) $minQty);
+            $qtyStep = is_numeric($row['qty_step'] ?? null) ? (float) $row['qty_step'] : 0.0;
             if ($unitType === 'meter') {
-                $qtyStep = is_numeric($row['qty_step'] ?? null) ? (float) $row['qty_step'] : 0.0;
                 if (
                     !$enforceSellableQuantity
                     && !meter_qty_respects_step((float) $qty, (float) $minQty, (float) $qtyStep)
@@ -303,7 +319,7 @@ final class CartService
                 $displayStock,
                 $unitType,
                 (float) $minQty,
-                $unitType === 'meter' ? $qtyStep : 0.0,
+                $qtyStep,
                 $meterLength
             );
             if ($enforceSellableQuantity) {
@@ -312,7 +328,7 @@ final class CartService
                     $displayStock,
                     $unitType,
                     (float) $minQty,
-                    $unitType === 'meter' ? $qtyStep : 0.0,
+                    $qtyStep,
                     $meterLength
                 );
                 if (empty($row['is_available']) || $reconciledQuantity <= 0) {

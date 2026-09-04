@@ -643,8 +643,27 @@ function support_tickets_handle_customer_post(mysqli $conn, int $customerId): vo
             redirect('/customer/support-tickets.php?id=' . $ticketId);
         }
     } catch (Throwable $e) {
-        error_log('[support-tickets] customer action failed: ' . $e->getMessage());
-        flash('error', $e->getMessage() !== '' ? $e->getMessage() : 'Unable to update support ticket.');
+        $safeCustomerMessages = [
+            'Support tickets are not available.',
+            'Order support tickets are not available.',
+            'General support tickets are not available.',
+            'Please provide a subject and message.',
+            'Selected order was not found.',
+            'You have reached the open support ticket limit. Please reply to an existing ticket or wait for the team to resolve one.',
+            'Message cannot be empty.',
+            'Ticket not found.',
+            'This ticket is closed. Please create a new ticket if you need more help.',
+        ];
+        $message = in_array($e->getMessage(), $safeCustomerMessages, true)
+            ? $e->getMessage()
+            : 'Unable to update support ticket.';
+        if ($message === 'Unable to update support ticket.') {
+            app_log('error', 'customer_support_action_failed', [
+                'customer_id' => $customerId,
+                'exception_type' => get_class($e),
+            ]);
+        }
+        flash('error', $message);
     }
 
     redirect('/customer/support-tickets.php');
@@ -722,11 +741,11 @@ function support_tickets_render_customer_page(mysqli $conn): void
                             <input type="hidden" name="support_action" value="create">
                             <div class="d-none" aria-hidden="true">
                                 <label>Website</label>
-                                <input type="text" name="company_website" tabindex="-1" autocomplete="off">
+                                <input type="text" name="company_website" aria-label="Website" tabindex="-1" autocomplete="off">
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Related Order</label>
-                                <select name="order_id" class="form-select">
+                                <select name="order_id" class="form-select" aria-label="Related Order">
                                     <?php if (!empty($settings['allow_general_tickets'])): ?>
                                         <option value="0">No specific order</option>
                                     <?php endif; ?>
@@ -742,7 +761,7 @@ function support_tickets_render_customer_page(mysqli $conn): void
                             <div class="row g-2">
                                 <div class="col-md-6">
                                     <label class="form-label">Category</label>
-                                    <select name="category" class="form-select">
+                                    <select name="category" class="form-select" aria-label="Support category">
                                         <?php foreach ($categories as $value => $label): ?>
                                             <option value="<?php echo e($value); ?>"><?php echo e($label); ?></option>
                                         <?php endforeach; ?>
@@ -750,7 +769,7 @@ function support_tickets_render_customer_page(mysqli $conn): void
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Priority</label>
-                                    <select name="priority" class="form-select">
+                                    <select name="priority" class="form-select" aria-label="Support priority">
                                         <?php foreach ($priorities as $value => $label): ?>
                                             <option value="<?php echo e($value); ?>" <?php echo $value === 'normal' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                         <?php endforeach; ?>
@@ -759,11 +778,11 @@ function support_tickets_render_customer_page(mysqli $conn): void
                             </div>
                             <div class="mt-3">
                                 <label class="form-label">Subject</label>
-                                <input class="form-control" name="subject" maxlength="160" required>
+                                <input class="form-control" name="subject" aria-label="Support subject" maxlength="160" required>
                             </div>
                             <div class="mt-3">
                                 <label class="form-label">Message</label>
-                                <textarea class="form-control" name="message" rows="5" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                <textarea class="form-control" name="message" aria-label="Support message" rows="5" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                             </div>
                             <button class="btn btn-primary w-100 mt-3" type="submit">Submit Ticket</button>
                         </form>
@@ -820,7 +839,7 @@ function support_tickets_render_customer_page(mysqli $conn): void
                                     <input type="hidden" name="support_action" value="reply">
                                     <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
                                     <label class="form-label">Reply</label>
-                                    <textarea class="form-control" name="message" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                    <textarea class="form-control" name="message" aria-label="Support reply" rows="4" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                                     <button class="btn btn-primary mt-2" type="submit">Send Reply</button>
                                 </form>
                             <?php endif; ?>
@@ -1165,12 +1184,12 @@ function support_tickets_render_order_panel(array $context): void
                         <input type="hidden" name="order_id" value="<?php echo $orderId; ?>">
                         <div class="d-none" aria-hidden="true">
                             <label>Website</label>
-                            <input type="text" name="company_website" tabindex="-1" autocomplete="off">
+                            <input type="text" name="company_website" aria-label="Website" tabindex="-1" autocomplete="off">
                         </div>
                         <div class="row g-2">
                             <div class="col-md-4">
                                 <label class="form-label">Category</label>
-                                <select name="category" class="form-select">
+                                <select name="category" class="form-select" aria-label="Support category">
                                     <?php foreach ($categories as $value => $label): ?>
                                         <option value="<?php echo e($value); ?>" <?php echo $value === 'order' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
@@ -1178,7 +1197,7 @@ function support_tickets_render_order_panel(array $context): void
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Priority</label>
-                                <select name="priority" class="form-select">
+                                <select name="priority" class="form-select" aria-label="Support priority">
                                     <?php foreach ($priorities as $value => $label): ?>
                                         <option value="<?php echo e($value); ?>" <?php echo $value === 'normal' ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
@@ -1186,11 +1205,11 @@ function support_tickets_render_order_panel(array $context): void
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Subject</label>
-                                <input class="form-control" name="subject" maxlength="160" required>
+                                <input class="form-control" name="subject" aria-label="Support subject" maxlength="160" required>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Message</label>
-                                <textarea class="form-control" name="message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                <textarea class="form-control" name="message" aria-label="Support message" rows="3" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                             </div>
                             <div class="col-12">
                                 <button class="btn btn-primary" type="submit">Submit Ticket</button>
@@ -1237,7 +1256,7 @@ function support_tickets_render_order_panel(array $context): void
                                         <input type="hidden" name="support_action" value="reply">
                                         <input type="hidden" name="ticket_id" value="<?php echo (int) $ticket['id']; ?>">
                                         <label class="form-label small">Reply</label>
-                                        <textarea class="form-control form-control-sm" name="message" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
+                                        <textarea class="form-control form-control-sm" name="message" aria-label="Support reply" rows="2" maxlength="<?php echo (int) $settings['max_message_length']; ?>" required></textarea>
                                         <button class="btn btn-sm btn-outline-primary mt-2" type="submit">Send Reply</button>
                                     </form>
                                 <?php endif; ?>

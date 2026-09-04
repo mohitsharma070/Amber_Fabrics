@@ -132,6 +132,53 @@ test('@bootstrap-failure @desktop cancels then accepts degraded cart removal exa
   expect(requests[0].postData()).toContain('cart_key=');
 });
 
+test('@bootstrap-failure @mobile keeps navigation, filters, and grouped footer sections keyboard-operable', async ({ page }) => {
+  await blockBootstrapBundle(page);
+  await page.goto('/');
+  await dismissCookieBanner(page);
+  expect(await page.evaluate(() => Boolean(window.bootstrap && window.bootstrap.Offcanvas))).toBe(false);
+
+  const menuButton = page.getByRole('button', { name: 'Open menu' });
+  await menuButton.focus();
+  await menuButton.press('Enter');
+  const navigationDrawer = page.locator('#mobileNavDrawer');
+  await expect(navigationDrawer).toBeVisible();
+  await expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('body')).toHaveClass(/native-offcanvas-open/);
+  await expect(navigationDrawer.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(navigationDrawer).toBeHidden();
+  await expect(menuButton).toBeFocused();
+  await expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+
+  const supportButton = page.getByRole('button', { name: 'Support', exact: true });
+  const exploreButton = page.getByRole('button', { name: 'Explore', exact: true });
+  await supportButton.click();
+  await expect(page.locator('#footerSupport')).toBeVisible();
+  await expect(supportButton).toHaveAttribute('aria-expanded', 'true');
+  await exploreButton.click();
+  await expect(page.locator('#footerSupport')).toBeHidden();
+  await expect(page.locator('#footerExplore')).toBeVisible();
+  await expect(supportButton).toHaveAttribute('aria-expanded', 'false');
+
+  await page.goto('/catalog');
+  const filterButton = page.getByRole('button', { name: /^Filters/ });
+  await filterButton.click();
+  const filterDrawer = page.locator('#catalogFiltersDrawer');
+  await expect(filterDrawer).toBeVisible();
+  await expect(filterButton).toHaveAttribute('aria-expanded', 'true');
+  await filterDrawer.getByRole('button', { name: 'Close' }).click();
+  await expect(filterDrawer).toBeHidden();
+  await expect(filterButton).toBeFocused();
+
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.goto('/');
+  const tabletMenuButton = page.locator('[data-mobile-nav-menu]');
+  await expect(tabletMenuButton).toBeVisible();
+  await tabletMenuButton.click();
+  await expect(page.locator('#mobileNavDrawer')).toBeVisible();
+});
+
 test('@bootstrap-failure @desktop requires degraded confirmation for wishlist removal', async ({ page }) => {
   await blockBootstrapBundle(page);
   const messages = captureNativeConfirmations(page, [true]);

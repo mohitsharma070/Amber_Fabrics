@@ -121,6 +121,7 @@ async function mountProductMediaFixture(page) {
         <img id="product-main-image" src="${defaultMedia[0].src}" alt="${defaultMedia[0].alt}" width="1200" height="1600">
       </picture>
       <video id="product-main-video" class="d-none"><source></video>
+      <div id="product-media-status" aria-live="polite"></div>
     </div>
     <div id="product-media-thumbs">
       <button type="button" class="media-thumb product-media-thumb border-primary"
@@ -198,10 +199,16 @@ test('@desktop preserves responsive media metadata across repeated variant, vide
 
   await page.getByRole('button', { name: 'Amber product video' }).click();
   await expect(mainImage).toHaveClass(/d-none/);
-  await expect(mainImage).not.toHaveAttribute('src', /.+/);
+  await expect(mainImage).toHaveAttribute('src', '/media/amber-detail.jpg');
   await expect(page.locator('#product-main-video')).not.toHaveClass(/d-none/);
   await expect(page.locator('#product-main-video source')).toHaveAttribute('src', '/media/amber-demo.mp4');
   await expectMediaAxeBaseline(page, 'selected variant video');
+
+  await page.locator('#product-main-video').dispatchEvent('stalled');
+  await expect(page.locator('#product-main-video')).toHaveClass(/d-none/);
+  await expect(mainImage).not.toHaveClass(/d-none/);
+  await expect(mainImage).toHaveAttribute('src', '/media/amber-detail.jpg');
+  await expect(page.locator('#product-media-status')).toHaveText('Product video could not be played. The product image has been restored.');
 
   await page.getByRole('button', { name: 'Purple', exact: true }).click();
   await expect(mainImage).toHaveAttribute('src', '/media/purple.jpg');
@@ -226,4 +233,11 @@ test('@desktop preserves responsive media metadata across repeated variant, vide
   await expect(webpSource).toHaveAttribute('srcset', '/media/navy-360w.webp 360w, /media/navy-720w.webp 720w');
   await expect(thumbnails).toHaveCount(1);
   await expectMediaAxeBaseline(page, 'repeated variant image switch');
+});
+
+test('@desktop renders the established no-image state when fixture media files do not exist', async ({ page }) => {
+  await page.goto('/fabric/e2e-simple-product');
+  await expect(page.getByRole('heading', { name: 'E2E Simple Product' })).toBeVisible();
+  await expect(page.locator('.product-gallery-column').getByText('No image', { exact: true })).toBeVisible();
+  await expect(page.locator('#product-main-image')).toHaveCount(0);
 });

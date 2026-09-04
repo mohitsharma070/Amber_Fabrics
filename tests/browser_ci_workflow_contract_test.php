@@ -55,9 +55,10 @@ if ($browserJob !== '') {
         'SHIPPING_COURIER_ENABLED: 0' => 'Courier integration must be disabled.',
         'SHIPPING_COURIER_AUTO_CREATE: 0' => 'Automatic courier shipment creation must be disabled.',
         'SHIPPING_COURIER_TRACKING_SYNC: 0' => 'Courier tracking synchronization must be disabled.',
-        "RAZORPAY_KEY_ID: ''" => 'Razorpay key ID must be empty.',
-        "RAZORPAY_KEY_SECRET: ''" => 'Razorpay key secret must be empty.',
+        'RAZORPAY_KEY_ID: rzp_test_e2e' => 'Browser CI must use only the deterministic test key ID.',
+        'RAZORPAY_KEY_SECRET: rzp_secret_e2e' => 'Browser CI must use only the deterministic test key secret.',
         "RAZORPAY_WEBHOOK_SECRET: ''" => 'Razorpay webhook secret must be empty.',
+        'RAZORPAY_TEST_BASE_URL: http://127.0.0.1:8001' => 'Razorpay API initialization must target the loopback stub.',
         'GOOGLE_ANALYTICS_ENABLED: 0' => 'Google Analytics must be disabled.',
         "GOOGLE_ANALYTICS_MEASUREMENT_ID: ''" => 'Google Analytics measurement ID must be empty.',
         "META_PIXEL_ID: ''" => 'Meta Pixel must be disabled.',
@@ -75,14 +76,19 @@ if ($browserJob !== '') {
         'php database/setup.php' => 'Browser CI must initialize schema through the repository setup command.',
         'php tests/browser_ci_workflow_contract_test.php' => 'Browser CI must enforce this workflow safety contract.',
         'php -S 127.0.0.1:8000 router.php' => 'The PHP server must bind only to loopback and use the repository router.',
+        'php -S 127.0.0.1:8001 tests/e2e/razorpay-stub.php' => 'The Razorpay API stub must bind only to loopback.',
+        'php -S 127.0.0.1:8002 tests/e2e/throwing-shipping-router.php' => 'The throwing courier harness must bind only to loopback.',
         'curl --fail --silent --show-error --retry-connrefused' => 'Browser CI must poll a real local HTTP response before Playwright starts.',
         'npm run test:e2e:smoke' => 'Browser CI must run the storefront smoke suite.',
+        'npm run test:e2e:commerce' => 'Browser CI must run the real first-party commerce suite.',
         'npm run test:e2e:a11y' => 'Browser CI must run the axe accessibility suite.',
         'if: failure()' => 'Browser diagnostics must upload only after a failure.',
         'uses: actions/upload-artifact@v4' => 'Browser CI must use the supported artifact action.',
         'test-results/' => 'Playwright traces and screenshots must be retained on failure.',
         'playwright-report/' => 'A generated Playwright report must be retained on failure.',
         'tmp/e2e-php-server.log' => 'The safe local PHP server log must be retained on failure.',
+        'tmp/e2e-razorpay-stub.log' => 'The loopback Razorpay stub log must be retained on failure.',
+        'tmp/e2e-shipping-failure-server.log' => 'The courier failure harness log must be retained on failure.',
         'if-no-files-found: ignore' => 'Missing optional diagnostics must not mask the test failure.',
     ];
 
@@ -98,14 +104,17 @@ if ($browserJob !== '') {
 $scripts = is_array($package['scripts'] ?? null) ? $package['scripts'] : [];
 $assert(isset($scripts['test:e2e:smoke']), 'The storefront smoke npm script must exist.');
 $assert(isset($scripts['test:e2e:a11y']), 'The axe accessibility npm script must exist.');
+$assert(isset($scripts['test:e2e:commerce']), 'The real commerce npm script must exist.');
 $assert(str_contains((string) ($scripts['test:e2e:smoke'] ?? ''), 'tests/e2e/storefront.spec.js'), 'The smoke script must execute the storefront browser suite.');
 $assert(str_contains((string) ($scripts['test:e2e:smoke'] ?? ''), 'tests/e2e/confirmation-fallback.spec.js'), 'The smoke script must execute the Bootstrap confirmation fallback suite.');
 $assert(str_contains((string) ($scripts['test:e2e:smoke'] ?? ''), 'tests/e2e/pdp-quantity-window.spec.js'), 'The smoke script must execute the PDP whole-unit quantity-window suite.');
 $assert(str_contains((string) ($scripts['test:e2e:a11y'] ?? ''), 'tests/e2e/accessibility.spec.js'), 'The accessibility script must execute the axe suite.');
+$assert(str_contains((string) ($scripts['test:e2e:commerce'] ?? ''), 'tests/e2e/commerce-real.spec.js'), 'The commerce script must execute real first-party purchase flows.');
+$assert(str_contains((string) ($scripts['test:e2e:commerce'] ?? ''), 'tests/e2e/razorpay-loopback.spec.js'), 'The commerce script must execute guarded online-payment initialization.');
 $assert(preg_match('/fullyParallel:\s*false/', $playwright) === 1, 'Playwright must keep fullyParallel disabled for shared fixtures.');
 $assert(preg_match('/workers:\s*1/', $playwright) === 1, 'Playwright must keep one worker for deterministic shared fixtures.');
 
-foreach (['storefront.spec.js', 'accessibility.spec.js', 'product-media.spec.js', 'confirmation-fallback.spec.js', 'pdp-quantity-window.spec.js'] as $specName) {
+foreach (['storefront.spec.js', 'accessibility.spec.js', 'product-media.spec.js', 'confirmation-fallback.spec.js', 'pdp-quantity-window.spec.js', 'commerce-real.spec.js', 'razorpay-loopback.spec.js'] as $specName) {
     $spec = (string) file_get_contents($root . '/tests/e2e/' . $specName);
     $assert(str_contains($spec, 'forbiddenProviderHosts'), $specName . ' must retain forbidden provider request blocking.');
     $assert(str_contains($spec, "page.on('pageerror'"), $specName . ' must fail on uncaught first-party page errors.');

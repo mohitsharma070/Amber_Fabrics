@@ -122,9 +122,10 @@ jobs:
       BIGSHIP_USERNAME: ''
       BIGSHIP_PASSWORD: ''
       BIGSHIP_ACCESS_KEY: ''
-      RAZORPAY_KEY_ID: ''
-      RAZORPAY_KEY_SECRET: ''
+      RAZORPAY_KEY_ID: rzp_test_e2e
+      RAZORPAY_KEY_SECRET: rzp_secret_e2e
       RAZORPAY_WEBHOOK_SECRET: ''
+      RAZORPAY_TEST_BASE_URL: http://127.0.0.1:8001
       GOOGLE_ANALYTICS_ENABLED: 0
       GOOGLE_ANALYTICS_MEASUREMENT_ID: ''
       META_PIXEL_ID: ''
@@ -181,6 +182,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p tmp
+          php -S 127.0.0.1:8001 tests/e2e/razorpay-stub.php > tmp/e2e-razorpay-stub.log 2>&1 &
+          php -S 127.0.0.1:8002 tests/e2e/throwing-shipping-router.php > tmp/e2e-shipping-failure-server.log 2>&1 &
           php -S 127.0.0.1:8000 router.php > tmp/e2e-php-server.log 2>&1 &
 
       - name: Wait for storefront readiness
@@ -191,6 +194,9 @@ jobs:
 
       - name: Storefront browser smoke tests
         run: npm run test:e2e:smoke
+
+      - name: Real commerce browser tests
+        run: npm run test:e2e:commerce
 
       - name: Axe accessibility tests
         run: npm run test:e2e:a11y
@@ -204,5 +210,7 @@ jobs:
             test-results/
             playwright-report/
             tmp/e2e-php-server.log
+            tmp/e2e-razorpay-stub.log
+            tmp/e2e-shipping-failure-server.log
           if-no-files-found: ignore
           retention-days: 7

@@ -295,6 +295,23 @@ try {
     $variantStmt->execute([$highMoqVariantProductId, 'Amber', 'Standard', 'E2E-HIGH-MOQ-VAR-AMBER', 249.00, 25.00, 2]);
     $variantStmt->execute([$highMoqVariantProductId, 'Stone', 'Standard', 'E2E-HIGH-MOQ-VAR-STONE', 249.00, 24.00, 3]);
 
+    $couponStmt = $conn->prepare(
+        "INSERT INTO coupons (
+            code, discount_type, discount_value, min_order_amount, max_discount,
+            start_date, end_date, usage_limit, used_count, status
+         ) VALUES ('E2E10', 'percent', 10.00, 100.00, 500.00, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 1 YEAR), 10000, 0, 'active')
+         ON DUPLICATE KEY UPDATE
+            discount_type = 'percent',
+            discount_value = 10.00,
+            min_order_amount = 100.00,
+            max_discount = 500.00,
+            start_date = CURDATE(),
+            end_date = DATE_ADD(CURDATE(), INTERVAL 1 YEAR),
+            usage_limit = 10000,
+            status = 'active'"
+    );
+    $couponStmt->execute();
+
     $conn->commit();
     $inTransaction = false;
     echo "E2E fixtures seeded.\n";

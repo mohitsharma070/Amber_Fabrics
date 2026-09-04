@@ -17,7 +17,11 @@
         var mainVideo = document.getElementById('product-main-video');
         var mainWebpSource = document.getElementById('product-main-webp-source');
         var thumbsWrap = document.getElementById('product-media-thumbs');
+        var mediaStatus = document.getElementById('product-media-status');
         if (!mainImage || !thumbsWrap) return null;
+        var lastImageDescriptor = null;
+        var recoveringVideo = false;
+        var intentionalVideoReset = false;
 
         function positiveDimension(value) {
             var dimension = parseInt(String(value || '0'), 10);
@@ -67,13 +71,16 @@
             mainVideo.classList.add('d-none');
             var source = mainVideo.querySelector('source');
             if (source && source.getAttribute('src')) {
+                intentionalVideoReset = true;
                 source.removeAttribute('src');
                 mainVideo.load();
+                window.setTimeout(function () { intentionalVideoReset = false; }, 0);
             }
             mainVideo.removeAttribute('aria-label');
         }
 
         function showImage(descriptor) {
+            lastImageDescriptor = descriptor;
             if (mainVideo) {
                 mainVideo.pause();
                 mainVideo.classList.add('d-none');
@@ -95,13 +102,6 @@
         function showVideo(descriptor) {
             if (!mainVideo) return;
             mainImage.classList.add('d-none');
-            mainImage.removeAttribute('src');
-            mainImage.setAttribute('alt', '');
-            mainImage.removeAttribute('width');
-            mainImage.removeAttribute('height');
-            if (mainWebpSource) {
-                mainWebpSource.removeAttribute('srcset');
-            }
             var source = mainVideo.querySelector('source');
             if (source && source.getAttribute('src') !== descriptor.src) {
                 source.setAttribute('src', descriptor.src);
@@ -110,6 +110,40 @@
             mainVideo.setAttribute('aria-label', descriptor.alt || 'Product video');
             mainVideo.classList.remove('d-none');
         }
+
+        function restoreImageAfterVideoFailure(event) {
+            if (event && event.type === 'abort' && intentionalVideoReset) {
+                intentionalVideoReset = false;
+                return;
+            }
+            if (recoveringVideo) return;
+            recoveringVideo = true;
+            clearVideoSource();
+            if (lastImageDescriptor) {
+                showImage(lastImageDescriptor);
+            } else {
+                mainImage.classList.add('d-none');
+            }
+            if (mediaStatus) {
+                mediaStatus.textContent = 'Product video could not be played. The product image has been restored.';
+            }
+            recoveringVideo = false;
+        }
+
+        if (mainVideo) {
+            ['error', 'abort', 'stalled'].forEach(function (eventName) {
+                mainVideo.addEventListener(eventName, restoreImageAfterVideoFailure);
+            });
+        }
+
+        lastImageDescriptor = normalizeDescriptor({
+            type: 'image',
+            src: mainImage.getAttribute('src'),
+            webp_srcset: mainWebpSource ? mainWebpSource.getAttribute('srcset') : '',
+            width: mainImage.getAttribute('width'),
+            height: mainImage.getAttribute('height'),
+            alt: mainImage.getAttribute('alt')
+        });
 
         function activateThumb(thumb) {
             var descriptor = descriptorFromThumb(thumb);

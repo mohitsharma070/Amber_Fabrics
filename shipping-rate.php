@@ -66,9 +66,12 @@ try {
         'pincode' => $pincode,
         'payment_method' => $paymentMethod,
         'items' => $quoteItems,
-    ]);
+    ], true);
 } catch (Throwable $e) {
-    error_log('[app] Live shipping quote failed: ' . $e->getMessage());
+    app_log('error', 'shipping_quote_failed', [
+        'exception_type' => get_class($e),
+        'payment_method' => $paymentMethod,
+    ]);
     $quote['debug_reason'] = 'bigship_rate_api_failed';
 }
 

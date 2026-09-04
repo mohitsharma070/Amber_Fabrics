@@ -6,6 +6,7 @@ $assert = static function (bool $condition, string $message) use (&$failures): v
 
 $shippingRateSource = (string) file_get_contents(__DIR__ . '/../shipping-rate.php');
 $checkoutJsSource = (string) file_get_contents(__DIR__ . '/../js/checkout.js');
+$hooksSource = (string) file_get_contents(__DIR__ . '/../includes/hooks.php');
 
 // 1. shipping-rate.php must NOT accept fallback_only from the client
 $assert(
@@ -26,7 +27,11 @@ $assert(
 // 3. shipping-rate.php catches exceptions from the live quote provider
 $assert(
     str_contains($shippingRateSource, "} catch (Throwable \$e) {") &&
-    str_contains($shippingRateSource, "\$quote['debug_reason'] = 'bigship_rate_api_failed';"),
+    str_contains($shippingRateSource, "\$quote['debug_reason'] = 'bigship_rate_api_failed';") &&
+    str_contains($shippingRateSource, "    ], true);") &&
+    str_contains($shippingRateSource, "app_log('error', 'shipping_quote_failed'") &&
+    !str_contains($shippingRateSource, '$e->getMessage()') &&
+    str_contains($hooksSource, 'if ($throwOnFailure) {'),
     'shipping-rate.php must catch Throwable around apply_filters and set debug_reason on failure'
 );
 

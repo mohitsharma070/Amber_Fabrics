@@ -79,7 +79,9 @@ $assert(
 // C. Valid pincode + courier failure: manual fallback with valid token
 // -----------------------------------------------------------------------
 $catchBlock = str_contains($shippingRate, "} catch (Throwable \$e) {") &&
-    str_contains($shippingRate, "error_log('[app] Live shipping quote failed: ' . \$e->getMessage())") &&
+    str_contains($shippingRate, "app_log('error', 'shipping_quote_failed'") &&
+    str_contains($shippingRate, "'exception_type' => get_class(\$e)") &&
+    !str_contains($shippingRate, '$e->getMessage()') &&
     str_contains($shippingRate, "\$quote['debug_reason'] = 'bigship_rate_api_failed'");
 $assert(
     $catchBlock,

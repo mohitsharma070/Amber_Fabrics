@@ -72,6 +72,7 @@ $safeContext = app_log_context_value([
 $assert(($safeContext['order_id'] ?? null) === 42, 'Safe structured-log context must be retained.');
 $assert(($safeContext['access_token'] ?? null) === '[redacted]', 'Token values must be redacted from structured logs.');
 $assert(($safeContext['nested']['password'] ?? null) === '[redacted]', 'Nested secret values must be redacted from structured logs.');
+app_log('error', ' Provider Failure ', ['exception_type' => RuntimeException::class]);
 unset($_SERVER['HTTP_X_REQUEST_ID'], $GLOBALS['app_request_id']);
 
 foreach ([

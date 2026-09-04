@@ -93,18 +93,43 @@ final class CustomerSessionMergeService
             ? $_SESSION['wishlist_meter_length']
             : [];
 
+        $mergedIds = array_values(array_filter(array_unique(array_map(
+            static function ($key): int {
+                [$productId] = CartService::cart_parse_key((string) $key);
+                return $productId;
+            },
+            array_merge(array_keys($dbWishlist), array_keys($sessionWishlist))
+        )), static fn($value): bool => $value > 0));
+        $unitMap = self::productUnitMap($conn, $mergedIds);
+        $meterConflictFound = false;
+
         foreach ($sessionWishlist as $wishlistKey => $wishlistQty) {
             [$productId] = CartService::cart_parse_key((string) $wishlistKey);
             if ($productId <= 0) {
                 continue;
             }
-            $existingQty = isset($dbWishlist[$wishlistKey]) ? normalize_meter_quantity($dbWishlist[$wishlistKey], 1.0) : 0.0;
-            $incomingQty = normalize_meter_quantity($wishlistQty, 1.0);
-            $dbWishlist[$wishlistKey] = max($existingQty, $incomingQty);
-            if (isset($sessionSizeMap[$wishlistKey])) {
+            $unitType = $unitMap[$productId] ?? 'meter';
+            if (!CartService::cartLineAllowsMeterLength(
+                $dbWishlist,
+                $dbMeterMap,
+                (string) $wishlistKey,
+                $unitType,
+                $sessionMeterMap[$wishlistKey] ?? null
+            )) {
+                $meterConflictFound = true;
+                continue;
+            }
+            $existingQty = isset($dbWishlist[$wishlistKey])
+                ? normalize_quantity_by_unit($dbWishlist[$wishlistKey], $unitType)
+                : 0.0;
+            $incomingQty = normalize_quantity_by_unit($wishlistQty, $unitType);
+            $dbWishlist[$wishlistKey] = $existingQty + $incomingQty;
+            if (!isset($dbSizeMap[$wishlistKey]) && isset($sessionSizeMap[$wishlistKey])) {
                 $dbSizeMap[$wishlistKey] = (string) $sessionSizeMap[$wishlistKey];
             }
             if (
+                !isset($dbMeterMap[$wishlistKey])
+                &&
                 isset($sessionMeterMap[$wishlistKey])
                 && is_numeric($sessionMeterMap[$wishlistKey])
                 && (float) $sessionMeterMap[$wishlistKey] > 0
@@ -113,10 +138,24 @@ final class CustomerSessionMergeService
             }
         }
 
+        $hydrated = CartService::cart_hydrate_items($conn, $dbWishlist, $dbSizeMap, $dbMeterMap);
+        $quantityAdjusted = !empty($hydrated['quantity_updates']) || !empty($hydrated['removed_keys']);
+        foreach ((array) ($hydrated['quantity_updates'] ?? []) as $wishlistKey => $quantity) {
+            $dbWishlist[$wishlistKey] = $quantity;
+        }
+        foreach ((array) ($hydrated['removed_keys'] ?? []) as $wishlistKey) {
+            unset($dbWishlist[$wishlistKey], $dbSizeMap[$wishlistKey], $dbMeterMap[$wishlistKey]);
+        }
+
         $_SESSION['wishlist'] = $dbWishlist;
         $_SESSION['wishlist_size'] = $dbSizeMap;
         $_SESSION['wishlist_meter_length'] = $dbMeterMap;
         $_SESSION['wishlist_loaded_for'] = $customerId;
+        if ($meterConflictFound) {
+            flash('error', 'Some meter-based wishlist items could not be merged because their selected length was missing or different. Please review your saved items.');
+        } elseif ($quantityAdjusted) {
+            flash('info', 'Some saved quantities were adjusted to current stock and ordering rules.');
+        }
         wishlist_save_to_db($conn, $customerId, $dbWishlist, $dbMeterMap, $dbSizeMap);
     }
 
@@ -195,7 +234,7 @@ final class CustomerSessionMergeService
             $minimumQuantity = $unitType === 'meter'
                 ? normalize_meter_quantity($stockMap[$productId]['min_order_meters'] ?? 1, 1.0)
                 : (float) max(1, (int) round((float) ($stockMap[$productId]['min_order_meters'] ?? 1)));
-            $quantityStep = $unitType === 'meter' ? (float) $stockMap[$productId]['qty_step'] : 0.0;
+            $quantityStep = (float) $stockMap[$productId]['qty_step'];
             $available = $unitType === 'meter'
                 ? (float) $stockMap[$productId]['stock_meters']
                 : (float) $stockMap[$productId]['stock'];

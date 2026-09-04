@@ -22,23 +22,23 @@ if (!function_exists('_cfg')) {
 require_once $root . '/includes/helpers/media.php';
 
 $descriptorFixture = fabric_product_media_descriptors(
-    ['variant-example.jpg', 'variant-detail.png'],
-    'variant-demo.mp4',
+    ['fabric_6a7d39f1455fa2.68441752.jpeg', 'fabric_6a7d39cd62caf7.32131077.jpeg'],
+    'fabric_6a7d39f1455fa2.68441752.jpeg',
     'Example product'
 );
 $assert(
     count($descriptorFixture) === 3
         && ($descriptorFixture[0]['type'] ?? '') === 'image'
-        && ($descriptorFixture[0]['src'] ?? '') === '/images/fabrics/variant-example.jpg'
+        && ($descriptorFixture[0]['src'] ?? '') === '/images/fabrics/fabric_6a7d39f1455fa2.68441752.jpeg'
         && array_key_exists('thumb_src', $descriptorFixture[0])
         && array_key_exists('webp_srcset', $descriptorFixture[0])
         && array_key_exists('width', $descriptorFixture[0])
         && array_key_exists('height', $descriptorFixture[0])
         && ($descriptorFixture[0]['webp_srcset'] ?? null) === ''
         && ($descriptorFixture[1]['type'] ?? '') === 'image'
-        && ($descriptorFixture[1]['src'] ?? '') === '/images/fabrics/variant-detail.png'
+        && ($descriptorFixture[1]['src'] ?? '') === '/images/fabrics/fabric_6a7d39cd62caf7.32131077.jpeg'
         && ($descriptorFixture[2]['type'] ?? '') === 'video'
-        && ($descriptorFixture[2]['src'] ?? '') === '/images/fabrics/variant-demo.mp4',
+        && ($descriptorFixture[2]['src'] ?? '') === '/images/fabrics/fabric_6a7d39f1455fa2.68441752.jpeg',
     'The media helper must emit the ordered image/video descriptor shape consumed by the PDP.'
 );
 $assert(
@@ -48,6 +48,10 @@ $assert(
     ]
         && array_keys($descriptorFixture[2]) === ['type', 'src', 'alt'],
     'The PDP media contract must expose only presentation fields needed by image and video controls.'
+);
+$assert(
+    fabric_product_media_descriptors(['missing-product-image.jpg'], 'missing-product-video.mp4', 'Missing') === [],
+    'Missing image and video filenames must not produce browser requests.'
 );
 
 $assert(
@@ -85,12 +89,13 @@ $assert(
         && !str_contains($productDetail, 'thumbsWrap.innerHTML = html;'),
     'PDP JavaScript must not infer media paths or rebuild media controls through HTML string concatenation.'
 );
+$assert(str_contains($productDetail, "source.removeAttribute('src')"), 'Variant changes must clear stale video source state.');
 $assert(
-    str_contains($productDetail, "mainWebpSource.removeAttribute('srcset')")
-        && str_contains($productDetail, "mainImage.removeAttribute('width')")
-        && str_contains($productDetail, "mainImage.removeAttribute('height')")
-        && str_contains($productDetail, "source.removeAttribute('src')"),
-    'Variant changes must explicitly clear stale responsive, intrinsic-dimension, and video source state.'
+    str_contains($productDetail, 'restoreImageAfterVideoFailure')
+        && str_contains($productDetail, "['error', 'abort', 'stalled']")
+        && str_contains($productDetail, 'lastImageDescriptor')
+        && str_contains($fabric, 'id="product-media-status"'),
+    'Failed product videos must restore the last valid image and announce the fallback.'
 );
 
 if ($failures !== []) {

@@ -73,13 +73,13 @@ include __DIR__ . '/../includes/header.php';
                         <form method="POST" action="/customer/reset-password.php?token=<?php echo urlencode($token); ?>">
                             <?php echo csrf_field(); ?>
                             <div class="mb-3">
-                                <label class="form-label">New Password <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
-                                <input type="password" name="password" class="<?php echo form_class($errors, 'password'); ?>" required>
+                                <label class="form-label" for="reset_password">New Password <small class="text-muted">(min. 10 chars, upper/lowercase and number)</small></label>
+                                <input id="reset_password" type="password" name="password" class="<?php echo form_class($errors, 'password'); ?>" required>
                                 <?php echo form_error($errors, 'password'); ?>
                             </div>
                             <div class="mb-4">
-                                <label class="form-label">Confirm Password</label>
-                                <input type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password'); ?>" required>
+                                <label class="form-label" for="reset_confirm_password">Confirm Password</label>
+                                <input id="reset_confirm_password" type="password" name="confirm_password" class="<?php echo form_class($errors, 'confirm_password'); ?>" required>
                                 <?php echo form_error($errors, 'confirm_password'); ?>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">Set New Password</button>

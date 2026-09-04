@@ -26,18 +26,19 @@ $assertQuantity(normalize_meter_quantity('2.50', 0.01), 2.50, 'Two and a half me
 $assertQuantity(normalize_meter_quantity('2.504', 0.01), 2.50, 'Meter quantity normalization must remain two-decimal.');
 
 $hasRepresentabilityPolicy = function_exists('meter_qty_step_is_representable');
-$assert($hasRepresentabilityPolicy, 'A shared two-decimal meter-step representability policy is required.');
+$assert($hasRepresentabilityPolicy, 'A shared four-decimal meter-step representability policy is required.');
 if ($hasRepresentabilityPolicy) {
-    foreach ([0.01, 0.05, 0.10, 0.25, 0.50, 1.00] as $step) {
-        $assert(meter_qty_step_is_representable($step), 'Valid two-decimal step ' . $step . ' was rejected.');
+    foreach ([0.0001, 0.001, 0.01, 0.05, 0.10, 0.125, 0.25, 0.50, 1.00] as $step) {
+        $assert(meter_qty_step_is_representable($step), 'Valid four-decimal step ' . $step . ' was rejected.');
     }
-    $assert(!meter_qty_step_is_representable(0.125), 'A 0.125-meter step must be rejected as unrepresentable.');
+    $assert(!meter_qty_step_is_representable(0.00001), 'A step with more than four decimals must be rejected.');
 }
 
 $assert(meter_qty_respects_step(1.01, 1.00, 0.01), 'A 0.01-meter step must remain valid.');
 $assert(meter_qty_respects_step(1.10, 1.00, 0.05), 'A 0.05-meter step must remain valid.');
 $assert(meter_qty_respects_step(1.25, 1.00, 0.25), 'A 0.25-meter step must remain valid.');
-$assert(!meter_qty_respects_step(1.25, 1.00, 0.125), 'Runtime validation must fail closed for a legacy 0.125-meter step.');
+$assert(meter_qty_respects_step(1.25, 1.00, 0.125), 'Runtime validation must accept a cent-storable quantity on a 0.125-meter step.');
+$assert(!meter_qty_respects_step(1.20, 1.00, 0.125), 'Runtime validation must reject a quantity outside the 0.125-meter grid.');
 
 $validationConnection = mysqli_init();
 $validationInput = [
@@ -50,12 +51,12 @@ $validationInput = [
     'sale_price' => '',
     'cost_price' => 50,
 ];
-$invalidStepValidation = ProductAdminService::validateExtended($validationConnection, $validationInput);
+$validFourDecimalStepValidation = ProductAdminService::validateExtended($validationConnection, $validationInput);
 $assert(
-    ($invalidStepValidation['errors']['qty_step'] ?? '') === 'Meter quantity step must use no more than two decimal places.',
-    'Admin validation must identify an unrepresentable meter step on the qty_step field.'
+    !isset($validFourDecimalStepValidation['errors']['qty_step']),
+    'Admin validation must accept a four-decimal meter step.'
 );
-foreach (['0.01', '0.05', '0.10', '0.25', '0.50', '1.00'] as $step) {
+foreach (['0.0001', '0.001', '0.01', '0.05', '0.10', '0.125', '0.25', '0.50', '1.00'] as $step) {
     $validationInput['qty_step'] = $step;
     $validStepValidation = ProductAdminService::validateExtended($validationConnection, $validationInput);
     $assert(!isset($validStepValidation['errors']['qty_step']), 'Admin validation rejected valid meter step ' . $step . '.');
@@ -68,8 +69,13 @@ $assertQuantity(
 );
 $assertQuantity(
     CartService::maximumSellableQuantity(9.00, 'meter', 1.00, 0.125, 2.50),
-    0.00,
-    'A legacy unrepresentable step must not be reconciled into a new sellable cart quantity.'
+    7.50,
+    'A four-decimal step must intersect the selected cut-length grid.'
+);
+$assertQuantity(
+    CartService::maximumSellableQuantity(1.40, 'meter', 1.00, 0.125, null),
+    1.25,
+    'A four-decimal step must reconcile to the highest two-decimal quantity on its grid.'
 );
 
 $product = [
@@ -124,7 +130,8 @@ $legacyProduct = $product;
 $legacyProduct['product_type'] = 'simple';
 $legacyProduct['stock_meters'] = 10.00;
 $legacyProduct['qty_step'] = 0.125;
-$legacyRejected = false;
+$legacyProduct['meter_options'] = '1.25';
+$fourDecimalAccepted = true;
 try {
     OrderItemSnapshotService::build(
         ['1::0' => 1.25],
@@ -136,9 +143,9 @@ try {
         '5208'
     );
 } catch (RuntimeException $exception) {
-    $legacyRejected = str_contains($exception->getMessage(), 'meter quantity step');
+    $fourDecimalAccepted = false;
 }
-$assert($legacyRejected, 'Checkout/order snapshot creation must reject a legacy unrepresentable step.');
+$assert($fourDecimalAccepted, 'Checkout/order snapshot creation must accept a valid cent-storable quantity on a four-decimal step.');
 
 $schema = $read('database/schema.sql');
 $setup = $read('database/setup.php');
@@ -158,15 +165,15 @@ $deliveryEndpoint = $read('delivery-estimate.php');
 $inventoryService = $read('includes/services/InventoryService.php');
 $assert(
     str_contains($adminService, 'meter_qty_step_is_representable')
-        && str_contains($adminService, 'two decimal places'),
-    'Admin/readiness validation must reject meter steps outside two-decimal precision.'
+        && str_contains($adminService, 'four decimal places'),
+    'Admin/readiness validation must reject meter steps outside four-decimal precision.'
 );
 $assert(
     str_contains($adminEditor, "\$_POST['qty_step']")
-        && str_contains($adminEditor, 'round((float) $qtyStepRaw, 2)')
+        && str_contains($adminEditor, 'round((float) $qtyStepRaw, 4)')
         && str_contains($adminForm, 'name="qty_step"')
-        && str_contains($adminForm, 'Meter steps support up to two decimal places.'),
-    'The product editor must submit, normalize, and explain the two-decimal meter-step boundary.'
+        && str_contains($adminForm, 'Meter steps support up to four decimal places'),
+    'The product editor must submit, normalize, and explain the four-decimal meter-step boundary.'
 );
 $assert(
     !in_array('Quantity Step', ProductImportService::HEADERS, true)
@@ -175,9 +182,9 @@ $assert(
     'Imports must keep their existing safe 1.00 step default and must not accept an unvalidated step column.'
 );
 $assert(
-    str_contains($cartService, 'meter_qty_step_is_representable')
-        && str_contains($cartService, 'return 0.0;'),
-    'Cart hydration/reconciliation must fail closed for an unrepresentable legacy step.'
+    str_contains($cartService, '$stepUnits = (int) round($quantityStep * 10000)')
+        && str_contains($cartService, '$stockUnits = $stockCents * 100'),
+    'Cart hydration/reconciliation must use scaled-integer arithmetic for four-decimal steps.'
 );
 $assert(str_contains($deliveryEndpoint, 'meter_qty_respects_step'), 'Delivery estimates must enforce the authoritative server-side step policy.');
 $assert(

@@ -373,6 +373,7 @@ do_action('product.view', [
                         <video id="product-main-video" class="w-100 h-100 d-none" style="object-fit:contain;background:#101418;" controls preload="metadata">
                             <source<?php if (is_array($defaultVideoDescriptor)): ?> src="<?php echo e((string) $defaultVideoDescriptor['src']); ?>"<?php endif; ?>>
                         </video>
+                        <div id="product-media-status" class="visually-hidden" aria-live="polite"></div>
                     </div>
                     <div id="product-media-thumbs" class="d-flex flex-wrap gap-2">
                         <?php foreach ($defaultImageMediaDescriptors as $index => $thumbAsset): ?>

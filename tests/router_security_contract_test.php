@@ -16,7 +16,7 @@ function test_router(string $uri): array {
         // mock return false inside router
         $projectRoot = realpath(' . var_export(__DIR__ . '/..', true) . ');
         $router = file_get_contents($projectRoot . "/router.php");
-        
+
         // Replace __DIR__ with the actual project root so static file checks work from the temp directory
         $router = preg_replace("/\b__DIR__\b/", var_export($projectRoot, true), $router);
         
@@ -40,7 +40,7 @@ function test_router(string $uri): array {
         $out = ob_get_clean();
         echo $out;
     ';
-    
+
     $tmpFile = tempnam(sys_get_temp_dir(), 'router_test_');
     if ($tmpFile === false) {
         return ['output' => 'FAILED_TO_CREATE_TEMP_FILE'];
@@ -98,20 +98,9 @@ $assert(str_contains($res['output'], 'Forbidden'), "J. /.env. trailing dot shoul
 $res = test_router('/composer.json.');
 $assert(str_contains($res['output'], 'Forbidden'), "J. /composer.json. trailing dot should be Forbidden, got: " . $res['output']);
 
-// K. ordinary public assets still work (using a temporary public asset to verify is_file logic if needed)
-$safePublicAsset = __DIR__ . '/../css/router_safe_test_asset_' . md5(uniqid()) . '.css';
-if (!file_exists($safePublicAsset)) {
-    try {
-        file_put_contents($safePublicAsset, 'body{}');
-        $basename = basename($safePublicAsset);
-        $res = test_router('/css/' . $basename);
-        $assert(str_contains($res['output'], 'SERVED_DIRECTLY'), "K. public CSS should be served directly, got: " . $res['output']);
-    } finally {
-        if (file_exists($safePublicAsset)) {
-            unlink($safePublicAsset);
-        }
-    }
-}
+// K. ordinary committed public assets still work without mutating the repository
+$res = test_router('/css/style.css');
+$assert(str_contains($res['output'], 'SERVED_DIRECTLY'), "K. public CSS should be served directly, got: " . $res['output']);
 
 // L. normal clean routes still work
 $res = test_router('/about');

@@ -73,28 +73,28 @@ include __DIR__ . '/includes/header.php';
                         <?php echo csrf_field(); ?>
                         <div class="row g-3">
                             <div class="col-sm-6">
-                                <label class="form-label">Name *</label>
-                                <input class="<?php echo form_class($errors, 'name'); ?>" required name="name" value="<?php echo e($prefill['name']); ?>" placeholder="Your full name">
+                                <label class="form-label" for="contact_name">Name *</label>
+                                <input id="contact_name" class="<?php echo form_class($errors, 'name'); ?>" required name="name" value="<?php echo e($prefill['name']); ?>" placeholder="Your full name">
                                 <?php echo form_error($errors, 'name'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Email *</label>
-                                <input class="<?php echo form_class($errors, 'email'); ?>" required type="email" name="email" value="<?php echo e($prefill['email']); ?>" placeholder="name@company.com">
+                                <label class="form-label" for="contact_email">Email *</label>
+                                <input id="contact_email" class="<?php echo form_class($errors, 'email'); ?>" required type="email" name="email" value="<?php echo e($prefill['email']); ?>" placeholder="name@company.com">
                                 <?php echo form_error($errors, 'email'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Country</label>
-                                <input class="<?php echo form_class($errors, 'country'); ?>" name="country" value="<?php echo e($prefill['country']); ?>" placeholder="Country">
+                                <label class="form-label" for="contact_country">Country</label>
+                                <input id="contact_country" class="<?php echo form_class($errors, 'country'); ?>" name="country" value="<?php echo e($prefill['country']); ?>" placeholder="Country">
                                 <?php echo form_error($errors, 'country'); ?>
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label">Phone</label>
-                                <input class="<?php echo form_class($errors, 'phone'); ?>" name="phone" type="tel" value="<?php echo e($prefill['phone']); ?>" placeholder="+91 98765 43210">
+                                <label class="form-label" for="contact_phone">Phone</label>
+                                <input id="contact_phone" class="<?php echo form_class($errors, 'phone'); ?>" name="phone" type="tel" value="<?php echo e($prefill['phone']); ?>" placeholder="+91 98765 43210">
                                 <?php echo form_error($errors, 'phone'); ?>
                             </div>
                             <div class="col-12">
-                                <label class="form-label">Message</label>
-                                <textarea class="<?php echo form_class($errors, 'message'); ?>" name="message" rows="5" placeholder="How can we help you?"><?php echo e($prefill['message']); ?></textarea>
+                                <label class="form-label" for="contact_message">Message</label>
+                                <textarea id="contact_message" class="<?php echo form_class($errors, 'message'); ?>" name="message" rows="5" placeholder="How can we help you?"><?php echo e($prefill['message']); ?></textarea>
                                 <?php echo form_error($errors, 'message'); ?>
                             </div>
                             <div class="col-12">
