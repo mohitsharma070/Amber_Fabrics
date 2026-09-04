@@ -46,22 +46,33 @@ $discountAmount = $couponInfo['valid'] ? min((float) $couponInfo['discount'], $s
 $invoiceValue = max(0.0, round($subtotal - $discountAmount, 2));
 
 $manual = CartService::checkout_shipping_breakdown($subtotal, 'India', $paymentMethod, $paymentMethod === 'cod');
-$quote = apply_filters('shipping.quote', [
+$fallbackOnly = (int) ($_POST['fallback_only'] ?? 0) === 1;
+$quote = [
     'base_shipping' => (float) $manual['base_shipping'],
     'cod_fee' => (float) $manual['cod_fee'],
     'shipping_total' => (float) $manual['shipping_total'],
     'source' => 'manual',
     'courier_name' => '',
     'courier_id' => 0,
-], [
-    'conn' => $conn,
-    'subtotal' => $subtotal,
-    'invoice_value' => $invoiceValue,
-    'country' => 'India',
-    'pincode' => $pincode,
-    'payment_method' => $paymentMethod,
-    'items' => $quoteItems,
-]);
+];
+if (!$fallbackOnly) {
+    try {
+        $quote = apply_filters('shipping.quote', $quote, [
+            'conn' => $conn,
+            'subtotal' => $subtotal,
+            'invoice_value' => $invoiceValue,
+            'country' => 'India',
+            'pincode' => $pincode,
+            'payment_method' => $paymentMethod,
+            'items' => $quoteItems,
+        ]);
+    } catch (Throwable $e) {
+        error_log('[app] Live shipping quote failed: ' . $e->getMessage());
+        $quote['debug_reason'] = 'bigship_rate_api_failed';
+    }
+} else {
+    $quote['debug_reason'] = 'bigship_rate_api_failed';
+}
 
 $baseShipping = max(0.0, round((float) ($quote['base_shipping'] ?? $manual['base_shipping']), 2));
 $codFee = max(0.0, round((float) ($quote['cod_fee'] ?? $manual['cod_fee']), 2));

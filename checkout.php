@@ -3,6 +3,11 @@ require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/helpers/coupon-functions.php';
 require_once __DIR__ . '/includes/security/customer-auth.php';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'refresh_quote') {
+    $_SESSION['checkout_old'] = $_POST;
+    redirect('/checkout.php');
+}
+
 if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
@@ -186,6 +191,9 @@ include __DIR__ . '/includes/header.php';
         <?php if (!empty($errors['_cart'])): ?>
             <div class="alert alert-danger"><?php echo e($errors['_cart']); ?></div>
         <?php endif; ?>
+        <?php if (!empty($errors['_checkout'])): ?>
+            <div class="alert alert-danger" role="alert"><?php echo e($errors['_checkout']); ?></div>
+        <?php endif; ?>
         <?php if (!$isIndia): ?>
             <div class="alert alert-warning">
                 International checkout is inquiry-only for now. Please use
@@ -308,7 +316,7 @@ include __DIR__ . '/includes/header.php';
                                 <textarea id="checkout_order_notes" name="order_notes" class="form-control" rows="2" maxlength="500"><?php echo e($old['order_notes']); ?></textarea>
                             </div>
                             <div class="col-12">
-                                <button type="button" class="btn btn-primary w-100" id="checkout_continue_payment">Continue to Payment</button>
+                                <button type="submit" name="action" value="refresh_quote" formaction="/checkout.php" class="btn btn-primary w-100" id="checkout_continue_payment">Continue to Payment</button>
                                 <div class="small mt-2" id="checkout_delivery_status" aria-live="polite">
                                     <?php echo $hasCompleteDelivery ? 'Delivery details verified. You can continue to payment.' : 'Complete your delivery address to calculate shipping.'; ?>
                                 </div>

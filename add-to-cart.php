@@ -101,60 +101,66 @@ foreach ($productVariants as $variantRow) {
 }
 
 // ── Variant lookup ──────────────────────────────────────────────────────────
-// Try explicit variant first (from product page), then color+size, then first active variant.
 $variant = null;
-if ($requiresVariant && $postedVariantId > 0) {
-    $candidate = InventoryService::get_variant_by_id($conn, $postedVariantId);
-    if ($candidate && (int) ($candidate['fabric_id'] ?? 0) === $productId && (int) ($candidate['is_active'] ?? 0) === 1) {
-        $variant = $candidate;
-    }
-}
-if ($requiresVariant && !$variant && ($selectedColor !== '' || $selectedSize !== '')) {
-    $variant = InventoryService::find_variant($conn, $productId, $selectedColor, $selectedSize);
-}
-if ($requiresVariant && !$variant) {
-    $variant = InventoryService::get_first_active_in_stock_variant($conn, $productId, $unitType);
-}
-if ($requiresVariant && !$variant) {
-    if ($isAjax) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Please select an available product variant.']);
-        exit;
-    }
-    flash('error', 'Please select an available product variant.');
-    redirect('/fabric.php?id=' . $productId);
-}
-if (!$variant && !$hasActiveVariants) {
-    if ($selectedSize !== '' && !empty($sizeOptions) && !in_array($selectedSize, $sizeOptions, true)) {
-        if ($isAjax) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Selected size is unavailable.']);
-            exit;
+if ($requiresVariant) {
+    if ($postedVariantId > 0) {
+        $candidate = InventoryService::get_variant_by_id($conn, $postedVariantId);
+        if (!$candidate || (int) ($candidate['fabric_id'] ?? 0) !== $productId || (int) ($candidate['is_active'] ?? 0) !== 1) {
+            $msg = 'Selected variant is unavailable or invalid.';
+            if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $msg]); exit; }
+            flash('error', $msg);
+            redirect('/fabric.php?id=' . $productId);
         }
+        if ($selectedColor !== '') {
+            $varColor = trim((string) ($candidate['color'] ?? ''));
+            if ($varColor !== '' && strcasecmp($selectedColor, $varColor) !== 0) {
+                $msg = 'Selected variant does not match the chosen colour.';
+                if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $msg]); exit; }
+                flash('error', $msg);
+                redirect('/fabric.php?id=' . $productId);
+            }
+        }
+        if ($selectedSize !== '') {
+            $varSize = CartService::variant_size_display($candidate, $unitType);
+            if ($varSize !== '' && strcasecmp($selectedSize, $varSize) !== 0) {
+                $msg = 'Selected variant does not match the chosen size.';
+                if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $msg]); exit; }
+                flash('error', $msg);
+                redirect('/fabric.php?id=' . $productId);
+            }
+        }
+        $variant = $candidate;
+    } elseif ($selectedColor !== '' || $selectedSize !== '') {
+        $variant = InventoryService::find_variant($conn, $productId, $selectedColor, $selectedSize);
+        if (!$variant) {
+            $msg = 'Selected colour/size combination is unavailable.';
+            if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $msg]); exit; }
+            flash('error', $msg);
+            redirect('/fabric.php?id=' . $productId);
+        }
+    } else {
+        $variant = InventoryService::get_first_active_in_stock_variant($conn, $productId, $unitType);
+        if (!$variant) {
+            $msg = 'Please select an available product variant.';
+            if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => $msg]); exit; }
+            flash('error', $msg);
+            redirect('/fabric.php?id=' . $productId);
+        }
+    }
+} else {
+    if ($selectedSize !== '' && !empty($sizeOptions) && !in_array($selectedSize, $sizeOptions, true)) {
+        if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Selected size is unavailable.']); exit; }
         flash('error', 'Selected size is unavailable.');
         redirect('/fabric.php?id=' . $productId);
     }
     if ($selectedColor !== '') {
         $productColor = trim((string) ($product['color'] ?? ''));
         if ($productColor !== '' && strcasecmp($selectedColor, $productColor) !== 0) {
-            if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'Selected colour is unavailable.']);
-                exit;
-            }
+            if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['success' => false, 'message' => 'Selected colour is unavailable.']); exit; }
             flash('error', 'Selected colour is unavailable.');
             redirect('/fabric.php?id=' . $productId);
         }
     }
-}
-if (!$variant && $hasActiveVariants && ($selectedColor !== '' || $selectedSize !== '')) {
-    if ($isAjax) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Selected colour/size combination is unavailable.']);
-        exit;
-    }
-    flash('error', 'Selected colour/size combination is unavailable.');
-    redirect('/fabric.php?id=' . $productId);
 }
 $variantId = $variant ? (int) ($variant['id'] ?? 0) : 0;
 if ($variant) {

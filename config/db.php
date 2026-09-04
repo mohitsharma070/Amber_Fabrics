@@ -341,18 +341,13 @@ function app_config_validate_production(array $config): void
 
 $allConfig = [];
 
-$httpHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
-$isLocalHost =
-    $httpHost === 'localhost' ||
-    $httpHost === '127.0.0.1' ||
-    strpos($httpHost, 'localhost:') === 0 ||
-    strpos($httpHost, '127.0.0.1:') === 0;
 $isCliServer = PHP_SAPI === 'cli-server';
 $isCli = PHP_SAPI === 'cli';
 
 // CLI should default to local mode so setup/migration scripts don't target production by accident.
-$mode = ($isLocalHost || $isCliServer || $isCli) ? 'local' : 'production';
-$modeOverride = strtolower(trim((string) (getenv('APP_MODE') ?: ($_SERVER['APP_MODE'] ?? ''))));
+// HTTP Host is client-controlled and must not be used to authorize local mode.
+$mode = ($isCliServer || $isCli) ? 'local' : 'production';
+$modeOverride = strtolower(trim((string) app_config_env('APP_MODE')));
 if ($modeOverride === 'prod') {
     $modeOverride = 'production';
 }

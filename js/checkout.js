@@ -316,7 +316,7 @@
             return true;
         }
 
-        async function maybeFetchLiveRate() {
+        async function maybeFetchLiveRate(isFallback) {
             var country = String(countryInput.value || '').trim().toLowerCase();
             var pincode = pincodeInput ? String(pincodeInput.value || '').trim() : '';
             if (country !== 'india' || !/^[1-9][0-9]{5}$/.test(pincode)) {
@@ -336,6 +336,7 @@
             body.set('csrf_token', csrfToken);
             body.set('pincode', pincode);
             body.set('payment_method', paymentMethod);
+            if (isFallback) body.set('fallback_only', '1');
             setDeliveryRequestPending(true);
             if (shippingNoteEl) shippingNoteEl.textContent = 'Checking delivery service and shipping…';
             var timedOut = false;
@@ -375,6 +376,9 @@
                     return false;
                 }
                 if (!res.ok || !data || !data.ok) {
+                    if (!isFallback) {
+                        return await maybeFetchLiveRate(true);
+                    }
                     shippingDebugReason = 'bigship_rate_api_failed';
                     setShippingNote('manual', '', shippingDebugReason, '');
                     return false;
@@ -409,6 +413,9 @@
                     : 'Delivery address verified with an estimated shipping rate.';
                 return true;
             } catch (error) {
+                if (timedOut && requestId === shippingRateRequestId && !isFallback) {
+                    return await maybeFetchLiveRate(true);
+                }
                 if (timedOut && requestId === shippingRateRequestId) {
                     if (shippingQuoteTokenInput) shippingQuoteTokenInput.value = '';
                     setCheckoutUnlocked(false);
@@ -417,6 +424,9 @@
                 }
                 if (error && error.name === 'AbortError') return false;
                 if (requestId === shippingRateRequestId) {
+                    if (!isFallback) {
+                        return await maybeFetchLiveRate(true);
+                    }
                     shippingDebugReason = 'bigship_rate_api_failed';
                     setShippingNote('manual', '', shippingDebugReason, '');
                 }
@@ -519,7 +529,8 @@
         setShippingNote(shippingSource, shippingCourierName, shippingDebugReason, shippingDebugMessage);
         setCheckoutUnlocked(deliveryUnlocked);
         if (continuePaymentBtn) {
-            continuePaymentBtn.addEventListener('click', async function () {
+            continuePaymentBtn.addEventListener('click', async function (ev) {
+                ev.preventDefault();
                 if (!validateAddressSection()) {
                     setCheckoutUnlocked(false);
                     if (deliveryStatusEl) deliveryStatusEl.textContent = 'Please complete the highlighted delivery fields.';

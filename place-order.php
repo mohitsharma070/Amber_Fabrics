@@ -483,6 +483,6 @@ try {
     }
 
     error_log('[app] place-order failed: ' . $e->getMessage());
-    $_SESSION['checkout_errors'] = ['Unable to place order right now. Please try again.'];
+    $_SESSION['checkout_errors'] = ['_checkout' => 'Unable to place order right now. Please try again.'];
     redirect('/checkout.php');
 }

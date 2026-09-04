@@ -65,7 +65,7 @@ $assert(
         && str_contains($checkoutScript, 'requestContext !== currentContext'),
     'Checkout must abort prior shipping requests and ignore stale responses.'
 );
-$liveRateStart = strpos($checkoutScript, 'async function maybeFetchLiveRate()');
+$liveRateStart = strpos($checkoutScript, 'async function maybeFetchLiveRate(');
 $liveRateEnd = strpos($checkoutScript, 'function scheduleLiveRate(', $liveRateStart === false ? 0 : $liveRateStart);
 $liveRateFunction = ($liveRateStart !== false && $liveRateEnd !== false)
     ? substr($checkoutScript, $liveRateStart, $liveRateEnd - $liveRateStart)

@@ -17,9 +17,13 @@ final class CustomerSessionMergeService
         $dbCartBundle = CartService::cart_load_from_db_bundle($conn, $customerId);
         $dbCart = is_array($dbCartBundle['cart'] ?? null) ? $dbCartBundle['cart'] : [];
         $dbMeterMap = is_array($dbCartBundle['meter_map'] ?? null) ? $dbCartBundle['meter_map'] : [];
+        $dbSizeMap = is_array($dbCartBundle['size_map'] ?? null) ? $dbCartBundle['size_map'] : [];
         $sessionCart = isset($_SESSION['cart']) && is_array($_SESSION['cart']) ? $_SESSION['cart'] : [];
         $sessionMeterMap = isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length'])
             ? $_SESSION['cart_meter_length']
+            : [];
+        $sessionSizeMap = isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size'])
+            ? $_SESSION['cart_size']
             : [];
 
         $mergedIds = array_values(array_filter(array_unique(array_map(
@@ -61,16 +65,20 @@ final class CustomerSessionMergeService
             ) {
                 $dbMeterMap[$cartKey] = round((float) $sessionMeterMap[$cartKey], 2);
             }
+            if (isset($sessionSizeMap[$cartKey])) {
+                $dbSizeMap[$cartKey] = (string) $sessionSizeMap[$cartKey];
+            }
         }
 
         self::capCartToAvailableStock($conn, $dbCart, $dbMeterMap);
 
         $_SESSION['cart'] = $dbCart;
         $_SESSION['cart_meter_length'] = $dbMeterMap;
+        $_SESSION['cart_size'] = $dbSizeMap;
         if ($meterConflictFound) {
             flash('error', 'Some meter-based cart items could not be merged because their selected length was missing or different. Please review your cart.');
         }
-        CartService::cart_save_to_db($conn, $customerId, $dbCart, $dbMeterMap);
+        CartService::cart_save_to_db($conn, $customerId, $dbCart, $dbMeterMap, $dbSizeMap);
     }
 
     private static function mergeWishlist(mysqli $conn, int $customerId): void

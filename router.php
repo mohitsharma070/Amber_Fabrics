@@ -26,8 +26,12 @@ $guestRoutes = ['order-access', 'order-auth', 'order', 'account-activate', 'supp
 // Mirror the private-directory protection from .htaccess. This is especially
 // important for tmp/local-mail.log because local messages can contain OTPs.
 $firstSegment = strtolower((string) (explode('/', $route, 2)[0] ?? ''));
-$blockedSegments = ['.git', 'config', 'database', 'includes', 'plugins', 'scripts', 'tmp', 'tmp_sessions', 'vendor'];
-if (in_array($firstSegment, $blockedSegments, true)) {
+$blockedSegments = ['.git', 'config', 'database', 'docs', 'includes', 'plugins', 'scripts', 'tests', 'tmp', 'tmp_sessions', 'vendor'];
+$basename = basename($requestPath);
+$normalizedBasename = rtrim($basename, ". ");
+$isFileBlocked = preg_match('/^(\.env|\.env\..*|secure-config\.php|app-config\.php|composer\.(json|lock|phar)|phpunit\.xml|\.git|\.gitignore|\.gitattributes|\.htaccess|\.htaccess\.bak|README(\.md)?|AGENTS\.md|CLAUDE\.md|openapi\.yaml|CHANGELOG\.md|GO_LIVE_CHECKLIST\.md|SECURITY\.md|query)$/i', $normalizedBasename);
+
+if ($isFileBlocked || in_array($firstSegment, $blockedSegments, true)) {
     http_response_code(403);
     header('Content-Type: text/plain; charset=UTF-8');
     exit('Forbidden');

@@ -844,13 +844,18 @@ final class CartService
         return $supports;
     }
 
-    public static function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null): void
+    public static function cart_save_to_db(mysqli $conn, int $customerId, array $cart, ?array $meterMap = null, ?array $sizeMap = null): void
     {
         try {
             $conn->begin_transaction();
             if ($meterMap === null) {
                 $meterMap = (isset($_SESSION['cart_meter_length']) && is_array($_SESSION['cart_meter_length']))
                     ? $_SESSION['cart_meter_length']
+                    : [];
+            }
+            if ($sizeMap === null) {
+                $sizeMap = (isset($_SESSION['cart_size']) && is_array($_SESSION['cart_size']))
+                    ? $_SESSION['cart_size']
                     : [];
             }
             $cartId = CartService::cart_get_or_create_db_cart($conn, $customerId);
@@ -959,7 +964,7 @@ final class CartService
                 // Simple products preserve the selected base-product size.
                 $selectedSize = '';
                 if ($variantId <= 0) {
-                    $selectedSize = trim((string) ($_SESSION['cart_size'][$rawKey] ?? ''));
+                    $selectedSize = trim((string) ($sizeMap[$rawKey] ?? ''));
                     if ($selectedSize === '') {
                         $parts = explode('::', $rawKey, 2);
                         $legacyToken = trim((string) ($parts[1] ?? ''));
@@ -1017,7 +1022,7 @@ final class CartService
 
     /**
      * Load the saved cart and meter metadata from DB for a logged-in customer.
-     * Returns ['cart' => [product_id => quantity], 'meter_map' => [product_id => meter_length]].
+     * Returns ['cart' => [product_id => quantity], 'meter_map' => [product_id => meter_length], 'size_map' => [cart_key => selected_size]].
      */
     public static function cart_load_from_db_bundle(mysqli $conn, int $customerId): array
     {
@@ -1103,6 +1108,7 @@ final class CartService
             $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $cart     = [];
             $meterMap = [];
+            $sizeMap  = [];
             foreach ($rows as $row) {
                 if ((int) $row['product_id'] > 0) {
                     $pid       = (int) $row['product_id'];
@@ -1123,12 +1129,18 @@ final class CartService
                     if ($supportsMeterLength && isset($row['meter_length']) && is_numeric($row['meter_length']) && (float) $row['meter_length'] > 0) {
                         $meterMap[$cartKey] = round((float) $row['meter_length'], 2);
                     }
+                    if ($supportsKeyColumns && isset($row['selected_size'])) {
+                        $sizeVal = trim((string) $row['selected_size']);
+                        if ($sizeVal !== '') {
+                            $sizeMap[$cartKey] = $sizeVal;
+                        }
+                    }
                 }
             }
-            return ['cart' => $cart, 'meter_map' => $meterMap];
+            return ['cart' => $cart, 'meter_map' => $meterMap, 'size_map' => $sizeMap];
         } catch (Throwable $e) {
             error_log('[app] cart_load_from_db failed: ' . $e->getMessage());
-            return ['cart' => [], 'meter_map' => []];
+            return ['cart' => [], 'meter_map' => [], 'size_map' => []];
         }
     }
 
