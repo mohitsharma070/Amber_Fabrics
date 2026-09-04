@@ -17,13 +17,7 @@ test.use({ javaScriptEnabled: false });
 test.beforeEach(async ({ page, context }) => {
   providerAttempts.set(page, []);
   pageErrors.set(page, []);
-  await context.addCookies([{
-    name: 'amber_marketing_consent',
-    value: 'denied',
-    url: 'http://127.0.0.1:8000',
-    httpOnly: true,
-    sameSite: 'Lax',
-  }]);
+  await context.clearCookies();
 
   await page.route('**/*', async (route) => {
     const hostname = new URL(route.request().url()).hostname;
@@ -44,9 +38,14 @@ test.afterEach(async ({ page }) => {
   expect(pageErrors.get(page), 'Storefront E2E must not produce uncaught first-party page errors.').toEqual([]);
 });
 
-test('@desktop checkout refresh quote with JavaScript disabled', async ({ page }) => {
-  // 1. Seed a safe disposable cart fixture
-  await page.goto('/catalog?q=E2E+Simple+Product');
+test('@desktop checkout refresh quote with JavaScript disabled', async ({ page, context }) => {
+  expect((await context.cookies()).filter((cookie) => cookie.name === 'amber_marketing_consent')).toEqual([]);
+
+  // 1. Start as a genuine first-time visitor and seed a safe disposable cart fixture.
+  await page.goto('/catalog?q=E2E+Simple+Product&utm_source=nojs-e2e');
+  const consentBanner = page.locator('#cookieConsentBanner');
+  await expect(consentBanner).toHaveAttribute('data-consent-status', 'unknown');
+  await expect(consentBanner).toHaveCSS('position', 'static');
   await page.getByRole('link', { name: 'E2E Simple Product', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'E2E Simple Product' })).toBeVisible();
   await page.locator('#add_to_cart_form').getByRole('button', { name: 'Add to Cart', exact: true }).click();
@@ -74,7 +73,8 @@ test('@desktop checkout refresh quote with JavaScript disabled', async ({ page }
   // Choose online payment and 'card', then refresh again to test PRG persistence.
   await page.getByRole('radio', { name: /Pay Online/ }).check();
   const onlineMethodSelect = page.locator('#online_method_noscript');
-  await onlineMethodSelect.selectOption('card', { force: true });
+  await expect(onlineMethodSelect).toBeVisible();
+  await onlineMethodSelect.selectOption('card');
 
   // 4. Submit Continue to Payment (intermediate refresh)
   await page.getByRole('button', { name: 'Continue to Payment' }).press('Enter');
@@ -93,8 +93,16 @@ test('@desktop checkout refresh quote with JavaScript disabled', async ({ page }
   const submitButton = page.locator('#checkout_submit');
   await expect(submitButton).toBeVisible();
 
-  // Simulate a missing CSRF token without following the redirect.
-  const response = await page.request.post('/checkout.php', {
+  const marketingCookies = (await context.cookies()).filter((cookie) => (
+    cookie.name === 'amber_marketing_consent' || cookie.name === 'amber_utm'
+  ));
+  expect(marketingCookies, 'Unknown consent must not silently create consent or attribution cookies.').toEqual([]);
+  await expect(page.locator('#cookieConsentBanner')).toHaveAttribute('data-consent-status', 'unknown');
+
+  // Use the browser context's shared cookie jar to prove invalid CSRF cannot replace valid state.
+  const sessionBefore = (await context.cookies()).find((cookie) => cookie.name === 'PHPSESSID');
+  expect(sessionBefore, 'The CSRF request must use the active browser session.').toBeTruthy();
+  const response = await context.request.post('/checkout.php', {
     maxRedirects: 0,
     form: {
       action: 'refresh_quote',
@@ -106,11 +114,33 @@ test('@desktop checkout refresh quote with JavaScript disabled', async ({ page }
   expect(response.status()).toBe(302);
   const redirectUrl = response.headers().location;
   expect(redirectUrl).toContain('/checkout.php');
+  const sessionAfter = (await context.cookies()).find((cookie) => cookie.name === 'PHPSESSID');
+  expect(sessionAfter && sessionAfter.value).toBe(sessionBefore.value);
 
   // Reload the page and ensure 'Hacker Name' wasn't persisted
   await page.goto('/checkout.php');
   await expect(page.getByText('Security session expired. Please verify your details and try again.')).toBeVisible();
   await expect(page.getByLabel('Full Name *', { exact: true })).toHaveValue('NoJS Buyer');
+});
+
+test('@desktop no-JavaScript consent controls use server POST and keep Privacy Policy reachable', async ({ page, context }) => {
+  await page.goto('/catalog');
+  const banner = page.locator('#cookieConsentBanner');
+  await expect(banner).toHaveAttribute('data-consent-status', 'unknown');
+  await expect(banner).toHaveCSS('position', 'static');
+
+  await banner.getByRole('link', { name: 'Privacy Policy' }).click();
+  await expect(page).toHaveURL(/\/privacy-policy$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Privacy Policy' })).toBeVisible();
+
+  await page.goBack();
+  const rejectButton = page.locator('[data-consent-noscript-actions]').getByRole('button', { name: 'Reject' });
+  await rejectButton.click();
+  await expect(page).toHaveURL(/\/catalog$/);
+  const consentCookie = (await context.cookies()).find((cookie) => cookie.name === 'amber_marketing_consent');
+  expect(consentCookie && consentCookie.value).toBe('denied');
+  await expect(page.locator('#cookieConsentBanner')).toHaveAttribute('data-consent-status', 'denied');
+  await expect(page.locator('#cookieConsentBanner')).toBeHidden();
 });
 
 test('@desktop no-JavaScript checkout retains a server quote when the courier hook throws', async ({ page }) => {

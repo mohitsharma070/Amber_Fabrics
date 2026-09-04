@@ -388,16 +388,6 @@ include __DIR__ . '/includes/header.php';
                                     <button type="button" class="checkout-online-method" data-online-method="card" aria-pressed="false">Card</button>
                                     <button type="button" class="checkout-online-method" data-online-method="emi" aria-pressed="false">EMI</button>
                                 </div>
-                                <noscript>
-                                    <div class="mb-3">
-                                        <label class="form-label mb-1" for="online_method_noscript">Online payment type</label>
-                                        <select class="form-select" id="online_method_noscript" name="online_method">
-                                            <option value="upi" <?php echo $selectedOnlineMethod === 'upi' ? 'selected' : ''; ?>>UPI</option>
-                                            <option value="card" <?php echo $selectedOnlineMethod === 'card' ? 'selected' : ''; ?>>Card</option>
-                                            <option value="emi" <?php echo $selectedOnlineMethod === 'emi' ? 'selected' : ''; ?>>EMI</option>
-                                        </select>
-                                    </div>
-                                </noscript>
                                 <div class="checkout-online-panels">
                                     <div class="checkout-online-panel is-active" data-online-panel="upi">
                                         <div class="small text-muted mb-2">Pay instantly with any UPI app in secure Razorpay checkout.</div>
@@ -428,6 +418,16 @@ include __DIR__ . '/includes/header.php';
                                     </div>
                                 </div>
                             </div>
+                            <noscript>
+                                <div class="mb-3" data-noscript-online-method>
+                                    <label class="form-label mb-1" for="online_method_noscript">Online payment type</label>
+                                    <select class="form-select" id="online_method_noscript" name="online_method">
+                                        <option value="upi" <?php echo $selectedOnlineMethod === 'upi' ? 'selected' : ''; ?>>UPI</option>
+                                        <option value="card" <?php echo $selectedOnlineMethod === 'card' ? 'selected' : ''; ?>>Card</option>
+                                        <option value="emi" <?php echo $selectedOnlineMethod === 'emi' ? 'selected' : ''; ?>>EMI</option>
+                                    </select>
+                                </div>
+                            </noscript>
                         </div>
                         </div>
                     </div>

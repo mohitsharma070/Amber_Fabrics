@@ -48,12 +48,35 @@ async function dismissCookieBanner(page) {
     await expect(banner).toHaveAttribute('data-consent-status', 'denied');
     await expect(banner).toHaveClass(/\bd-none\b/);
     await expect(banner).toBeHidden();
+    const consentCookie = (await page.context().cookies()).find((cookie) => cookie.name === 'amber_marketing_consent');
+    expect(consentCookie && consentCookie.value).toBe('denied');
   }
 }
 
 function productPurchaseForm(page) {
   return page.locator('#add_to_cart_form');
 }
+
+test('@desktop keeps the unknown banner visible and preserves explicit granted consent', async ({ page, context }) => {
+  await context.clearCookies();
+  await page.goto('/');
+  const banner = page.locator('#cookieConsentBanner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toHaveAttribute('data-consent-status', 'unknown');
+  await expect(banner.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy-policy');
+
+  const consentResponse = page.waitForResponse((response) => response.url().includes('/cookie-consent.php'));
+  const reload = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
+  await banner.getByRole('button', { name: 'Accept' }).click();
+  const response = await consentResponse;
+  expect(response.ok()).toBe(true);
+  await reload;
+
+  const consentCookie = (await context.cookies()).find((cookie) => cookie.name === 'amber_marketing_consent');
+  expect(consentCookie && consentCookie.value).toBe('granted');
+  await expect(page.locator('#cookieConsentBanner')).toHaveAttribute('data-consent-status', 'granted');
+  await expect(page.locator('#cookieConsentBanner')).toBeHidden();
+});
 
 test('@desktop completes the storefront path through checkout review without submitting an order', async ({ page }) => {
   let deliveryRequestBody = '';
