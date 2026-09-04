@@ -21,28 +21,62 @@ if (!function_exists('_cfg')) {
 }
 require_once $root . '/includes/helpers/media.php';
 
-$descriptorFixture = fabric_product_media_descriptors(
-    ['fabric_6a7d39f1455fa2.68441752.jpeg', 'fabric_6a7d39cd62caf7.32131077.jpeg'],
-    'fabric_6a7d39f1455fa2.68441752.jpeg',
-    'Example product'
-);
+$fixtureDirectory = $root . '/images/fabrics';
+$fixtureDirectoryCreated = !is_dir($fixtureDirectory);
+$fixtureSuffix = (string) getmypid();
+$fixtureImageOne = '__pdp-contract-image-' . $fixtureSuffix . '-one.jpg';
+$fixtureImageTwo = '__pdp-contract-image-' . $fixtureSuffix . '-two.jpg';
+$fixtureVideo = '__pdp-contract-video-' . $fixtureSuffix . '.mp4';
+$fixturePaths = [
+    $fixtureDirectory . DIRECTORY_SEPARATOR . $fixtureImageOne,
+    $fixtureDirectory . DIRECTORY_SEPARATOR . $fixtureImageTwo,
+    $fixtureDirectory . DIRECTORY_SEPARATOR . $fixtureVideo,
+];
+
+try {
+    if ($fixtureDirectoryCreated && !mkdir($fixtureDirectory, 0777, true) && !is_dir($fixtureDirectory)) {
+        throw new RuntimeException('Unable to create the isolated PDP media fixture directory.');
+    }
+    foreach ($fixturePaths as $fixturePath) {
+        if (file_put_contents($fixturePath, 'contract fixture') === false) {
+            throw new RuntimeException('Unable to create an isolated PDP media fixture.');
+        }
+    }
+
+    $descriptorFixture = fabric_product_media_descriptors(
+        [$fixtureImageOne, $fixtureImageTwo],
+        $fixtureVideo,
+        'Example product'
+    );
+} finally {
+    foreach ($fixturePaths as $fixturePath) {
+        if (is_file($fixturePath)) {
+            unlink($fixturePath);
+        }
+    }
+    if ($fixtureDirectoryCreated && is_dir($fixtureDirectory)) {
+        rmdir($fixtureDirectory);
+    }
+}
 $assert(
     count($descriptorFixture) === 3
         && ($descriptorFixture[0]['type'] ?? '') === 'image'
-        && ($descriptorFixture[0]['src'] ?? '') === '/images/fabrics/fabric_6a7d39f1455fa2.68441752.jpeg'
+        && ($descriptorFixture[0]['src'] ?? '') === '/images/fabrics/' . $fixtureImageOne
         && array_key_exists('thumb_src', $descriptorFixture[0])
         && array_key_exists('webp_srcset', $descriptorFixture[0])
         && array_key_exists('width', $descriptorFixture[0])
         && array_key_exists('height', $descriptorFixture[0])
         && ($descriptorFixture[0]['webp_srcset'] ?? null) === ''
         && ($descriptorFixture[1]['type'] ?? '') === 'image'
-        && ($descriptorFixture[1]['src'] ?? '') === '/images/fabrics/fabric_6a7d39cd62caf7.32131077.jpeg'
+        && ($descriptorFixture[1]['src'] ?? '') === '/images/fabrics/' . $fixtureImageTwo
         && ($descriptorFixture[2]['type'] ?? '') === 'video'
-        && ($descriptorFixture[2]['src'] ?? '') === '/images/fabrics/fabric_6a7d39f1455fa2.68441752.jpeg',
+        && ($descriptorFixture[2]['src'] ?? '') === '/images/fabrics/' . $fixtureVideo,
     'The media helper must emit the ordered image/video descriptor shape consumed by the PDP.'
 );
 $assert(
-    array_keys($descriptorFixture[0]) === [
+    count($descriptorFixture) === 3
+        && isset($descriptorFixture[0], $descriptorFixture[2])
+        && array_keys($descriptorFixture[0]) === [
         'type', 'src', 'thumb_src', 'webp_srcset', 'width', 'height',
         'thumb_width', 'thumb_height', 'alt',
     ]
