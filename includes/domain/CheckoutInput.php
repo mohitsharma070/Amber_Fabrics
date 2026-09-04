@@ -80,7 +80,7 @@ final class CheckoutInput
         $state = [];
         foreach ([
             'full_name', 'phone', 'email', 'address', 'city', 'state', 'pincode', 'country',
-            'order_notes', 'payment_method', 'cod_whatsapp_consent', 'cod_fee_apply',
+            'order_notes', 'payment_method', 'online_method', 'cod_whatsapp_consent', 'cod_fee_apply',
             'shipping_address_id', 'create_account',
         ] as $key) {
             $state[$key] = $input[$key] ?? $defaults[$key];

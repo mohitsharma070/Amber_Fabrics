@@ -4,7 +4,12 @@ require_once __DIR__ . '/includes/helpers/coupon-functions.php';
 require_once __DIR__ . '/includes/security/customer-auth.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'refresh_quote') {
-    $_SESSION['checkout_old'] = $_POST;
+    if (!verify_csrf()) {
+        flash('error', 'Security session expired. Please verify your details and try again.');
+        redirect('/checkout.php');
+    }
+    $normalized = CheckoutInput::fromRequest($_POST, (int) ($_SESSION['customer_id'] ?? 0));
+    $_SESSION['checkout_old'] = CheckoutInput::sessionState($normalized);
     redirect('/checkout.php');
 }
 

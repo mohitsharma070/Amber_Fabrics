@@ -13,6 +13,9 @@ if (!public_form_rate_limit_allow('shipping_quote', 30, 300)) {
 }
 
 $pincode = trim((string) ($_POST['pincode'] ?? ''));
+if (!preg_match('/^[1-9][0-9]{5}$/', $pincode)) {
+    api_json(['ok' => false, 'message' => 'Please enter a valid 6-digit Indian pincode.'], 422);
+}
 $paymentMethod = strtolower(trim((string) ($_POST['payment_method'] ?? 'cod')));
 if (!in_array($paymentMethod, ['cod', 'razorpay'], true)) {
     $paymentMethod = 'cod';
@@ -46,7 +49,6 @@ $discountAmount = $couponInfo['valid'] ? min((float) $couponInfo['discount'], $s
 $invoiceValue = max(0.0, round($subtotal - $discountAmount, 2));
 
 $manual = CartService::checkout_shipping_breakdown($subtotal, 'India', $paymentMethod, $paymentMethod === 'cod');
-$fallbackOnly = (int) ($_POST['fallback_only'] ?? 0) === 1;
 $quote = [
     'base_shipping' => (float) $manual['base_shipping'],
     'cod_fee' => (float) $manual['cod_fee'],
@@ -55,22 +57,18 @@ $quote = [
     'courier_name' => '',
     'courier_id' => 0,
 ];
-if (!$fallbackOnly) {
-    try {
-        $quote = apply_filters('shipping.quote', $quote, [
-            'conn' => $conn,
-            'subtotal' => $subtotal,
-            'invoice_value' => $invoiceValue,
-            'country' => 'India',
-            'pincode' => $pincode,
-            'payment_method' => $paymentMethod,
-            'items' => $quoteItems,
-        ]);
-    } catch (Throwable $e) {
-        error_log('[app] Live shipping quote failed: ' . $e->getMessage());
-        $quote['debug_reason'] = 'bigship_rate_api_failed';
-    }
-} else {
+try {
+    $quote = apply_filters('shipping.quote', $quote, [
+        'conn' => $conn,
+        'subtotal' => $subtotal,
+        'invoice_value' => $invoiceValue,
+        'country' => 'India',
+        'pincode' => $pincode,
+        'payment_method' => $paymentMethod,
+        'items' => $quoteItems,
+    ]);
+} catch (Throwable $e) {
+    error_log('[app] Live shipping quote failed: ' . $e->getMessage());
     $quote['debug_reason'] = 'bigship_rate_api_failed';
 }
 
