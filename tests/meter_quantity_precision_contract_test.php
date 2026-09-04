@@ -71,6 +71,58 @@ $assertQuantity(
     'Multiple 2.50-meter cuts must stay on the configured two-decimal grid.'
 );
 
+// A, B: maximumSellableQuantity returns 0.0 for incompatible legacy steps
+foreach ([0.125, 0.001, 0.0001] as $invalidStep) {
+    $assertQuantity(
+        CartService::maximumSellableQuantity(10.00, 'meter', 1.00, $invalidStep, 2.50),
+        0.0,
+        "Meter max sellable qty must fail closed (return 0.0) for legacy step $invalidStep."
+    );
+}
+
+// C: Valid steps still work
+foreach ([0.01, 0.05, 0.25, 0.50] as $validStep) {
+    $assert(
+        CartService::maximumSellableQuantity(10.00, 'meter', 1.00, $validStep, 2.50) > 0.0,
+        "Meter max sellable qty must work for valid two-decimal step $validStep."
+    );
+}
+
+// D: Step 0 preserves existing behavior
+$assertQuantity(
+    CartService::maximumSellableQuantity(10.00, 'meter', 1.00, 0.0, 2.50),
+    10.0,
+    'Step 0.0 must preserve existing "no configured step" behavior.'
+);
+
+// H: Piece/set behavior is unchanged
+$assertQuantity(
+    CartService::maximumSellableQuantity(10.00, 'piece', 1.00, 0.125),
+    10.0,
+    'Piece/set quantity behavior must remain unchanged, treating step as whole units.'
+);
+
+// I: high MOQ behavior remains unchanged
+$assertQuantity(
+    CartService::maximumSellableQuantity(10.00, 'meter', 5.00, 0.0),
+    10.0,
+    'High MOQ behavior must remain unchanged.'
+);
+
+// J: valid meter bundle quantities still reconcile correctly
+$assertQuantity(
+    CartService::maximumSellableQuantity(10.00, 'meter', 1.00, 0.50, 2.50),
+    10.0,
+    'Valid meter bundle quantities must still reconcile correctly.'
+);
+
+// E, G: Cart hydration rejects legacy step
+$assertQuantity(
+    CartService::reconcileSellableQuantity(5.00, 10.00, 'meter', 1.00, 0.125, 2.50),
+    0.0,
+    'reconcileSellableQuantity must return 0.0 for legacy step 0.125, which removes it from cart.'
+);
+
 $product = [
     'id' => 1,
     'name' => 'Meter Fabric',
@@ -157,6 +209,7 @@ $importService = $read('includes/services/ProductImportService.php');
 $cartService = $read('includes/services/CartService.php');
 $deliveryEndpoint = $read('delivery-estimate.php');
 $inventoryService = $read('includes/services/InventoryService.php');
+$adminScript = $read('admin/partials/fabric-product-form-script.php');
 
 $assert(
     str_contains($adminService, 'meter_qty_step_is_representable')
@@ -167,8 +220,18 @@ $assert(
     str_contains($adminEditor, "\$_POST['qty_step']")
         && str_contains($adminEditor, 'round((float) $qtyStepRaw, 2)')
         && str_contains($adminForm, 'name="qty_step"')
+        && str_contains($adminForm, 'min="0.01" step="0.01"')
         && str_contains($adminForm, 'Meter steps support up to two decimal places'),
-    'The product editor must submit, normalize to 2 decimals, and explain the two-decimal meter-step boundary.'
+    'The product editor must submit, normalize to 2 decimals, and explain the two-decimal meter-step boundary. PHP form meter step = 0.01.'
+);
+$assert(
+    str_contains($adminScript, "qtyStepInput.min = isMeter ? '0.01' : '1';") &&
+    str_contains($adminScript, "qtyStepInput.step = isMeter ? '0.01' : '1';"),
+    'Admin JS meter step = 0.01. Admin JS meter min = 0.01. Piece/set remains step=1/min=1.'
+);
+$assert(
+    !str_contains($adminScript, '0.0001'),
+    'No active admin code advertises 0.0001 precision for qty_step.'
 );
 $assert(
     !in_array('Quantity Step', ProductImportService::HEADERS, true)

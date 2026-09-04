@@ -26,6 +26,10 @@ final class CartService
             return (float) ($minimumUnits + (intdiv($availableUnits - $minimumUnits, $stepUnits) * $stepUnits));
         }
 
+        if ($quantityStep > 0.0000001 && !meter_qty_step_is_representable($quantityStep)) {
+            return 0.0;
+        }
+
         $stockCents = max(0, (int) floor(($availableStock * 100) + 0.0000001));
         $stockUnits = $stockCents;
         $minimumUnits = (int) round(normalize_meter_quantity($minimumQuantity, 1.0) * 100);

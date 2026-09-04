@@ -117,8 +117,8 @@
         }
         if (qtyStepInput) {
             qtyStepInput.placeholder = isMeter ? 'e.g. 0.5' : '1';
-            qtyStepInput.min = isMeter ? '0.0001' : '1';
-            qtyStepInput.step = isMeter ? '0.0001' : '1';
+            qtyStepInput.min = isMeter ? '0.01' : '1';
+            qtyStepInput.step = isMeter ? '0.01' : '1';
         }
         if (lowStockUnitsInput) {
             lowStockUnitsInput.disabled = isMeter;
