@@ -97,6 +97,9 @@ function shipping_courier_api_failure_message(array $response, string $operation
 
 function shipping_courier_filter_shipping_quote($quote, array $context)
 {
+    $deadlineNs = !empty($context['storefront_rate_request'])
+        ? hrtime(true) + BigshipService::STOREFRONT_QUOTE_TIMEOUT_MS * 1000000
+        : null;
     if (!is_array($quote)) {
         return $quote;
     }
@@ -165,7 +168,7 @@ function shipping_courier_filter_shipping_quote($quote, array $context)
         $ratePayload['codamount'] = $invoiceValue;
     }
 
-    $response = shipping_courier_bigship_client()->rates($ratePayload);
+    $response = shipping_courier_bigship_client()->rates($ratePayload, $deadlineNs);
     $rate = !empty($response['ok']) && is_array($response['body'] ?? null)
         ? shipping_courier_bigship_selected_rate($response['body'])
         : null;

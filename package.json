@@ -5,8 +5,8 @@
     "test:e2e:preflight": "node --test tests/e2e/safety.test.js && php tests/e2e/fixture_policy_test.php",
     "test:e2e:seed": "php tests/e2e/fixtures.php",
     "test:e2e": "npm run test:e2e:smoke",
-    "test:e2e:smoke": "npm run test:e2e:preflight && npm run test:e2e:seed && playwright test tests/e2e/storefront.spec.js tests/e2e/product-media.spec.js tests/e2e/confirmation-fallback.spec.js tests/e2e/pdp-quantity-window.spec.js tests/e2e/checkout-noscript.spec.js",
-    "test:e2e:commerce": "npm run test:e2e:preflight && npm run test:e2e:seed && playwright test tests/e2e/commerce-real.spec.js tests/e2e/razorpay-loopback.spec.js",
+    "test:e2e:smoke": "npm run test:e2e:preflight && npm run test:e2e:seed && playwright test tests/e2e/storefront.spec.js tests/e2e/product-media.spec.js tests/e2e/confirmation-fallback.spec.js tests/e2e/pdp-quantity-window.spec.js tests/e2e/checkout-noscript.spec.js tests/e2e/recommendation-overflow.spec.js",
+    "test:e2e:commerce": "npm run test:e2e:preflight && npm run test:e2e:seed && playwright test tests/e2e/commerce-real.spec.js tests/e2e/razorpay-loopback.spec.js tests/e2e/shipping-deadline.spec.js",
     "test:e2e:a11y": "npm run test:e2e:preflight && npm run test:e2e:seed && playwright test tests/e2e/accessibility.spec.js",
     "test:e2e:install": "playwright install chromium"
   },

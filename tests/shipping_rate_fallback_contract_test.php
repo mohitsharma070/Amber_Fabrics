@@ -80,6 +80,20 @@ $assert(
     'checkout.js must clear token and keep checkout locked on timeout without creating an insecure unlock path'
 );
 
+$bigshipSource = (string) file_get_contents(__DIR__ . '/../includes/services/BigshipService.php');
+$rateFilterSource = (string) file_get_contents(__DIR__ . '/../plugins/shipping-courier/modules/reference-and-rates.php');
+$assert(str_contains($shippingRateSource, "'storefront_rate_request' => true") &&
+    !str_contains($shippingRateSource, "\$_POST['storefront_rate_request']") &&
+    str_contains($rateFilterSource, "\$context['storefront_rate_request']") &&
+    str_contains($rateFilterSource, '->rates($ratePayload, $deadlineNs)'),
+    'Only trusted storefront rate context must opt into the quote deadline.');
+$assert(str_contains($bigshipSource, 'STOREFRONT_QUOTE_TIMEOUT_MS = 7000') &&
+    str_contains($checkoutJsSource, 'SHIPPING_RATE_TIMEOUT_MS = 10000') &&
+    str_contains($bigshipSource, 'HttpClientPolicy::curlOptions(25, 5, $skipTls)'),
+    'The quote budget must leave browser headroom without changing operational Bigship timeouts.');
+$assert(!str_contains($shippingRateSource, "\$response['debug_message']"),
+    'The storefront must not return raw provider messages, including in local mode.');
+
 if ($failures !== []) {
     fwrite(STDERR, implode(PHP_EOL, $failures) . PHP_EOL);
     exit(1);

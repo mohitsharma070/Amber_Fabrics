@@ -66,6 +66,7 @@ try {
         'pincode' => $pincode,
         'payment_method' => $paymentMethod,
         'items' => $quoteItems,
+        'storefront_rate_request' => true,
     ], true);
 } catch (Throwable $e) {
     app_log('error', 'shipping_quote_failed', [
@@ -83,7 +84,6 @@ $source = $source !== '' ? substr($source, 0, 32) : 'manual';
 $courierName = trim((string) ($quote['courier_name'] ?? ''));
 $courierId = max(0, (int) ($quote['courier_id'] ?? 0));
 $debugReason = trim((string) ($quote['debug_reason'] ?? ''));
-$debugMessage = trim((string) ($quote['debug_message'] ?? ''));
 $estimate = DeliveryEstimateService::calculate($quoteItems, $source);
 log_ecommerce_event($conn,'add_shipping_info',$customerId>0?$customerId:null,null,null,null,null,$shippingTotal,['session_type'=>$customerId>0?'customer':'guest','source'=>$source,'payment_method'=>$paymentMethod]);
 
@@ -120,9 +120,6 @@ $response = [
 
 if ($debugReason !== '') {
     $response['debug_reason'] = $debugReason;
-    if (($GLOBALS['_app_mode'] ?? '') === 'local' && $debugMessage !== '') {
-        $response['debug_message'] = $debugMessage;
-    }
 }
 
 api_json($response);

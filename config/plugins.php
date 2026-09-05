@@ -161,6 +161,7 @@ return [
             'title_cart_upsells' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_CART_UPSELLS', 'Complete Your Cart') : 'Complete Your Cart',
             'title_popular' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_POPULAR', 'Popular picks') : 'Popular picks',
             'title_personalized' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_PERSONALIZED', 'Recommended for you') : 'Recommended for you',
+            'title_new_arrivals' => function_exists('_cfg') ? _cfg('RECOMMENDATIONS_TITLE_NEW_ARRIVALS', 'New arrivals') : 'New arrivals',
         ],
         'support-tickets' => [
             'enabled' => (int) (function_exists('_cfg') ? _cfg('SUPPORT_TICKETS_ENABLED', '1') : '1'),
