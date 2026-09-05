@@ -25,6 +25,7 @@ function recommendations_settings(): array
         'title_cart_upsells' => recommendations_setting_text('title_cart_upsells', 'Complete Your Cart'),
         'title_popular' => recommendations_setting_text('title_popular', 'Popular picks'),
         'title_personalized' => recommendations_setting_text('title_personalized', 'Recommended for you'),
+        'title_new_arrivals' => recommendations_setting_text('title_new_arrivals', 'New arrivals'),
     ];
 }
 
@@ -826,14 +827,18 @@ function recommendations_render_section(mysqli $conn, array $rows, string $title
     $sectionKey = recommendations_sanitize_tracking_value($sectionKey !== '' ? $sectionKey : $title);
     recommendations_log_impressions($conn, $rows, $sectionKey);
     ?>
-    <div class="mt-4 border-top pt-4 recommendations-block">
-        <h5 class="mb-3"><?php echo e($title); ?></h5>
-        <div class="catalog-products-grid">
-            <?php foreach ($rows as $row): ?>
-                <?php echo recommendations_render_product_card($conn, $row, $sectionKey); ?>
-            <?php endforeach; ?>
+    <section class="section-block pt-0">
+        <div class="container">
+            <div class="recommendations-block" data-rec-section="<?php echo e($sectionKey); ?>">
+                <h5 class="mb-3"><?php echo e($title); ?></h5>
+                <div class="catalog-products-grid">
+                    <?php foreach ($rows as $row): ?>
+                        <?php echo recommendations_render_product_card($conn, $row, $sectionKey); ?>
+                    <?php endforeach; ?>
+                </div>
+            </div>
         </div>
-    </div>
+    </section>
     <?php
 }
 
@@ -1012,9 +1017,26 @@ function recommendations_render_catalog_after_results(array $context): void
     }
 
     if (empty($rows)) {
-        $rows = recommendations_fetch_popular_picks($conn, min(4, (int) $settings['max_items']), $excludeProductIds);
-        $title = (string) $settings['title_popular'];
-        $sectionKey = 'popular';
+        $limit = min(4, (int) $settings['max_items']);
+        $popularIds = recommendations_enabled('popular_picks_enabled')
+            ? recommendations_fetch_popular_product_ids($conn, $limit, $excludeProductIds)
+            : [];
+
+        // Popularity IDs may no longer be sellable. Keep latest-product fillers
+        // out of this section so its heading describes the displayed products.
+        $rows = !empty($popularIds)
+            ? recommendations_fetch_products_by_ids($conn, $popularIds, $limit, $excludeProductIds)
+            : [];
+        if (!empty($rows)) {
+            $title = (string) $settings['title_popular'];
+            $sectionKey = 'popular';
+        } else {
+            $rows = recommendations_fetch_latest_products($conn, $limit, $excludeProductIds);
+            if (!empty($rows)) {
+                $title = (string) ($settings['title_new_arrivals'] ?? 'New arrivals');
+                $sectionKey = 'new_arrivals';
+            }
+        }
     }
 
     recommendations_render_section($conn, $rows, $title, $sectionKey ?? 'popular');

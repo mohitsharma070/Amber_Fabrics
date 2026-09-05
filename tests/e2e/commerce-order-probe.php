@@ -45,7 +45,7 @@ if ($orderNumber === '-') {
     $orderStmt = $conn->prepare(
         "SELECT id, order_number, customer_email, payment_method, payment_status,
                 coupon_code, coupon_discount, shipping_quote_token, shipping_source,
-                inventory_reserved_at
+                inventory_reserved_at, subtotal, shipping_amount, total_amount
          FROM orders
          WHERE LOWER(customer_email) = ?
          ORDER BY id DESC
@@ -56,7 +56,7 @@ if ($orderNumber === '-') {
     $orderStmt = $conn->prepare(
         "SELECT id, order_number, customer_email, payment_method, payment_status,
                 coupon_code, coupon_discount, shipping_quote_token, shipping_source,
-                inventory_reserved_at
+                inventory_reserved_at, subtotal, shipping_amount, total_amount
          FROM orders
          WHERE order_number = ? AND LOWER(customer_email) = ?
          LIMIT 1"
@@ -70,6 +70,10 @@ if (!$order) {
 }
 
 $orderId = (int) $order['id'];
+$quoteStmt = $conn->prepare('SELECT subtotal, base_shipping, cod_fee, shipping_total, source, serviceability_status,
+    estimated_delivery_start, estimated_delivery_end FROM shipping_quotes WHERE quote_token = ?');
+$quoteStmt->execute([(string) $order['shipping_quote_token']]);
+$quote = $quoteStmt->get_result()->fetch_assoc() ?: [];
 $itemsStmt = $conn->prepare(
     "SELECT f.product_code, oi.variant_id, oi.unit_type, oi.quantity_meters,
             oi.bundle_quantity, oi.meter_length
@@ -95,6 +99,7 @@ $ordersForEmail = (int) (($duplicateStmt->get_result()->fetch_assoc()['order_cou
 
 echo json_encode([
     'order' => $order,
+    'quote' => $quote,
     'items' => $items,
     'payment' => $payment,
     'coupon_reservations' => $couponReservations,

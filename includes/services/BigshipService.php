@@ -5,8 +5,11 @@ require_once __DIR__ . '/../integrations/HttpClientPolicy.php';
 
 final class BigshipService
 {
+    public const STOREFRONT_QUOTE_TIMEOUT_MS = 7000;
+
     private array $settings;
     private static array $tokens = [];
+    private ?int $deadlineNs = null;
 
     public function __construct(array $settings)
     {
@@ -28,7 +31,17 @@ final class BigshipService
     public function packages(array $query = []): array { return $this->request('GET', '/api/outbound/hyperlocal/get-packages-list', $query); }
     public function paymentModes(string $segment): array { return $this->request('GET', '/api/outbound/get-payment-mode', ['segment_type' => $segment]); }
     public function riskTypes(array $query = []): array { return $this->request('GET', '/api/outbound/domestic/risk-types', $query); }
-    public function rates(array $payload): array { return $this->request('POST', '/api/outbound/user-rate-calculator', $payload); }
+    public function rates(array $payload, ?int $deadlineNs = null): array
+    {
+        $previousDeadline = $this->deadlineNs;
+        $this->deadlineNs = $deadlineNs;
+        try {
+            // Login, retries and the rate request share this monotonic deadline.
+            return $this->request('POST', '/api/outbound/user-rate-calculator', $payload);
+        } finally {
+            $this->deadlineNs = $previousDeadline;
+        }
+    }
     public function createOrder(array $payload): array { return $this->request('POST', '/api/outbound/create-order', $payload); }
     public function courierCosts(array $payload): array { return $this->request('POST', '/api/outbound/courier-wise-shipment-cost', $payload); }
     public function placeOrder(array $payload, bool $multipart = false): array { return $this->request('POST', '/api/outbound/place-order', $payload, [], true, $multipart); }
@@ -79,6 +92,9 @@ final class BigshipService
         bool $multipart = false,
         bool $getPayloadInBody = false
     ): array {
+        if ($this->deadlineExpired()) {
+            return self::result(false, 'Bigship quote deadline exceeded.');
+        }
         if (!function_exists('curl_init')) {
             return self::result(false, 'cURL is unavailable.');
         }
@@ -117,12 +133,15 @@ final class BigshipService
         $last = self::result(false, 'Bigship request was not attempted.');
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             $this->throttle();
+            if ($this->deadlineExpired()) {
+                return self::result(false, 'Bigship quote deadline exceeded.');
+            }
             $last = $this->execute($method, $url, $payload, $requestHeaders, $multipart, $getPayloadInBody);
             $status = (int) ($last['status'] ?? 0);
             if (!HttpClientPolicy::retryableStatus($status) || $attempt === 3) {
                 return $last;
             }
-            usleep(150000 * $attempt);
+            $this->pause(150000 * $attempt);
         }
         return $last;
     }
@@ -212,6 +231,16 @@ final class BigshipService
         }
         $skipTls = (($GLOBALS['_app_mode'] ?? '') === 'local') && (int) ($this->settings['bigship_http_skip_tls_verify'] ?? 0) === 1;
         $options = HttpClientPolicy::curlOptions(25, 5, $skipTls);
+        if ($this->deadlineNs !== null) {
+            $remainingMs = (int) floor(($this->deadlineNs - hrtime(true)) / 1000000);
+            if ($remainingMs < 1) {
+                curl_close($ch);
+                return self::result(false, 'Bigship quote deadline exceeded.');
+            }
+            // Millisecond options override the normal operational timeouts only for quotes.
+            $options[CURLOPT_TIMEOUT_MS] = min(25000, $remainingMs);
+            $options[CURLOPT_CONNECTTIMEOUT_MS] = min(5000, $remainingMs);
+        }
         $options[CURLOPT_CUSTOMREQUEST] = $method;
         $options[CURLOPT_HTTPHEADER] = $headers;
         if ($method !== 'GET' || $getPayloadInBody) {
@@ -231,6 +260,9 @@ final class BigshipService
         $errno = curl_errno($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
+        if ($this->deadlineExpired()) {
+            return self::result(false, 'Bigship quote deadline exceeded.', $status);
+        }
         if ($errno !== 0) {
             return self::result(false, 'Bigship request failed with transport error ' . $errno . '.', $status);
         }
@@ -269,9 +301,22 @@ final class BigshipService
         if (!apcu_add($bucket, 1, 65)) {
             $count = apcu_inc($bucket);
             if (is_int($count) && $count > 95) {
-                usleep(250000);
+                $this->pause(250000);
             }
         }
+    }
+
+    private function deadlineExpired(): bool
+    {
+        return $this->deadlineNs !== null && hrtime(true) >= $this->deadlineNs;
+    }
+
+    private function pause(int $microseconds): void
+    {
+        if ($this->deadlineNs !== null) {
+            $microseconds = min($microseconds, max(0, (int) floor(($this->deadlineNs - hrtime(true)) / 1000)));
+        }
+        if ($microseconds > 0) usleep($microseconds);
     }
 
     private static function value(array $body, array $keys): string

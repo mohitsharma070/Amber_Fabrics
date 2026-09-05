@@ -302,6 +302,12 @@ paths:
     post:
       tags: [Checkout]
       summary: Calculate shipping quote
+      description: >-
+        Storefront Bigship login, rate requests, retries and throttle waits share a
+        seven-second provider deadline, leaving headroom within checkout's ten-second
+        browser timeout. Provider timeout, error or no usable rate returns the canonical
+        server-calculated manual quote and quote_token for an otherwise valid request.
+        Raw provider errors are never returned to the storefront.
       security:
         - sessionCookieAuth: []
       requestBody:

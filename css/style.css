@@ -1191,14 +1191,22 @@ img {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.recommendations-block {
-    width: min(100%, 1140px);
-    margin-left: auto;
-    margin-right: auto;
+.catalog-products-grid > * {
+    min-width: 0;
 }
 
-.recommendations-block .catalog-products-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+.catalog-products-grid .card,
+.catalog-products-grid .card-body,
+.catalog-products-grid .fabric-card-title,
+.catalog-products-grid .fabric-price,
+.catalog-products-grid .fabric-card-category {
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.catalog-products-grid .d-flex.gap-1,
+.catalog-products-grid .d-flex.gap-1 > * {
+    min-width: 0;
 }
 
 .catalog-utility-row {
@@ -1710,8 +1718,9 @@ img {
 /* --- Ultra-compact phones (320-360px) --- */
 @media (max-width: 359.98px) {
     .container {
-        padding-left: 0.7rem;
-        padding-right: 0.7rem;
+        /* Contain the 0.75rem negative side margins of Bootstrap .row.g-4. */
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
     }
 
     .hero-section {
