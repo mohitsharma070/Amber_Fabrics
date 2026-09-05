@@ -1,4 +1,4 @@
-﻿// @ts-check
+// @ts-check
 const { test, expect } = require('@playwright/test');
 
 /**
@@ -149,5 +149,40 @@ test('@mobile cart and checkout rows fit narrow viewports without horizontal scr
             expect(overflow.clientWidth).toBe(width);
             expect(overflow.scrollWidth, `${route} at ${width}px`).toBeLessThanOrEqual(width);
         }
+    }
+});
+
+test('@mobile PDP and Cart recommendations stay inside the viewport at all tested narrow widths', async ({ page }) => {
+    for (const width of WIDTHS) {
+        await page.setViewportSize({ width, height: 800 });
+        
+        // 1. Test PDP layout
+        await page.goto('/fabric/e2e-simple-product');
+        // Wait for page load
+        await page.waitForSelector('.product-detail-info');
+        
+        let overflow = await measureHorizontalOverflow(page);
+        expect(
+            overflow.scrollWidth,
+            `[${width}px] PDP document.scrollWidth should not exceed clientWidth`,
+        ).toBeLessThanOrEqual(overflow.clientWidth);
+        
+        // PDP should not have a nested .container inside the recommendation block
+        const pdpNestedContainer = await page.locator('.product-detail-info .container').count();
+        expect(pdpNestedContainer, `[${width}px] PDP recommendation should not have nested .container`).toBe(0);
+
+        // 2. Test Cart layout
+        await page.locator('#add_to_cart_form').getByRole('button', { name: 'Add to Cart', exact: true }).click();
+        await expect(page).toHaveURL(/\/cart$/);
+        
+        overflow = await measureHorizontalOverflow(page);
+        expect(
+            overflow.scrollWidth,
+            `[${width}px] Cart document.scrollWidth should not exceed clientWidth`,
+        ).toBeLessThanOrEqual(overflow.clientWidth);
+        
+        // Cart should not have a nested .container inside the recommendation block
+        const cartNestedContainer = await page.locator('.cart-summary-card .container').count();
+        expect(cartNestedContainer, `[${width}px] Cart recommendation should not have nested .container`).toBe(0);
     }
 });

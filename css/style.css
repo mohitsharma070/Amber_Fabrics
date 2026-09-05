@@ -1195,15 +1195,6 @@ img {
     min-width: 0;
 }
 
-.catalog-products-grid .card,
-.catalog-products-grid .card-body,
-.catalog-products-grid .fabric-card-title,
-.catalog-products-grid .fabric-price,
-.catalog-products-grid .fabric-card-category {
-    max-width: 100%;
-    overflow: hidden;
-}
-
 .catalog-products-grid .d-flex.gap-1,
 .catalog-products-grid .d-flex.gap-1 > * {
     min-width: 0;

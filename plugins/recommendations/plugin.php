@@ -827,18 +827,14 @@ function recommendations_render_section(mysqli $conn, array $rows, string $title
     $sectionKey = recommendations_sanitize_tracking_value($sectionKey !== '' ? $sectionKey : $title);
     recommendations_log_impressions($conn, $rows, $sectionKey);
     ?>
-    <section class="section-block pt-0">
-        <div class="container">
-            <div class="recommendations-block" data-rec-section="<?php echo e($sectionKey); ?>">
-                <h5 class="mb-3"><?php echo e($title); ?></h5>
-                <div class="catalog-products-grid">
-                    <?php foreach ($rows as $row): ?>
-                        <?php echo recommendations_render_product_card($conn, $row, $sectionKey); ?>
-                    <?php endforeach; ?>
-                </div>
-            </div>
+    <div class="mt-4 border-top pt-4 recommendations-block" data-rec-section="<?php echo e($sectionKey); ?>">
+        <h5 class="mb-3"><?php echo e($title); ?></h5>
+        <div class="catalog-products-grid">
+            <?php foreach ($rows as $row): ?>
+                <?php echo recommendations_render_product_card($conn, $row, $sectionKey); ?>
+            <?php endforeach; ?>
         </div>
-    </section>
+    </div>
     <?php
 }
 
@@ -1039,5 +1035,13 @@ function recommendations_render_catalog_after_results(array $context): void
         }
     }
 
-    recommendations_render_section($conn, $rows, $title, $sectionKey ?? 'popular');
+    if (!empty($rows)) {
+        ?>
+        <section class="section-block pt-0">
+            <div class="container">
+                <?php recommendations_render_section($conn, $rows, $title, $sectionKey ?? 'popular'); ?>
+            </div>
+        </section>
+        <?php
+    }
 }
