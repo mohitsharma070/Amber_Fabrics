@@ -4,6 +4,7 @@ if (PHP_SAPI !== 'cli' || getenv('AMBER_RUN_DISPOSABLE_MYSQL_TESTS') !== '1'
     || getenv('APP_MODE') !== 'local' || !preg_match('/_(test|e2e)$/', (string) getenv('DB_NAME'))
     || !in_array(getenv('DB_HOST'), ['127.0.0.1', 'localhost', '::1'], true)) { exit(2); }
 putenv('MAIL_DRIVER=log');
+putenv('MAIL_FROM=ci@example.test');
 putenv('SHIPPING_COURIER_ENABLED=0');
 putenv('COD_GUARD_WHATSAPP_PROVIDER=none');
 ob_start();
@@ -42,7 +43,7 @@ register_shutdown_function(static function () use (&$hook): void {
     ob_end_clean();
     echo json_encode(['status' => isset($flash['success']) ? 'success' : (isset($flash['error']) ? 'error' : 'unknown'),
         'message' => $flash['error'] ?? '', 'hook' => $hook]);
-    session_destroy();
+    if (session_status() === PHP_SESSION_ACTIVE) { session_destroy(); }
 });
 fwrite(STDOUT, $conn->thread_id . "\n");
 // Optional baseline allows RED against main without overwriting the worktree.
