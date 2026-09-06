@@ -32,10 +32,16 @@ add_action('order.after_status_change', static function (array $context) use (&$
     $observer = new mysqli($config['DB_HOST'], $config['DB_USER'], $config['DB_PASSWORD'], $config['DB_NAME'], (int) $config['DB_PORT']);
     $id = (int) $context['order_id'];
     $row = $observer->query("SELECT order_status FROM orders WHERE id = $id")->fetch_assoc();
-    $details = $observer->query("SELECT details FROM order_activity_logs WHERE order_id = $id ORDER BY id DESC LIMIT 1")->fetch_assoc();
+    $logs = $observer->query("SELECT details FROM order_activity_logs WHERE order_id = $id")->fetch_all(MYSQLI_ASSOC);
+    $found = false;
+    foreach ($logs as $logRow) {
+        if ($logRow['details'] === 'Order: ' . $context['previous_status'] . ' -> ' . $context['target_status']) {
+            $found = true;
+            break;
+        }
+    }
     $hook = ['previous' => $context['previous_status'], 'committed' =>
-        $row['order_status'] === $context['target_status']
-        && ($details['details'] ?? '') === 'Order: ' . $context['previous_status'] . ' -> ' . $context['target_status']];
+        $row['order_status'] === $context['target_status'] && $found];
     $observer->close();
 });
 register_shutdown_function(static function () use (&$hook): void {

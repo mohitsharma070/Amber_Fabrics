@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $module = (string) file_get_contents($root . '/plugins/shipping-courier/modules/webhook-handling.php');
+$shipmentLifecycle = (string) file_get_contents($root . '/plugins/shipping-courier/modules/shipment-lifecycle.php');
 $endpoint = (string) file_get_contents($root . '/shipping-courier-webhook.php');
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
@@ -31,6 +32,16 @@ $assert(
     str_contains($endpoint, 'shipping_courier_webhook_mark_processed($conn, $provider, $eventId, $signature, $rawPayload, $lifecycleAttempt)')
         && str_contains($endpoint, 'shipping_courier_webhook_mark_failed($conn, $provider, $eventId, $e->getMessage(), $signature, $lifecycleAttempt)'),
     'Courier lifecycle completion calls must carry the claimed attempt number.'
+);
+$assert(
+    str_contains($shipmentLifecycle, 'SELECT order_status FROM orders WHERE id = ? LIMIT 1 FOR UPDATE')
+        && str_contains($shipmentLifecycle, 'InventoryService::can_transition_order_status($currentStatus, $localStatus)'),
+    'Courier order mutations must lock authoritative state and delegate to the canonical lifecycle policy.'
+);
+$assert(
+    !str_contains($shipmentLifecycle, "order_status NOT IN ('cancelled', 'refunded')")
+        && str_contains($shipmentLifecycle, "'order_status' => \$localOrderStatus"),
+    'Tracking sync must expose the actual applied status without retaining the incomplete terminal-state guard.'
 );
 
 if ($failures !== []) {

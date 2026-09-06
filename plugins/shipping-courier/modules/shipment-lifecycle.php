@@ -33,23 +33,67 @@ function shipping_courier_bigship_local_order_status(string $providerStatus): st
     return '';
 }
 
+function shipping_courier_order_status_transaction_active(mysqli $conn): bool
+{
+    $result = $conn->query('SELECT @@in_transaction AS active');
+    $row = $result->fetch_assoc();
+    return ((int) ($row['active'] ?? 0)) === 1;
+}
+
 function shipping_courier_apply_bigship_order_status(mysqli $conn, int $orderId, string $providerStatus): string
 {
     $localStatus = shipping_courier_bigship_local_order_status($providerStatus);
     if ($orderId <= 0 || $localStatus === '') {
         return '';
     }
-    $legacyStatus = OrderFieldCompatibilityService::legacyStatus($localStatus);
 
-    $stmt = $conn->prepare(
-        "UPDATE orders
-         SET order_status = ?, status = ?, updated_at = NOW()
-         WHERE id = ?
-           AND order_status NOT IN ('cancelled', 'refunded')"
-    );
-    $stmt->bind_param('ssi', $localStatus, $legacyStatus, $orderId);
-    $stmt->execute();
-    return $localStatus;
+    $startedTransaction = !shipping_courier_order_status_transaction_active($conn);
+    if ($startedTransaction) {
+        $conn->begin_transaction();
+    } else {
+        $conn->query('SAVEPOINT shipping_courier_order_status');
+    }
+
+    try {
+        $lock = $conn->prepare('SELECT order_status FROM orders WHERE id = ? LIMIT 1 FOR UPDATE');
+        $lock->bind_param('i', $orderId);
+        $lock->execute();
+        $order = $lock->get_result()->fetch_assoc();
+        $currentStatus = is_array($order) ? (string) ($order['order_status'] ?? '') : '';
+
+        if ($currentStatus === '' || !InventoryService::can_transition_order_status($currentStatus, $localStatus)) {
+            if ($startedTransaction) {
+                $conn->commit();
+            } else {
+                $conn->query('RELEASE SAVEPOINT shipping_courier_order_status');
+            }
+            return '';
+        }
+
+        $legacyStatus = OrderFieldCompatibilityService::legacyStatus($localStatus);
+        $stmt = $conn->prepare(
+            'UPDATE orders
+             SET order_status = ?, status = ?, updated_at = NOW()
+             WHERE id = ?'
+        );
+        $stmt->bind_param('ssi', $localStatus, $legacyStatus, $orderId);
+        $stmt->execute();
+
+        if ($startedTransaction) {
+            $conn->commit();
+        } else {
+            $conn->query('RELEASE SAVEPOINT shipping_courier_order_status');
+        }
+        return $localStatus;
+    } catch (Throwable $e) {
+        if ($startedTransaction) {
+            $conn->rollback();
+        } else {
+            $conn->query('ROLLBACK TO SAVEPOINT shipping_courier_order_status');
+            $conn->query('RELEASE SAVEPOINT shipping_courier_order_status');
+        }
+        throw $e;
+    }
 }
 
 function shipping_courier_create_shipment(mysqli $conn, int $orderId): array
@@ -398,6 +442,7 @@ function shipping_courier_sync_tracking(mysqli $conn, int $orderId): array
     return shipping_courier_result(true, 'Courier tracking synced.', [
         'shipment' => $shipment,
         'metadata' => $metadata,
+        'order_status' => $localOrderStatus,
         'provider_response' => $body,
     ]);
 }

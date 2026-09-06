@@ -99,6 +99,7 @@ try {
     $assert($row['order_notes'] === $row['notes'], 'Customer cancellation must keep notes synchronized.');
 
     $courierId = $makeOrder('CANON-' . $suffix . '-B', 'cod');
+    $conn->query("UPDATE orders SET order_status = 'shipped', status = 'shipped' WHERE id = $courierId");
     shipping_courier_apply_bigship_order_status($conn, $courierId, 'returned');
     $row = $conn->query("SELECT order_status, status FROM orders WHERE id = $courierId")->fetch_assoc();
     $assert($row['order_status'] === 'returned', 'Courier return must persist canonical returned status.');
@@ -119,6 +120,42 @@ try {
     $row = $conn->query("SELECT order_status, status, order_notes, notes FROM orders WHERE id = $codId")->fetch_assoc();
     $assert($row['order_status'] === 'cancelled' && $row['status'] === 'cancelled', 'COD cancellation must synchronize statuses.');
     $assert($row['order_notes'] === $row['notes'] && str_contains((string) $row['order_notes'], 'COD test cancellation'), 'COD cancellation must append canonical and compatibility notes together.');
+
+    // CASE 1: Partial return completion
+    $partId = $makeOrder('CANON-' . $suffix . '-P1', 'cod');
+    $conn->query("UPDATE orders SET order_status = 'delivered', status = 'delivered', payment_status = 'paid' WHERE id = $partId");
+    $conn->query("UPDATE payments SET payment_status = 'paid' WHERE order_id = $partId");
+    $conn->query("INSERT INTO returns (order_id, customer_id, return_number, status, reason, refund_amount, requested_at) VALUES ($partId, $customerId, 'RET-P1', 'refund_initiated', 'defective', 0, NOW())");
+    $retPartId = (int) $conn->insert_id;
+    $conn->query("INSERT INTO return_items (return_id, order_item_id, product_name, quantity, line_total, refund_amount) VALUES ($retPartId, 0, 'Item 1', 1, 50.00, 0)");
+    
+    // Process real return completion via worker
+    $conn->commit();
+    exec(PHP_BINARY . ' ' . escapeshellarg($root . '/tests/helpers/admin_returns_worker.php') . ' ' . $retPartId . ' refund_completed 20.00');
+    $conn->begin_transaction();
+    
+    $row = $conn->query("SELECT payment_status, order_status, status FROM orders WHERE id = $partId")->fetch_assoc();
+    $assert($row['order_status'] === 'returned', 'Partial return must map canonical order_status to returned.');
+    $assert($row['status'] === OrderFieldCompatibilityService::legacyStatus('returned'), 'Partial return must sync legacy status.');
+    $assert($row['payment_status'] === 'paid', 'Partial return must keep payment_status unchanged.');
+
+    // CASE 2: Full refund completion
+    $fullId = $makeOrder('CANON-' . $suffix . '-F1', 'cod');
+    $conn->query("UPDATE orders SET order_status = 'delivered', status = 'delivered', payment_status = 'paid' WHERE id = $fullId");
+    $conn->query("UPDATE payments SET payment_status = 'paid' WHERE order_id = $fullId");
+    $conn->query("INSERT INTO returns (order_id, customer_id, return_number, status, reason, refund_amount, requested_at) VALUES ($fullId, $customerId, 'RET-F1', 'refund_initiated', 'defective', 0, NOW())");
+    $retFullId = (int) $conn->insert_id;
+    $conn->query("INSERT INTO return_items (return_id, order_item_id, product_name, quantity, line_total, refund_amount) VALUES ($retFullId, 0, 'Item 1', 1, 105.00, 0)");
+    
+    // Process real full refund via worker
+    $conn->commit();
+    exec(PHP_BINARY . ' ' . escapeshellarg($root . '/tests/helpers/admin_returns_worker.php') . ' ' . $retFullId . ' refund_completed 105.00');
+    $conn->begin_transaction();
+    
+    $row = $conn->query("SELECT payment_status, order_status, status FROM orders WHERE id = $fullId")->fetch_assoc();
+    $assert($row['order_status'] === 'refunded', 'Full return must map canonical order_status to refunded.');
+    $assert($row['status'] === OrderFieldCompatibilityService::legacyStatus('refunded'), 'Full return must sync legacy status.');
+    $assert($row['payment_status'] === 'refunded', 'Full return must update payment_status to refunded.');
 } finally {
     $conn->rollback();
     foreach ($orderIds as $id) {
