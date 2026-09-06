@@ -28,8 +28,13 @@ $start = static function (int $id, string $target, string $expected = '') use ($
 $wait = static function (int $threadId) use ($conn): void {
     $deadline = microtime(true) + 10;
     do {
-        $row = $conn->query("SELECT trx_state FROM information_schema.INNODB_TRX WHERE trx_mysql_thread_id = $threadId")->fetch_assoc();
-        if (($row['trx_state'] ?? '') === 'LOCK WAIT') { return; }
+        $rows = $conn->query('SHOW PROCESSLIST')->fetch_all(MYSQLI_ASSOC);
+        foreach ($rows as $row) {
+            if ((int) ($row['Id'] ?? 0) !== $threadId) { continue; }
+            $state = strtolower((string) ($row['State'] ?? ''));
+            $query = strtolower((string) ($row['Info'] ?? ''));
+            if (str_contains($state, 'lock') || str_contains($query, 'for update')) { return; }
+        }
         usleep(20000);
     } while (microtime(true) < $deadline);
     throw new RuntimeException('Worker did not reach a real InnoDB row-lock wait.');
