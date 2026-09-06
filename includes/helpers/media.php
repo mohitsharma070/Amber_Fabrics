@@ -5,7 +5,7 @@
 function random_filename(string $originalName): string
 {
     $ext = pathinfo($originalName, PATHINFO_EXTENSION);
-    return uniqid('fabric_', true) . ($ext ? ".{$ext}" : '');
+    return 'fabric_' . bin2hex(random_bytes(16)) . ($ext ? ".{$ext}" : '');
 }
 
 function fabric_upload_directory(): string

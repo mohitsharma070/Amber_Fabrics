@@ -171,7 +171,7 @@ if ($eventType === 'payment.failed') {
         }
 
         $orderStmt = $conn->prepare(
-            "SELECT id, payment_status, notes
+            "SELECT id, payment_status, order_notes
              FROM orders
              WHERE id = ? AND payment_method = 'razorpay'
              FOR UPDATE"

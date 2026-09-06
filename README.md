@@ -47,6 +47,7 @@ return [
     'APP_ENV' => 'local',
     'APP_DEBUG' => '1',
     'APP_URL' => 'http://localhost:8000',
+    'APP_TRUSTED_PROXY_IPS' => '',
     'DB_HOST' => '127.0.0.1',
     'DB_PORT' => '3306',
     'DB_USER' => 'root',
@@ -94,6 +95,8 @@ Runtime configuration precedence is:
 3. environment variables
 
 CLI defaults to local mode. Production-only CLI commands must explicitly set `APP_MODE=production`. Production validates required database, mail, Razorpay, enabled courier settings, `ADMIN_LOGIN_PASSPHRASE` (minimum 16 characters), and immutable `APP_IDENTITY_HASH_KEY` (minimum 32 characters) at bootstrap. Prefer server environment variables. On shared hosting, these two keys may instead be stored as `NAME=value` lines in `/home/<account>/.app-secrets`, outside the application root with Unix mode `0600`; the bootstrap loads only this allowlist into the current PHP process before validation. `APP_SECRETS_FILE` may select a different outside-root path. Never print the values. See `config/secure-config.production.example.php` for placeholders.
+
+When TLS terminates at a reverse proxy, set `APP_TRUSTED_PROXY_IPS` to the exact comma-separated IP addresses PHP sees in `REMOTE_ADDR` (for example, `10.0.0.5,10.0.0.6`). Keep it empty for direct hosting and local HTTP development. The proxy must remove client-supplied `X-Forwarded-Proto` and `X-Forwarded-SSL` headers and set its own trusted value. CIDR ranges are intentionally unsupported; list each proxy address explicitly.
 
 ## Tests and validation
 
@@ -194,7 +197,7 @@ The suite stops at checkout payment/review. It does not submit an order, initial
 
 ## Production operations
 
-The secured cron entry point is `cron/run-plugins.php`. Configure one Hostinger CLI job every 10 minutes. CLI is preferred; HTTP execution requires `X-Cron-Token` (the query token remains a compatibility fallback). A normal or `--local-smoke` run processes real records, while `--check` performs read-only readiness validation.
+The secured cron entry point is `cron/run-plugins.php`. Configure one Hostinger CLI job every 10 minutes. CLI is preferred; HTTP execution requires `X-Cron-Token`. A normal or `--local-smoke` run processes real records, while `--check` performs read-only readiness validation.
 
 ```bash
 php cron/run-plugins.php

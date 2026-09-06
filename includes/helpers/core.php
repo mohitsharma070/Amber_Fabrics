@@ -4,11 +4,20 @@ function app_request_is_https(): bool
     if (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') {
         return true;
     }
-    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') {
-        return true;
-    }
-    if (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') {
-        return true;
+
+    $remoteAddress = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+    $trustedProxyAddresses = array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) ($GLOBALS['_app_config']['APP_TRUSTED_PROXY_IPS'] ?? ''))
+    ), static fn(string $address): bool => $address !== ''));
+    if ($remoteAddress !== '' && in_array($remoteAddress, $trustedProxyAddresses, true)) {
+        $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+        if ($forwardedProto === 'https') {
+            return true;
+        }
+        if ($forwardedProto === '' && strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_SSL'] ?? ''))) === 'on') {
+            return true;
+        }
     }
 
     $appEnv = strtolower(trim((string) ($GLOBALS['_app_config']['APP_ENV'] ?? '')));

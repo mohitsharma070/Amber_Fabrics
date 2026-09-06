@@ -1,6 +1,7 @@
 <?php
 
 $root = dirname(__DIR__);
+require_once $root . '/includes/helpers/migration-checksum.php';
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
     if (!$condition) {
@@ -43,7 +44,7 @@ $schema = $read('database/schema.sql');
 $setup = $read('database/setup.php');
 $openapi = $read('openapi.yaml');
 
-$assert(str_contains($cron, 'HTTP_X_CRON_TOKEN') && strpos($cron, 'HTTP_X_CRON_TOKEN') < strpos($cron, "\$_GET['token']"), 'Cron must prefer the header token over the query fallback.');
+$assert(str_contains($cron, 'HTTP_X_CRON_TOKEN') && !str_contains($cron, "\$_GET['token']"), 'Cron must require the header token and reject the query fallback.');
 $assert(str_contains($cron, "--check") && str_contains($cron, "if (!\$isCheck)"), '--check must exist and skip persistent health writes.');
 $assert(str_contains($cron, 'finally') && str_contains($cron, 'cron_db_lock_state') && str_contains($cron, "'busy'"), 'Cron locks must distinguish contention and release in finally.');
 $assert(str_contains($cron, 'http_response_code(500)') && str_contains($cron, 'http_response_code(405)'), 'Cron HTTP status handling must expose runtime failure and reject unsupported methods.');
@@ -57,9 +58,9 @@ $assert(str_contains($dashboard, 'cron_last_success_at') && str_contains($dashbo
 foreach (['delivery_attempts', 'next_attempt_at', 'idx_public_form_attempts_updated', 'idx_shipping_courier_provider_updated', 'idx_support_tickets_status_updated'] as $needle) {
     $assert(str_contains($migration, $needle) && str_contains($schema, $needle) && str_contains($setup, $needle), 'Migration/schema/setup must align for ' . $needle . '.');
 }
-$checksum = hash_file('sha256', $root . '/' . $migrationPath);
+$checksum = migration_file_checksum($root . '/' . $migrationPath);
 $assert(is_string($checksum) && str_contains($schema, $checksum), 'Fresh-schema migration baseline must contain the current migration checksum.');
-$assert(str_contains($openapi, 'Prefer X-Cron-Token') && str_contains($openapi, "'405':"), 'OpenAPI must document token preference and method rejection.');
+$assert(str_contains($openapi, 'Require X-Cron-Token') && str_contains($openapi, "'405':"), 'OpenAPI must document strict token requirement and method rejection.');
 
 if ($failures !== []) {
     fwrite(STDERR, "Cron reliability hardening contract failures:\n- " . implode("\n- ", $failures) . "\n");

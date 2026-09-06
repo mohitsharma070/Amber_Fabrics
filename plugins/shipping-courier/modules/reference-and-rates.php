@@ -535,8 +535,11 @@ function shipping_courier_upsert_metadata(mysqli $conn, int $orderId, int $shipm
     return shipping_courier_get_metadata($conn, $shipmentId, $provider);
 }
 
-function shipping_courier_bigship_client(): BigshipService
+function shipping_courier_bigship_client(): object
 {
+    if (defined('AMBER_TESTING') && AMBER_TESTING && is_object($GLOBALS['shipping_courier_bigship_client_override'] ?? null)) {
+        return $GLOBALS['shipping_courier_bigship_client_override'];
+    }
     static $client = null;
     if (!$client instanceof BigshipService) {
         $client = new BigshipService(shipping_courier_settings());

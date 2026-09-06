@@ -312,6 +312,152 @@ try {
     );
     $couponStmt->execute();
 
+    $registrationCleanup = $conn->prepare('DELETE FROM customers WHERE email = ?');
+    $registrationCleanup->execute(['e2e-new-registration@example.test']);
+
+    $customerPassword = implode('', ['E2E', 'Auth', '123!']);
+    $customerPasswordHash = password_hash($customerPassword, PASSWORD_DEFAULT);
+    if (!is_string($customerPasswordHash) || $customerPasswordHash === '') {
+        throw new RuntimeException('Unable to hash the E2E customer password.');
+    }
+    $customerStmt = $conn->prepare(
+        "INSERT INTO customers
+            (name, email, password_hash, auth_version, phone, country, is_active, email_verified)
+         VALUES (?, ?, ?, 1, '9876543210', 'India', 1, 1)
+         ON DUPLICATE KEY UPDATE
+            name = VALUES(name),
+            password_hash = VALUES(password_hash),
+            auth_version = 1,
+            phone = VALUES(phone),
+            country = VALUES(country),
+            is_active = 1,
+            email_verified = 1,
+            email_verify_token = NULL,
+            email_verify_expires = NULL"
+    );
+    $customerIdStmt = $conn->prepare('SELECT id FROM customers WHERE email = ? LIMIT 1');
+    $customerIds = [];
+    foreach ([
+        ['E2E Customer', 'e2e-customer@example.test'],
+        ['E2E Other Customer', 'e2e-other-customer@example.test'],
+    ] as [$customerName, $customerEmail]) {
+        $customerStmt->execute([$customerName, $customerEmail, $customerPasswordHash]);
+        $customerIdStmt->execute([$customerEmail]);
+        $customerId = (int) (($customerIdStmt->get_result()->fetch_assoc()['id'] ?? 0));
+        if ($customerId <= 0) {
+            throw new RuntimeException('Seeded customer could not be resolved.');
+        }
+        $customerIds[$customerEmail] = $customerId;
+    }
+
+    $adminStmt = $conn->prepare(
+        "INSERT INTO admins (name, email, role, is_active)
+         VALUES (?, ?, ?, 1)
+         ON DUPLICATE KEY UPDATE
+            name = VALUES(name),
+            role = VALUES(role),
+            is_active = 1"
+    );
+    $adminIdStmt = $conn->prepare('SELECT id FROM admins WHERE email = ? LIMIT 1');
+    $adminIds = [];
+    foreach ([
+        ['E2E Operations Admin', 'e2e-operations-admin@example.test', 'operations_manager'],
+        ['E2E Viewer Admin', 'e2e-viewer-admin@example.test', 'viewer'],
+    ] as [$adminName, $adminEmail, $adminRole]) {
+        $adminStmt->execute([$adminName, $adminEmail, $adminRole]);
+        $adminIdStmt->execute([$adminEmail]);
+        $adminId = (int) (($adminIdStmt->get_result()->fetch_assoc()['id'] ?? 0));
+        if ($adminId <= 0) {
+            throw new RuntimeException('Seeded admin could not be resolved.');
+        }
+        $adminIds[$adminEmail] = $adminId;
+    }
+
+    $orderStmt = $conn->prepare(
+        "INSERT INTO orders (
+            order_number, customer_name, customer_phone, customer_email, customer_id,
+            address, city, state, pincode, country, subtotal, shipping_amount,
+            discount_amount, total_amount, payment_method, payment_status,
+            order_status, currency, shipping_cost, total, status
+         ) VALUES (?, ?, '9876543210', ?, ?, '42 E2E Test Street', 'Jaipur',
+                   'Rajasthan', '302001', 'India', 199.00, 0.00, 0.00, 199.00,
+                   'cod', 'pending', 'pending', 'INR', 0.00, 199.00, 'pending')
+         ON DUPLICATE KEY UPDATE
+            customer_name = VALUES(customer_name),
+            customer_phone = VALUES(customer_phone),
+            customer_email = VALUES(customer_email),
+            customer_id = VALUES(customer_id),
+            address = VALUES(address),
+            city = VALUES(city),
+            state = VALUES(state),
+            pincode = VALUES(pincode),
+            country = VALUES(country),
+            subtotal = VALUES(subtotal),
+            shipping_amount = VALUES(shipping_amount),
+            discount_amount = VALUES(discount_amount),
+            total_amount = VALUES(total_amount),
+            payment_method = 'cod',
+            payment_status = 'pending',
+            order_status = 'pending',
+            currency = 'INR',
+            shipping_cost = 0.00,
+            total = 199.00,
+            status = 'pending',
+            inventory_reserved_at = NULL,
+            inventory_restored_at = NULL,
+            updated_at = NOW()"
+    );
+    $orderIdStmt = $conn->prepare('SELECT id FROM orders WHERE order_number = ? LIMIT 1');
+    $orders = [
+        ['E2E-AUTH-OWNED', 'E2E Customer', 'e2e-customer@example.test', $customerIds['e2e-customer@example.test']],
+        ['E2E-AUTH-OTHER', 'E2E Other Customer', 'e2e-other-customer@example.test', $customerIds['e2e-other-customer@example.test']],
+        ['E2E-GUEST-ORDER', 'E2E Guest Customer', 'e2e-guest-order@example.test', null],
+    ];
+    $orderIds = [];
+    foreach ($orders as [$orderNumber, $customerName, $customerEmail, $customerId]) {
+        $orderStmt->execute([$orderNumber, $customerName, $customerEmail, $customerId]);
+        $orderIdStmt->execute([$orderNumber]);
+        $orderId = (int) (($orderIdStmt->get_result()->fetch_assoc()['id'] ?? 0));
+        if ($orderId <= 0) {
+            throw new RuntimeException('Seeded order could not be resolved.');
+        }
+        $orderIds[$orderNumber] = $orderId;
+    }
+
+    $deleteOrderItemsStmt = $conn->prepare('DELETE FROM order_items WHERE order_id = ?');
+    $orderItemStmt = $conn->prepare(
+        "INSERT INTO order_items (
+            order_id, product_id, product_name, unit_type, quantity, price, total,
+            fabric_id, fabric_name_snapshot, fabric_sku_snapshot, quantity_meters,
+            price_per_meter, line_total
+         ) VALUES (?, ?, 'E2E Simple Product', 'piece', 1.00, 199.00, 199.00,
+                   ?, 'E2E Simple Product', 'E2E-SIMPLE-SKU', 1.00, 199.00, 199.00)"
+    );
+    $simpleProductId = (int) ($productIds['E2E-SIMPLE'] ?? 0);
+    foreach ($orderIds as $orderId) {
+        $deleteOrderItemsStmt->execute([$orderId]);
+        $orderItemStmt->execute([$orderId, $simpleProductId, $simpleProductId]);
+    }
+
+    $guestOrderId = (int) ($orderIds['E2E-GUEST-ORDER'] ?? 0);
+    $deleteGuestTokensStmt = $conn->prepare('DELETE FROM guest_order_access_tokens WHERE order_id = ?');
+    $deleteGuestTokensStmt->execute([$guestOrderId]);
+
+    $deleteAdminOtpStmt = $conn->prepare('DELETE FROM admin_login_otps WHERE admin_id = ?');
+    $deleteAdminAttemptStmt = $conn->prepare('DELETE FROM admin_login_attempts WHERE attempt_key = ?');
+    foreach ($adminIds as $adminEmail => $adminId) {
+        $deleteAdminOtpStmt->execute([$adminId]);
+        foreach ([
+            hash('sha256', strtolower($adminEmail) . '|127.0.0.1'),
+            hash('sha256', 'admin_otp|verify|' . $adminId . '|127.0.0.1'),
+            hash('sha256', 'admin_otp|resend|' . $adminId . '|127.0.0.1'),
+        ] as $attemptKey) {
+            $deleteAdminAttemptStmt->execute([$attemptKey]);
+        }
+    }
+
+    $conn->query("DELETE FROM public_form_attempts WHERE scope = 'customer_register' OR scope LIKE 'guest_order_link_%'");
+
     $conn->commit();
     $inTransaction = false;
     echo "E2E fixtures seeded.\n";

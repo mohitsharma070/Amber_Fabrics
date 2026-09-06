@@ -1,5 +1,6 @@
 <?php
 $root = dirname(__DIR__);
+require_once $root . '/includes/helpers/migration-checksum.php';
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
     if (!$condition) {
@@ -39,7 +40,7 @@ $assert(!str_contains($categories, 'ALTER TABLE'), 'Admin category requests must
 foreach ([$schema, $setup] as $source) {
     $assert(str_contains($source, 'uses_variant_size TINYINT(1) NOT NULL DEFAULT 0'), 'Fresh schema and setup must define the category flag.');
 }
-$checksum = hash_file('sha256', $root . '/' . $migrationPath);
+$checksum = migration_file_checksum($root . '/' . $migrationPath);
 $assert(is_string($checksum) && str_contains($schema, $checksum), 'Fresh schema must baseline the architecture migration checksum.');
 $assert(
     str_contains($cron, "'categories' => ['uses_variant_size', 'default_unit_type']")

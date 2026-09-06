@@ -39,6 +39,7 @@ function shipping_courier_apply_bigship_order_status(mysqli $conn, int $orderId,
     if ($orderId <= 0 || $localStatus === '') {
         return '';
     }
+    $legacyStatus = OrderFieldCompatibilityService::legacyStatus($localStatus);
 
     $stmt = $conn->prepare(
         "UPDATE orders
@@ -46,7 +47,7 @@ function shipping_courier_apply_bigship_order_status(mysqli $conn, int $orderId,
          WHERE id = ?
            AND order_status NOT IN ('cancelled', 'refunded')"
     );
-    $stmt->bind_param('ssi', $localStatus, $localStatus, $orderId);
+    $stmt->bind_param('ssi', $localStatus, $legacyStatus, $orderId);
     $stmt->execute();
     return $localStatus;
 }
@@ -129,12 +130,34 @@ function shipping_courier_create_shipment_unlocked(mysqli $conn, int $orderId): 
     $responses = is_array($rawResponses) ? $rawResponses : [];
     $customGlobalOrderId = trim((string) ($existingMetadata['provider_order_id'] ?? ''));
     if ($customGlobalOrderId === '') {
+        if (in_array(($responses['create_order_intent']['state'] ?? ''), ['pending', 'outcome_unknown'], true)) {
+            return shipping_courier_result(false, 'Bigship create-order outcome is unknown; reconcile the stable order invoice in Bigship before retrying.');
+        }
         $createPayload = shipping_courier_bigship_order_request($payload);
         if (empty($createPayload['ok']) || !is_array($createPayload['body'] ?? null)) {
             return shipping_courier_result(false, (string) ($createPayload['message'] ?? 'Unable to prepare Bigship create-order payload.'));
         }
+        $responses['create_order_intent'] = [
+            'state' => 'pending',
+            'business_id' => trim((string) ($order['order_number'] ?? '')),
+            'payload_hash' => hash('sha256', (string) json_encode($createPayload['body'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'started_at' => gmdate('c'),
+        ];
+        $existingMetadata = shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, [
+            'provider' => $provider,
+            'raw_response_json' => $responses,
+        ]);
+        if (!$existingMetadata) {
+            return shipping_courier_result(false, 'Unable to persist Bigship create-order intent.');
+        }
         $createOrder = shipping_courier_bigship_client()->createOrder((array) $createPayload['body']);
         if (empty($createOrder['ok']) || !is_array($createOrder['body'] ?? null)) {
+            $responses['create_order_intent']['state'] = 'outcome_unknown';
+            $responses['create_order_intent']['provider_status'] = (int) ($createOrder['status'] ?? 0);
+            shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, [
+                'provider' => $provider,
+                'raw_response_json' => $responses,
+            ]);
             $message = shipping_courier_api_failure_message($createOrder, 'create order');
             error_log('[shipping-courier] ' . $message . ' order_id=' . $orderId);
             return shipping_courier_result(false, $message, ['status' => (int) ($createOrder['status'] ?? 0)]);
@@ -142,9 +165,50 @@ function shipping_courier_create_shipment_unlocked(mysqli $conn, int $orderId): 
         $responses['create_order'] = $createOrder['body'];
         $customGlobalOrderId = shipping_courier_response_value($createOrder['body'], ['CustomGlobalOrderId', 'custom_global_order_id']);
         if ($customGlobalOrderId === '') {
+            $responses['create_order_intent']['state'] = 'outcome_unknown';
+            shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, [
+                'provider' => $provider,
+                'raw_response_json' => $responses,
+            ]);
             return shipping_courier_result(false, 'Bigship create-order did not return CustomGlobalOrderId.');
         }
+        if (defined('AMBER_TESTING') && AMBER_TESTING && is_callable($GLOBALS['shipping_courier_bigship_fault_after_success'] ?? null)) {
+            $GLOBALS['shipping_courier_bigship_fault_after_success']('create_order');
+        }
+        $responses['create_order_intent']['state'] = 'completed';
+        $responses['create_order_intent']['completed_at'] = gmdate('c');
         $existingMetadata = shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, shipping_courier_bigship_lifecycle_metadata($responses, $customGlobalOrderId));
+    }
+
+    if (in_array(($responses['place_order_intent']['state'] ?? ''), ['pending', 'outcome_unknown'], true)) {
+        $details = shipping_courier_bigship_client()->shipmentDetails($customGlobalOrderId);
+        $detailsBody = !empty($details['ok']) && is_array($details['body'] ?? null) ? $details['body'] : [];
+        $detailsMetadata = shipping_courier_metadata_from_response($detailsBody);
+        if (trim((string) ($detailsMetadata['provider_shipment_id'] ?? '')) === '') {
+            return shipping_courier_result(false, 'Bigship place-order outcome is unknown; reconciliation did not confirm a shipment, so place-order was not repeated.');
+        }
+        $responses['place_order'] = $detailsBody;
+        $responses['place_order_intent']['state'] = 'reconciled';
+        $responses['place_order_intent']['completed_at'] = gmdate('c');
+        $shipmentData = shipping_courier_shipment_data_from_response($detailsBody);
+        $shipmentData = shipping_courier_apply_tracking_milestones($shipmentData, $detailsBody, $shipment);
+        $shipmentData['courier_name'] = $shipmentData['courier_name'] ?? (string) ($order['courier_name'] ?? $provider);
+        $shipmentData['shipping_cost'] = $shipmentData['shipping_cost'] ?? (float) ($order['base_shipping'] ?? 0);
+        $shipment = shipping_courier_upsert_shipment($conn, $orderId, $shipmentData);
+        $labelUrl = shipping_courier_bigship_download_document_url($customGlobalOrderId, 'label');
+        if ($labelUrl !== '') {
+            $responses['download_label'] = ['AttachmentData' => $labelUrl];
+        }
+        $metadata = shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, shipping_courier_bigship_lifecycle_metadata($responses, $customGlobalOrderId));
+        if (function_exists('log_order_activity')) {
+            log_order_activity($conn, $orderId, 'shipping_courier_reconciled', 'system', 0, 'shipping-courier', 'Courier shipment reconciled with provider: ' . $provider);
+        }
+        shipping_courier_maybe_send_tracking_email($conn, $orderId, $previousTrackingId, $shipment);
+        return shipping_courier_result(true, 'Courier shipment reconciled.', [
+            'shipment' => $shipment,
+            'metadata' => $metadata,
+            'provider_response' => $responses,
+        ]);
     }
 
     $cost = shipping_courier_bigship_client()->courierCosts([
@@ -171,16 +235,38 @@ function shipping_courier_create_shipment_unlocked(mysqli $conn, int $orderId): 
             $placePayload['invoiceType'] = $invoiceType;
         }
         $placePayload = array_merge($placePayload, shipping_courier_bigship_place_documents($orderId));
-        $placeOrder = shipping_courier_bigship_client()->placeOrder($placePayload, true);
-    } else {
-        $placeOrder = shipping_courier_bigship_client()->placeOrder($placePayload);
     }
+
+    $responses['place_order_intent'] = [
+        'state' => 'pending',
+        'provider_order_id' => $customGlobalOrderId,
+        'courier_id' => $courierId,
+        'payload_hash' => hash('sha256', (string) json_encode($placePayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+        'started_at' => gmdate('c'),
+    ];
+    $existingMetadata = shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, shipping_courier_bigship_lifecycle_metadata($responses, $customGlobalOrderId));
+    if (!$existingMetadata) {
+        return shipping_courier_result(false, 'Unable to persist Bigship place-order intent.');
+    }
+
+    $placeOrder = shipping_courier_bigship_client()->placeOrder(
+        $placePayload,
+        in_array($segment, ['domestic_b2b', 'domestic_b2c'], true)
+    );
     if (empty($placeOrder['ok']) || !is_array($placeOrder['body'] ?? null)) {
+        $responses['place_order_intent']['state'] = 'outcome_unknown';
+        $responses['place_order_intent']['provider_status'] = (int) ($placeOrder['status'] ?? 0);
+        shipping_courier_upsert_metadata($conn, $orderId, $shipmentId, shipping_courier_bigship_lifecycle_metadata($responses, $customGlobalOrderId));
         $message = shipping_courier_api_failure_message($placeOrder, 'place order');
         error_log('[shipping-courier] ' . $message . ' order_id=' . $orderId);
         return shipping_courier_result(false, $message, ['status' => (int) ($placeOrder['status'] ?? 0)]);
     }
     $responses['place_order'] = $placeOrder['body'];
+    if (defined('AMBER_TESTING') && AMBER_TESTING && is_callable($GLOBALS['shipping_courier_bigship_fault_after_success'] ?? null)) {
+        $GLOBALS['shipping_courier_bigship_fault_after_success']('place_order');
+    }
+    $responses['place_order_intent']['state'] = 'completed';
+    $responses['place_order_intent']['completed_at'] = gmdate('c');
 
     $body = $placeOrder['body'];
     $shipmentData = array_merge(

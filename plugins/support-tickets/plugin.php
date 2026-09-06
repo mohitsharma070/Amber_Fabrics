@@ -1151,7 +1151,7 @@ function support_tickets_render_order_panel(array $context): void
     $statuses = support_tickets_statuses();
     $categories = support_tickets_categories();
     $priorities = support_tickets_priorities();
-    $effectiveOrderStatus = strtolower((string) ($order['order_status'] ?? $order['status'] ?? ''));
+    $effectiveOrderStatus = strtolower((string) ($order['order_status'] ?? ''));
     $deliveredAt = trim((string) ($shipment['delivered_at'] ?? ''));
     $isWithinReturnWindow = return_request_is_eligible($deliveredAt);
     $canUseReturnFlow = $effectiveOrderStatus === 'delivered' && $isWithinReturnWindow && !$returnRequest;

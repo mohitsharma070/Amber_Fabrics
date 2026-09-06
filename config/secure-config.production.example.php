@@ -12,6 +12,8 @@ return [
     'APP_DEBUG' => '0',
     'APP_URL' => 'https://replace-with-your-domain.example',
     'APP_FORCE_HTTPS' => '1',
+    // Exact comma-separated REMOTE_ADDR values. Leave empty when no reverse proxy is used.
+    'APP_TRUSTED_PROXY_IPS' => '',
     'APP_IDENTITY_HASH_KEY' => 'replace-with-at-least-32-random-characters',
     'DB_HOST' => 'replace-with-db-host',
     'DB_PORT' => '3306',

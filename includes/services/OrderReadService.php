@@ -12,13 +12,12 @@ final class OrderReadService
             "SELECT
                 o.id,
                 o.order_number,
-                o.status,
                 o.order_status,
                 o.payment_status,
                 o.payment_method,
                 o.currency,
-                o.total,
-                o.notes,
+                o.total_amount,
+                o.order_notes,
                 o.created_at,
                 (
                     SELECT r.status
@@ -54,7 +53,7 @@ final class OrderReadService
                     AND o.payment_method IN ('razorpay', 'upi')
                     AND o.created_at < (NOW() - INTERVAL 30 MINUTE)
                )
-             GROUP BY o.id, o.order_number, o.status, o.order_status, o.payment_status, o.payment_method, o.currency, o.total, o.notes, o.created_at
+             GROUP BY o.id, o.order_number, o.order_status, o.payment_status, o.payment_method, o.currency, o.total_amount, o.order_notes, o.created_at
              ORDER BY o.created_at DESC"
         );
         $stmt->bind_param('i', $customerId);
@@ -68,9 +67,10 @@ final class OrderReadService
             return null;
         }
 
+        $columns = self::canonicalOrderColumns('o');
         $stmt = $conn->prepare(
             "SELECT
-                o.*,
+                {$columns},
                 c.name AS customer_name,
                 c.email AS customer_email,
                 (
@@ -93,7 +93,8 @@ final class OrderReadService
         if ($orderId <= 0) {
             return null;
         }
-        $stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? LIMIT 1");
+        $columns = self::canonicalOrderColumns('o');
+        $stmt = $conn->prepare("SELECT {$columns} FROM orders o WHERE o.id = ? LIMIT 1");
         $stmt->bind_param('i', $orderId);
         $stmt->execute();
         return $stmt->get_result()->fetch_assoc() ?: null;
@@ -111,7 +112,7 @@ final class OrderReadService
             "SELECT id, order_number, customer_name, customer_phone, customer_email,
                     address, city, state, pincode, country,
                     subtotal, shipping_amount, discount_amount, total_amount,
-                    payment_method, payment_status, order_status, order_notes, notes, admin_notes, created_at,
+                    payment_method, payment_status, order_status, order_notes, admin_notes, created_at,
                     {$financialSelect}
              FROM orders
              WHERE id = ?
@@ -300,5 +301,23 @@ final class OrderReadService
         $stmt->bind_param('i', $orderId);
         $stmt->execute();
         return $stmt->get_result()->fetch_assoc() ?: null;
+    }
+
+    private static function canonicalOrderColumns(string $alias): string
+    {
+        $prefix = $alias !== '' ? $alias . '.' : '';
+        return implode(', ', array_map(
+            static fn(string $column): string => $prefix . $column,
+            [
+                'id', 'order_number', 'customer_name', 'customer_phone', 'customer_email',
+                'address', 'city', 'state', 'pincode', 'country', 'subtotal',
+                'shipping_amount', 'discount_amount', 'total_amount', 'payment_method',
+                'payment_status', 'order_status', 'order_notes', 'customer_id', 'payment_id',
+                'currency', 'shipping_address', 'admin_notes', 'inventory_reserved_at',
+                'inventory_restored_at', 'serviceability_status', 'estimated_dispatch_start',
+                'estimated_dispatch_end', 'estimated_delivery_start', 'estimated_delivery_end',
+                'created_at', 'updated_at',
+            ]
+        ));
     }
 }

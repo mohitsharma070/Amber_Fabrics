@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
+require_once $root . '/includes/helpers/migration-checksum.php';
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
     if (!$condition) {
@@ -64,7 +65,7 @@ foreach (['variant_id', 'cron_run_history', 'initialization_status'] as $needle)
     $assert(str_contains($migration, $needle) && str_contains($schema, $needle), 'Migration and fresh schema must include ' . $needle . '.');
 }
 $assert(str_contains($migration, 'DROP TABLE IF EXISTS newsletter_subscribers') && !str_contains($schema, 'CREATE TABLE IF NOT EXISTS newsletter_subscribers'), 'Newsletter must be dropped in the migration and absent from fresh schema.');
-$checksum = hash_file('sha256', $root . '/' . $migrationPath);
+$checksum = migration_file_checksum($root . '/' . $migrationPath);
 $assert(is_string($checksum) && str_contains($schema, $checksum), 'Fresh schema must contain the current migration checksum.');
 $assert(str_contains($setup, 'cron_run_history') && str_contains($setup, 'idx_shipping_courier_reverse_claim'), 'Fresh setup must align with cron and reverse-pickup schema.');
 

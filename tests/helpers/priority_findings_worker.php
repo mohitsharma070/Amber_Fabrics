@@ -44,12 +44,66 @@ try {
         echo json_encode(['status' => 'reserved']);
         exit;
     }
+    if ($action === 'order_transition') {
+        $orderId = (int) ($argv[3] ?? 0);
+        $targetStatus = (string) ($argv[4] ?? '');
+        $expectedStatus = (string) ($argv[5] ?? '');
+        $adminId = (int) ($argv[6] ?? 1);
+
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SERVER['SCRIPT_NAME'] = '/admin/order-view.php';
+        $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+        $_SERVER['HTTP_USER_AGENT'] = 'test-agent';
+
+        $_SESSION['admin_id'] = $adminId;
+        $_SESSION['admin_name'] = 'Worker Admin';
+        $_SESSION['admin_role'] = 'super_admin';
+        $_SESSION['admin_session_started_at'] = time();
+        $_SESSION['admin_last_seen_at'] = time();
+        require_once dirname(__DIR__, 2) . '/includes/helpers/admin.php';
+        $_SESSION['admin_session_fingerprint'] = admin_session_fingerprint();
+        $_SESSION['csrf_token'] = 'test-csrf';
+
+        $_POST = [
+            'action' => 'workflow_transition',
+            'target_status' => $targetStatus,
+            'expected_status' => $expectedStatus,
+            'csrf_token' => 'test-csrf',
+        ];
+
+        $_GET['id'] = $orderId;
+
+        register_shutdown_function(static function () {
+            $flash = $_SESSION['flash_messages'] ?? [];
+            $error = $flash['error'][0] ?? null;
+            $success = $flash['success'][0] ?? null;
+            if (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+            if ($success) {
+                echo json_encode(['status' => 'success']);
+            } else if ($error) {
+                echo json_encode(['status' => 'error', 'message' => $error]);
+            } else {
+                echo json_encode(['status' => 'unknown']);
+            }
+        });
+
+        ob_start();
+        try {
+            require dirname(__DIR__, 2) . '/admin/order-view.php';
+        } catch (Throwable $e) {
+            // caught
+        }
+        exit;
+    }
+
     throw new RuntimeException('Unknown worker action.');
 } catch (Throwable $e) {
     try {
         $conn->rollback();
     } catch (Throwable $ignored) {
     }
-    echo json_encode(['status' => 'failed']);
+    echo json_encode(['status' => 'failed', 'error' => $e->getMessage()]);
     exit(1);
 }

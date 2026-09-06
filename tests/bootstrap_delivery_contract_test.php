@@ -48,7 +48,7 @@ foreach ($iterator as $file) {
         continue;
     }
     $relativePath = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
-    if (str_starts_with($relativePath, 'tests/') || str_starts_with($relativePath, 'vendor/')) {
+    if (str_starts_with($relativePath, 'tests/') || str_starts_with($relativePath, 'vendor/') || str_starts_with($relativePath, 'tmp/')) {
         continue;
     }
     $productionSources .= (string) file_get_contents($file->getPathname());
@@ -61,11 +61,13 @@ $assert(substr_count($productionSources, $bundleUrl) === count($bundleConsumers)
 $assert(is_file($cssPath), 'The pinned first-party Bootstrap CSS asset must exist.');
 $assert(is_file($bundlePath), 'The pinned first-party Bootstrap bundle asset must exist.');
 if (is_file($cssPath)) {
-    $assert(hash_file('sha256', $cssPath) === '3c8f27e6009ccfd710a905e6dcf12d0ee3c6f2ac7da05b0572d3e0d12e736fc8', 'Bootstrap CSS must match the exact 5.3.3 npm distribution.');
+    $canonicalCss = str_replace(["\r\n", "\r"], "\n", (string) file_get_contents($cssPath));
+    $assert(hash('sha256', $canonicalCss) === '3c8f27e6009ccfd710a905e6dcf12d0ee3c6f2ac7da05b0572d3e0d12e736fc8', 'Bootstrap CSS must match the exact 5.3.3 npm distribution.');
     $assert(str_contains((string) file_get_contents($cssPath), 'Bootstrap  v5.3.3'), 'Bootstrap CSS must identify version 5.3.3.');
 }
 if (is_file($bundlePath)) {
-    $assert(hash_file('sha256', $bundlePath) === '0833b2e9c3a26c258476c46266e6877fc75218625162e0460be9a3a098a61c6c', 'Bootstrap bundle must match the exact 5.3.3 npm distribution including Popper.');
+    $canonicalBundle = str_replace(["\r\n", "\r"], "\n", (string) file_get_contents($bundlePath));
+    $assert(hash('sha256', $canonicalBundle) === '0833b2e9c3a26c258476c46266e6877fc75218625162e0460be9a3a098a61c6c', 'Bootstrap bundle must match the exact 5.3.3 npm distribution including Popper.');
     $assert(str_contains((string) file_get_contents($bundlePath), 'Bootstrap v5.3.3'), 'Bootstrap bundle must identify version 5.3.3.');
 }
 

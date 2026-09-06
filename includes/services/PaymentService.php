@@ -150,11 +150,11 @@ final class PaymentService
         $updateOrder = $conn->prepare(
             "UPDATE orders
              SET payment_status = 'failed',
-                 notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+                 " . OrderFieldCompatibilityService::appendNoteAssignments() . ",
                  updated_at = NOW()
              WHERE id = ?"
         );
-        $updateOrder->bind_param('ssi', $note, $note, $orderId);
+        $updateOrder->bind_param('ssssi', $note, $note, $note, $note, $orderId);
         $updateOrder->execute();
 
         return true;
@@ -430,11 +430,11 @@ final class PaymentService
                  SET payment_status = 'failed',
                      order_status = 'cancelled',
                      status = 'cancelled',
-                     notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+                     " . OrderFieldCompatibilityService::appendNoteAssignments() . ",
                      updated_at = NOW()
                  WHERE id = ?"
             );
-            $upd->bind_param('ssi', $note, $note, $orderId);
+            $upd->bind_param('ssssi', $note, $note, $note, $note, $orderId);
             $upd->execute();
 
             $updPay = $conn->prepare(
@@ -674,6 +674,58 @@ final class PaymentService
         $stmt->execute();
     }
 
+    public static function cleanup_payment_webhook_events(
+        mysqli $conn,
+        int $payloadRetentionDays = 30,
+        int $auditRetentionDays = 0,
+        int $limit = 500
+    ): array {
+        $payloadRetentionDays = max(1, min(3650, $payloadRetentionDays));
+        $auditRetentionDays = max(0, min(36500, $auditRetentionDays));
+        $limit = max(1, min(5000, $limit));
+
+        $scrub = $conn->prepare(
+            "UPDATE payment_webhook_events
+             SET raw_payload = NULL,
+                 updated_at = updated_at
+             WHERE status = 'processed'
+               AND raw_payload IS NOT NULL
+               AND processed_at IS NOT NULL
+               AND processed_at < DATE_SUB(NOW(), INTERVAL {$payloadRetentionDays} DAY)
+             ORDER BY processed_at ASC, id ASC
+             LIMIT {$limit}"
+        );
+        $scrub->execute();
+        $scrubbed = max(0, (int) $scrub->affected_rows);
+
+        $deleted = 0;
+        $remaining = max(0, $limit - $scrubbed);
+        $deleteEnabled = $auditRetentionDays > $payloadRetentionDays;
+        if ($deleteEnabled && $remaining > 0) {
+            $delete = $conn->prepare(
+                "DELETE FROM payment_webhook_events
+                 WHERE status = 'processed'
+                   AND raw_payload IS NULL
+                   AND processed_at IS NOT NULL
+                   AND processed_at < DATE_SUB(NOW(), INTERVAL {$auditRetentionDays} DAY)
+                 ORDER BY processed_at ASC, id ASC
+                 LIMIT {$remaining}"
+            );
+            $delete->execute();
+            $deleted = max(0, (int) $delete->affected_rows);
+        }
+
+        $processed = $scrubbed + $deleted;
+        return CronService::result('success', $processed, $processed, 0, [
+            'scrubbed_count' => $scrubbed,
+            'deleted_count' => $deleted,
+            'payload_retention_days' => $payloadRetentionDays,
+            'audit_retention_days' => $auditRetentionDays,
+            'audit_delete_enabled' => $deleteEnabled,
+            'limit' => $limit,
+        ]);
+    }
+
     /**
      * Upsert payment attempt audit row by provider + gateway attempt reference.
      * attemptRef should be gateway order id (e.g. Razorpay order id).
@@ -770,7 +822,7 @@ final class PaymentService
             $conn->begin_transaction();
 
             $orderStmt = $conn->prepare(
-                "SELECT id, order_number, payment_method, payment_status, order_status, notes
+                "SELECT id, order_number, payment_method, payment_status, order_status, order_notes
                  FROM orders
                  WHERE id = ?
                  FOR UPDATE"
@@ -829,7 +881,7 @@ final class PaymentService
 
                 $refundStatus = '';
                 $existingRefundId = '';
-                $existingNotes = (string) ($order['notes'] ?? '');
+                $existingNotes = (string) ($order['order_notes'] ?? '');
                 $existingRefundId = PaymentService::extract_razorpay_refund_id_from_notes($existingNotes);
                 if ($existingRefundId === '') {
                     $existingRefundId = PaymentService::latest_refund_ledger_gateway_refund_id($conn, $orderId, 'razorpay');
@@ -862,10 +914,10 @@ final class PaymentService
 
                         $updNotes = $conn->prepare(
                             "UPDATE orders
-                             SET notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END
+                             SET " . OrderFieldCompatibilityService::appendNoteAssignments() . "
                              WHERE id = ?"
                         );
-                        $updNotes->bind_param('ssi', $refundNote, $refundNote, $orderId);
+                        $updNotes->bind_param('ssssi', $refundNote, $refundNote, $refundNote, $refundNote, $orderId);
                         $updNotes->execute();
 
                         $paymentRowId = (int) ($payment['id'] ?? 0);
@@ -902,15 +954,16 @@ final class PaymentService
                 }
             }
 
+            $refundedLegacyStatus = OrderFieldCompatibilityService::legacyStatus('refunded');
             $updOrder = $conn->prepare(
                 "UPDATE orders
                  SET payment_status = 'refunded',
-                     order_status = CASE WHEN order_status = 'cancelled' THEN 'refunded' ELSE order_status END,
-                     status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE status END,
+                     order_status = 'refunded',
+                     status = ?,
                      updated_at = NOW()
                  WHERE id = ?"
             );
-            $updOrder->bind_param('i', $orderId);
+            $updOrder->bind_param('si', $refundedLegacyStatus, $orderId);
             $updOrder->execute();
 
             if ($payment) {
@@ -1000,9 +1053,7 @@ final class PaymentService
             }
 
             $nextOrderStatus = in_array($currentOrderStatus, ['pending', 'failed'], true) ? 'confirmed' : $currentOrderStatus;
-            $nextLegacyStatus = in_array($nextOrderStatus, ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'], true)
-                ? $nextOrderStatus
-                : 'processing';
+            $nextLegacyStatus = OrderFieldCompatibilityService::legacyStatus($nextOrderStatus);
 
             $updateOrder = $conn->prepare(
                 "UPDATE orders
@@ -1092,7 +1143,7 @@ final class PaymentService
             $conn->begin_transaction();
 
             $orderStmt = $conn->prepare(
-                "SELECT id, payment_method, payment_status, order_status, status, notes
+                "SELECT id, payment_method, payment_status, order_status, order_notes
                  FROM orders
                  WHERE id = ?
                  FOR UPDATE"
@@ -1109,7 +1160,7 @@ final class PaymentService
                 throw new RuntimeException('Sync is available only for Razorpay orders.');
             }
 
-            $notes = (string) ($order['notes'] ?? '');
+            $notes = (string) ($order['order_notes'] ?? '');
             $refundId = PaymentService::extract_razorpay_refund_id_from_notes($notes);
             if ($refundId === '') {
                 $refundId = PaymentService::latest_refund_ledger_gateway_refund_id($conn, $orderId, 'razorpay');
@@ -1137,15 +1188,16 @@ final class PaymentService
             $payment = $paymentRowStmt->get_result()->fetch_assoc();
 
             if ($refundStatus === 'processed') {
+                $refundedLegacyStatus = OrderFieldCompatibilityService::legacyStatus('refunded');
                 $updOrder = $conn->prepare(
                     "UPDATE orders
                      SET payment_status = 'refunded',
                          order_status = 'refunded',
-                         status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE status END,
+                         status = ?,
                          updated_at = NOW()
                      WHERE id = ?"
                 );
-                $updOrder->bind_param('i', $orderId);
+                $updOrder->bind_param('si', $refundedLegacyStatus, $orderId);
                 $updOrder->execute();
 
                 if ($payment) {

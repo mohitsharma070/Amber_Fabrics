@@ -11,9 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $mode = trim((string) ($_GET['hub_mode'] ?? $_GET['hub.mode'] ?? ''));
     $token = trim((string) ($_GET['hub_verify_token'] ?? $_GET['hub.verify_token'] ?? ''));
     $challenge = (string) ($_GET['hub_challenge'] ?? $_GET['hub.challenge'] ?? '');
-    $verifyToken = cod_guard_webhook_verify_token();
-
-    if ($mode === 'subscribe' && $verifyToken !== '' && hash_equals($verifyToken, $token)) {
+    if (cod_guard_validate_webhook_verification($mode, $token)) {
         header('Content-Type: text/plain');
         echo $challenge;
         exit;

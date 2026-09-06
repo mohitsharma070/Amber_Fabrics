@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
+require_once $root . '/includes/helpers/migration-checksum.php';
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
     if (!$condition) {
@@ -121,7 +122,7 @@ $assert(str_contains($placeOrder, 'CouponService::guestIdentityHash($email, $pho
 foreach (['guest_identity_hash', 'uq_coupon_usages_coupon_guest', 'commerce_outbox', 'commerce_outbox_deliveries', 'uq_commerce_outbox_dedupe'] as $needle) {
     $assert(str_contains($migration, $needle) && str_contains($schema, $needle) && str_contains($setup, $needle), 'Migration/schema/setup must align for ' . $needle . '.');
 }
-$checksum = hash_file('sha256', $root . '/' . $migrationPath);
+$checksum = migration_file_checksum($root . '/' . $migrationPath);
 $assert(is_string($checksum) && str_contains($schema, $checksum), 'Fresh schema must baseline the current remediation migration checksum.');
 
 foreach (['60, 300, 900, 3600, 14400', 'STALE_CLAIM_MINUTES = 15', 'MAX_ATTEMPTS = 6', 'CronService::sanitizeError', 'commerce_outbox_deliveries'] as $needle) {

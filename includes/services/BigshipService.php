@@ -42,9 +42,9 @@ final class BigshipService
             $this->deadlineNs = $previousDeadline;
         }
     }
-    public function createOrder(array $payload): array { return $this->request('POST', '/api/outbound/create-order', $payload); }
+    public function createOrder(array $payload): array { return $this->request('POST', '/api/outbound/create-order', $payload, [], true, false, false, false); }
     public function courierCosts(array $payload): array { return $this->request('POST', '/api/outbound/courier-wise-shipment-cost', $payload); }
-    public function placeOrder(array $payload, bool $multipart = false): array { return $this->request('POST', '/api/outbound/place-order', $payload, [], true, $multipart); }
+    public function placeOrder(array $payload, bool $multipart = false): array { return $this->request('POST', '/api/outbound/place-order', $payload, [], true, $multipart, false, false); }
     public function cancelOrder(array $payload): array { return $this->request('POST', '/api/outbound/cancel-order', $payload); }
     public function trackOrder(string $id, int $courierId = 0, string $trackSegment = ''): array
     {
@@ -90,7 +90,8 @@ final class BigshipService
         array $headers = [],
         bool $authenticated = true,
         bool $multipart = false,
-        bool $getPayloadInBody = false
+        bool $getPayloadInBody = false,
+        bool $retrySafe = true
     ): array {
         if ($this->deadlineExpired()) {
             return self::result(false, 'Bigship quote deadline exceeded.');
@@ -131,14 +132,15 @@ final class BigshipService
         }
 
         $last = self::result(false, 'Bigship request was not attempted.');
-        for ($attempt = 1; $attempt <= 3; $attempt++) {
+        $maxAttempts = $retrySafe ? 3 : 1;
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             $this->throttle();
             if ($this->deadlineExpired()) {
                 return self::result(false, 'Bigship quote deadline exceeded.');
             }
             $last = $this->execute($method, $url, $payload, $requestHeaders, $multipart, $getPayloadInBody);
             $status = (int) ($last['status'] ?? 0);
-            if (!HttpClientPolicy::retryableStatus($status) || $attempt === 3) {
+            if (!HttpClientPolicy::retryableStatus($status) || $attempt === $maxAttempts) {
                 return $last;
             }
             $this->pause(150000 * $attempt);
