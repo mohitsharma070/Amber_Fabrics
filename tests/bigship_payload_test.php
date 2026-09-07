@@ -54,6 +54,7 @@ $request = shipping_courier_bigship_order_request([
     'order' => [
         'id' => 10,
         'order_number' => 'AF-TEST-10',
+        'created_at' => '2026-01-02 03:04:05',
         'customer_name' => 'Test Customer',
         'customer_phone' => '9876543210',
         'customer_email' => 'test@example.test',
@@ -76,6 +77,7 @@ $requestBody = is_array($request['body'] ?? null) ? $request['body'] : [];
 $products = (array) ($requestBody['boxes'][0]['products'] ?? []);
 $productTotal = array_sum(array_map(static fn(array $product): float => (float) ($product['totalAmount'] ?? 0), $products));
 $assert(!empty($request['ok']), 'Domestic B2C payload could not be built.');
+$assert(($requestBody['MasterOrderDate'] ?? '') === '2026-01-02 03:04:05', 'Bigship order date must remain stable across retries.');
 $assert(abs($productTotal - (float) ($requestBody['MasterOrderInvoiceAmount'] ?? -1)) < 0.001, 'B2C product totals do not match MasterOrderInvoiceAmount.');
 
 $settings = [

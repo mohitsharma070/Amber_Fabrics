@@ -60,7 +60,7 @@ final class CronService
             foreach ([
                 'CRON_RUN_TOKEN', 'DB_PASSWORD', 'SMTP_PASSWORD', 'RAZORPAY_KEY_SECRET',
                 'RAZORPAY_WEBHOOK_SECRET', 'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
-                'COD_GUARD_WHATSAPP_APP_SECRET', 'COD_GUARD_WEBHOOK_TOKEN',
+                'COD_GUARD_WHATSAPP_APP_SECRET',
                 'SHIPPING_COURIER_WEBHOOK_SECRET', 'BIGSHIP_PASSWORD', 'BIGSHIP_ACCESS_KEY',
                 'ADMIN_LOGIN_PASSPHRASE', 'APP_IDENTITY_HASH_KEY',
             ] as $key) {

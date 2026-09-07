@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
+require_once $root . '/includes/helpers/migration-checksum.php';
 $failures = [];
 $assert = static function (bool $condition, string $message) use (&$failures): void {
     if (!$condition) {
@@ -51,7 +52,7 @@ $assert(str_contains($endpoint, 'cod_guard_validate_webhook_request') && str_con
 foreach (['cod_guard_webhook_events', 'whatsapp_consent_at', 'whatsapp_consent_version', 'uq_cod_guard_webhook_message'] as $needle) {
     $assert(str_contains($migration, $needle) && str_contains($schema, $needle) && str_contains($setup, $needle), 'Migration, schema, and setup must align for ' . $needle . '.');
 }
-$checksum = hash_file('sha256', $root . '/' . $migrationPath);
+$checksum = migration_file_checksum($root . '/' . $migrationPath);
 $assert(is_string($checksum) && str_contains($schema, $checksum), 'Fresh schema must contain the WhatsApp hardening migration checksum.');
 $assert(str_contains($cron, "'cod_guard_webhook_events'") && str_contains($cron, "'whatsapp_consent_at'"), 'Cron readiness must detect a missing WhatsApp hardening migration.');
 $assert(str_contains($openapi, 'cod_whatsapp_consent') && str_contains($openapi, 'duplicate provider message IDs'), 'OpenAPI must document conditional consent and duplicate webhook acknowledgement.');

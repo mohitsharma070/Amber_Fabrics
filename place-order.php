@@ -276,7 +276,7 @@ try {
         'discount_amount' => $discountAmount,
         'total_amount' => $totalAmount,
         'payment_method' => $paymentMethod,
-        'notes' => $orderNotesWithCoupon,
+        'order_notes' => $orderNotesWithCoupon,
         'shipping_address_json' => $shippingAddressJson,
         'customer_id' => $orderCustomerId,
         'coupon_id' => $couponId,

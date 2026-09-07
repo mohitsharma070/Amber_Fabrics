@@ -600,7 +600,7 @@ final class InventoryService
         }
         try {
             $ownerSql = $customerId > 0 ? 'AND customer_id = ?' : '';
-            $orderStmt = $conn->prepare("SELECT id, order_number, order_status, status, payment_status, payment_method, notes FROM orders WHERE id = ? {$ownerSql} FOR UPDATE");
+            $orderStmt = $conn->prepare("SELECT id, order_number, order_status, payment_status, payment_method, order_notes FROM orders WHERE id = ? {$ownerSql} FOR UPDATE");
             if ($customerId > 0) { $orderStmt->bind_param('ii', $orderId, $customerId); } else { $orderStmt->bind_param('i', $orderId); }
             $orderStmt->execute();
             $order = $orderStmt->get_result()->fetch_assoc();
@@ -634,18 +634,19 @@ final class InventoryService
                 $refundNote = "\n[System] Refund process initiated on " . date('d M Y, H:i');
             }
 
-            $existingNotes = trim((string) ($order['notes'] ?? ''));
+            $existingNotes = trim((string) ($order['order_notes'] ?? ''));
             $newNotes = trim($existingNotes . $refundNote);
 
             $updateStmt = $conn->prepare(
                 "UPDATE orders
                  SET order_status = 'cancelled',
                      status = 'cancelled',
+                     order_notes = ?,
                      notes = ?,
                      updated_at = NOW()
                  WHERE id = ?"
             );
-            $updateStmt->bind_param('si', $newNotes, $orderId);
+            $updateStmt->bind_param('ssi', $newNotes, $newNotes, $orderId);
             $updateStmt->execute();
             release_coupon_usage_for_order($conn, $orderId);
 

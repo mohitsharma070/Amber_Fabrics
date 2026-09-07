@@ -24,6 +24,9 @@ jobs:
       - name: Validate Composer metadata
         run: composer validate --strict --no-check-publish
 
+      - name: Audit locked Composer dependencies
+        run: composer audit --locked --no-interaction
+
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
@@ -137,7 +140,6 @@ jobs:
       COD_GUARD_WHATSAPP_TEMPLATE_NAME: ''
       COD_GUARD_WHATSAPP_APP_SECRET: ''
       COD_GUARD_WEBHOOK_VERIFY_TOKEN: ''
-      COD_GUARD_WEBHOOK_TOKEN: ''
       MAIL_DRIVER: log
       MAIL_FROM: browser-ci@example.test
       ADMIN_NOTIFICATION_EMAIL: browser-ci@example.test

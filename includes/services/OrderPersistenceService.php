@@ -18,7 +18,7 @@ final class OrderPersistenceService
         $discountAmount = (float) $order['discount_amount'];
         $totalAmount = (float) $order['total_amount'];
         $paymentMethod = (string) $order['payment_method'];
-        $notes = (string) $order['notes'];
+        $orderNotes = (string) $order['order_notes'];
         $shippingAddressJson = $order['shipping_address_json'] ?? null;
         $customerId = isset($order['customer_id']) ? (int) $order['customer_id'] : null;
         $couponId = (int) ($order['coupon_id'] ?? 0);
@@ -58,12 +58,12 @@ final class OrderPersistenceService
                 $discountAmount,
                 $totalAmount,
                 $paymentMethod,
-                $notes,
+                $orderNotes,
                 $shippingAddressJson,
                 $customerId,
                 $shippingAmount,
                 $totalAmount,
-                $notes,
+                $orderNotes,
                 $couponId,
                 $couponCode,
                 $discountAmount,
@@ -100,12 +100,12 @@ final class OrderPersistenceService
                 $discountAmount,
                 $totalAmount,
                 $paymentMethod,
-                $notes,
+                $orderNotes,
                 $shippingAddressJson,
                 $customerId,
                 $shippingAmount,
                 $totalAmount,
-                $notes
+                $orderNotes
             );
         }
         $stmt->execute();
@@ -276,11 +276,11 @@ final class OrderPersistenceService
              SET payment_status = 'paid',
                  order_status = 'confirmed',
                  status = 'confirmed',
-                 notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+                 " . OrderFieldCompatibilityService::appendNoteAssignments() . ",
                  updated_at = NOW()
              WHERE id = ?"
         );
-        $order->bind_param('ssi', $note, $note, $orderId);
+        $order->bind_param('ssssi', $note, $note, $note, $note, $orderId);
         $order->execute();
 
         $payment = $conn->prepare(

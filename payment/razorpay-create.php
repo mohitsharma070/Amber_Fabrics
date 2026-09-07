@@ -31,11 +31,11 @@ $cancelInvalidRazorpayOrder = static function (mysqli $conn, int $orderId, strin
              SET payment_status = 'failed',
                  order_status = 'cancelled',
                  status = 'cancelled',
-                 notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+                 " . OrderFieldCompatibilityService::appendNoteAssignments() . ",
                  updated_at = NOW()
              WHERE id = ?"
         );
-        $orderUpdate->bind_param('ssi', $reason, $reason, $orderId);
+        $orderUpdate->bind_param('ssssi', $reason, $reason, $reason, $reason, $orderId);
         $orderUpdate->execute();
 
         $paymentUpdate = $conn->prepare(

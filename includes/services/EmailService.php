@@ -207,9 +207,9 @@ final class EmailService
 
         $currency = (string) ($order['currency'] ?? 'INR');
         $subtotalAmount = (float) ($order['subtotal'] ?? 0);
-        $shippingAmount = (float) (($order['shipping_amount'] ?? null) !== null ? $order['shipping_amount'] : ($order['shipping_cost'] ?? 0));
+        $shippingAmount = (float) ($order['shipping_amount'] ?? 0);
         $discountAmount = (float) (($order['discount_amount'] ?? null) !== null ? $order['discount_amount'] : ($order['coupon_discount'] ?? 0));
-        $totalAmount = (float) (($order['total_amount'] ?? null) !== null ? $order['total_amount'] : ($order['total'] ?? 0));
+        $totalAmount = (float) ($order['total_amount'] ?? 0);
         $isPaid = strtolower((string) ($order['payment_status'] ?? '')) === 'paid';
         $paymentMethodLabel = strtoupper((string) ($order['payment_method'] ?? ''));
         $lines = [

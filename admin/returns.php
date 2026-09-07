@@ -174,16 +174,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $allocStmt->execute();
                 }
                 $isFullRefund = $amount >= ($orderTotal - 0.01) && $orderTotal > 0;
+                $canonicalOrderStatus = $isFullRefund ? 'refunded' : 'returned';
+                $legacyOrderStatus = OrderFieldCompatibilityService::legacyStatus($canonicalOrderStatus);
+
                 $syncStmt = $conn->prepare(
                     "UPDATE orders o
                      JOIN returns r ON r.order_id = o.id
-                     SET o.order_status = CASE WHEN ? = 1 THEN 'refunded' ELSE 'returned' END,
+                     SET o.order_status = ?,
+                         o.status = ?,
                          o.payment_status = CASE WHEN ? = 1 AND o.payment_status = 'paid' THEN 'refunded' ELSE o.payment_status END,
                          o.updated_at = NOW()
                      WHERE r.id = ?"
                 );
                 $fullFlag = $isFullRefund ? 1 : 0;
-                $syncStmt->bind_param('iii', $fullFlag, $fullFlag, $returnId);
+                $syncStmt->bind_param('ssii', $canonicalOrderStatus, $legacyOrderStatus, $fullFlag, $returnId);
                 $syncStmt->execute();
                 $adminId = (int) ($_SESSION['admin_id'] ?? 0);
                 $adminName = (string) ($_SESSION['admin_name'] ?? 'admin');

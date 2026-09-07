@@ -10,6 +10,7 @@ require_once __DIR__ . '/security/UploadPolicy.php';
 require_once __DIR__ . '/integrations/HttpClientPolicy.php';
 require_once __DIR__ . '/integrations/JsonHttpClient.php';
 require_once __DIR__ . '/services/SiteSettingsService.php';
+require_once __DIR__ . '/services/OrderFieldCompatibilityService.php';
 require_once __DIR__ . '/services/PaymentService.php';
 require_once __DIR__ . '/services/WebhookLifecycleService.php';
 require_once __DIR__ . '/services/ProductReadService.php';

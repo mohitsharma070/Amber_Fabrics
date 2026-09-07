@@ -404,7 +404,10 @@ function shipping_courier_bigship_order_request(array $payload): array
         'MasterOrderShippingLandmark' => '',
     ];
 
-    $orderDate = gmdate('Y-m-d H:i:s');
+    $orderDate = trim((string) ($order['created_at'] ?? ''));
+    if ($orderDate === '') {
+        return shipping_courier_result(false, 'Order creation time is unavailable for Bigship order creation.');
+    }
     $invoiceNo = (string) ($order['order_number'] ?? ('ORD-' . (int) ($order['id'] ?? 0)));
     $codAmount = $paymentModeId === 2 ? round(max(0.0, (float) ($order['total_amount'] ?? $invoiceAmount)), 2) : 0.0;
 

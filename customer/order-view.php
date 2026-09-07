@@ -36,7 +36,7 @@ function customer_visible_order_notes(string $notes): string
     return implode("\n", $visible);
 }
 
-$customerVisibleNotes = customer_visible_order_notes((string) ($order['notes'] ?? ''));
+$customerVisibleNotes = customer_visible_order_notes((string) ($order['order_notes'] ?? ''));
 
 $items = OrderReadService::itemsWithImages($conn, $orderId, false);
 $shipment = OrderReadService::customerShipment($conn, $orderId);
@@ -90,11 +90,11 @@ if (empty($shipping)) {
 $currency = (string) ($order['currency'] ?? 'INR');
 $taxableAmount = max(0.0, (float) ($order['subtotal'] ?? 0) - (float) ($order['discount_amount'] ?? 0));
 $gst = order_gst_breakdown($taxableAmount, (string) ($order['country'] ?? ''));
-$displayShipping = (float) (($order['shipping_amount'] ?? 0) > 0 ? $order['shipping_amount'] : ($order['shipping_cost'] ?? 0));
-$displayTotal = (float) (($order['total_amount'] ?? 0) > 0 ? $order['total_amount'] : ($order['total'] ?? 0));
+$displayShipping = (float) ($order['shipping_amount'] ?? 0);
+$displayTotal = (float) ($order['total_amount'] ?? 0);
 $displayDiscount = (float) ($order['discount_amount'] ?? 0);
 
-$effectiveOrderStatus = (string) ($order['order_status'] ?? $order['status'] ?? '');
+$effectiveOrderStatus = (string) ($order['order_status'] ?? '');
 $s = CommercePresenter::orderStatus($effectiveOrderStatus);
 $payMeta = CommercePresenter::paymentStatus((string) ($order['payment_status'] ?? 'pending'));
 $isRefundInitiated = in_array(strtolower($effectiveOrderStatus), ['cancelled', 'refunded'], true)

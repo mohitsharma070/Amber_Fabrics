@@ -43,7 +43,7 @@ if ($policyErrors !== []) {
 
 if ($orderNumber === '-') {
     $orderStmt = $conn->prepare(
-        "SELECT id, order_number, customer_email, payment_method, payment_status,
+        "SELECT id, order_number, customer_email, payment_method, payment_status, order_status,
                 coupon_code, coupon_discount, shipping_quote_token, shipping_source,
                 inventory_reserved_at, subtotal, shipping_amount, total_amount
          FROM orders
@@ -54,7 +54,7 @@ if ($orderNumber === '-') {
     $orderStmt->execute([$email]);
 } else {
     $orderStmt = $conn->prepare(
-        "SELECT id, order_number, customer_email, payment_method, payment_status,
+        "SELECT id, order_number, customer_email, payment_method, payment_status, order_status,
                 coupon_code, coupon_discount, shipping_quote_token, shipping_source,
                 inventory_reserved_at, subtotal, shipping_amount, total_amount
          FROM orders

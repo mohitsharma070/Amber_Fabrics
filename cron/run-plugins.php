@@ -32,9 +32,7 @@ if (PHP_SAPI !== 'cli') {
     }
     $expectedToken = trim((string) _cfg('CRON_RUN_TOKEN', ''));
     $headerToken = trim((string) ($_SERVER['HTTP_X_CRON_TOKEN'] ?? ''));
-    $queryToken = trim((string) ($_GET['token'] ?? ''));
-    $providedToken = $headerToken !== '' ? $headerToken : $queryToken;
-    if ($expectedToken === '' || $providedToken === '' || !hash_equals($expectedToken, $providedToken)) {
+    if ($expectedToken === '' || $headerToken === '' || !hash_equals($expectedToken, $headerToken)) {
         http_response_code(403);
         echo "Forbidden\n";
         exit;
@@ -79,7 +77,7 @@ function cron_db_lock_release(mysqli $conn, string $lockName): void
 function cron_readiness_check(mysqli $conn): array
 {
     $requiredTables = [
-        'orders', 'payments', 'public_form_attempts', 'site_settings', 'cod_confirmations', 'cod_guard_webhook_events',
+        'orders', 'payments', 'payment_webhook_events', 'public_form_attempts', 'site_settings', 'cod_confirmations', 'cod_guard_webhook_events',
         'abandoned_cart_reminders', 'inventory_alert_logs', 'back_in_stock_subscriptions',
         'shipping_rto_risks', 'support_tickets', 'cron_run_history', 'commerce_outbox', 'commerce_outbox_deliveries',
     ];
@@ -107,6 +105,7 @@ function cron_readiness_check(mysqli $conn): array
         'coupon_usages' => ['guest_identity_hash'],
         'commerce_outbox' => ['dedupe_key', 'status', 'attempts', 'available_at', 'claim_token', 'claimed_at'],
         'commerce_outbox_deliveries' => ['outbox_id', 'handler_key', 'status', 'claim_token', 'claimed_at'],
+        'payment_webhook_events' => ['payload_hash', 'raw_payload', 'status', 'attempts', 'processed_at', 'created_at', 'updated_at'],
     ];
     foreach ($requiredColumns as $table => $columns) {
         foreach ($columns as $column) {
@@ -301,6 +300,12 @@ try {
     } else {
         $jobs[] = CronService::runJob('stale_razorpay_release', !$isLocalSmoke, static fn(): array => PaymentService::release_stale_pending_razorpay_orders_global_report($conn, 30, 200), $logger);
         $jobs[] = CronService::runJob('commerce_outbox', false, static fn(): array => OutboxService::processBatch($conn, 100), $logger);
+        $jobs[] = CronService::runJob('payment_webhook_retention', false, static fn(): array => PaymentService::cleanup_payment_webhook_events(
+            $conn,
+            (int) _cfg('PAYMENT_WEBHOOK_PAYLOAD_RETENTION_DAYS', '30'),
+            (int) _cfg('PAYMENT_WEBHOOK_AUDIT_RETENTION_DAYS', '0'),
+            (int) _cfg('PAYMENT_WEBHOOK_CLEANUP_BATCH_SIZE', '500')
+        ), $logger);
         $jobs[] = CronService::runJob('public_form_rate_limit_cleanup', false, static function () use ($conn): array {
             $stmt = $conn->prepare('DELETE FROM public_form_attempts WHERE updated_at < (NOW() - INTERVAL 7 DAY) ORDER BY updated_at ASC LIMIT 5000');
             $stmt->execute();

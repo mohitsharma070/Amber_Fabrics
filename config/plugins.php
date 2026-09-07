@@ -37,7 +37,6 @@ return [
             'whatsapp_template_language' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_TEMPLATE_LANGUAGE', 'en') : 'en',
             'whatsapp_app_secret' => function_exists('_cfg') ? _cfg('COD_GUARD_WHATSAPP_APP_SECRET', '') : '',
             'webhook_verify_token' => function_exists('_cfg') ? _cfg('COD_GUARD_WEBHOOK_VERIFY_TOKEN', '') : '',
-            'webhook_auth_token' => function_exists('_cfg') ? _cfg('COD_GUARD_WEBHOOK_TOKEN', '') : '',
         ],
         'utm-attribution' => [
             'cookie_days' => (int) (function_exists('_cfg') ? _cfg('UTM_COOKIE_DAYS', '30') : '30'),

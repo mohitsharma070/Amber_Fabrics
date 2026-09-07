@@ -32,32 +32,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'workflow_transition') {
         $targetStatus = trim((string) ($_POST['target_status'] ?? ''));
+        $expectedStatus = trim((string) ($_POST['expected_status'] ?? ''));
         if (!in_array($targetStatus, $validOrderStatuses, true)) {
             flash('error', 'Invalid target status.');
             redirect('order-view.php?id=' . $id);
         }
 
-        $currentStmt = $conn->prepare("SELECT order_status, payment_method, payment_status FROM orders WHERE id = ? LIMIT 1");
-        $currentStmt->bind_param('i', $id);
-        $currentStmt->execute();
-        $currentRow = $currentStmt->get_result()->fetch_assoc() ?: [];
-        $currentOrderStatus = (string) ($currentRow['order_status'] ?? '');
-        $currentPaymentStatus = (string) ($currentRow['payment_status'] ?? 'pending');
-        $method = strtolower((string) ($currentRow['payment_method'] ?? ''));
-        if (!InventoryService::can_transition_order_status($currentOrderStatus, $targetStatus)) {
-            flash('error', 'Invalid order status transition.');
-            redirect('order-view.php?id=' . $id);
-        }
-        if (in_array($targetStatus, ['shipped', 'delivered'], true) && in_array($method, ['razorpay', 'upi'], true) && strtolower($currentPaymentStatus) !== 'paid') {
-            flash('error', 'Online-paid orders can be shipped only after payment is captured.');
-            redirect('order-view.php?id=' . $id);
-        }
-
         try {
             $conn->begin_transaction();
-            $legacyStatus = in_array($targetStatus, ['pending','confirmed','shipped','delivered','cancelled'], true)
-                ? $targetStatus
-                : 'processing';
+
+            $currentStmt = $conn->prepare("SELECT order_status, payment_method, payment_status FROM orders WHERE id = ? LIMIT 1 FOR UPDATE");
+            $currentStmt->bind_param('i', $id);
+            $currentStmt->execute();
+            $currentRow = $currentStmt->get_result()->fetch_assoc();
+
+            if (!$currentRow) {
+                throw new RuntimeException('Order not found.');
+            }
+
+            $currentOrderStatus = (string) ($currentRow['order_status'] ?? '');
+            $currentPaymentStatus = (string) ($currentRow['payment_status'] ?? 'pending');
+            $method = strtolower((string) ($currentRow['payment_method'] ?? ''));
+
+            if ($expectedStatus !== '' && $currentOrderStatus !== $expectedStatus) {
+                throw new RuntimeException('The order state has changed since you loaded this page. Please review the updated status.');
+            }
+
+            if (!InventoryService::can_transition_order_status($currentOrderStatus, $targetStatus)) {
+                throw new RuntimeException('Invalid order status transition.');
+            }
+            if (in_array($targetStatus, ['shipped', 'delivered'], true) && in_array($method, ['razorpay', 'upi'], true) && strtolower($currentPaymentStatus) !== 'paid') {
+                throw new RuntimeException('Online-paid orders can be shipped only after payment is captured.');
+            }
+
+            $legacyStatus = OrderFieldCompatibilityService::legacyStatus($targetStatus);
             $update = $conn->prepare(
                 "UPDATE orders
                  SET order_status = ?, status = ?, updated_at = NOW()
@@ -142,7 +150,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $rollbackException) {
                 // ignore rollback errors
             }
-            flash('error', 'Unable to update order right now.');
+            $msg = $e->getMessage();
+            if (in_array($msg, ['Order not found.', 'Invalid order status transition.', 'Online-paid orders can be shipped only after payment is captured.', 'The order state has changed since you loaded this page. Please review the updated status.'], true)) {
+                flash('error', $msg);
+            } else {
+                flash('error', 'Unable to update order right now.');
+            }
             redirect('order-view.php?id=' . $id);
         }
 
@@ -332,7 +345,7 @@ if (!$order) {
 }
 
 $razorpayAuditLines = [];
-$systemNotes = trim((string) ($order['notes'] ?? ''));
+$systemNotes = trim((string) ($order['order_notes'] ?? ''));
 if ($systemNotes !== '') {
     $parts = preg_split('/\R+/', $systemNotes);
     if (is_array($parts)) {
@@ -463,6 +476,7 @@ include 'partials/header.php';
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="workflow_transition">
                                 <input type="hidden" name="target_status" value="<?php echo e($nextStatus); ?>">
+                                <input type="hidden" name="expected_status" value="<?php echo e((string) ($order['order_status'] ?? '')); ?>">
                                 <button class="btn btn-sm <?php echo $nextStatus === 'cancelled' ? 'btn-outline-danger' : 'btn-outline-primary'; ?>" type="submit">
                                     <?php echo ucfirst($nextStatus); ?>
                                 </button>

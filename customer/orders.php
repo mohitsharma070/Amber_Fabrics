@@ -61,14 +61,14 @@ function order_customer_status_messages(array $order): array
     }
 
     if (strtolower((string) ($order['payment_status'] ?? '')) === 'failed') {
-        $failureReason = order_failure_reason((string) ($order['notes'] ?? ''));
+        $failureReason = order_failure_reason((string) ($order['order_notes'] ?? ''));
         if ($failureReason !== '') {
             $messages[] = ['class' => 'warning', 'text' => order_failure_message_for_customer($failureReason)];
         }
     }
 
     if (order_refund_initiated(
-        strtolower((string) ($order['order_status'] ?? $order['status'] ?? '')),
+        strtolower((string) ($order['order_status'] ?? '')),
         strtolower((string) ($order['payment_method'] ?? '')),
         strtolower((string) ($order['payment_status'] ?? ''))
     )) {
@@ -109,7 +109,7 @@ include __DIR__ . '/../includes/header.php';
         <?php else: ?>
             <div class="d-md-none">
                 <?php foreach ($orders as $o):
-                    $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
+                    $effectiveOrderStatus = (string) ($o['order_status'] ?? '');
                     $s = CommercePresenter::orderStatus($effectiveOrderStatus);
                     $payMeta = CommercePresenter::paymentStatus((string) ($o['payment_status'] ?? 'pending'));
                     $totalQty = (float) ($o['total_qty'] ?? 0);
@@ -130,7 +130,7 @@ include __DIR__ . '/../includes/header.php';
                         </div>
                         <div class="small mb-2">
                             <div>Items: <?php echo e(format_meter_quantity($totalQty)); ?></div>
-                            <div>Total: <strong><?php echo e(money((float) $o['total'], (string) ($o['currency'] ?? 'INR'), true)); ?></strong></div>
+                            <div>Total: <strong><?php echo e(money((float) $o['total_amount'], (string) ($o['currency'] ?? 'INR'), true)); ?></strong></div>
                             <div>Payment: <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?></div>
                         </div>
                         <div class="d-flex gap-2 flex-wrap">
@@ -173,7 +173,7 @@ include __DIR__ . '/../includes/header.php';
                     </thead>
                     <tbody>
                     <?php foreach ($orders as $o):
-                        $effectiveOrderStatus = (string) ($o['order_status'] ?? $o['status'] ?? '');
+                        $effectiveOrderStatus = (string) ($o['order_status'] ?? '');
                         $s      = CommercePresenter::orderStatus($effectiveOrderStatus);
                         $payMeta = CommercePresenter::paymentStatus((string) ($o['payment_status'] ?? 'pending'));
                         $totalQty = (float) ($o['total_qty'] ?? 0);
@@ -184,7 +184,7 @@ include __DIR__ . '/../includes/header.php';
                             <td class="fw-semibold"><?php echo e($o['order_number']); ?></td>
                             <td class="text-muted small"><?php echo date('d M Y', strtotime($o['created_at'])); ?></td>
                             <td class="text-muted small"><?php echo e(format_meter_quantity($totalQty)); ?> total</td>
-                            <td><?php echo e(money((float) $o['total'], (string) ($o['currency'] ?? 'INR'), true)); ?></td>
+                            <td><?php echo e(money((float) $o['total_amount'], (string) ($o['currency'] ?? 'INR'), true)); ?></td>
                             <td class="text-muted small">
                                 <?php echo ucfirst(str_replace('_', ' ', (string) $o['payment_method'])); ?>
                                 <div class="mt-1">

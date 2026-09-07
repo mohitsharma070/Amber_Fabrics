@@ -56,7 +56,7 @@ function app_config_load_file(string $path, string $mode): array
 function app_config_apply_env_overrides(array $config): array
 {
     $keys = [
-        'APP_ENV', 'APP_DEBUG', 'APP_URL', 'APP_FORCE_HTTPS',
+        'APP_ENV', 'APP_DEBUG', 'APP_URL', 'APP_FORCE_HTTPS', 'APP_TRUSTED_PROXY_IPS',
         'DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
         'ADMIN_NOTIFICATION_EMAIL', 'CRON_RUN_TOKEN', 'CRON_EXPECTED_INTERVAL_MINUTES',
         'ADMIN_LOGIN_PASSPHRASE', 'APP_IDENTITY_HASH_KEY',
@@ -67,13 +67,14 @@ function app_config_apply_env_overrides(array $config): array
         'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET',
         'RAZORPAY_HTTP_TIMEOUT_SEC', 'RAZORPAY_HTTP_CONNECT_TIMEOUT_SEC',
         'RAZORPAY_HTTP_CA_BUNDLE', 'RAZORPAY_HTTP_SKIP_TLS_VERIFY', 'RAZORPAY_TEST_BASE_URL',
+        'PAYMENT_WEBHOOK_PAYLOAD_RETENTION_DAYS', 'PAYMENT_WEBHOOK_AUDIT_RETENTION_DAYS',
+        'PAYMENT_WEBHOOK_CLEANUP_BATCH_SIZE',
         'COD_GUARD_WHATSAPP_THRESHOLD', 'COD_GUARD_CALL_THRESHOLD',
         'COD_GUARD_CONFIRMATION_HOURS', 'COD_GUARD_MESSAGE_MAX_ATTEMPTS',
         'COD_GUARD_WHATSAPP_PROVIDER', 'COD_GUARD_WHATSAPP_API_BASE_URL',
         'COD_GUARD_WHATSAPP_PHONE_NUMBER_ID', 'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
         'COD_GUARD_WHATSAPP_TEMPLATE_NAME', 'COD_GUARD_WHATSAPP_TEMPLATE_LANGUAGE',
         'COD_GUARD_WHATSAPP_APP_SECRET', 'COD_GUARD_WEBHOOK_VERIFY_TOKEN',
-        'COD_GUARD_WEBHOOK_TOKEN',
         'UTM_COOKIE_DAYS', 'META_PIXEL_ID', 'META_CAPI_PIXEL_ID',
         'META_CAPI_ACCESS_TOKEN', 'META_CAPI_TEST_EVENT_CODE',
         'GOOGLE_ANALYTICS_ENABLED', 'GOOGLE_ANALYTICS_MEASUREMENT_ID',
@@ -174,7 +175,6 @@ function app_config_validate_production(array $config): void
         'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
         'COD_GUARD_WHATSAPP_TEMPLATE_NAME',
         'COD_GUARD_WHATSAPP_APP_SECRET',
-        'COD_GUARD_WEBHOOK_TOKEN',
         'COD_GUARD_WEBHOOK_VERIFY_TOKEN',
     ];
     $codGuardConfigured = false;
@@ -196,7 +196,6 @@ function app_config_validate_production(array $config): void
         'COD_GUARD_WHATSAPP_ACCESS_TOKEN',
         'COD_GUARD_WHATSAPP_TEMPLATE_NAME',
         'COD_GUARD_WHATSAPP_APP_SECRET',
-        'COD_GUARD_WEBHOOK_TOKEN',
     ] as $key) {
         if (trim((string) ($config[$key] ?? '')) !== '') {
             $codGuardBootstrapVerifyOnly = false;
@@ -210,9 +209,7 @@ function app_config_validate_production(array $config): void
         $required[] = 'COD_GUARD_WHATSAPP_TEMPLATE_NAME';
         $required[] = 'COD_GUARD_WHATSAPP_TEMPLATE_LANGUAGE';
         $required[] = 'COD_GUARD_WEBHOOK_VERIFY_TOKEN';
-        if (trim((string) ($config['COD_GUARD_WHATSAPP_APP_SECRET'] ?? '')) === '') {
-            $required[] = 'COD_GUARD_WEBHOOK_TOKEN';
-        }
+        $required[] = 'COD_GUARD_WHATSAPP_APP_SECRET';
     }
 
     $courierEnabled = (int) trim((string) ($config['SHIPPING_COURIER_ENABLED'] ?? '0')) === 1;

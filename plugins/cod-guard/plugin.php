@@ -30,7 +30,6 @@ function cod_guard_settings(): array
         'whatsapp_template_language' => trim((string) plugin_setting('cod-guard', 'whatsapp_template_language', 'en')),
         'whatsapp_app_secret' => trim((string) plugin_setting('cod-guard', 'whatsapp_app_secret', '')),
         'webhook_verify_token' => trim((string) plugin_setting('cod-guard', 'webhook_verify_token', '')),
-        'webhook_auth_token' => trim((string) plugin_setting('cod-guard', 'webhook_auth_token', '')),
     ];
 }
 
@@ -786,11 +785,11 @@ function cod_guard_cancel_order(mysqli $conn, int $orderId, string $reason, stri
         "UPDATE orders
          SET order_status = 'cancelled',
              status = 'cancelled',
-             notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE CONCAT(notes, '\n', ?) END,
+             " . OrderFieldCompatibilityService::appendNoteAssignments() . ",
              updated_at = NOW()
          WHERE id = ? AND payment_method = 'cod' AND order_status = 'pending'"
     );
-    $upd->bind_param('ssi', $reason, $reason, $orderId);
+    $upd->bind_param('ssssi', $reason, $reason, $reason, $reason, $orderId);
     $upd->execute();
     if ((int) $upd->affected_rows <= 0) {
         return;
@@ -819,25 +818,26 @@ function cod_guard_webhook_verify_token(): string
     return (string) ($settings['webhook_verify_token'] ?? '');
 }
 
+function cod_guard_validate_webhook_verification(string $mode, string $token): bool
+{
+    $verifyToken = cod_guard_webhook_verify_token();
+    return $mode === 'subscribe'
+        && $verifyToken !== ''
+        && hash_equals($verifyToken, $token);
+}
+
 function cod_guard_validate_webhook_request(string $payload): bool
 {
     $settings = cod_guard_settings();
     $secret = trim((string) ($settings['whatsapp_app_secret'] ?? ''));
-    if ($secret !== '') {
-        $signature = trim((string) ($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? ''));
-        if ($signature === '') {
-            return false;
-        }
-        $expected = 'sha256=' . hash_hmac('sha256', $payload, $secret);
-        return hash_equals($expected, $signature);
-    }
+    $signature = trim((string) ($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? ''));
 
-    $authToken = trim((string) ($settings['webhook_auth_token'] ?? ''));
-    if ($authToken === '') {
+    if ($secret === '' || $signature === '') {
         return false;
     }
-    $provided = trim((string) ($_SERVER['HTTP_X_COD_GUARD_TOKEN'] ?? ($_GET['token'] ?? '')));
-    return $provided !== '' && hash_equals($authToken, $provided);
+
+    $expected = 'sha256=' . hash_hmac('sha256', $payload, $secret);
+    return hash_equals($expected, $signature);
 }
 
 function cod_guard_claim_webhook_event(mysqli $conn, array $message): string

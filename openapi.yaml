@@ -489,7 +489,7 @@ paths:
       tags: [Webhook]
       summary: COD Guard message webhook callback
       security:
-        - genericWebhookSignatureHeader: []
+        - codGuardSignatureHeader: []
       requestBody:
         required: true
         content:
@@ -1347,10 +1347,9 @@ paths:
     get:
       tags: [Operations]
       summary: Run scheduled plugin jobs over HTTP
-      description: Runs scheduled work with overlap protection. Prefer X-Cron-Token; the query token is retained for compatibility. Returns 200 for healthy or degraded noncritical work and 500 for critical or runtime failure. Compact sanitized run/callback failures are retained for 30 days for authorized administrators.
+      description: Runs scheduled work with overlap protection. Require X-Cron-Token. Returns 200 for healthy or degraded noncritical work and 500 for critical or runtime failure. Compact sanitized run/callback failures are retained for 30 days for authorized administrators.
       security:
         - cronTokenHeader: []
-        - cronTokenQuery: []
       responses:
         '200':
           description: Job execution log
@@ -1397,6 +1396,11 @@ components:
       in: header
       name: X-Webhook-Signature
       description: Generic signature header placeholder for plugin-managed webhook signatures.
+    codGuardSignatureHeader:
+      type: apiKey
+      in: header
+      name: X-Hub-Signature-256
+      description: Required sha256 HMAC of the raw request body using COD_GUARD_WHATSAPP_APP_SECRET.
     webhookVerifyTokenQuery:
       type: apiKey
       in: query
@@ -1406,12 +1410,7 @@ components:
       type: apiKey
       in: header
       name: X-Cron-Token
-      description: Preferred secret token configured as CRON_RUN_TOKEN.
-    cronTokenQuery:
-      type: apiKey
-      in: query
-      name: token
-      description: Deprecated compatibility alternative for CRON_RUN_TOKEN; use X-Cron-Token to avoid URL log exposure.
+      description: Required secret token configured as CRON_RUN_TOKEN.
 
   parameters:
     TokenQuery:
