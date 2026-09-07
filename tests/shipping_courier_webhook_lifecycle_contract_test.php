@@ -43,6 +43,11 @@ $assert(
         && str_contains($shipmentLifecycle, "'order_status' => \$localOrderStatus"),
     'Tracking sync must expose the actual applied status without retaining the incomplete terminal-state guard.'
 );
+$assert(
+    str_contains($shipmentLifecycle, 'bool $transactionOwnedByCaller = false')
+        && !str_contains($shipmentLifecycle, '@@in_transaction'),
+    'Courier transaction ownership must be explicit and portable across supported MySQL/MariaDB servers.'
+);
 
 if ($failures !== []) {
     fwrite(STDERR, implode(PHP_EOL, $failures) . PHP_EOL);

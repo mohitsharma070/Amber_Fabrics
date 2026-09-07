@@ -33,21 +33,23 @@ function shipping_courier_bigship_local_order_status(string $providerStatus): st
     return '';
 }
 
-function shipping_courier_order_status_transaction_active(mysqli $conn): bool
-{
-    $result = $conn->query('SELECT @@in_transaction AS active');
-    $row = $result->fetch_assoc();
-    return ((int) ($row['active'] ?? 0)) === 1;
-}
-
-function shipping_courier_apply_bigship_order_status(mysqli $conn, int $orderId, string $providerStatus): string
+/**
+ * Pass $transactionOwnedByCaller only when the current connection already owns
+ * the transaction; production tracking sync uses the default short transaction.
+ */
+function shipping_courier_apply_bigship_order_status(
+    mysqli $conn,
+    int $orderId,
+    string $providerStatus,
+    bool $transactionOwnedByCaller = false
+): string
 {
     $localStatus = shipping_courier_bigship_local_order_status($providerStatus);
     if ($orderId <= 0 || $localStatus === '') {
         return '';
     }
 
-    $startedTransaction = !shipping_courier_order_status_transaction_active($conn);
+    $startedTransaction = !$transactionOwnedByCaller;
     if ($startedTransaction) {
         $conn->begin_transaction();
     } else {

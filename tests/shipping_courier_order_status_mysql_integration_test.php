@@ -82,7 +82,7 @@ try {
 
     $outerTransactionId = $makeOrder('shipped');
     $conn->begin_transaction();
-    $assert(shipping_courier_apply_bigship_order_status($conn, $outerTransactionId, 'delivered') === 'delivered', 'A caller-owned transaction must still apply an allowed transition.');
+    $assert(shipping_courier_apply_bigship_order_status($conn, $outerTransactionId, 'delivered', true) === 'delivered', 'A caller-owned transaction must still apply an allowed transition.');
     $observer = new mysqli(
         (string) getenv('DB_HOST'),
         (string) getenv('DB_USER'),
